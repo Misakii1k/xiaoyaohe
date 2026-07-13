@@ -1,0 +1,31 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dev-dist/
+
+# Cloudflare / Wrangler 本地状态
+.wrangler/
+
+# Claude Code 工程元数据
+.claude/
+
+# 本地日志
+*.log
+preview.log
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 环境变量与密钥（绝对不能提交）
+.env
+.env.*
+!.env.example
+
+# 临时与缓存
+*.tmp
+.cache/
