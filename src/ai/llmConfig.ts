@@ -1,8 +1,8 @@
 // LLM 配置（OpenAI 兼容 endpoint）
 // 用于"自然语言填表"功能：用户描述 → 结构化处方
 //
-// 安全提示：apiKey 会被前端 JS 看到。代码仓库里默认 apiKey 留空，
-// 用户必须在「设置 → AI 大模型」里填自己的密钥才能使用 AI 功能。
+// 地址和模型可持久化；密钥由 SecretStore 保管（Android 安全存储，PWA 仅当前会话）。
+import { clearSessionSecret, getSessionSecret, initializeSecretStore, setSessionSecret } from './secretStore';
 
 const LS_KEY = 'medbox.llmConfig.v1';
 const LS_HEALTH_KEY = 'medbox.llmHealth.v1';
@@ -28,38 +28,71 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
   model: 'gpt-4o-mini',
 };
 
-export function getLlmConfig(): LlmConfig {
+export async function initializeLlmSecretStore(): Promise<void> {
+  await initializeSecretStore();
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return { ...DEFAULT_LLM_CONFIG };
+    if (!raw) return;
     const parsed = JSON.parse(raw) as Partial<LlmConfig>;
-    return {
-      baseUrl: parsed.baseUrl?.trim() || DEFAULT_LLM_CONFIG.baseUrl,
-      apiKey: parsed.apiKey?.trim() || DEFAULT_LLM_CONFIG.apiKey,
-      model: parsed.model?.trim() || DEFAULT_LLM_CONFIG.model,
-    };
+    // Remove the legacy plaintext before touching native storage. If secure
+    // storage is unavailable, losing the cached key is safer than retaining it.
+    localStorage.removeItem(LS_KEY);
+    localStorage.setItem(LS_KEY, JSON.stringify({ baseUrl: parsed.baseUrl, model: parsed.model }));
+    if (parsed.apiKey && !getSessionSecret()) await setSessionSecret(parsed.apiKey);
   } catch {
-    return { ...DEFAULT_LLM_CONFIG };
+    // A damaged legacy config is handled by getLlmConfig defaults.
   }
 }
 
-export function setLlmConfig(cfg: LlmConfig): void {
-  localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+export function getLlmConfig(): LlmConfig {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return { ...DEFAULT_LLM_CONFIG, apiKey: getSessionSecret() };
+    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
+    return {
+      baseUrl: parsed.baseUrl?.trim() || DEFAULT_LLM_CONFIG.baseUrl,
+      apiKey: getSessionSecret(),
+      model: parsed.model?.trim() || DEFAULT_LLM_CONFIG.model,
+    };
+  } catch {
+    return { ...DEFAULT_LLM_CONFIG, apiKey: getSessionSecret() };
+  }
+}
+
+export async function setLlmConfig(cfg: LlmConfig): Promise<void> {
+  const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
+  localStorage.setItem(LS_KEY, JSON.stringify({ baseUrl, model: cfg.model.trim() }));
+  await setSessionSecret(cfg.apiKey);
 }
 
 export function isUsingDefaultKey(): boolean {
-  return getLlmConfig().apiKey === DEFAULT_LLM_CONFIG.apiKey;
+  return !getLlmConfig().apiKey;
 }
 
-export function resetLlmConfig(): void {
+export async function resetLlmConfig(): Promise<void> {
   localStorage.removeItem(LS_KEY);
+  await clearSessionSecret();
+}
+
+export function normalizeAndValidateBaseUrl(value: string): string {
+  const url = new URL(value.trim());
+  const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+  if (url.protocol !== 'https:' && !(import.meta.env.DEV && local)) {
+    throw new Error('生产环境只允许 HTTPS AI 地址');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error('AI 地址不能包含账号密码、查询参数或片段');
+  }
+  return url.toString().replace(/\/$/, '');
 }
 
 /** 拉模型列表（用于下拉自动检测）。失败抛错。 */
 export async function listModels(cfg: LlmConfig): Promise<string[]> {
-  const r = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/models', {
+  const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
+  const r = await fetch(baseUrl + '/models', {
     method: 'GET',
     headers: { authorization: 'Bearer ' + cfg.apiKey },
+    signal: AbortSignal.timeout(20_000),
   });
   if (!r.ok) {
     const d = (await r.json().catch(() => ({}))) as any;

@@ -2,7 +2,8 @@
 // 用户：「阿司匹林肠溶片 100mg，每天早晚各一片，饭后吃，30天，注意监测出血」
 // 输出：{ name, dosageText, amountPerDose, slots, slotTimes, mealRelsBySlot, daysOfWeek, notes }
 
-import { getLlmConfig } from './llmConfig';
+import { getLlmConfig, normalizeAndValidateBaseUrl } from './llmConfig';
+import { requireAiConsent } from './consent';
 import {
   SLOT_DEFAULT_TIME,
   mealRelsFromBySlot,
@@ -80,8 +81,10 @@ export async function parsePrescription(text: string): Promise<PrescriptionDraft
       'unconfigured',
     );
   }
+  const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
+  await requireAiConsent('prescription', baseUrl);
 
-  const resp = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+  const resp = await fetch(baseUrl + '/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -96,6 +99,7 @@ export async function parsePrescription(text: string): Promise<PrescriptionDraft
         { role: 'user', content: desc },
       ],
     }),
+    signal: AbortSignal.timeout(45_000),
   });
 
   if (!resp.ok) {

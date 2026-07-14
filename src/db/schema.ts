@@ -33,6 +33,15 @@ export const MEAL_LABEL: Record<MealRel, string> = {
 
 export type MealRelsBySlot = Partial<Record<Slot, MealRel[]>>;
 
+/** A calendar date in the device's local timezone (YYYY-MM-DD). */
+export type LocalDate = `${number}-${number}-${number}`;
+
+/** A confirmed, machine-readable dose used for inventory accounting. */
+export interface StructuredDose {
+  quantity: number;
+  unit: string;
+}
+
 /** 把 mealRels 数组拼成展示串，"餐前·餐中·餐后" */
 export function formatMealRels(rels: MealRel[] | undefined | null): string {
   if (!rels || rels.length === 0) return '';
@@ -138,6 +147,14 @@ export interface Medication {
   dosageText: string;
   /** 每次用量，如 "1片" / "半片" */
   amountPerDose: string;
+  /** 已由用户确认的结构化单次用量；库存扣减只使用该值。 */
+  doseQuantity?: number;
+  doseUnit?: string;
+  /** 确认结构化剂量时对应的原始文本；文本变化后需要重新确认。 */
+  doseSourceText?: string;
+  /** 旧自由文本可解析时仅保存建议，不直接用于库存扣减。 */
+  doseMigrationSuggestion?: StructuredDose;
+  doseReviewRequired?: boolean;
   /** 涉及的时段（可多个） */
   slots: Slot[];
   /** 与进餐关系（可多选，例：餐前 + 餐后）；空数组 = 不限 */
@@ -149,8 +166,12 @@ export interface Medication {
   /** 剩余药量（第一版：按药品总库存） */
   inventory?: MedicationInventory;
   notes?: string;
-  /** 药品过期日期（UTC 毫秒时间戳），可选 */
+  /** @deprecated 旧版 UTC 时间戳；仅用于兼容旧编辑页和备份。 */
   expiryDate?: number;
+  /** 药品过期日（本地日历日期）；当日结束前均不视为过期。 */
+  expiryLocalDate?: LocalDate;
+  /** 用于检测旧编辑页是否改动/清空了 expiryDate。 */
+  expirySourceTimestamp?: number;
   identity: MedIdentity;
   updatedAt: number;
   /** 创建时间（UTC 毫秒），用于周期用药的 active/rest 日判断；老数据可能缺失 */
@@ -185,6 +206,10 @@ export interface ReminderRule {
   enabled: boolean;
   /** 周期性用药规则（吃 N 天停 M 天），缺省时视为每日服药 */
   cycle?: { activeDays: number; restDays: number };
+  /** 周期首日，按设备本地日历日期计算，避免创建时刻导致首日错位。 */
+  cycleStartDate?: LocalDate;
+  /** 旧数据缺少周期首日时提示用户复核，不静默猜测。 */
+  cycleStartNeedsReview?: boolean;
   escalate: EscalatePolicy;
   updatedAt: number;
   deleted?: boolean;
@@ -193,16 +218,63 @@ export interface ReminderRule {
 /** 服药记录（照护闭环） */
 export interface IntakeLog {
   id: string;
+  /** 新版记录引用确定性的 occurrence；旧记录可能缺失。 */
+  occurrenceId?: string;
+  scheduleRevisionId?: string;
+  sourceRuleId?: string;
   medId: string;
   slot: Slot;
   /** 应服时间（UTC 毫秒） */
   dueAt: number;
+  /** 新记录只持久化 taken/skipped；pending 仅兼容旧备份。 */
   status: 'taken' | 'skipped' | 'pending';
   /** 患者确认时间（UTC 毫秒） */
   ackAt?: number;
   /** 本次打卡扣减的库存数量；用于撤销时恢复，老记录为空表示无法自动恢复 */
   inventoryDelta?: number;
   updatedAt: number;
+}
+
+export type MedicationScheduleReviewFlag = 'cycle-start-missing' | 'dose-unstructured';
+
+/**
+ * An immutable snapshot of one reminder rule plus the medication fields that
+ * influence scheduling. New snapshots supersede earlier snapshots for the same
+ * sourceRuleId from effectiveDate onward; earlier snapshots are never mutated.
+ */
+export interface MedicationScheduleRevision {
+  readonly id: string;
+  readonly medId: string;
+  readonly sourceRuleId: string;
+  readonly effectiveDate: LocalDate;
+  readonly createdAt: number;
+  readonly enabled: boolean;
+  readonly slot: Slot;
+  readonly timeLocal: string;
+  readonly daysOfWeek: readonly number[];
+  readonly cycle?: Readonly<{ activeDays: number; restDays: number }>;
+  readonly cycleStartDate?: LocalDate;
+  readonly mealRels: readonly MealRel[];
+  readonly doseQuantity?: number;
+  readonly doseUnit?: string;
+  readonly reviewFlags: readonly MedicationScheduleReviewFlag[];
+}
+
+/** One expected dose generated deterministically from a schedule revision. */
+export interface MedicationOccurrence {
+  readonly id: string;
+  readonly medId: string;
+  readonly sourceRuleId: string;
+  readonly scheduleRevisionId: string;
+  readonly localDate: LocalDate;
+  readonly slot: Slot;
+  readonly dueAt: number;
+  readonly timeLocal: string;
+  readonly mealRels: readonly MealRel[];
+  readonly doseQuantity?: number;
+  readonly doseUnit?: string;
+  /** Legacy logs used ruleId_YYYYMMDD; this key keeps them readable in place. */
+  readonly legacyLogId: string;
 }
 
 /** 云同步的快照主体（KV: data:{household}） */

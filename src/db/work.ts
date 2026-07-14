@@ -7,11 +7,22 @@ import type {
   WorkSettlement,
   WorkSettlementStatus,
 } from './schema';
+import {
+  calculateWorkRangeIncome,
+  type WorkRangeIncomeResult,
+} from '../domain/workIncome';
 
 export interface WorkImportResult {
   added: number;
   updated: number;
   skipped: number;
+}
+
+export class RunningWorkEntryConflictError extends Error {
+  constructor(readonly runningEntry: WorkEntry) {
+    super('已有班次在进行，请先停止');
+    this.name = 'RunningWorkEntryConflictError';
+  }
 }
 
 export interface WorkBackupPayload {
@@ -35,6 +46,14 @@ export interface WorkIncomeSummary {
   attendanceDays: number;
 }
 
+export interface WorkCsvOptions {
+  profiles?: WorkProfile[];
+  settlements?: WorkSettlement[];
+  rangeStart?: number;
+  rangeEnd?: number;
+  now?: number;
+}
+
 interface WorkDB extends DBSchema {
   workProfiles: {
     key: string;
@@ -55,7 +74,6 @@ interface WorkDB extends DBSchema {
 
 const DB_VERSION = 2;
 const DEFAULT_PROFILE_ID = 'default-work-profile';
-const DAY = 24 * 60 * 60 * 1000;
 let workDbp: Promise<IDBPDatabase<WorkDB>> | null = null;
 
 function workDb(): Promise<IDBPDatabase<WorkDB>> {
@@ -170,8 +188,54 @@ export async function listProjectNames(limit = 12): Promise<string[]> {
 }
 
 export async function putWorkEntry(entry: WorkEntry): Promise<void> {
-  entry.updatedAt = Date.now();
-  await (await workDb()).put('workEntries', normalizeWorkEntry(entry));
+  const d = await workDb();
+  const candidate = normalizeWorkEntry({ ...entry, updatedAt: Date.now() });
+  const tx = d.transaction('workEntries', 'readwrite');
+  try {
+    if (candidate.status === 'running' && !candidate.deleted) {
+      const existing = await findOtherRunningEntry(tx.store, candidate.id);
+      if (existing) {
+        await tx.done;
+        throw new RunningWorkEntryConflictError(existing);
+      }
+    }
+    await tx.store.put(candidate);
+    await tx.done;
+  } catch (error) {
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+}
+
+export interface StartWorkEntryResult {
+  started: boolean;
+  entry: WorkEntry;
+}
+
+/** Serialize the running-entry check and insert so rapid taps cannot start two shifts. */
+export async function startWorkEntry(entry: WorkEntry): Promise<StartWorkEntryResult> {
+  const d = await workDb();
+  const tx = d.transaction('workEntries', 'readwrite');
+  try {
+    const existing = await findOtherRunningEntry(tx.store);
+    if (existing) {
+      await tx.done;
+      return { started: false, entry: existing };
+    }
+
+    const candidate = normalizeWorkEntry({
+      ...entry,
+      status: 'running',
+      endAt: undefined,
+      updatedAt: Date.now(),
+    });
+    await tx.store.put(candidate);
+    await tx.done;
+    return { started: true, entry: candidate };
+  } catch (error) {
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function softDeleteWorkEntry(id: string): Promise<void> {
@@ -232,28 +296,34 @@ export async function markWorkSettlementSettled(id: string, status: WorkSettleme
   await d.put('workSettlements', settlement);
 }
 
+export function calculateWorkIncomeRange(
+  entries: WorkEntry[],
+  profiles: WorkProfile[],
+  settlements: WorkSettlement[],
+  rangeStart: number,
+  rangeEnd: number,
+  now = Date.now(),
+): WorkRangeIncomeResult {
+  return calculateWorkRangeIncome(entries, profiles, settlements, rangeStart, rangeEnd, now);
+}
+
 export function calculateWorkIncome(entry: WorkEntry, entriesInScope: WorkEntry[] = [], now = Date.now()): WorkIncome {
   const normalized = normalizeWorkEntry({ ...entry });
-  const effectiveMs = durationMs(normalized, now);
-  if (normalized.amountOverride !== undefined && Number.isFinite(normalized.amountOverride)) {
-    return { effectiveMs, amount: money(normalized.amountOverride), billable: true, key: normalized.id };
+  const source = entriesInScope.some((candidate) => candidate.id === normalized.id)
+    ? entriesInScope
+    : [...entriesInScope, normalized];
+  const actualEnd = Math.max(normalized.startAt + 1, normalized.endAt ?? now);
+  const calculation = calculateWorkRangeIncome(source, [], [], normalized.startAt, actualEnd - 1, now);
+  const contribution = calculation.entryContributions.find((row) => row.entryId === normalized.id);
+  if (contribution) {
+    return {
+      effectiveMs: contribution.effectiveMs,
+      amount: contribution.amount,
+      billable: contribution.billable,
+      key: contribution.key,
+    };
   }
-  const snap = normalized.paySnapshot;
-  if (!snap) return { effectiveMs, amount: 0, billable: false, key: normalized.id };
-  if (snap.mode === 'hourly') {
-    return { effectiveMs, amount: money((effectiveMs / 3_600_000) * snap.amount), billable: true, key: normalized.id };
-  }
-  if (snap.mode === 'daily') {
-    const key = `${normalized.profileId || normalized.projectName}_${dateKey(normalized.startAt)}`;
-    const earliest = entriesInScope
-      .filter((e) => !e.deleted && e.paySnapshot?.mode === 'daily')
-      .filter((e) => (e.profileId || e.projectName) === (normalized.profileId || normalized.projectName))
-      .filter((e) => dateKey(e.startAt) === dateKey(normalized.startAt))
-      .sort((a, b) => a.startAt - b.startAt || a.id.localeCompare(b.id))[0];
-    const billable = !earliest || earliest.id === normalized.id || normalized.amountOverride !== undefined;
-    return { effectiveMs, amount: billable ? money(snap.amount) : 0, billable, key };
-  }
-  return { effectiveMs, amount: 0, billable: false, key: `${normalized.profileId || normalized.projectName}_${monthKey(normalized.startAt)}` };
+  return { effectiveMs: 0, amount: 0, billable: Boolean(normalized.paySnapshot), key: normalized.id };
 }
 
 export function listWorkIncomeSummary(
@@ -264,46 +334,7 @@ export function listWorkIncomeSummary(
   rangeEnd: number,
   now = Date.now(),
 ): WorkIncomeSummary {
-  const scoped = entries.filter((e) => !e.deleted && overlaps(e, rangeStart, rangeEnd, now));
-  let totalMs = 0;
-  let estimatedIncome = 0;
-  let pendingIncome = 0;
-  let settledIncome = 0;
-  const days = new Set<string>();
-  const countedSalary = new Set<string>();
-
-  for (const entry of scoped) {
-    totalMs += clippedDurationMs(entry, rangeStart, rangeEnd, now);
-    days.add(dateKey(entry.startAt));
-    const income = calculateWorkIncome(entry, scoped, now);
-    estimatedIncome += income.amount;
-    if (entry.settlementStatus === 'settled') settledIncome += income.amount;
-    else pendingIncome += income.amount;
-  }
-
-  if (rangeEnd - rangeStart >= 25 * DAY) {
-    for (const profile of profiles.filter((p) => !p.deleted && p.payMode === 'salary')) {
-      const months = monthsInRange(rangeStart, rangeEnd);
-      for (const periodKey of months) {
-        const key = `${profile.id}_${periodKey}`;
-        if (countedSalary.has(key)) continue;
-        countedSalary.add(key);
-        const existing = settlements.find((s) => s.profileId === profile.id && s.periodKey === periodKey && !s.deleted);
-        const amount = money(existing?.amount ?? profile.baseAmount);
-        estimatedIncome += amount;
-        if (existing?.status === 'settled') settledIncome += amount;
-        else pendingIncome += amount;
-      }
-    }
-  }
-
-  return {
-    totalMs,
-    estimatedIncome: money(estimatedIncome),
-    pendingIncome: money(pendingIncome),
-    settledIncome: money(settledIncome),
-    attendanceDays: days.size,
-  };
+  return calculateWorkRangeIncome(entries, profiles, settlements, rangeStart, rangeEnd, now).summary;
 }
 
 export async function listWorkIncomeByProfile(
@@ -314,38 +345,7 @@ export async function listWorkIncomeByProfile(
   end: number,
   now: number,
 ): Promise<{ profileId: string; profileName: string; totalIncome: number; totalMs: number; entryCount: number }[]> {
-  const results: { profileId: string; profileName: string; totalIncome: number; totalMs: number; entryCount: number }[] = [];
-  for (const profile of profiles) {
-    if (profile.deleted) continue;
-    const scoped = entries.filter(
-      (e) => !e.deleted && e.profileId === profile.id && e.startAt >= start && e.startAt <= end,
-    );
-    let totalIncome = 0;
-    let totalMs = 0;
-    for (const entry of scoped) {
-      const income = calculateWorkIncome(entry, scoped, now);
-      totalIncome += income.amount;
-      totalMs += income.effectiveMs;
-    }
-    if (profile.payMode === 'salary' && end - start >= 25 * DAY) {
-      const months = monthsInRange(start, end);
-      for (const periodKey of months) {
-        const existing = settlements.find(
-          (s) => s.profileId === profile.id && s.periodKey === periodKey && !s.deleted,
-        );
-        const amount = money(existing?.amount ?? profile.baseAmount);
-        totalIncome += amount;
-      }
-    }
-    results.push({
-      profileId: profile.id,
-      profileName: profile.name,
-      totalIncome: money(totalIncome),
-      totalMs,
-      entryCount: scoped.length,
-    });
-  }
-  return results.sort((a, b) => b.totalIncome - a.totalIncome);
+  return calculateWorkRangeIncome(entries, profiles, settlements, start, end, now).byProfile;
 }
 
 export async function importWorkData(payload: WorkBackupPayload): Promise<WorkImportResult> {
@@ -353,24 +353,42 @@ export async function importWorkData(payload: WorkBackupPayload): Promise<WorkIm
   const d = await workDb();
   const defaultProfile = await d.get('workProfiles', DEFAULT_PROFILE_ID) || workDefaultProfile();
   const tx = d.transaction(['workProfiles', 'workEntries', 'workSettlements'], 'readwrite');
-  await mergeStore(tx.objectStore('workProfiles'), payload.workProfiles || [], isWorkProfileLike, normalizeWorkProfile, result);
-  await mergeStore(tx.objectStore('workEntries'), payload.workEntries || [], isWorkEntryLike, (entry) => normalizeWorkEntry(entry, defaultProfile), result);
-  await mergeStore(tx.objectStore('workSettlements'), payload.workSettlements || [], isWorkSettlementLike, normalizeWorkSettlement, result);
-  await tx.done;
-  return result;
+  try {
+    await mergeStore(tx.objectStore('workProfiles'), payload.workProfiles || [], isWorkProfileLike, normalizeWorkProfile, result);
+    await mergeStore(tx.objectStore('workEntries'), payload.workEntries || [], isWorkEntryLike, (entry) => normalizeWorkEntry(entry, defaultProfile), result);
+    await mergeStore(tx.objectStore('workSettlements'), payload.workSettlements || [], isWorkSettlementLike, normalizeWorkSettlement, result);
+    const running = await activeRunningEntries(tx.objectStore('workEntries'));
+    if (running.length > 1) {
+      tx.abort();
+      await tx.done.catch(() => undefined);
+      throw new RunningWorkEntryConflictError(running[0]);
+    }
+    await tx.done;
+    return result;
+  } catch (error) {
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function importWorkEntries(entries: WorkEntry[]): Promise<WorkImportResult> {
   return importWorkData({ workEntries: entries });
 }
 
-export async function exportWorkEntriesCsv(entries?: WorkEntry[]): Promise<string> {
+export async function exportWorkEntriesCsv(entries?: WorkEntry[], options: WorkCsvOptions = {}): Promise<string> {
   const rows = entries ?? await listWorkEntries();
   const scoped = rows.filter((e) => !e.deleted);
+  const now = options.now ?? Date.now();
+  const profiles = options.profiles ?? (entries ? [] : await listWorkProfiles());
+  const settlements = options.settlements ?? (entries ? [] : await listWorkSettlements());
+  const range = resolveCsvRange(scoped, options, now);
+  const calculation = calculateWorkRangeIncome(scoped, profiles, settlements, range.start, range.end, now);
+  const incomeByEntry = new Map(calculation.entryContributions.map((row) => [row.entryId, row]));
   const header = ['工作', '任务', '薪资模式', '开始时间', '结束时间', '休息分钟', '有效小时', '预计收入', '结算状态', '备注'];
   const lines = [header.map(csvCell).join(',')];
   for (const entry of scoped) {
-    const income = calculateWorkIncome(entry, scoped, Date.now());
+    const income = incomeByEntry.get(entry.id);
+    if (!income) continue;
     lines.push([
       entry.paySnapshot?.profileName || entry.projectName,
       entry.taskName,
@@ -384,6 +402,32 @@ export async function exportWorkEntriesCsv(entries?: WorkEntry[]): Promise<strin
       entry.note || '',
     ].map(csvCell).join(','));
   }
+  for (const salary of calculation.salaryContributions) {
+    lines.push([
+      salary.profileName,
+      `固定薪资 ${salary.periodKey}`,
+      '固定薪资',
+      '',
+      '',
+      '',
+      '0.00',
+      salary.amount.toFixed(2),
+      salary.status === 'settled' ? '已结算' : '待结算',
+      salary.source === 'settlement' ? '按实际结算金额折算' : '按日历日估算',
+    ].map(csvCell).join(','));
+  }
+  lines.push([
+    '合计',
+    `${calculation.entryContributions.length} 条班次`,
+    '',
+    '',
+    '',
+    '',
+    (calculation.summary.totalMs / 3_600_000).toFixed(2),
+    calculation.summary.estimatedIncome.toFixed(2),
+    '',
+    '',
+  ].map(csvCell).join(','));
   return '\ufeff' + lines.join('\r\n');
 }
 
@@ -416,6 +460,47 @@ async function ensureDefaultProfileAndMigrate(d: IDBPDatabase<WorkDB>): Promise<
   for (const entry of entries) {
     const normalized = normalizeWorkEntry(entry, defaultProfile);
     if (JSON.stringify(entry) !== JSON.stringify(normalized)) await d.put('workEntries', normalized);
+  }
+  await reconcileLegacyRunningEntries(d);
+}
+
+async function findOtherRunningEntry(store: any, excludedId?: string): Promise<WorkEntry | undefined> {
+  return (await activeRunningEntries(store)).find((entry) => entry.id !== excludedId);
+}
+
+async function activeRunningEntries(store: any): Promise<WorkEntry[]> {
+  const entries = await store.index('byStatus').getAll('running');
+  return entries
+    .map((entry: WorkEntry) => normalizeWorkEntry(entry))
+    .filter((entry: WorkEntry) => !entry.deleted)
+    .sort((left: WorkEntry, right: WorkEntry) =>
+      right.startAt - left.startAt || right.updatedAt - left.updatedAt || right.id.localeCompare(left.id),
+    );
+}
+
+/** Older builds could create multiple running entries; preserve the newest and close the rest. */
+async function reconcileLegacyRunningEntries(d: IDBPDatabase<WorkDB>): Promise<void> {
+  const readTx = d.transaction('workEntries', 'readonly');
+  const running = await activeRunningEntries(readTx.store);
+  await readTx.done;
+  if (running.length < 2) return;
+
+  const [current, ...duplicates] = running;
+  const closedAt = Math.max(0, current.startAt);
+  const tx = d.transaction('workEntries', 'readwrite');
+  try {
+    for (const entry of duplicates) {
+      await tx.store.put(normalizeWorkEntry({
+        ...entry,
+        status: 'stopped',
+        endAt: Math.max(entry.startAt, closedAt),
+        updatedAt: Date.now(),
+      }));
+    }
+    await tx.done;
+  } catch (error) {
+    await tx.done.catch(() => undefined);
+    throw error;
   }
 }
 
@@ -508,48 +593,28 @@ function normalizePayMode(mode: unknown): WorkPayMode {
   return mode === 'salary' || mode === 'daily' || mode === 'hourly' ? mode : 'hourly';
 }
 
-function durationMs(entry: WorkEntry, now: number): number {
-  const end = entry.endAt ?? now;
-  return Math.max(0, end - entry.startAt - (entry.breakMinutes || 0) * 60_000);
-}
-
-function clippedDurationMs(entry: WorkEntry, rangeStart: number, rangeEnd: number, now: number): number {
-  const end = entry.endAt ?? now;
-  if (entry.startAt > rangeEnd || end < rangeStart) return 0;
-  const startAt = Math.max(entry.startAt, rangeStart);
-  const endAt = Math.min(end, rangeEnd);
-  return Math.max(0, endAt - startAt - (entry.breakMinutes || 0) * 60_000);
-}
-
-function overlaps(entry: WorkEntry, rangeStart: number, rangeEnd: number, now: number): boolean {
-  const end = entry.endAt ?? now;
-  return entry.startAt <= rangeEnd && end >= rangeStart;
-}
-
-function monthsInRange(rangeStart: number, rangeEnd: number): string[] {
-  const out: string[] = [];
-  const d = new Date(rangeStart);
-  d.setDate(1);
-  d.setHours(0, 0, 0, 0);
-  while (d.getTime() <= rangeEnd) {
-    out.push(monthKey(d.getTime()));
-    d.setMonth(d.getMonth() + 1);
-  }
-  return out;
-}
-
 function money(value: number): number {
   return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 }
 
-function dateKey(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function monthKey(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+function resolveCsvRange(entries: WorkEntry[], options: WorkCsvOptions, now: number): { start: number; end: number } {
+  const explicitStart = Number.isFinite(options.rangeStart) ? Number(options.rangeStart) : undefined;
+  const explicitEnd = Number.isFinite(options.rangeEnd) ? Number(options.rangeEnd) : undefined;
+  if (explicitStart !== undefined || explicitEnd !== undefined) {
+    const start = explicitStart ?? Math.min(...entries.map((entry) => entry.startAt), explicitEnd ?? now);
+    return { start, end: Math.max(start, explicitEnd ?? now) };
+  }
+  if (entries.length > 0) {
+    const start = Math.min(...entries.map((entry) => entry.startAt));
+    const endExclusive = Math.max(...entries.map((entry) => entry.endAt ?? now), start + 1);
+    return { start, end: endExclusive - 1 };
+  }
+  const start = new Date(now);
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  return { start: start.getTime(), end: end.getTime() - 1 };
 }
 
 function formatIsoLocal(ms: number): string {
@@ -565,7 +630,8 @@ function payModeLabel(mode?: WorkPayMode): string {
   return '';
 }
 
-function csvCell(value: string): string {
-  const text = String(value ?? '');
+export function csvCell(value: string): string {
+  const raw = String(value ?? '');
+  const text = /^[\t\r\n ]*[=+\-@]/.test(raw) ? `'${raw}` : raw;
   return `"${text.replace(/"/g, '""')}"`;
 }

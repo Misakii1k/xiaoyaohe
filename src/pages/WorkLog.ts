@@ -2,12 +2,11 @@ import { detectWorkEntryIssues, parseWorkEntryText, parseWorkProfileText, summar
 import {
   batchMarkSettled,
   calculateWorkIncome,
+  calculateWorkIncomeRange,
   createPaySnapshot,
   exportWorkEntriesCsv,
-  getRunningWorkEntry,
   listWorkEntries,
   listWorkEntriesByProfile,
-  listWorkEntriesByRange,
   listWorkIncomeByProfile,
   listWorkIncomeSummary,
   listWorkProfiles,
@@ -17,13 +16,28 @@ import {
   putWorkEntry,
   putWorkProfile,
   putWorkSettlement,
+  RunningWorkEntryConflictError,
+  startWorkEntry,
   softDeleteWorkEntry,
   softDeleteWorkProfile,
   workUid,
 } from '../db/work';
 import type { WorkAiDraft, WorkEntry, WorkPayMode, WorkProfile, WorkSettlement } from '../db/schema';
+import {
+  effectiveWorkDurationMs,
+  resolveWorkBreakMinutes,
+  type WorkRangeIncomeResult,
+} from '../domain/workIncome';
 import { navigate } from '../router';
-import { confirmDialog, el, icon, renderPage, toast } from '../ui/components';
+import {
+  closeDialog,
+  confirmDialog,
+  el,
+  icon,
+  openDialog,
+  renderPage,
+  toast,
+} from '../ui/components';
 import { getLlmConfig } from '../ai/llmConfig';
 import { exportWorkReport } from '../tools/registry';
 
@@ -41,8 +55,25 @@ type HeroRange = 'today' | 'week' | 'month' | 'custom';
 const TAG_OPTIONS = ['加班', '节假日', '外勤', '补班'] as const;
 type WorkTag = (typeof TAG_OPTIONS)[number];
 const MAX_TASK_TEMPLATES = 10;
+const CURRENCY_FORMAT = new Intl.NumberFormat('zh-CN', {
+  style: 'currency',
+  currency: 'CNY',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat('zh-CN', {
+  month: 'numeric',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+const TIME_FORMAT = new Intl.DateTimeFormat('zh-CN', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
 
-let tickTimer: number | undefined;
 let currentFilter: WorkFilter = 'today';
 let shownCount = PAGE_SIZE;
 let heroRange: HeroRange = 'today';
@@ -50,33 +81,103 @@ let heroCustomStart: number | undefined;
 let heroCustomEnd: number | undefined;
 let multiSelectMode = false;
 const selectedEntryIds = new Set<string>();
+let workPageGeneration = 0;
+let activeWorkPageCleanup: (() => void) | undefined;
+
+export interface WorkPageLifecycle {
+  isActive: () => boolean;
+  refresh: () => Promise<void>;
+  dispose: () => void;
+}
+
+export function createWorkPageLifecycle(
+  signal: AbortSignal | undefined,
+  generation: number,
+  getCurrentGeneration: () => number,
+  rerender: () => Promise<unknown>,
+): WorkPageLifecycle {
+  let disposed = false;
+  const isActive = () => !disposed && !signal?.aborted && generation === getCurrentGeneration();
+  return {
+    isActive,
+    refresh: async () => {
+      if (!isActive()) return;
+      await rerender();
+    },
+    dispose: () => {
+      disposed = true;
+    },
+  };
+}
 
 interface WorkPageState {
+  root: HTMLElement;
+  isActive: () => boolean;
+  refresh: () => Promise<void>;
   profiles: WorkProfile[];
   entries: WorkEntry[];
   filteredEntries: WorkEntry[];
   settlements: WorkSettlement[];
+  filteredRange: { start: number; end: number };
+  filteredCalculation: WorkRangeIncomeResult;
   running?: WorkEntry;
   now: number;
 }
 
-export async function renderWorkLogPage(root: HTMLElement): Promise<void> {
-  window.clearInterval(tickTimer);
+export async function renderWorkLogPage(
+  root: HTMLElement,
+  signal?: AbortSignal,
+): Promise<() => void> {
+  activeWorkPageCleanup?.();
+  const generation = ++workPageGeneration;
+  let tickTimer: number | undefined;
+  const lifecycle = createWorkPageLifecycle(
+    signal,
+    generation,
+    () => workPageGeneration,
+    () => renderWorkLogPage(root, signal),
+  );
+  const cleanup = () => {
+    signal?.removeEventListener('abort', cleanup);
+    lifecycle.dispose();
+    if (tickTimer !== undefined) window.clearInterval(tickTimer);
+    tickTimer = undefined;
+    if (activeWorkPageCleanup === cleanup) activeWorkPageCleanup = undefined;
+  };
+  activeWorkPageCleanup = cleanup;
+  signal?.addEventListener('abort', cleanup, { once: true });
+  if (!lifecycle.isActive()) return cleanup;
   renderWorkShell(root, '正在载入工时收入...');
   try {
     const now = Date.now();
     const range = filterRange(currentFilter, now);
-    const [profiles, entries, filteredEntries, settlements] = await Promise.all([
+    const [profiles, entries, settlements] = await Promise.all([
       listWorkProfiles(),
       listWorkEntries(),
-      range ? listWorkEntriesByRange(range.start, range.end) : listWorkEntries(),
       listWorkSettlements(),
     ]);
+    if (!lifecycle.isActive()) return cleanup;
+    const filteredRange = range ?? allEntriesRange(entries, now);
+    const filteredCalculation = calculateWorkIncomeRange(
+      entries,
+      profiles,
+      settlements,
+      filteredRange.start,
+      filteredRange.end,
+      now,
+    );
+    const includedIds = new Set(filteredCalculation.entryContributions.map((row) => row.entryId));
+    const filteredEntries = entries.filter((entry) => includedIds.has(entry.id));
     const state: WorkPageState = {
+      root,
+      isActive: lifecycle.isActive,
+      refresh: lifecycle.refresh,
       profiles,
       entries,
       filteredEntries,
       settlements,
+      filteredRange,
+      filteredCalculation,
       running: entries.find((e) => e.status === 'running' && !e.deleted),
       now,
     };
@@ -90,16 +191,25 @@ export async function renderWorkLogPage(root: HTMLElement): Promise<void> {
     content.append(renderEntriesCard(state));
     content.append(renderCompareCard(state));
     // 多选模式底部操作栏
-    if (multiSelectMode) content.append(renderBatchActionBar());
+    if (multiSelectMode) content.append(renderBatchActionBar(state));
 
     const back = el('button', { class: 'icon-btn', type: 'button', title: '返回工具箱', 'aria-label': '返回工具箱' } as any);
     back.append(icon('arrow-left'));
-    back.onclick = () => navigate('/tools');
+    back.onclick = () => {
+      if (state.isActive()) navigate('/tools');
+    };
+    if (!state.isActive()) return cleanup;
     renderPage({ root, title: '工时收入', activeTab: 'work', topLeft: back, content, showTabbar: false });
-    if (state.running) tickTimer = window.setInterval(() => updateRunningUi(state.running!), 1000);
+    if (state.running) {
+      tickTimer = window.setInterval(() => {
+        if (state.isActive()) updateRunningUi(state);
+      }, 1000);
+    }
   } catch (e) {
+    if (!lifecycle.isActive()) return cleanup;
     renderWorkShell(root, e instanceof Error ? e.message : '工时收入载入失败，请刷新后重试。');
   }
+  return cleanup;
 }
 
 function renderWorkShell(root: HTMLElement, message: string): void {
@@ -128,18 +238,26 @@ function renderHero(state: WorkPageState): HTMLElement {
     { id: 'month', label: '本月' },
     { id: 'custom', label: '自定义' },
   ];
-  const chipRow = el('div', { class: 'work-filter-row work-hero-range-row' });
+  const chipRow = el('div', {
+    class: 'work-filter-row work-hero-range-row',
+    role: 'group',
+    'aria-label': '收入统计区间',
+  } as any);
   for (const c of chips) {
-    const b = el('button', { class: `chip${heroRange === c.id ? ' on' : ''}`, type: 'button', html: c.label } as any);
+    const b = el('button', {
+      class: `chip${heroRange === c.id ? ' on' : ''}`,
+      type: 'button',
+      html: c.label,
+      'aria-pressed': String(heroRange === c.id),
+    } as any);
     b.onclick = async () => {
+      if (!state.isActive()) return;
       heroRange = c.id;
       if (c.id !== 'custom') {
         heroCustomStart = undefined;
         heroCustomEnd = undefined;
-        await renderWorkLogPage(document.getElementById('app')!);
-      } else {
-        await renderWorkLogPage(document.getElementById('app')!);
       }
+      await state.refresh();
     };
     chipRow.append(b);
   }
@@ -152,11 +270,12 @@ function renderHero(state: WorkPageState): HTMLElement {
     if (heroCustomStart) startInput.value = toDateInputValue(heroCustomStart);
     if (heroCustomEnd) endInput.value = toDateInputValue(heroCustomEnd);
     const refresh = async () => {
+      if (!state.isActive()) return;
       const s = startInput.value ? new Date(startInput.value + 'T00:00:00').getTime() : undefined;
-      const e = endInput.value ? new Date(endInput.value + 'T23:59:59').getTime() : undefined;
+      const e = endInput.value ? new Date(endInput.value + 'T23:59:59.999').getTime() : undefined;
       heroCustomStart = s;
       heroCustomEnd = e;
-      await renderWorkLogPage(document.getElementById('app')!);
+      await state.refresh();
     };
     startInput.onchange = refresh;
     endInput.onchange = refresh;
@@ -191,27 +310,37 @@ function toDateInputValue(ms: number): string {
 function renderTimerCard(state: WorkPageState): HTMLElement {
   const card = el('div', { class: 'card work-timer-card work-primary-card' });
   const heading = el('div', { class: 'work-card-heading' });
-  heading.append(el('h3', { html: state.running ? '正在上班' : '快速打卡' }));
+  heading.append(el('h2', { html: state.running ? '正在上班' : '快速打卡' }));
   if (state.running) heading.append(el('span', { class: 'work-status-pill', html: '运行中' }));
   card.append(heading);
 
   if (state.running) {
     const running = state.running;
     const income = calculateWorkIncome(running, state.entries, Date.now());
-    card.append(el('div', { class: 'work-running-project', html: escapeHtml(running.paySnapshot?.profileName || running.projectName) }));
-    card.append(el('div', { class: 'muted', html: `${escapeHtml(running.taskName || '未命名班次')} · ${payModeLabel(running.paySnapshot?.mode)} · 预计 ${moneyText(income.amount)}` }));
-    const elapsed = el('div', { class: 'work-running-time', html: formatDuration(durationMs(running, Date.now())) });
+    card.append(el('div', { class: 'work-running-project', html: running.paySnapshot?.profileName || running.projectName }));
+    card.append(el('div', { class: 'muted', html: `${running.taskName || '未命名班次'} · ${payModeLabel(running.paySnapshot?.mode)} · 预计 ${moneyText(income.amount)}` }));
+    const elapsed = el('div', { class: 'work-running-time', html: formatDuration(effectiveWorkDurationMs(running, Date.now())) });
     elapsed.setAttribute('data-work-running-elapsed', '1');
     card.append(elapsed);
     card.append(el('div', { class: 'muted', html: `开始于 ${formatDateTime(running.startAt)}` }));
     const row = el('div', { class: 'btn-row work-actions-row' });
     const stop = el('button', { class: 'btn', html: '停止班次' });
     stop.onclick = async () => {
+      if (!state.isActive()) return;
+      const plannedBreak = Math.max(0, running.breakMinutes || 0);
+      if (plannedBreak > 0) {
+        const confirmed = await confirmIfActive(
+          state,
+          `停止后将扣除计划休息 ${plannedBreak} 分钟。需要调整时请先取消并编辑班次。`,
+          '确认停止',
+        );
+        if (!confirmed) return;
+      }
       running.status = 'stopped';
       running.endAt = Date.now();
       await putWorkEntry(running);
-      toast('已停止班次');
-      await renderWorkLogPage(document.getElementById('app')!);
+      showToast(state, '已停止班次');
+      await state.refresh();
     };
     const edit = el('button', { class: 'btn tonal', html: '编辑' });
     edit.onclick = () => openEntryDialog(running, state);
@@ -223,7 +352,7 @@ function renderTimerCard(state: WorkPageState): HTMLElement {
   if (state.profiles.length === 0) {
     card.append(el('div', { class: 'muted', html: '先创建一个工作档案，再开始记录班次。' }));
     const add = el('button', { class: 'btn', html: '新增工作档案' });
-    add.onclick = () => openProfileDialog(undefined);
+    add.onclick = () => openProfileDialog(undefined, state);
     card.append(add);
     return card;
   }
@@ -235,7 +364,8 @@ function renderTimerCard(state: WorkPageState): HTMLElement {
   task.input.setAttribute('list', datalistId);
   const datalist = el('datalist', { id: datalistId } as any);
   const refreshTaskDatalist = () => {
-    datalist.innerHTML = '';
+    if (!state.isActive()) return;
+    datalist.replaceChildren();
     const p = state.profiles.find((x) => x.id === profile.input.value);
     for (const t of p?.taskTemplates || []) datalist.append(el('option', { value: t } as any));
   };
@@ -244,18 +374,30 @@ function renderTimerCard(state: WorkPageState): HTMLElement {
   card.append(profile.wrap, task.wrap, datalist);
   const start = el('button', { class: 'btn', html: '开始班次', style: 'margin-top:12px' } as any);
   start.onclick = async () => {
-    const active = await getRunningWorkEntry();
-    if (active) return toast('已有班次在进行，请先停止');
+    if (!state.isActive()) return;
     const p = state.profiles.find((x) => x.id === profile.input.value);
-    if (!p) return toast('请选择工作');
+    if (!p) return showToast(state, '请选择工作');
     const taskName = task.input.value.trim();
-    await putWorkEntry(newEntryFromProfile(p, Date.now(), undefined, taskName));
-    // 任务名非空且未在模板中，自动追加（去重，最多 10 条，超出移除最早的）
-    if (taskName) await maybeAddTaskTemplate(p, taskName);
-    // 记录最近班次信息，供工具箱"一键开始上次班次"使用
-    saveLastWorkEntry(p.id, taskName || undefined);
-    toast('开始班次');
-    await renderWorkLogPage(document.getElementById('app')!);
+    start.disabled = true;
+    start.setAttribute('aria-busy', 'true');
+    try {
+      const result = await startWorkEntry(newEntryFromProfile(p, Date.now(), undefined, taskName));
+      if (!state.isActive()) return;
+      if (!result.started) return showToast(state, '已有班次在进行，请先停止');
+      // 任务名非空且未在模板中，自动追加（去重，最多 10 条，超出移除最早的）
+      if (taskName) await maybeAddTaskTemplate(p, taskName);
+      // 记录最近班次信息，供工具箱"一键开始上次班次"使用
+      saveLastWorkEntry(p.id, taskName || undefined);
+      showToast(state, '开始班次');
+      await state.refresh();
+    } catch (error) {
+      showToast(state, workActionError(error, '开始班次'));
+    } finally {
+      if (state.isActive()) {
+        start.disabled = false;
+        start.removeAttribute('aria-busy');
+      }
+    }
   };
   card.append(start);
   return card;
@@ -289,23 +431,25 @@ function renderAiCard(state: WorkPageState): HTMLElement {
   }
 
   const text = el('textarea', { placeholder: '例如：昨天奶茶店 10 点到 18 点，休息 1 小时，日结 180，已结' } as any) as HTMLTextAreaElement;
-  card.append(text);
+  card.append(fieldWrap('工作描述', text));
   const row = el('div', { class: 'btn-row', style: 'margin-top:10px' } as any);
   const parseProfile = el('button', { class: 'btn tonal', html: '解析工作档案' });
   const parseEntry = el('button', { class: 'btn tonal', html: '解析班次' });
   const summarize = el('button', { class: 'btn tonal', html: '生成月度总结' });
   const issues = el('button', { class: 'btn tonal', html: '检查最近异常' });
-  parseProfile.onclick = async () => runAi(parseProfile, async () => previewProfileDraft(await parseWorkProfileText(text.value)));
-  parseEntry.onclick = async () => runAi(parseEntry, async () => previewEntryDraft(await parseWorkEntryText(text.value, state.profiles), state));
+  parseProfile.onclick = async () => runAi(parseProfile, state, async () => previewProfileDraft(await parseWorkProfileText(text.value), state));
+  parseEntry.onclick = async () => runAi(parseEntry, state, async () => previewEntryDraft(await parseWorkEntryText(text.value, state.profiles), state));
   summarize.onclick = async () => {
+    if (!state.isActive()) return;
     const month = rangeFor('month', state.now);
     const data = listWorkIncomeSummary(state.entries, state.profiles, state.settlements, month.start, month.end, state.now);
-    await runAi(summarize, async () => previewSummaryDraft(await summarizeWorkIncome(data)));
+    await runAi(summarize, state, async () => previewSummaryDraft(await summarizeWorkIncome(data), state));
   };
   issues.onclick = async () => {
+    if (!state.isActive()) return;
     const entry = state.entries[0];
-    if (!entry) return toast('还没有班次可检查');
-    await runAi(issues, async () => previewSummaryDraft(await detectWorkEntryIssues(entry, { profiles: state.profiles, recentEntries: state.entries.slice(0, 20) })));
+    if (!entry) return showToast(state, '还没有班次可检查');
+    await runAi(issues, state, async () => previewSummaryDraft(await detectWorkEntryIssues(entry, { profiles: state.profiles, recentEntries: state.entries.slice(0, 20) }), state));
   };
   row.append(parseProfile, parseEntry, summarize, issues);
   card.append(row);
@@ -315,9 +459,9 @@ function renderAiCard(state: WorkPageState): HTMLElement {
 function renderProfilesCard(state: WorkPageState): HTMLElement {
   const card = el('div', { class: 'card work-list-card' });
   const head = el('div', { class: 'work-card-heading' });
-  head.append(el('h3', { html: '工作档案' }));
+  head.append(el('h2', { html: '工作档案' }));
   const add = el('button', { class: 'btn tonal small', html: '新增' });
-  add.onclick = () => openProfileDialog(undefined);
+  add.onclick = () => openProfileDialog(undefined, state);
   head.append(add);
   card.append(head);
   if (state.profiles.length === 0) {
@@ -328,19 +472,20 @@ function renderProfilesCard(state: WorkPageState): HTMLElement {
   for (const profile of state.profiles) {
     const row = el('div', { class: 'work-profile-row' });
     row.append(el('div', { class: 'grow' }, [
-      el('div', { class: 'work-entry-title', html: escapeHtml(profile.name) }),
+      el('div', { class: 'work-entry-title', html: profile.name }),
       el('div', { class: 'muted', html: `${payModeLabel(profile.payMode)} · ${moneyText(profile.baseAmount)}${profile.payMode === 'salary' ? '/月' : profile.payMode === 'hourly' ? '/小时' : '/天'}` }),
     ]));
     const actions = el('div', { class: 'work-entry-actions' });
     const edit = el('button', { class: 'btn text small', html: '编辑' });
-    edit.onclick = () => openProfileDialog(profile);
+    edit.onclick = () => openProfileDialog(profile, state);
     const del = el('button', { class: 'btn text small danger-text', html: '删除' });
     del.onclick = async () => {
-      const ok = await confirmDialog('删除这个工作档案？已有班次不会被删除。', '删除', true);
+      if (!state.isActive()) return;
+      const ok = await confirmIfActive(state, '删除这个工作档案？已有班次不会被删除。', '删除', true);
       if (!ok) return;
       await softDeleteWorkProfile(profile.id);
-      toast('已删除工作档案');
-      await renderWorkLogPage(document.getElementById('app')!);
+      showToast(state, '已删除工作档案');
+      await state.refresh();
     };
     actions.append(edit, del);
     row.append(actions);
@@ -364,8 +509,11 @@ function renderManualEntryCard(state: WorkPageState): HTMLElement {
   const quick = el('div', { class: 'work-quick-row' });
   const oneHour = el('button', { class: 'chip', type: 'button', html: '刚刚结束 1 小时' } as any);
   const workday = el('button', { class: 'chip', type: 'button', html: '今天默认班次' } as any);
-  oneHour.onclick = () => form.setRange(new Date(Date.now() - HOUR), new Date());
+  oneHour.onclick = () => {
+    if (state.isActive()) form.setRange(new Date(Date.now() - HOUR), new Date());
+  };
   workday.onclick = () => {
+    if (!state.isActive()) return;
     const p = state.profiles.find((x) => x.id === form.profileInput.value) || state.profiles[0];
     form.setRange(todayAt(p.defaultStartTime || '09:00'), todayAt(p.defaultEndTime || '18:00'));
     form.breakInput.value = String(p.defaultBreakMinutes || 0);
@@ -374,12 +522,18 @@ function renderManualEntryCard(state: WorkPageState): HTMLElement {
   card.append(quick, form.wrap);
   const save = el('button', { class: 'btn tonal', html: '保存班次', style: 'margin-top:12px' } as any);
   save.onclick = async () => {
+    if (!state.isActive()) return;
     const values = readEntryForm(form, state);
     const error = validateEntry(values);
-    if (error) return toast(error);
-    await putWorkEntry(values);
-    toast('已保存班次');
-    await renderWorkLogPage(document.getElementById('app')!);
+    if (error) return showToast(state, error);
+    try {
+      await putWorkEntry(values);
+    } catch (error) {
+      showToast(state, workActionError(error, '更新班次'));
+      return;
+    }
+    showToast(state, '已保存班次');
+    await state.refresh();
   };
   card.append(save);
   return card;
@@ -388,31 +542,50 @@ function renderManualEntryCard(state: WorkPageState): HTMLElement {
 function renderEntriesCard(state: WorkPageState): HTMLElement {
   const card = el('div', { class: 'card work-list-card' });
   const head = el('div', { class: 'work-card-heading' });
-  head.append(el('h3', { html: '收入明细' }));
+  head.append(el('h2', { html: '收入明细' }));
   const actions = el('div', { class: 'work-card-actions' });
-  const multiBtn = el('button', { class: `btn tonal small${multiSelectMode ? ' on' : ''}`, html: multiSelectMode ? '退出多选' : '多选' });
+  const multiBtn = el('button', {
+    class: `btn tonal small${multiSelectMode ? ' on' : ''}`,
+    type: 'button',
+    html: multiSelectMode ? '退出多选' : '多选',
+    'aria-pressed': String(multiSelectMode),
+  } as any);
   multiBtn.onclick = async () => {
+    if (!state.isActive()) return;
     multiSelectMode = !multiSelectMode;
     if (!multiSelectMode) selectedEntryIds.clear();
-    await renderWorkLogPage(document.getElementById('app')!);
+    await state.refresh();
   };
   const reportBtn = el('button', { class: 'btn tonal small', html: '导出报表' });
   reportBtn.onclick = () => openReportDialog(state);
   const exportBtn = el('button', { class: 'btn tonal small', html: '导出 CSV' });
   exportBtn.onclick = async () => {
-    const csv = await exportWorkEntriesCsv(state.filteredEntries);
+    if (!state.isActive()) return;
+    const csv = await exportWorkEntriesCsv(state.entries, {
+      profiles: state.profiles,
+      settlements: state.settlements,
+      rangeStart: state.filteredRange.start,
+      rangeEnd: state.filteredRange.end,
+      now: state.now,
+    });
+    if (!state.isActive()) return;
     downloadText(csv, `work-income-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
-    toast('已导出 CSV');
+    showToast(state, '已导出 CSV');
   };
   actions.append(multiBtn, reportBtn, exportBtn);
   head.append(actions);
-  card.append(head, renderFilterBar());
+  card.append(head, renderFilterBar(state));
+  card.append(el('div', {
+    class: 'muted work-multi-hint',
+    html: `${filterLabel(currentFilter)}合计 ${moneyText(state.filteredCalculation.summary.estimatedIncome)} · ${formatDuration(state.filteredCalculation.summary.totalMs)}`,
+  }));
   if (multiSelectMode && selectedEntryIds.size > 0) {
     card.append(el('div', { class: 'muted work-multi-hint', html: `已选 ${selectedEntryIds.size} 条班次` }));
   }
   const shown = state.filteredEntries.slice(0, shownCount);
   if (shown.length === 0) {
     card.append(el('div', { class: 'muted', html: '这个范围还没有班次记录。' }));
+    card.append(renderSalarySettlements(state));
     return card;
   }
   const list = el('div', { class: 'work-entry-list' });
@@ -421,8 +594,9 @@ function renderEntriesCard(state: WorkPageState): HTMLElement {
   if (shown.length < state.filteredEntries.length) {
     const more = el('button', { class: 'btn text work-more-btn', html: `查看更多（剩余 ${state.filteredEntries.length - shown.length} 条）` });
     more.onclick = async () => {
+      if (!state.isActive()) return;
       shownCount += PAGE_SIZE;
-      await renderWorkLogPage(document.getElementById('app')!);
+      await state.refresh();
     };
     card.append(more);
   }
@@ -431,7 +605,8 @@ function renderEntriesCard(state: WorkPageState): HTMLElement {
 }
 
 function renderEntryRow(entry: WorkEntry, state: WorkPageState): HTMLElement {
-  const income = calculateWorkIncome(entry, state.filteredEntries, state.now);
+  const income = state.filteredCalculation.entryContributions.find((row) => row.entryId === entry.id)
+    ?? calculateWorkIncome(entry, state.entries, state.now);
   const runningClass = entry.status === 'running' ? ' running' : '';
   // running 班次优先显示运行中样式，不叠加 settled/pending 背景色
   const settledClass = entry.status === 'running'
@@ -440,27 +615,35 @@ function renderEntryRow(entry: WorkEntry, state: WorkPageState): HTMLElement {
   const row = el('div', { class: `work-entry-row${runningClass}${settledClass}` });
   // 多选模式下左侧显示复选框
   if (multiSelectMode) {
-    const checkbox = el('input', { type: 'checkbox', class: 'work-entry-check', 'aria-label': '选择此班次' } as any) as HTMLInputElement;
+    const projectName = entry.paySnapshot?.profileName || entry.projectName || '未命名项目';
+    const taskName = entry.taskName || '班次';
+    const checkbox = el('input', {
+      type: 'checkbox',
+      class: 'work-entry-check',
+      'aria-label': `选择班次：${projectName}，${taskName}`,
+    } as any) as HTMLInputElement;
     checkbox.checked = selectedEntryIds.has(entry.id);
     checkbox.onchange = async () => {
+      if (!state.isActive()) return;
       if (checkbox.checked) selectedEntryIds.add(entry.id);
       else selectedEntryIds.delete(entry.id);
-      await renderWorkLogPage(document.getElementById('app')!);
+      await state.refresh();
     };
-    row.append(checkbox);
+    const checkboxWrap = el('label', { class: 'work-entry-check-wrap' }, [checkbox]);
+    row.append(checkboxWrap);
   }
   const main = el('div', { class: 'grow' });
-  main.append(el('div', { class: 'work-entry-title', html: escapeHtml(entry.paySnapshot?.profileName || entry.projectName) }));
-  main.append(el('div', { class: 'muted', html: `${escapeHtml(entry.taskName || '班次')} · ${formatDateTime(entry.startAt)} - ${entry.endAt ? formatTime(entry.endAt) : '进行中'} · ${formatDuration(income.effectiveMs)}` }));
+  main.append(el('div', { class: 'work-entry-title', html: entry.paySnapshot?.profileName || entry.projectName }));
+  main.append(el('div', { class: 'muted', html: `${entry.taskName || '班次'} · ${formatDateTime(entry.startAt)} - ${entry.endAt ? formatTime(entry.endAt) : '进行中'} · ${formatDuration(income.effectiveMs)}` }));
   if (!income.billable && entry.paySnapshot?.mode === 'daily') main.append(el('div', { class: 'muted work-entry-note', html: '同一天日结已计入第一条班次' }));
   // 标签 chip 行
   const tags = (entry.tags || []).filter((t) => (TAG_OPTIONS as readonly string[]).includes(t));
   if (tags.length > 0) {
     const tagRow = el('div', { class: 'work-entry-tags' });
-    for (const t of tags) tagRow.append(el('span', { class: 'tag-chip', html: escapeHtml(t) }));
+    for (const t of tags) tagRow.append(el('span', { class: 'tag-chip', html: t }));
     main.append(tagRow);
   }
-  if (entry.note) main.append(el('div', { class: 'muted work-entry-note', html: escapeHtml(entry.note) }));
+  if (entry.note) main.append(el('div', { class: 'muted work-entry-note', html: entry.note }));
   const side = el('div', { class: 'work-entry-side' });
   side.append(el('div', { class: 'work-entry-duration', html: moneyText(income.amount) }));
   side.append(el('div', { class: `work-settle-pill ${entry.settlementStatus === 'settled' ? 'settled' : ''}`, html: entry.settlementStatus === 'settled' ? '已结算' : '待结算' }));
@@ -471,18 +654,20 @@ function renderEntryRow(entry: WorkEntry, state: WorkPageState): HTMLElement {
   if (!multiSelectMode) {
     const settle = el('button', { class: 'btn text small', html: entry.settlementStatus === 'settled' ? '改待结' : '已结' });
     settle.onclick = async () => {
+      if (!state.isActive()) return;
       await markWorkEntrySettled(entry.id, entry.settlementStatus === 'settled' ? 'pending' : 'settled');
-      await renderWorkLogPage(document.getElementById('app')!);
+      await state.refresh();
     };
     const again = el('button', { class: 'btn text small', html: '继续' });
     again.onclick = () => continueEntry(entry, state);
     const del = el('button', { class: 'btn text small danger-text', html: '删除' });
     del.onclick = async () => {
-      const ok = await confirmDialog('删除这条班次记录？', '删除', true);
+      if (!state.isActive()) return;
+      const ok = await confirmIfActive(state, '删除这条班次记录？', '删除', true);
       if (!ok) return;
       await softDeleteWorkEntry(entry.id);
-      toast('已删除');
-      await renderWorkLogPage(document.getElementById('app')!);
+      showToast(state, '已删除');
+      await state.refresh();
     };
     actions.append(settle, edit, again, del);
   } else {
@@ -494,32 +679,37 @@ function renderEntryRow(entry: WorkEntry, state: WorkPageState): HTMLElement {
 }
 
 /** 多选模式底部操作栏：标记已结算 / 待结算 + 取消多选 */
-function renderBatchActionBar(): HTMLElement {
+function renderBatchActionBar(state: WorkPageState): HTMLElement {
   const bar = el('div', { class: 'work-batch-bar' });
   const hint = el('span', { class: 'muted', html: `已选 ${selectedEntryIds.size} 条` });
   const settledBtn = el('button', { class: 'btn tonal small', html: '标记已结算' });
   settledBtn.onclick = async () => {
-    if (selectedEntryIds.size === 0) return toast('请先选择班次');
+    if (!state.isActive()) return;
+    if (selectedEntryIds.size === 0) return showToast(state, '请先选择班次');
     await batchMarkSettled([...selectedEntryIds], true);
-    toast('已批量标记为已结算');
+    if (!state.isActive()) return;
+    showToast(state, '已批量标记为已结算');
     selectedEntryIds.clear();
     multiSelectMode = false;
-    await renderWorkLogPage(document.getElementById('app')!);
+    await state.refresh();
   };
   const pendingBtn = el('button', { class: 'btn tonal small', html: '标记待结算' });
   pendingBtn.onclick = async () => {
-    if (selectedEntryIds.size === 0) return toast('请先选择班次');
+    if (!state.isActive()) return;
+    if (selectedEntryIds.size === 0) return showToast(state, '请先选择班次');
     await batchMarkSettled([...selectedEntryIds], false);
-    toast('已批量标记为待结算');
+    if (!state.isActive()) return;
+    showToast(state, '已批量标记为待结算');
     selectedEntryIds.clear();
     multiSelectMode = false;
-    await renderWorkLogPage(document.getElementById('app')!);
+    await state.refresh();
   };
   const cancelBtn = el('button', { class: 'btn text small', html: '退出多选' });
   cancelBtn.onclick = async () => {
+    if (!state.isActive()) return;
     multiSelectMode = false;
     selectedEntryIds.clear();
-    await renderWorkLogPage(document.getElementById('app')!);
+    await state.refresh();
   };
   bar.append(hint, settledBtn, pendingBtn, cancelBtn);
   return bar;
@@ -529,24 +719,25 @@ function renderSalarySettlements(state: WorkPageState): HTMLElement {
   const salaryProfiles = state.profiles.filter((p) => p.payMode === 'salary');
   const wrap = el('div', { class: 'work-salary-settlements' });
   if (salaryProfiles.length === 0 || currentFilter === 'today') return wrap;
-  wrap.append(el('h3', { html: '固定薪资结算' }));
+  wrap.append(el('h2', { html: '固定薪资结算' }));
   const periodKey = monthKey(state.now);
   for (const profile of salaryProfiles) {
     const settlement = state.settlements.find((s) => s.profileId === profile.id && s.periodKey === periodKey && !s.deleted);
     const row = el('div', { class: 'work-profile-row' });
     row.append(el('div', { class: 'grow' }, [
-      el('div', { class: 'work-entry-title', html: `${escapeHtml(profile.name)} · ${periodKey}` }),
+      el('div', { class: 'work-entry-title', html: `${profile.name} · ${periodKey}` }),
       el('div', { class: 'muted', html: `${moneyText(settlement?.amount ?? profile.baseAmount)} · ${settlement?.status === 'settled' ? '已结算' : '待结算'}` }),
     ]));
     const btn = el('button', { class: 'btn text small', html: settlement?.status === 'settled' ? '改待结' : '已结算' });
     btn.onclick = async () => {
+      if (!state.isActive()) return;
       const id = `${profile.id}_${periodKey}`;
       if (!settlement) {
         await putWorkSettlement({ id, profileId: profile.id, periodKey, amount: profile.baseAmount, status: 'settled', settledAt: Date.now(), updatedAt: Date.now() });
       } else {
         await markWorkSettlementSettled(id, settlement.status === 'settled' ? 'pending' : 'settled');
       }
-      await renderWorkLogPage(document.getElementById('app')!);
+      await state.refresh();
     };
     row.append(btn);
     wrap.append(row);
@@ -558,7 +749,7 @@ function renderSalarySettlements(state: WorkPageState): HTMLElement {
 function renderCompareCard(state: WorkPageState): HTMLElement {
   const card = el('div', { class: 'card work-list-card work-compare-card' });
   const head = el('div', { class: 'work-card-heading' });
-  head.append(el('h3', { html: '按工作档案分组' }));
+  head.append(el('h2', { html: '按工作档案分组' }));
   const rangeLabel = el('span', { class: 'muted', html: heroRangeLabel() });
   head.append(rangeLabel);
   card.append(head);
@@ -568,14 +759,16 @@ function renderCompareCard(state: WorkPageState): HTMLElement {
   }
   const heroR = heroRangeFor(state.now);
   // 列表加载是异步的，使用占位后再填充
-  const listWrap = el('div', { class: 'work-compare-list', html: '<div class="muted">载入中...</div>' });
+  const listWrap = el('div', { class: 'work-compare-list' });
+  listWrap.append(el('div', { class: 'muted', html: '载入中...' }));
   card.append(listWrap);
   void Promise.all([
     listWorkIncomeByProfile(state.entries, state.profiles, state.settlements, heroR.start, heroR.end, state.now),
     // 同时拉取每个 profile 的最新班次（用于展示最近一次班次信息）
     Promise.all(state.profiles.map((p) => listWorkEntriesByProfile(p.id).then((entries) => ({ profileId: p.id, latest: entries[0] })))),
   ]).then(([rows, latests]) => {
-    listWrap.innerHTML = '';
+    if (!state.isActive()) return;
+    listWrap.replaceChildren();
     if (rows.length === 0) {
       listWrap.append(el('div', { class: 'muted', html: '该区间没有班次数据。' }));
       return;
@@ -583,22 +776,26 @@ function renderCompareCard(state: WorkPageState): HTMLElement {
     const latestMap = new Map(latests.map((x) => [x.profileId, x.latest]));
     for (const row of rows) {
       const item = el('div', { class: 'work-compare-row' });
-      item.append(el('div', { class: 'work-entry-title', html: escapeHtml(row.profileName) }));
+      item.append(el('div', { class: 'work-entry-title', html: row.profileName }));
       const meta = el('div', { class: 'muted', html: `${moneyText(row.totalIncome)} · ${formatDuration(row.totalMs)} · ${row.entryCount} 班` });
       item.append(meta);
       const latest = latestMap.get(row.profileId);
       if (latest) {
-        item.append(el('div', { class: 'muted work-compare-latest', html: `最近：${escapeHtml(latest.taskName || '班次')} · ${formatDateTime(latest.startAt)}` }));
+        item.append(el('div', { class: 'muted work-compare-latest', html: `最近：${latest.taskName || '班次'} · ${formatDateTime(latest.startAt)}` }));
       }
       listWrap.append(item);
     }
+  }).catch(() => {
+    if (!state.isActive()) return;
+    listWrap.replaceChildren(el('div', { class: 'muted', html: '分组统计载入失败，请稍后重试。' }));
   });
   return card;
 }
 
 /** 导出报表对话框：选择周/月 + 日期，生成 CSV 下载，文本摘要展示可复制 */
 function openReportDialog(state: WorkPageState): void {
-  const overlay = el('div', { class: 'overlay' });
+  if (!state.isActive()) return;
+  let overlay: HTMLElement;
   const box = el('div', { class: 'card work-edit-dialog' });
   box.append(el('h3', { html: '导出区间报表' }));
   const modeField = selectField('报表周期', [
@@ -616,6 +813,7 @@ function openReportDialog(state: WorkPageState): void {
   const quickRow = el('div', { class: 'work-quick-row' });
   const weekChip = el('button', { class: 'chip', type: 'button', html: '本周' } as any);
   weekChip.onclick = () => {
+    if (!state.isActive()) return;
     modeField.input.value = 'week';
     const r = rangeFor('week', state.now);
     startField.input.value = toDateInputValue(r.start);
@@ -624,6 +822,7 @@ function openReportDialog(state: WorkPageState): void {
   };
   const monthChip = el('button', { class: 'chip', type: 'button', html: '本月' } as any);
   monthChip.onclick = () => {
+    if (!state.isActive()) return;
     modeField.input.value = 'month';
     const r = rangeFor('month', state.now);
     startField.input.value = toDateInputValue(r.start);
@@ -635,19 +834,29 @@ function openReportDialog(state: WorkPageState): void {
 
   const summaryBox = el('div', { class: 'work-report-summary' });
   const summaryText = el('textarea', { class: 'work-report-summary-text', readonly: true } as any) as HTMLTextAreaElement;
-  summaryText.setAttribute('aria-label', '区间报表文本摘要');
-  summaryBox.append(el('label', { html: '区间摘要（可复制）' }), summaryText);
+  summaryText.id = 'work-report-summary';
+  summaryText.name = summaryText.id;
+  summaryBox.append(el('label', { html: '区间摘要（可复制）', htmlFor: summaryText.id } as any), summaryText);
   box.append(summaryBox);
 
   const refreshPreview = () => {
+    if (!state.isActive()) return;
     const startMs = new Date(startField.input.value + 'T00:00:00').getTime();
-    const endMs = new Date(endField.input.value + 'T23:59:59').getTime();
+    const endMs = new Date(endField.input.value + 'T23:59:59.999').getTime();
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
       summaryText.value = '请选择有效的开始/结束日期';
       return;
     }
     const mode = modeField.input.value === 'week' ? 'week' : 'month';
-    const { summary } = exportWorkReport(state.entries, state.profiles, state.settlements, startMs, endMs, mode);
+    const { summary } = exportWorkReport(
+      state.entries,
+      state.profiles,
+      state.settlements,
+      startMs,
+      endMs,
+      mode,
+      state.now,
+    );
     summaryText.value = summary;
   };
   refreshPreview();
@@ -658,54 +867,74 @@ function openReportDialog(state: WorkPageState): void {
   const row = el('div', { class: 'btn-row' });
   const cancel = el('button', { class: 'btn text', html: '取消' });
   const download = el('button', { class: 'btn', html: '下载 CSV' });
-  cancel.onclick = () => overlay.remove();
+  cancel.onclick = () => {
+    if (state.isActive()) closeDialog(overlay);
+  };
   download.onclick = () => {
+    if (!state.isActive()) return;
     const startMs = new Date(startField.input.value + 'T00:00:00').getTime();
-    const endMs = new Date(endField.input.value + 'T23:59:59').getTime();
+    const endMs = new Date(endField.input.value + 'T23:59:59.999').getTime();
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
-      toast('请选择有效的开始/结束日期');
+      showToast(state, '请选择有效的开始/结束日期');
       return;
     }
     const mode = modeField.input.value === 'week' ? 'week' : 'month';
-    const { csv } = exportWorkReport(state.entries, state.profiles, state.settlements, startMs, endMs, mode);
+    const { csv } = exportWorkReport(
+      state.entries,
+      state.profiles,
+      state.settlements,
+      startMs,
+      endMs,
+      mode,
+      state.now,
+    );
     const startStr = startField.input.value || 'report';
     const endStr = endField.input.value || '';
     const fname = `work-report-${startStr}${endStr ? `_to_${endStr}` : ''}.csv`;
     downloadText(csv, fname, 'text/csv;charset=utf-8');
-    toast('已下载 CSV 报表');
+    showToast(state, '已下载 CSV 报表');
   };
   row.append(cancel, download);
   box.append(row);
-  overlay.append(box);
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-  document.body.append(overlay);
+  overlay = openDialog(box, { initialFocus: modeField.input });
 }
 
-function renderFilterBar(): HTMLElement {
+function renderFilterBar(state: WorkPageState): HTMLElement {
   const filters: { id: WorkFilter; label: string }[] = [
     { id: 'today', label: '今日' },
     { id: 'week', label: '本周' },
     { id: 'month', label: '本月' },
     { id: 'all', label: '全部' },
   ];
-  const row = el('div', { class: 'work-filter-row' });
+  const row = el('div', {
+    class: 'work-filter-row',
+    role: 'group',
+    'aria-label': '班次筛选区间',
+  } as any);
   for (const filter of filters) {
-    const b = el('button', { class: `chip${currentFilter === filter.id ? ' on' : ''}`, type: 'button', html: filter.label } as any);
+    const b = el('button', {
+      class: `chip${currentFilter === filter.id ? ' on' : ''}`,
+      type: 'button',
+      html: filter.label,
+      'aria-pressed': String(currentFilter === filter.id),
+    } as any);
     b.onclick = async () => {
+      if (!state.isActive()) return;
       currentFilter = filter.id;
       shownCount = PAGE_SIZE;
       // 切换过滤区间时清空多选状态
       multiSelectMode = false;
       selectedEntryIds.clear();
-      await renderWorkLogPage(document.getElementById('app')!);
+      await state.refresh();
     };
     row.append(b);
   }
   return row;
 }
 
-function openProfileDialog(profile?: WorkProfile): void {
-  const overlay = el('div', { class: 'overlay' });
+function openProfileDialog(profile: WorkProfile | undefined, state: WorkPageState): void {
+  if (!state.isActive()) return;
+  let overlay: HTMLElement;
   const box = el('div', { class: 'card work-edit-dialog' });
   box.append(el('h3', { html: profile ? '编辑工作档案' : '新增工作档案' }));
   const name = inputField('工作名称', 'text', '例如：奶茶店');
@@ -737,10 +966,10 @@ function openProfileDialog(profile?: WorkProfile): void {
   const labelNode = el('label', { html: `任务模板（${templates.length}/${MAX_TASK_TEMPLATES}）` });
   const chipList = el('div', { class: 'work-template-chips' });
   const updateLabel = () => {
-    labelNode.innerHTML = `任务模板（${templates.length}/${MAX_TASK_TEMPLATES}）`;
+    labelNode.textContent = `任务模板（${templates.length}/${MAX_TASK_TEMPLATES}）`;
   };
   const renderChips = () => {
-    chipList.innerHTML = '';
+    chipList.replaceChildren();
     if (templates.length === 0) {
       chipList.append(el('span', { class: 'muted', html: '暂无模板，可在下方输入并添加。' }));
       return;
@@ -748,9 +977,10 @@ function openProfileDialog(profile?: WorkProfile): void {
     for (let i = 0; i < templates.length; i++) {
       const idx = i;
       const item = el('span', { class: 'work-template-chip' });
-      item.append(el('span', { html: escapeHtml(templates[idx]) }));
+      item.append(el('span', { html: templates[idx] }));
       const delBtn = el('button', { class: 'btn text small work-template-del', type: 'button', 'aria-label': '删除该模板', html: '×' } as any);
       delBtn.onclick = () => {
+        if (!state.isActive()) return;
         templates.splice(idx, 1);
         renderChips();
         updateLabel();
@@ -761,16 +991,20 @@ function openProfileDialog(profile?: WorkProfile): void {
   };
   templateSection.append(labelNode, chipList);
   const newTplInput = el('input', { type: 'text', placeholder: '输入新模板后回车 / 点击添加', class: 'work-template-input' } as any) as HTMLInputElement;
+  newTplInput.id = `work-template-${profile?.id || 'new'}`;
+  newTplInput.name = newTplInput.id;
+  labelNode.htmlFor = newTplInput.id;
   const addBtn = el('button', { class: 'btn tonal small', type: 'button', html: '添加' });
   const addTemplate = () => {
+    if (!state.isActive()) return;
     const v = newTplInput.value.trim();
     if (!v) return;
     if (templates.includes(v)) {
-      toast('该模板已存在');
+      showToast(state, '该模板已存在');
       return;
     }
     if (templates.length >= MAX_TASK_TEMPLATES) {
-      toast(`最多 ${MAX_TASK_TEMPLATES} 条，请先删除旧的`);
+      showToast(state, `最多 ${MAX_TASK_TEMPLATES} 条，请先删除旧的`);
       return;
     }
     templates.push(v);
@@ -794,9 +1028,12 @@ function openProfileDialog(profile?: WorkProfile): void {
   const row = el('div', { class: 'btn-row' });
   const cancel = el('button', { class: 'btn text', html: '取消' });
   const save = el('button', { class: 'btn', html: '保存' });
-  cancel.onclick = () => overlay.remove();
+  cancel.onclick = () => {
+    if (state.isActive()) closeDialog(overlay);
+  };
   save.onclick = async () => {
-    if (!name.input.value.trim()) return toast('请填写工作名称');
+    if (!state.isActive()) return;
+    if (!name.input.value.trim()) return showToast(state, '请填写工作名称');
     await putWorkProfile({
       id: profile?.id || workUid(),
       name: name.input.value.trim(),
@@ -811,19 +1048,19 @@ function openProfileDialog(profile?: WorkProfile): void {
       taskTemplates: templates,
       updatedAt: profile?.updatedAt || Date.now(),
     });
-    overlay.remove();
-    toast('已保存工作档案');
-    await renderWorkLogPage(document.getElementById('app')!);
+    if (!state.isActive()) return;
+    closeDialog(overlay);
+    showToast(state, '已保存工作档案');
+    await state.refresh();
   };
   row.append(cancel, save);
   box.append(row);
-  overlay.append(box);
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-  document.body.append(overlay);
+  overlay = openDialog(box, { initialFocus: name.input });
 }
 
 function openEntryDialog(entry: WorkEntry, state: WorkPageState): void {
-  const overlay = el('div', { class: 'overlay' });
+  if (!state.isActive()) return;
+  let overlay: HTMLElement;
   const box = el('div', { class: 'card work-edit-dialog' });
   box.append(el('h3', { html: '编辑班次' }));
   const form = renderEntryForm({ state, entry });
@@ -831,21 +1068,28 @@ function openEntryDialog(entry: WorkEntry, state: WorkPageState): void {
   const row = el('div', { class: 'btn-row' });
   const cancel = el('button', { class: 'btn text', html: '取消' });
   const save = el('button', { class: 'btn', html: '保存' });
-  cancel.onclick = () => overlay.remove();
+  cancel.onclick = () => {
+    if (state.isActive()) closeDialog(overlay);
+  };
   save.onclick = async () => {
+    if (!state.isActive()) return;
     const values = readEntryForm(form, state, entry);
     const error = validateEntry(values);
-    if (error) return toast(error);
-    await putWorkEntry(values);
-    overlay.remove();
-    toast('已更新班次');
-    await renderWorkLogPage(document.getElementById('app')!);
+    if (error) return showToast(state, error);
+    try {
+      await putWorkEntry(values);
+    } catch (error) {
+      showToast(state, workActionError(error, '更新班次'));
+      return;
+    }
+    if (!state.isActive()) return;
+    closeDialog(overlay);
+    showToast(state, '已更新班次');
+    await state.refresh();
   };
   row.append(cancel, save);
   box.append(row);
-  overlay.append(box);
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-  document.body.append(overlay);
+  overlay = openDialog(box, { initialFocus: form.profileInput });
 }
 
 function renderEntryForm(opts: { state: WorkPageState; entry?: WorkEntry }) {
@@ -864,7 +1108,10 @@ function renderEntryForm(opts: { state: WorkPageState; entry?: WorkEntry }) {
   task.input.value = opts.entry?.taskName || '';
   start.input.value = toDateTimeLocal(opts.entry ? new Date(opts.entry.startAt) : new Date(now.getTime() - HOUR));
   end.input.value = toDateTimeLocal(opts.entry?.endAt ? new Date(opts.entry.endAt) : now);
-  rest.input.value = String(opts.entry?.breakMinutes || opts.state.profiles.find((p) => p.id === profile.input.value)?.defaultBreakMinutes || 0);
+  rest.input.value = String(resolveWorkBreakMinutes(
+    opts.entry?.breakMinutes,
+    opts.state.profiles.find((p) => p.id === profile.input.value)?.defaultBreakMinutes,
+  ));
   amount.input.value = opts.entry?.amountOverride !== undefined ? String(opts.entry.amountOverride) : '';
   settled.input.value = opts.entry?.settlementStatus || 'pending';
   note.value = opts.entry?.note || '';
@@ -875,7 +1122,8 @@ function renderEntryForm(opts: { state: WorkPageState; entry?: WorkEntry }) {
   task.input.setAttribute('list', datalistId);
   const datalist = el('datalist', { id: datalistId } as any);
   const refreshTaskDatalist = () => {
-    datalist.innerHTML = '';
+    if (!opts.state.isActive()) return;
+    datalist.replaceChildren();
     const p = opts.state.profiles.find((x) => x.id === profile.input.value);
     for (const t of p?.taskTemplates || []) datalist.append(el('option', { value: t } as any));
   };
@@ -885,15 +1133,22 @@ function renderEntryForm(opts: { state: WorkPageState; entry?: WorkEntry }) {
 
   // 标签多选 chip
   const tagsField = el('div', { class: 'field work-tags-field' });
-  tagsField.append(el('label', { html: '标签' }));
+  const tagsLabel = el('div', { html: '标签', id: `work-tags-${++workFieldSeq}` });
+  tagsField.append(tagsLabel);
   const selectedTags = new Set<WorkTag>((opts.entry?.tags || []) as WorkTag[]);
   const tagChips = el('div', { class: 'work-tags-row' });
   const renderTagChips = () => {
-    tagChips.innerHTML = '';
+    tagChips.replaceChildren();
     for (const t of TAG_OPTIONS) {
       const on = selectedTags.has(t);
-      const c = el('button', { class: `chip${on ? ' on' : ''}`, type: 'button', html: t } as any);
+      const c = el('button', {
+        class: `chip${on ? ' on' : ''}`,
+        type: 'button',
+        html: t,
+        'aria-pressed': String(on),
+      } as any);
       c.onclick = () => {
+        if (!opts.state.isActive()) return;
         if (on) selectedTags.delete(t);
         else selectedTags.add(t);
         renderTagChips();
@@ -902,6 +1157,8 @@ function renderEntryForm(opts: { state: WorkPageState; entry?: WorkEntry }) {
     }
   };
   renderTagChips();
+  tagChips.setAttribute('role', 'group');
+  tagChips.setAttribute('aria-labelledby', tagsLabel.id);
   tagsField.append(tagChips);
   wrap.append(tagsField);
 
@@ -916,7 +1173,11 @@ function renderEntryForm(opts: { state: WorkPageState; entry?: WorkEntry }) {
     settledInput: settled.input,
     noteInput: note,
     selectedTags,
-    setRange: (s: Date, e: Date) => { start.input.value = toDateTimeLocal(s); end.input.value = toDateTimeLocal(e); },
+    setRange: (s: Date, e: Date) => {
+      if (!opts.state.isActive()) return;
+      start.input.value = toDateTimeLocal(s);
+      end.input.value = toDateTimeLocal(e);
+    },
   };
 }
 
@@ -953,14 +1214,23 @@ function validateEntry(entry: WorkEntry): string | undefined {
 }
 
 async function continueEntry(entry: WorkEntry, state: WorkPageState): Promise<void> {
-  const active = await getRunningWorkEntry();
-  if (active) return toast('已有班次在进行，请先停止');
+  if (!state.isActive()) return;
   const profile = state.profiles.find((p) => p.id === entry.profileId) || state.profiles[0];
-  await putWorkEntry(newEntryFromProfile(profile, Date.now(), undefined, entry.taskName));
+  let result;
+  try {
+    result = await startWorkEntry(
+      newEntryFromProfile(profile, Date.now(), undefined, entry.taskName),
+    );
+  } catch (error) {
+    showToast(state, workActionError(error, '继续班次'));
+    return;
+  }
+  if (!state.isActive()) return;
+  if (!result.started) return showToast(state, '已有班次在进行，请先停止');
   // 同步最近班次信息，供工具箱"一键开始上次班次"使用
   if (profile) saveLastWorkEntry(profile.id, entry.taskName || undefined);
-  toast('已继续该工作');
-  await renderWorkLogPage(document.getElementById('app')!);
+  showToast(state, '已继续该工作');
+  await state.refresh();
 }
 
 function newEntryFromProfile(profile: WorkProfile, startAt: number, endAt?: number, taskName = ''): WorkEntry {
@@ -979,22 +1249,47 @@ function newEntryFromProfile(profile: WorkProfile, startAt: number, endAt?: numb
   };
 }
 
-async function runAi(button: HTMLButtonElement, fn: () => Promise<void>): Promise<void> {
-  const old = button.innerHTML;
+function showToast(state: WorkPageState, message: string, duration?: number): void {
+  if (state.isActive()) toast(message, duration);
+}
+
+function workActionError(error: unknown, action: string): string {
+  if (error instanceof RunningWorkEntryConflictError) return error.message;
+  const detail = error instanceof Error && error.message ? `：${error.message}` : '，请重试';
+  return `${action}失败${detail}`;
+}
+
+async function confirmIfActive(
+  state: WorkPageState,
+  message: string,
+  confirmText = '确定',
+  danger = false,
+): Promise<boolean> {
+  if (!state.isActive()) return false;
+  const confirmed = await confirmDialog(message, confirmText, danger);
+  return state.isActive() && confirmed;
+}
+
+async function runAi(button: HTMLButtonElement, state: WorkPageState, fn: () => Promise<void>): Promise<void> {
+  if (!state.isActive()) return;
+  const old = button.textContent || '';
   button.setAttribute('disabled', 'true');
-  button.innerHTML = 'AI 处理中...';
+  button.textContent = 'AI 处理中...';
   try {
     await fn();
   } catch (e) {
     const msg = e instanceof WorkAiError ? e.message : e instanceof Error ? e.message : String(e);
-    toast('AI 失败：' + msg, 3600);
+    showToast(state, 'AI 失败：' + msg, 3600);
   } finally {
-    button.removeAttribute('disabled');
-    button.innerHTML = old;
+    if (state.isActive()) {
+      button.removeAttribute('disabled');
+      button.textContent = old;
+    }
   }
 }
 
-function previewProfileDraft(draft: WorkAiDraft): void {
+function previewProfileDraft(draft: WorkAiDraft, state: WorkPageState): void {
+  if (!state.isActive()) return;
   const profile = draft.profile || {};
   openProfileDialog({
     id: workUid(),
@@ -1008,16 +1303,17 @@ function previewProfileDraft(draft: WorkAiDraft): void {
     defaultBreakMinutes: Number(profile.defaultBreakMinutes || 0),
     note: [String(profile.note || ''), draft.warnings.join('；')].filter(Boolean).join('\n'),
     updatedAt: Date.now(),
-  });
+  }, state);
 }
 
 function previewEntryDraft(draft: WorkAiDraft, state: WorkPageState): void {
+  if (!state.isActive()) return;
   const raw = draft.entry || draft.entries?.[0];
-  if (!raw) return toast('AI 没有解析出班次');
+  if (!raw) return showToast(state, 'AI 没有解析出班次');
   const profile = state.profiles.find((p) => p.id === raw.profileId)
     || state.profiles.find((p) => raw.projectName && p.name.includes(String(raw.projectName)))
     || state.profiles[0];
-  if (!profile) return toast('请先创建工作档案');
+  if (!profile) return showToast(state, '请先创建工作档案');
   const startAt = parseAiTime((raw as any).startAtText) || Number(raw.startAt) || Date.now() - HOUR;
   const endAt = parseAiTime((raw as any).endAtText) || Number(raw.endAt) || Date.now();
   openEntryDialog({
@@ -1028,7 +1324,7 @@ function previewEntryDraft(draft: WorkAiDraft, state: WorkPageState): void {
     paySnapshot: createPaySnapshot(profile),
     startAt,
     endAt,
-    breakMinutes: Number(raw.breakMinutes || profile.defaultBreakMinutes || 0),
+    breakMinutes: Number(raw.breakMinutes ?? profile.defaultBreakMinutes ?? 0),
     amountOverride: raw.amountOverride !== undefined ? Number(raw.amountOverride) : undefined,
     settlementStatus: raw.settlementStatus === 'settled' ? 'settled' : 'pending',
     settledAt: raw.settlementStatus === 'settled' ? Date.now() : undefined,
@@ -1038,17 +1334,19 @@ function previewEntryDraft(draft: WorkAiDraft, state: WorkPageState): void {
   }, state);
 }
 
-function previewSummaryDraft(draft: WorkAiDraft): void {
-  const overlay = el('div', { class: 'overlay' });
+function previewSummaryDraft(draft: WorkAiDraft, state: WorkPageState): void {
+  if (!state.isActive()) return;
   const box = el('div', { class: 'card work-edit-dialog' });
   box.append(el('h3', { html: 'AI 月度总结' }));
-  box.append(el('div', { class: 'muted', html: escapeHtml(draft.summary || '暂无总结') }));
-  if (draft.warnings.length) box.append(el('div', { class: 'banner warn', html: escapeHtml(draft.warnings.join('；')) }));
+  box.append(el('div', { class: 'muted', html: draft.summary || '暂无总结' }));
+  if (draft.warnings.length) box.append(el('div', { class: 'banner warn', html: draft.warnings.join('；') }));
   const close = el('button', { class: 'btn', html: '知道了', style: 'margin-top:16px' } as any);
-  close.onclick = () => overlay.remove();
   box.append(close);
-  overlay.append(box);
-  document.body.append(overlay);
+  if (!state.isActive()) return;
+  const overlay = openDialog(box, { initialFocus: close });
+  close.onclick = () => {
+    if (state.isActive()) closeDialog(overlay);
+  };
 }
 
 function metric(label: string, value: string): HTMLElement {
@@ -1069,25 +1367,39 @@ function selectField(label: string, options: { value: string; label: string }[])
   return { wrap: fieldWrap(label, input), input };
 }
 
+let workFieldSeq = 0;
 function fieldWrap(label: string, input: HTMLElement): HTMLElement {
   const wrap = el('div', { class: 'field' });
-  wrap.append(el('label', { html: label }), input);
+  const id = input.id || `work-field-${++workFieldSeq}`;
+  input.id = id;
+  if (!input.getAttribute('name')) input.setAttribute('name', id);
+  wrap.append(el('label', { html: label, htmlFor: id } as any), input);
   return wrap;
 }
 
-function updateRunningUi(running: WorkEntry): void {
-  const elapsed = document.querySelector<HTMLElement>('[data-work-running-elapsed]');
-  if (elapsed) elapsed.innerHTML = formatDuration(durationMs(running, Date.now()));
-}
-
-function durationMs(entry: WorkEntry, now: number): number {
-  const end = entry.endAt ?? now;
-  return Math.max(0, end - entry.startAt - (entry.breakMinutes || 0) * MINUTE);
+function updateRunningUi(state: WorkPageState): void {
+  if (!state.isActive() || !state.running) return;
+  const elapsed = state.root.querySelector<HTMLElement>('[data-work-running-elapsed]');
+  if (elapsed) elapsed.textContent = formatDuration(effectiveWorkDurationMs(state.running, Date.now()));
 }
 
 function filterRange(filter: WorkFilter, now: number): { start: number; end: number } | null {
   if (filter === 'all') return null;
   return rangeFor(filter, now);
+}
+
+function allEntriesRange(entries: WorkEntry[], now: number): { start: number; end: number } {
+  if (entries.length === 0) return rangeFor('month', now);
+  const start = Math.min(...entries.map((entry) => entry.startAt));
+  const endExclusive = Math.max(...entries.map((entry) => entry.endAt ?? now), start + 1);
+  return { start, end: endExclusive - 1 };
+}
+
+function filterLabel(filter: WorkFilter): string {
+  if (filter === 'today') return '今日';
+  if (filter === 'week') return '本周';
+  if (filter === 'month') return '本月';
+  return '全部';
 }
 
 function rangeFor(filter: Exclude<WorkFilter, 'all'>, now: number): { start: number; end: number } {
@@ -1109,16 +1421,15 @@ function formatDuration(ms: number): string {
 }
 
 function formatDateTime(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getMonth() + 1}/${d.getDate()} ${formatTime(ms)}`;
+  return DATE_TIME_FORMAT.format(new Date(ms));
 }
 
 function formatTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return TIME_FORMAT.format(new Date(ms));
 }
 
 function moneyText(value: number): string {
-  return `¥${(Number.isFinite(value) ? value : 0).toFixed(2)}`;
+  return CURRENCY_FORMAT.format(Number.isFinite(value) ? value : 0);
 }
 
 function payModeLabel(mode?: WorkPayMode): string {
@@ -1190,15 +1501,6 @@ function downloadText(text: string, filename: string, type: string): void {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-function escapeHtml(value: string): string {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
 
 /** 写入最近一次班次信息（profileId + taskName），供工具箱"一键开始上次班次"使用。 */

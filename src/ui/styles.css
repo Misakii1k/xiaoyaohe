@@ -60,9 +60,9 @@
 
   /* ---- 圆角（与设备 concentric） ---- */
   --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
   --radius-full: 9999px;
 
   /* ---- iOS 动效曲线 ---- */
@@ -137,6 +137,7 @@
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+  letter-spacing: 0 !important;
 }
 
 html,
@@ -148,7 +149,7 @@ body {
     'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', system-ui, sans-serif;
   font-size: var(--fs-body);
   line-height: 1.45;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   -webkit-text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -182,7 +183,7 @@ body {
   backdrop-filter: blur(var(--glass-blur-heavy)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur-heavy)) saturate(var(--glass-saturate));
   border-bottom: 0.5px solid var(--separator);
-  animation: topbar-enter 720ms var(--ease-spring) both;
+  animation: none;
 }
 @keyframes topbar-enter {
   from { opacity: 0; transform: translateY(-16px); }
@@ -194,10 +195,14 @@ body {
   flex: 1;
   font-size: var(--fs-title2);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   line-height: 1.2;
   padding-left: 12px;
   color: var(--label-primary);
+}
+
+.topbar h1[tabindex='-1']:focus {
+  outline: none;
 }
 
 .topbar .icon-btn {
@@ -280,15 +285,8 @@ body {
 }
 
 .page > * {
-  animation: glass-fade-up 620ms var(--ease-spring) backwards;
+  animation: none;
 }
-.page > *:nth-child(1) { animation-delay: 0ms; }
-.page > *:nth-child(2) { animation-delay: 70ms; }
-.page > *:nth-child(3) { animation-delay: 140ms; }
-.page > *:nth-child(4) { animation-delay: 210ms; }
-.page > *:nth-child(5) { animation-delay: 280ms; }
-.page > *:nth-child(6) { animation-delay: 350ms; }
-.page > *:nth-child(n + 7) { animation-delay: 420ms; }
 
 @keyframes glass-fade-up {
   0% {
@@ -354,12 +352,13 @@ body {
   color: var(--label-primary);
 }
 
+.card h2,
 .card h3 {
   margin: 0 0 16px;
   font-size: var(--fs-title3);
   font-weight: 700;
   color: var(--label-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .muted {
@@ -370,14 +369,14 @@ body {
 .big {
   font-size: var(--fs-title1);
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   color: var(--label-primary);
 }
 
 .huge {
   font-size: var(--fs-largeTitle);
   font-weight: 700;
-  letter-spacing: -0.035em;
+  letter-spacing: 0;
   color: var(--label-primary);
 }
 
@@ -392,7 +391,7 @@ body {
   padding: 0 24px;
   font-size: var(--fs-headline);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   border: 0.5px solid rgba(255, 255, 255, 0.28);
   border-radius: var(--radius-md);
   background: linear-gradient(180deg, #2e8dff 0%, var(--brand) 100%);
@@ -618,11 +617,12 @@ label {
   margin-bottom: 8px;
   font-size: var(--fs-subheadline);
   color: var(--label-secondary);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 input[type='text'],
 input[type='time'],
+input[type='date'],
 input[type='datetime-local'],
 input[type='password'],
 input[type='url'],
@@ -704,6 +704,32 @@ textarea {
   font-weight: 500;
 }
 
+.dose-structure-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.dose-review {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: -4px 0 20px;
+}
+
+.dose-review .banner {
+  flex: 1 1 260px;
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .dose-structure-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
 /* ============ Chips ============ */
 .chips {
   display: flex;
@@ -779,7 +805,7 @@ textarea {
   font-weight: 600;
   font-size: var(--fs-footnote);
   line-height: 1;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   border: 0.5px solid rgba(255, 255, 255, 0.45);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -871,7 +897,7 @@ textarea {
   font-size: var(--fs-title3);
   font-weight: 700;
   color: var(--brand-deep);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 /* ============ Tab Bar：浮动玻璃胶囊 + 液态滑动指示器 ============ */
@@ -896,7 +922,7 @@ textarea {
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
   z-index: 20;
   padding: 6px;
-  animation: tabbar-enter 720ms var(--ease-spring) both;
+  animation: none;
 }
 
 /* 滑动激活指示器 —— 用 :has() 检测当前激活 tab 的 nth-child，translateX 平滑切换 */
@@ -957,7 +983,7 @@ textarea {
   border-radius: calc(var(--radius-xl) - 8px);
   transition: color 420ms var(--ease-spring),
     transform 280ms var(--ease-spring);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .tabbar a .ic {
@@ -978,6 +1004,7 @@ textarea {
   stroke-linejoin: round;
   transition: stroke-width 280ms var(--ease-out);
 }
+
 .tabbar a:active {
   transform: scale(0.90);
 }
@@ -1024,7 +1051,7 @@ textarea {
   border-radius: var(--radius-full);
   font-size: var(--fs-subheadline);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   z-index: 100;
   max-width: calc(100% - 32px);
   text-align: left;
@@ -1082,7 +1109,7 @@ textarea {
   font-size: var(--fs-title2);
   font-weight: 700;
   color: var(--label-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 .empty .sub {
   font-size: var(--fs-subheadline);
@@ -1119,7 +1146,7 @@ textarea {
   font-size: var(--fs-headline);
   font-weight: 600;
   color: var(--label-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1253,7 +1280,7 @@ textarea {
   font-size: var(--fs-title1);
   font-weight: 700;
   color: var(--brand-deep);
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
 }
 
 /* ============ Today 时段聚合卡片 ============ */
@@ -1317,7 +1344,7 @@ textarea {
   font-size: var(--fs-title1);
   font-weight: 700;
   color: var(--label-primary);
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
@@ -1363,7 +1390,7 @@ textarea {
   font-size: var(--fs-headline);
   font-weight: 600;
   color: var(--label-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1533,7 +1560,7 @@ textarea {
 .section-title {
   font-size: var(--fs-headline);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   margin-bottom: 12px;
 }
 .inventory-editor .field {
@@ -1940,7 +1967,7 @@ textarea {
   font-weight: 700;
   color: var(--label-primary);
   margin-bottom: 10px;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 .nlu-label svg {
   width: 18px;
@@ -1959,7 +1986,7 @@ textarea {
   font-family: inherit;
   color: var(--label-primary);
   line-height: 1.5;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   resize: vertical;
   min-height: 64px;
   transition: border-color 280ms var(--ease-out),
@@ -2045,7 +2072,7 @@ textarea {
 }
 .panel-title {
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2065,7 +2092,7 @@ textarea {
   border-radius: var(--radius-full);
   font-size: var(--fs-caption);
   font-weight: 600;
-  letter-spacing: -0.005em;
+  letter-spacing: 0;
   border: 0.5px solid transparent;
   transition: background 280ms var(--ease-out), color 280ms var(--ease-out);
 }
@@ -2118,6 +2145,87 @@ textarea {
   opacity: 1;
   padding: 4px 18px 18px;
   border-top: 0.5px solid var(--separator);
+}
+
+.sync-v2-actions {
+  margin-top: 12px;
+}
+
+.sync-v2-session-note {
+  margin-top: 12px;
+  line-height: 1.55;
+}
+
+.sync-v2-summary {
+  margin-bottom: 10px;
+}
+
+.sync-v2-id,
+.protected-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.settings-divider {
+  margin: 20px 0 14px;
+  padding-top: 18px;
+  border-top: 0.5px solid var(--separator);
+  color: var(--label-secondary);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+
+.sync-v2-devices h4 {
+  margin: 18px 0 8px;
+  font-size: var(--fs-body);
+}
+
+.sync-v2-device .btn {
+  flex: 0 0 auto;
+}
+
+.sync-v2-forget {
+  margin-top: 10px;
+  color: var(--ios-red);
+}
+
+.protected-value-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.protected-value-dialog .protected-value {
+  width: 100%;
+  margin: 14px 0;
+  min-height: 120px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+}
+
+.sync-v2-migration-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.sync-v2-migration-dialog .field {
+  margin-bottom: 14px;
+}
+
+.sync-v2-migration-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 0 16px;
+  line-height: 1.5;
+}
+
+.sync-v2-migration-confirm input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.sync-v2-migration-report {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  margin-bottom: 14px;
 }
 
 /* AI 卡里模型选择行 */
@@ -2394,6 +2502,9 @@ textarea {
   line-height: 1.12;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .work-summary-sub {
@@ -2416,6 +2527,9 @@ textarea {
   line-height: 1;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .work-income-grid {
@@ -2447,6 +2561,7 @@ textarea {
   margin-bottom: 14px;
 }
 
+.work-card-heading h2,
 .work-card-heading h3 {
   margin: 0;
 }
@@ -2521,6 +2636,8 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-height: 44px;
+  padding-block: 8px;
   cursor: pointer;
   font-weight: 700;
   list-style: none;
@@ -2617,12 +2734,17 @@ textarea {
   display: grid;
   justify-items: end;
   gap: 6px;
+  min-width: 0;
   flex-shrink: 0;
 }
 
 .work-entry-duration {
   font-weight: 700;
-  white-space: nowrap;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: end;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2650,6 +2772,7 @@ textarea {
   border-top: 0.5px solid var(--separator);
 }
 
+.work-salary-settlements h2,
 .work-salary-settlements h3 {
   margin: 0 0 8px;
 }
@@ -2780,6 +2903,12 @@ textarea {
   border: 0;
   box-shadow: none;
 }
+.med-search-bar:focus-within {
+  border-color: var(--brand);
+  box-shadow:
+    var(--glass-highlight),
+    0 0 0 3px rgba(0, 122, 255, 0.18);
+}
 .med-filter-row {
   margin-top: -4px;
 }
@@ -2799,7 +2928,7 @@ textarea {
   border-radius: var(--radius-full);
   font-size: var(--fs-caption);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   border: 0.5px solid transparent;
   white-space: nowrap;
 }
@@ -2837,12 +2966,19 @@ textarea {
   font-weight: 700;
 }
 
+.med-line.notification-target {
+  outline: 3px solid var(--brand);
+  outline-offset: 3px;
+  scroll-margin-block: 88px 120px;
+}
+
 /* ============ Today: 本周依从性卡片 ============ */
 .adherence-card {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
+.adherence-card h2,
 .adherence-card h3 {
   margin: 0;
 }
@@ -2927,7 +3063,10 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding-top: 4px;
+  width: 44px;
+  min-height: 44px;
+  margin-top: -6px;
+  cursor: pointer;
 }
 .med-batch-checkbox {
   width: 24px;
@@ -3059,8 +3198,17 @@ textarea {
   flex-shrink: 0;
   width: 22px;
   height: 22px;
-  margin-top: 4px;
   accent-color: var(--brand);
+  cursor: pointer;
+}
+.work-entry-check-wrap {
+  flex: 0 0 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  margin-top: -7px;
   cursor: pointer;
 }
 .work-multi-hint {
@@ -3227,8 +3375,8 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border: none;
   background: var(--tone-warn-bg);
@@ -3331,11 +3479,11 @@ textarea {
 }
 .cycle-inputs-wrap {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 8px;
 }
-@media (max-width: 360px) {
+@media (max-width: 520px) {
   .cycle-inputs-wrap {
     grid-template-columns: 1fr;
   }
@@ -3349,3 +3497,21 @@ textarea {
   background: var(--label-quaternary);
 }
 
+/* Browser zoom and very short viewports must not let fixed navigation cover content. */
+@media (max-height: 500px) {
+  #app {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .tabbar {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    transform: none;
+    width: calc(100% - 32px);
+    max-width: 420px;
+    height: 72px;
+    margin: 16px auto max(16px, env(safe-area-inset-bottom));
+  }
+}

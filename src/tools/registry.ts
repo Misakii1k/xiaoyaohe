@@ -1,13 +1,16 @@
 import type { IconName } from '../ui/components';
-import type { RouteHandler } from '../router';
-import { renderTodayPage } from '../pages/Today';
-import { renderMedListPage } from '../pages/MedList';
-import { renderMedEditPage } from '../pages/MedEdit';
-import { renderScanSortPage } from '../pages/ScanSort';
-import { renderWorkLogPage } from '../pages/WorkLog';
-import { listLogs, listLogsByDay, listMeds, listRules, importMedsAndRules } from '../db/local';
+import { runLazyRoute, type RouteHandler } from '../router';
 import {
-  calculateWorkIncome,
+  listLogs,
+  listLogsByDay,
+  listMeds,
+  listRules,
+  listScheduleRevisions,
+  importMedsAndRules,
+} from '../db/local';
+import {
+  calculateWorkIncomeRange,
+  csvCell,
   exportWorkEntriesCsv,
   getRunningWorkEntry,
   importWorkData,
@@ -16,7 +19,20 @@ import {
   listWorkProfiles,
   listWorkSettlements,
 } from '../db/work';
-import type { IntakeLog, Medication, ReminderRule, WorkEntry, WorkProfile, WorkSettlement } from '../db/schema';
+import type {
+  IntakeLog,
+  Medication,
+  MedicationScheduleRevision,
+  ReminderRule,
+  WorkEntry,
+  WorkProfile,
+  WorkSettlement,
+} from '../db/schema';
+import {
+  findLogForOccurrence,
+  generateOccurrences,
+  toLocalDate,
+} from '../domain/medicationSchedule';
 
 export interface BackupImportResult {
   added: number;
@@ -58,6 +74,7 @@ interface BackupPayload {
   meds?: Medication[];
   rules?: ReminderRule[];
   logs?: IntakeLog[];
+  scheduleRevisions?: MedicationScheduleRevision[];
   workProfiles?: WorkProfile[];
   workEntries?: WorkEntry[];
   workSettlements?: WorkSettlement[];
@@ -66,12 +83,13 @@ interface BackupPayload {
 export const backupProviders: BackupProvider[] = [
   {
     key: 'meds',
-    version: 1,
+    version: 2,
     label: '吃药工具',
     export: async () => ({
       meds: await listMeds(true),
       rules: await listRules(true),
       logs: await listLogs(),
+      scheduleRevisions: await listScheduleRevisions(),
     }),
     import: async (data) => {
       const payload = asPayload(data);
@@ -79,14 +97,19 @@ export const backupProviders: BackupProvider[] = [
         Array.isArray(payload.meds) ? payload.meds : [],
         Array.isArray(payload.rules) ? payload.rules : [],
         Array.isArray(payload.logs) ? payload.logs : [],
+        Array.isArray(payload.scheduleRevisions) ? payload.scheduleRevisions : [],
       );
       return {
-        added: result.meds.added + result.rules.added + result.logs.added,
+        added: result.meds.added + result.rules.added + result.logs.added + result.scheduleRevisions.added,
         updated: result.meds.updated + result.rules.updated + result.logs.updated,
-        skipped: result.meds.skipped + result.rules.skipped + result.logs.skipped,
+        skipped: result.meds.skipped + result.rules.skipped + result.logs.skipped + result.scheduleRevisions.skipped,
       };
     },
-    count: async () => (await listMeds()).length + (await listRules()).length + (await listLogs()).length,
+    count: async () =>
+      (await listMeds()).length +
+      (await listRules()).length +
+      (await listLogs()).length +
+      (await listScheduleRevisions()).length,
   },
   {
     key: 'workEntries',
@@ -117,29 +140,55 @@ export const tools: ToolDefinition[] = [
     meta: '提醒 · 药盒 · 扫码',
     homeRoute: '/today',
     routes: [
-      { path: '/today', handler: (_p, root) => renderTodayPage(root) },
-      { path: '/meds', handler: (_p, root) => renderMedListPage(root) },
-      { path: '/meds/new', handler: (_p, root) => renderMedEditPage(root, null) },
-      { path: '/meds/:id/edit', handler: (p, root) => renderMedEditPage(root, p.id) },
-      { path: '/scan', handler: (_p, root) => renderScanSortPage(root) },
+      {
+        path: '/today',
+        handler: (_p, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/Today'), (page) =>
+            page.renderTodayPage(root, context.signal)),
+      },
+      {
+        path: '/meds',
+        handler: (_p, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/MedList'), (page) =>
+            page.renderMedListPage(root, context.signal)),
+      },
+      {
+        path: '/meds/new',
+        handler: (_p, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/MedEdit'), (page) =>
+            page.renderMedEditPage(root, null, context.signal)),
+      },
+      {
+        path: '/meds/:id/edit',
+        handler: (params, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/MedEdit'), (page) =>
+            page.renderMedEditPage(root, params.id, context.signal)),
+      },
+      {
+        path: '/scan',
+        handler: (_p, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/ScanSort'), (page) =>
+            page.renderScanSortPage(root, context.signal)),
+      },
     ],
     getSummary: async () => {
-      const [meds, rules, logs] = await Promise.all([
+      const [meds, rules, logs, revisions] = await Promise.all([
         listMeds(),
         listRules(),
         listLogsByDay(startOfDay(Date.now()), startOfDay(Date.now()) + DAY - 1),
+        listScheduleRevisions(),
       ]);
       if (meds.length === 0) return { text: '还没有药品，先添加常用药', tone: 'muted' };
       const enabled = rules.filter((r) => r.enabled && !r.deleted).length;
-      const todaysRules = rules.filter((r) => r.enabled && !r.deleted && meds.some((m) => shouldTakeToday(m) && m.id === r.medId));
-      const done = todaysRules.filter((r) => {
-        const dueAt = todayAt(r.timeLocal);
-        const log = logs.find((l) => l.id === `${r.id}_${ymd(new Date(dueAt))}`);
+      const occurrences = generateOccurrences(revisions, toLocalDate(), toLocalDate())
+        .filter((occurrence) => meds.some((med) => med.id === occurrence.medId));
+      const done = occurrences.filter((occurrence) => {
+        const log = findLogForOccurrence(occurrence, logs);
         return log?.status === 'taken' || log?.status === 'skipped';
       }).length;
-      const pending = todaysRules.length - done;
+      const pending = occurrences.length - done;
       if (pending > 0) return { text: `今日待服 ${pending} 项 · ${meds.length} 种药`, tone: 'warn' };
-      if (todaysRules.length > 0) return { text: `今日已完成 · ${meds.length} 种药`, tone: 'ok' };
+      if (occurrences.length > 0) return { text: `今日已处理 · ${meds.length} 种药`, tone: 'ok' };
       return { text: `${meds.length} 种药 · ${enabled} 条提醒`, tone: enabled ? 'info' : 'muted' };
     },
     backupProvider: backupProviders[0],
@@ -151,7 +200,12 @@ export const tools: ToolDefinition[] = [
     meta: '计时 · 补录 · 统计',
     homeRoute: '/work',
     routes: [
-      { path: '/work', handler: (_p, root) => renderWorkLogPage(root) },
+      {
+        path: '/work',
+        handler: (_p, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/WorkLog'), (page) =>
+            page.renderWorkLogPage(root, context.signal)),
+      },
     ],
     getSummary: async () => {
       const running = await getRunningWorkEntry();
@@ -169,7 +223,7 @@ export const tools: ToolDefinition[] = [
 
 export async function buildBackup(): Promise<Record<string, unknown>> {
   const data: Record<string, unknown> = {
-    version: 3,
+    version: 4,
     app: 'medbox',
     at: Date.now(),
     providers: backupProviders.map((p) => ({ key: p.key, version: p.version })),
@@ -186,6 +240,7 @@ export async function countBackupPayload(raw: unknown): Promise<Record<string, n
     meds: Array.isArray(payload.meds) ? payload.meds.length : 0,
     rules: Array.isArray(payload.rules) ? payload.rules.length : 0,
     logs: Array.isArray(payload.logs) ? payload.logs.length : 0,
+    scheduleRevisions: Array.isArray(payload.scheduleRevisions) ? payload.scheduleRevisions.length : 0,
     workEntries:
       (Array.isArray(payload.workProfiles) ? payload.workProfiles.length : 0) +
       (Array.isArray(payload.workEntries) ? payload.workEntries.length : 0) +
@@ -217,14 +272,16 @@ export async function previewBackupImport(raw: unknown): Promise<BackupPreviewRe
 
   // 吃药工具：meds + rules + logs
   {
-    const [existingMeds, existingRules, existingLogs] = await Promise.all([
+    const [existingMeds, existingRules, existingLogs, existingRevisions] = await Promise.all([
       listMeds(true),
       listRules(true),
       listLogs(),
+      listScheduleRevisions(),
     ]);
     const medMap = new Map(existingMeds.map((m) => [m.id, m]));
     const ruleMap = new Map(existingRules.map((r) => [r.id, r]));
     const logMap = new Map(existingLogs.map((l) => [l.id, l]));
+    const revisionIds = new Set(existingRevisions.map((revision) => revision.id));
 
     let added = 0;
     let updated = 0;
@@ -269,6 +326,19 @@ export async function previewBackupImport(raw: unknown): Promise<BackupPreviewRe
       if (!existing) added += 1;
       else if ((item.updatedAt || 0) > (existing.updatedAt || 0)) updated += 1;
       else skipped += 1;
+    }
+
+    const scheduleRevisions = Array.isArray(payload.scheduleRevisions)
+      ? payload.scheduleRevisions
+      : [];
+    for (const item of scheduleRevisions) {
+      if (!item || typeof item.id !== 'string' || typeof item.sourceRuleId !== 'string') {
+        skipped += 1;
+        warnings.push('计划历史存在无效记录，将跳过');
+        continue;
+      }
+      if (revisionIds.has(item.id)) skipped += 1;
+      else added += 1;
     }
 
     providers.push({ key: 'meds', label: '吃药工具', added, updated, skipped });
@@ -360,24 +430,6 @@ function endOfMonth(ms: number): number {
   return d.getTime() - 1;
 }
 
-function todayAt(timeLocal: string): number {
-  const [h, m] = timeLocal.split(':').map(Number);
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
-  return d.getTime();
-}
-
-function ymd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}${m}${day}`;
-}
-
-function shouldTakeToday(med: Medication): boolean {
-  return med.daysOfWeek.length === 0 || med.daysOfWeek.includes(new Date().getDay());
-}
-
 export interface WorkReportResult {
   csv: string;
   summary: string;
@@ -395,23 +447,20 @@ export function exportWorkReport(
   start: number,
   end: number,
   mode: 'week' | 'month',
+  now = Date.now(),
 ): WorkReportResult {
-  const scoped = entries.filter((e) => !e.deleted && e.startAt >= start && e.startAt <= end);
+  const calculation = calculateWorkIncomeRange(entries, profiles, settlements, start, end, now);
+  const incomeByEntry = new Map(calculation.entryContributions.map((row) => [row.entryId, row]));
+  const scoped = entries.filter((entry) => incomeByEntry.has(entry.id));
   const header = ['日期', '班次名', '开始时间', '结束时间', '工时(小时)', '收入(元)', '结算状态'];
   const lines: string[] = [header.map(csvCell).join(',')];
-  let totalMs = 0;
-  let totalIncome = 0;
-  let settledCount = 0;
   for (const entry of scoped) {
-    const income = calculateWorkIncome(entry, scoped, end + 1);
+    const income = incomeByEntry.get(entry.id)!;
     const hours = (income.effectiveMs / 3_600_000).toFixed(2);
     const dateText = formatDateSlash(entry.startAt);
     const startText = formatClock(entry.startAt);
     const endText = entry.endAt ? formatClock(entry.endAt) : '';
     const settledText = entry.settlementStatus === 'settled' ? '已结算' : '待结算';
-    if (entry.settlementStatus === 'settled') settledCount += 1;
-    totalMs += income.effectiveMs;
-    totalIncome += income.amount;
     lines.push([
       dateText,
       entry.paySnapshot?.profileName || entry.projectName,
@@ -422,48 +471,42 @@ export function exportWorkReport(
       settledText,
     ].map(csvCell).join(','));
   }
-  // 合计行
+  for (const salary of calculation.salaryContributions) {
+    lines.push([
+      salary.periodKey,
+      `${salary.profileName} · 固定薪资`,
+      '',
+      '',
+      '0.00',
+      salary.amount.toFixed(2),
+      salary.status === 'settled' ? '已结算' : '待结算',
+    ].map(csvCell).join(','));
+  }
   lines.push([
     '合计',
     `${scoped.length} 条`,
     '',
     '',
-    (totalMs / 3_600_000).toFixed(2),
-    totalIncome.toFixed(2),
-    `${settledCount}/${scoped.length}`,
+    (calculation.summary.totalMs / 3_600_000).toFixed(2),
+    calculation.summary.estimatedIncome.toFixed(2),
+    `已结 ${calculation.summary.settledIncome.toFixed(2)}`,
   ].map(csvCell).join(','));
 
-  // 摘要：补全薪资档案（月度）
-  let salaryIncome = 0;
-  if (mode === 'month' || end - start >= 25 * DAY) {
-    const months = monthsInRange(start, end);
-    for (const profile of profiles.filter((p) => !p.deleted && p.payMode === 'salary')) {
-      for (const periodKey of months) {
-        const existing = settlements.find((s) => s.profileId === profile.id && s.periodKey === periodKey && !s.deleted);
-        salaryIncome += round2(existing?.amount ?? profile.baseAmount);
-      }
-    }
-  }
-  const grandIncome = round2(totalIncome + salaryIncome);
-  const totalHours = (totalMs / 3_600_000).toFixed(1);
-  const settledRatio = scoped.length > 0 ? Math.round((settledCount / scoped.length) * 100) : 0;
+  const totalHours = (calculation.summary.totalMs / 3_600_000).toFixed(1);
+  const settledRatio = calculation.summary.estimatedIncome > 0
+    ? Math.round((calculation.summary.settledIncome / calculation.summary.estimatedIncome) * 100)
+    : 0;
   const periodLabel = mode === 'month' ? '本月' : '本周';
-  const summaryParts: string[] = [`${periodLabel}共记录班次 ${scoped.length} 次`];
-  if (scoped.length > 0) {
-    summaryParts.push(`总工时 ${totalHours} 小时`);
-    summaryParts.push(`总收入 ${grandIncome.toFixed(2)} 元`);
-    summaryParts.push(`已结算占比 ${settledRatio}%`);
-  } else {
-    summaryParts.push('无班次记录');
-  }
+  const summaryParts: string[] = [
+    `${periodLabel}共记录班次 ${scoped.length} 次`,
+    `总工时 ${totalHours} 小时`,
+    `总收入 ${calculation.summary.estimatedIncome.toFixed(2)} 元`,
+    `已结算占比 ${settledRatio}%`,
+  ];
+  if (scoped.length === 0) summaryParts.push('无班次记录，固定薪资仍按日历日估算');
   const summary = summaryParts.join('，') + '。';
 
   return { csv: '\ufeff' + lines.join('\r\n'), summary };
-}
-
-function csvCell(value: string): string {
-  const text = String(value ?? '');
-  return `"${text.replace(/"/g, '""')}"`;
 }
 
 function formatDateSlash(ms: number): string {
@@ -476,22 +519,6 @@ function formatClock(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function monthsInRange(rangeStart: number, rangeEnd: number): string[] {
-  const out: string[] = [];
-  const d = new Date(rangeStart);
-  d.setDate(1);
-  d.setHours(0, 0, 0, 0);
-  while (d.getTime() <= rangeEnd) {
-    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-    d.setMonth(d.getMonth() + 1);
-  }
-  return out;
-}
-
-function round2(value: number): number {
-  return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 }
 
 export { exportWorkEntriesCsv };

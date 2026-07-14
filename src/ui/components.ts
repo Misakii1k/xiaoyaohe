@@ -1,6 +1,6 @@
 // 通用 UI 组件 / 工具函数（M3，无框架，纯 DOM）
 import { SLOT_LABEL, type Slot } from '../db/schema';
-import { navigate } from '../router';
+import { navigate, registerRouteTransitionCleanup } from '../router';
 import { getLastSync, onSync, type SyncState } from '../sync/syncClient';
 
 // One-time CSS injection for spinner & skeleton animations
@@ -22,6 +22,8 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   props: Partial<HTMLElementTagNameMap[K]> & {
     class?: string;
+    text?: string;
+    /** @deprecated Legacy alias for text. Markup is intentionally not parsed. */
     html?: string;
     'aria-*'?: string;
     'data-*'?: string;
@@ -29,9 +31,10 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   children: (Node | string)[] = []
 ): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
-  const { class: cls, html, ...rest } = props as any;
+  const { class: cls, text, html, ...rest } = props as any;
   if (cls) node.className = cls;
-  if (html !== undefined) node.innerHTML = html;
+  const content = text ?? html;
+  if (content !== undefined) node.textContent = String(content);
   for (const [k, v] of Object.entries(rest)) {
     if (v == null) continue;
     if (k.startsWith('aria-') || k.startsWith('data-')) {
@@ -122,7 +125,13 @@ export function icon(name: IconName, className?: string): SVGSVGElement {
   svg.setAttribute('stroke-linejoin', 'round');
   svg.setAttribute('aria-hidden', 'true');
   if (className) svg.setAttribute('class', className);
-  svg.innerHTML = ICON_PATHS[name];
+  const parsed = new DOMParser().parseFromString(
+    `<svg xmlns="${ns}">${ICON_PATHS[name]}</svg>`,
+    'image/svg+xml',
+  );
+  for (const child of Array.from(parsed.documentElement.children)) {
+    svg.append(document.importNode(child, true));
+  }
   return svg;
 }
 
@@ -217,6 +226,60 @@ export interface OpenDialogOptions {
   initialFocus?: HTMLElement;
 }
 
+const dialogClosers = new WeakMap<HTMLElement, () => void>();
+const activeDialogs = new Set<HTMLElement>();
+let openDialogSeq = 0;
+
+interface DialogAppState {
+  root: HTMLElement & { inert: boolean };
+  inert: boolean;
+  ariaHidden: string | null;
+}
+
+let dialogAppState: DialogAppState | null = null;
+
+function makeAppInert(): void {
+  const root = document.getElementById('app') as (HTMLElement & { inert: boolean }) | null;
+  if (!root) return;
+  if (!dialogAppState) {
+    dialogAppState = {
+      root,
+      inert: root.inert ?? false,
+      ariaHidden: root.getAttribute('aria-hidden'),
+    };
+  }
+  root.inert = true;
+  root.setAttribute('aria-hidden', 'true');
+}
+
+function restoreAppAfterLastDialog(): void {
+  if (activeDialogs.size > 0 || !dialogAppState) return;
+  const { root, inert, ariaHidden } = dialogAppState;
+  dialogAppState = null;
+  root.inert = inert;
+  if (ariaHidden == null) root.removeAttribute('aria-hidden');
+  else root.setAttribute('aria-hidden', ariaHidden);
+}
+
+/** Close through the dialog lifecycle so focus and listeners are restored. */
+export function closeDialog(overlay: HTMLElement): void {
+  dialogClosers.get(overlay)?.();
+}
+
+/** Close every component-owned dialog, for example before a route replaces its page. */
+export function closeAllDialogs(): void {
+  for (const overlay of Array.from(activeDialogs).reverse()) {
+    try {
+      closeDialog(overlay);
+    } catch (error) {
+      console.error('Dialog cleanup failed', error);
+    }
+  }
+  restoreAppAfterLastDialog();
+}
+
+registerRouteTransitionCleanup(closeAllDialogs);
+
 export function openDialog(
   card: HTMLElement,
   opts: OpenDialogOptions = {}
@@ -224,7 +287,17 @@ export function openDialog(
   const overlay = el('div', { class: 'overlay' }, [card]);
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
-  if (opts.labelId) overlay.setAttribute('aria-labelledby', opts.labelId);
+  if (opts.labelId) {
+    overlay.setAttribute('aria-labelledby', opts.labelId);
+  } else {
+    const heading = card.querySelector<HTMLElement>('h1,h2,h3,[data-dialog-title],.big');
+    if (heading) {
+      heading.id ||= `open-dialog-title-${++openDialogSeq}`;
+      overlay.setAttribute('aria-labelledby', heading.id);
+    } else {
+      overlay.setAttribute('aria-label', '对话框');
+    }
+  }
 
   // Make overlay scrollable & top-anchored so virtual keyboard doesn't hide inputs
   overlay.style.alignItems = 'flex-start';
@@ -233,6 +306,8 @@ export function openDialog(
   overlay.style.paddingBottom = 'max(28px, env(safe-area-inset-bottom))';
 
   const previouslyFocused = opts.returnFocusTo ?? (document.activeElement as HTMLElement | null);
+  activeDialogs.add(overlay);
+  makeAppInert();
   const focusables = () =>
     overlay.querySelectorAll<HTMLElement>(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -268,11 +343,15 @@ export function openDialog(
   const close = () => {
     if (closed) return;
     closed = true;
+    dialogClosers.delete(overlay);
+    activeDialogs.delete(overlay);
     overlay.removeEventListener('keydown', trapKeydown);
     overlay.remove();
+    restoreAppAfterLastDialog();
     opts.onClose?.();
     previouslyFocused?.focus();
   };
+  dialogClosers.set(overlay, close);
 
   overlay.addEventListener('keydown', trapKeydown);
   // Click on overlay (not on card) closes
@@ -295,6 +374,7 @@ export function confirmDialog(message: string, okText = '确定', danger = false
   const ok = el('button', { class: `btn ${danger ? 'danger' : ''}`, html: okText });
   const cancel = el('button', { class: 'btn text', html: '取消' });
   const title = el('div', { class: 'big', html: message, id: titleId, style: 'margin-bottom:24px' } as any);
+  title.style.whiteSpace = 'pre-line';
   const actions = el(
     'div',
     { style: 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap' } as any,
@@ -303,16 +383,19 @@ export function confirmDialog(message: string, okText = '确定', danger = false
   const box = el('div', { class: 'card' }, [title, actions]);
   let overlay: HTMLElement | null = null;
   return new Promise<boolean>((resolve) => {
-    const close = (v: boolean) => {
-      if (overlay) overlay.remove();
+    let settled = false;
+    const close = (v: boolean, dismissedByDialog = false) => {
+      if (settled) return;
+      settled = true;
+      if (overlay && !dismissedByDialog) closeDialog(overlay);
       resolve(v);
     };
     ok.onclick = () => close(true);
     cancel.onclick = () => close(false);
     overlay = openDialog(box, {
       labelId: titleId,
-      onClose: () => close(false),
-      initialFocus: ok,
+      onClose: () => close(false, true),
+      initialFocus: danger ? cancel : ok,
     });
   });
 }
@@ -357,8 +440,14 @@ export function emptyState(
 /** ---------- 进度环 ---------- */
 export function progressRing(value: number, total: number): HTMLElement {
   const wrap = el('div', { class: 'progress-ring' });
+  wrap.setAttribute('role', 'progressbar');
+  wrap.setAttribute('aria-valuemin', '0');
+  wrap.setAttribute('aria-valuemax', String(Math.max(0, total)));
+  wrap.setAttribute('aria-valuenow', String(Math.max(0, value)));
+  wrap.setAttribute('aria-label', `已完成 ${value} 项，共 ${total} 项`);
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('viewBox', '0 0 80 80');
   const bg = document.createElementNS(ns, 'circle');
   bg.setAttribute('class', 'ring-bg');
@@ -452,7 +541,8 @@ export function renderPage(opts: {
   showTabbar?: boolean;
 }): void {
   installRipple();
-  opts.root.innerHTML = '';
+  opts.root.replaceChildren();
+  document.title = `${opts.title} · 日常工具箱`;
   const left = opts.topLeft || (opts.showTabbar !== false && opts.activeTab !== 'tools'
     ? toolboxButton()
     : undefined);
@@ -474,6 +564,9 @@ export function renderPage(opts: {
   });
   window.addEventListener('hashchange', () => unsub?.(), { once: true });
 
+  opts.content.setAttribute('role', 'main');
+  opts.content.setAttribute('id', 'main-content');
+  opts.content.setAttribute('tabindex', '-1');
   opts.root.append(topbar(opts.title, right, left));
   opts.root.append(opts.content);
   if (opts.fab) opts.root.append(opts.fab);
@@ -495,6 +588,8 @@ function toolboxButton(): HTMLElement {
 }
 
 /** ---------- Form field wrapper (label + input + error slot) ---------- */
+let fieldSeq = 0;
+
 export interface FieldOptions {
   /** id of the input element, used to wire label[for] and aria-describedby */
   inputId?: string;
@@ -513,10 +608,10 @@ export function field(
 ): HTMLElement {
   const wrap = el('div', { class: `field ${opts.class ?? ''}`.trim() });
   const label = el('label', { html: labelText });
-  if (opts.inputId) {
-    label.setAttribute('for', opts.inputId);
-    inputEl.setAttribute('id', opts.inputId);
-  }
+  const generatedId = opts.inputId || inputEl.id || `field-${++fieldSeq}`;
+  label.setAttribute('for', generatedId);
+  inputEl.setAttribute('id', generatedId);
+  if (!inputEl.getAttribute('name')) inputEl.setAttribute('name', generatedId);
   wrap.append(label);
   wrap.append(inputEl);
   const errorText = el('small', { class: 'error-text', html: opts.error ?? '' });
@@ -590,19 +685,19 @@ export async function withBusyState<T>(
   fn: () => Promise<T>
 ): Promise<T> {
   if (btn.disabled) return Promise.reject(new Error('Button already busy'));
-  const originalHTML = btn.innerHTML;
+  const originalChildren = Array.from(btn.childNodes);
   const originalWidth = btn.style.width;
   const sp = spinner(18);
   sp.style.marginRight = '8px';
   btn.disabled = true;
-  btn.innerHTML = '';
+  btn.replaceChildren();
   btn.append(sp);
   btn.append(document.createTextNode('处理中…'));
   try {
     return await fn();
   } finally {
     btn.disabled = false;
-    btn.innerHTML = originalHTML;
+    btn.replaceChildren(...originalChildren);
     btn.style.width = originalWidth;
   }
 }

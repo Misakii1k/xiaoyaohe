@@ -1,5 +1,11 @@
 // 药品列表页：按药品分组展示（一种药一张卡片，时段标签直接显示在卡片内）
-import { listMeds, listRules, listLogsByRange, batchUpdateRules } from '../db/local';
+import {
+  listMeds,
+  listRules,
+  listLogsByRange,
+  listScheduleRevisions,
+  batchUpdateRules,
+} from '../db/local';
 import {
   SLOT_LABEL,
   SLOT_DEFAULT_TIME,
@@ -11,11 +17,29 @@ import {
   type IntakeLog,
   type Slot,
 } from '../db/schema';
-import { el, renderPage, emptyState, icon, toast, openDialog, SLOT_ICON } from '../ui/components';
+import {
+  el,
+  renderPage,
+  emptyState,
+  icon,
+  toast,
+  openDialog,
+  closeDialog,
+  SLOT_ICON,
+} from '../ui/components';
 import { navigate } from '../router';
 import { estimateDaysLeft } from '../features/inventory';
 import { checkInteractions, type DrugInteraction } from '../data/drugInteractions';
-import { isRestDay } from '../features/reminderScheduler';
+import { isRestDay, rescheduleMedicationReminders } from '../features/reminderScheduler';
+import {
+  addLocalDays,
+  calculateAdherence,
+  generateOccurrences,
+  getMedicationExpiryLocalDate,
+  localDayBounds,
+  toLocalDate,
+  type AdherenceSummary,
+} from '../domain/medicationSchedule';
 
 /** 时段筛选选项（"全部" 不在 SLOTS 内，单独表示） */
 type SlotFilter = 'all' | Slot;
@@ -33,8 +57,13 @@ const SLOT_FILTER_ORDER: SlotFilter[] = ['all', 'morning', 'noon', 'evening', 'b
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const NEAR_EXPIRY_DAYS = 30;
 
-export async function renderMedListPage(root: HTMLElement): Promise<void> {
-  const [meds, rules] = await Promise.all([listMeds(), listRules()]);
+export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
+  const [meds, rules, revisions] = await Promise.all([
+    listMeds(),
+    listRules(),
+    listScheduleRevisions(),
+  ]);
+  if (signal?.aborted) return;
 
   const addBtn = el('button', { class: 'icon-btn', 'aria-label': '新增药品' } as any);
   addBtn.append(icon('plus'));
@@ -42,7 +71,11 @@ export async function renderMedListPage(root: HTMLElement): Promise<void> {
 
   const batchBtn = el('button', { class: 'icon-btn', 'aria-label': '批量管理' } as any);
   batchBtn.append(icon('list'));
-  batchBtn.onclick = () => enterBatchMode(root);
+  let cleanupPageInteractions: () => void = () => undefined;
+  batchBtn.onclick = () => {
+    cleanupPageInteractions();
+    void enterBatchMode(root, signal);
+  };
   batchBtn.style.marginRight = '4px';
 
   const topRight = el('div', { class: 'topbar-actions', style: 'display:flex;align-items:center;gap:4px' } as any);
@@ -88,15 +121,28 @@ export async function renderMedListPage(root: HTMLElement): Promise<void> {
   const nowMs = Date.now();
 
   // 取近 7 天 logs，用于依从性显示
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
-  const weekAgoStart = todayStart - 6 * MS_PER_DAY; // 含今天，共 7 天
-  const weekEnd = todayStart + MS_PER_DAY - 1;
+  const today = toLocalDate(nowMs);
+  const weekStart = addLocalDays(today, -6);
+  const weekAgoStart = localDayBounds(weekStart).start;
+  const weekEnd = localDayBounds(today).end;
   let weekLogs: IntakeLog[] = [];
   try {
     weekLogs = await listLogsByRange(weekAgoStart, weekEnd);
   } catch {
     weekLogs = [];
+  }
+  if (signal?.aborted) return;
+  const weekOccurrences = generateOccurrences(revisions, weekStart, today);
+  const adherenceByMedId = new Map<string, AdherenceSummary>();
+  for (const med of meds) {
+    adherenceByMedId.set(
+      med.id,
+      calculateAdherence(
+        weekOccurrences.filter((occurrence) => occurrence.medId === med.id),
+        weekLogs,
+        nowMs,
+      ),
+    );
   }
 
   // 按药品排序：先按"是否有未来时段"，再按药名
@@ -127,11 +173,15 @@ export async function renderMedListPage(root: HTMLElement): Promise<void> {
       class: 'chip sm' + (key === 'all' ? ' on' : ''),
       html: SLOT_FILTER_LABELS[key],
       type: 'button',
+      'aria-pressed': String(key === 'all'),
     } as any) as HTMLButtonElement;
     chip.onclick = () => {
       if (currentFilter === key) return;
       currentFilter = key;
-      for (const [k, c] of filterChips) c.classList.toggle('on', k === key);
+      for (const [k, c] of filterChips) {
+        c.classList.toggle('on', k === key);
+        c.setAttribute('aria-pressed', String(k === key));
+      }
       applyFilter();
     };
     filterChips.set(key, chip);
@@ -146,7 +196,7 @@ export async function renderMedListPage(root: HTMLElement): Promise<void> {
       m,
       timeByMedSlot.get(m.id),
       rules,
-      weekLogs,
+      adherenceByMedId.get(m.id),
       interactionsByMedId.get(m.id) ?? [],
       nowMs,
     );
@@ -171,10 +221,22 @@ export async function renderMedListPage(root: HTMLElement): Promise<void> {
       card.style.display = matchKeyword && matchSlot ? '' : 'none';
     }
   };
-  searchInput.addEventListener('input', () => {
+  const onSearchInput = () => {
     window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(applyFilter, 200);
-  });
+    searchTimer = window.setTimeout(() => {
+      searchTimer = undefined;
+      if (!signal?.aborted) applyFilter();
+    }, 200);
+  };
+  const cleanupSearch = () => {
+    window.clearTimeout(searchTimer);
+    searchTimer = undefined;
+    searchInput.removeEventListener('input', onSearchInput);
+    signal?.removeEventListener('abort', cleanupSearch);
+  };
+  cleanupPageInteractions = cleanupSearch;
+  searchInput.addEventListener('input', onSearchInput);
+  signal?.addEventListener('abort', cleanupSearch, { once: true });
 
   renderPage({ root, title: '药品', activeTab: 'meds', topRight, content });
 }
@@ -183,7 +245,7 @@ function renderMedCard(
   m: Medication,
   slotTimes: Map<Slot, string> | undefined,
   allRules: ReminderRule[],
-  weekLogs: IntakeLog[],
+  adherence: AdherenceSummary | undefined,
   interactions: DrugInteraction[],
   nowMs: number,
 ): HTMLElement {
@@ -202,7 +264,7 @@ function renderMedCard(
   const metaTags = el('div', { class: 'med-card-tags' });
   appendExpiryTag(metaTags, m);
   appendDaysLeftTag(metaTags, m, allRules);
-  appendAdherenceTag(metaTags, m.id, weekLogs);
+  appendAdherenceTag(metaTags, adherence);
   // 停药期标签：该药任一启用 rule 命中 rest 日
   const medRules = allRules.filter((r) => r.medId === m.id && !r.deleted && r.enabled);
   if (medRules.some((r) => isRestDay(m, r, nowMs))) {
@@ -213,8 +275,8 @@ function renderMedCard(
     const warnBtn = el('button', {
       class: 'interaction-icon',
       type: 'button',
-      'aria-label': `查看相互作用（${interactions.length} 条）`,
-      title: `存在 ${interactions.length} 条相互作用，点击查看`,
+      'aria-label': `查看常见相互作用提示（${interactions.length} 条）`,
+      title: `内置规则命中 ${interactions.length} 条常见相互作用提示`,
     } as any);
     warnBtn.append(icon('warn'));
     warnBtn.onclick = (e) => {
@@ -264,7 +326,11 @@ function renderMedCard(
 /** 相互作用详情对话框：列出该药涉及的所有相互作用组合 */
 function showInteractionDialog(medName: string, hits: DrugInteraction[]): void {
   const card = el('div', { class: 'card interaction-dialog' });
-  card.append(el('h3', { html: `${medName} · 相互作用` }));
+  card.append(el('h3', { html: `${medName} · 常见相互作用提示` }));
+  card.append(el('p', {
+    class: 'muted',
+    text: '仅覆盖应用内置的有限常见组合，不代表完整药物审查，也不能替代医生或药师意见。',
+  }));
   const list = el('div', { class: 'interaction-list' });
   for (const h of hits) {
     const sev = h.severity;
@@ -279,18 +345,23 @@ function showInteractionDialog(medName: string, hits: DrugInteraction[]): void {
   const closeBtn = el('button', { class: 'btn', html: '关闭' });
   card.append(closeBtn);
   const overlay = openDialog(card);
-  closeBtn.onclick = () => overlay.remove();
+  closeBtn.onclick = () => closeDialog(overlay);
 }
 
 /** 追加过期/近效期标签 */
 function appendExpiryTag(host: HTMLElement, m: Medication): void {
-  if (!m.expiryDate) return;
-  const now = Date.now();
-  const diffDays = Math.ceil((m.expiryDate - now) / MS_PER_DAY);
+  const expiryDate = getMedicationExpiryLocalDate(m);
+  if (!expiryDate) return;
+  const today = toLocalDate();
+  const diffDays = Math.round(
+    (localDayBounds(expiryDate).start - localDayBounds(today).start) / MS_PER_DAY,
+  );
   if (diffDays < 0) {
     host.append(
       el('span', { class: 'med-tag med-tag-danger', html: '已过期' })
     );
+  } else if (diffDays === 0) {
+    host.append(el('span', { class: 'med-tag med-tag-warn', html: '今天到期' }));
   } else if (diffDays <= NEAR_EXPIRY_DAYS) {
     host.append(
       el('span', { class: 'med-tag med-tag-warn', html: `${diffDays} 天后过期` })
@@ -308,17 +379,17 @@ function appendDaysLeftTag(host: HTMLElement, m: Medication, rules: ReminderRule
   );
 }
 
-/** 追加近 7 天完成率标签 */
-function appendAdherenceTag(host: HTMLElement, medId: string, weekLogs: IntakeLog[]): void {
-  const medLogs = weekLogs.filter((l) => l.medId === medId);
-  const due = medLogs.length;
-  if (due === 0) return;
-  const done = medLogs.filter((l) => l.status === 'taken' || l.status === 'skipped').length;
-  const rate = Math.round((done / due) * 100);
+/** 跳过仅计入处理率；依从率固定为已服 / 已到期应服。 */
+function appendAdherenceTag(host: HTMLElement, summary: AdherenceSummary | undefined): void {
+  if (!summary || summary.due === 0) return;
+  const rate = Math.round(summary.adherenceRate * 100);
+  const handled = Math.round(summary.handledRate * 100);
   const cls = rate >= 80 ? 'med-tag-ok' : 'med-tag-warn';
-  host.append(
-    el('span', { class: `med-tag ${cls}`, html: `近 7 天 ${rate}%` })
-  );
+  host.append(el('span', {
+    class: `med-tag ${cls}`,
+    html: `近 7 天依从 ${rate}%`,
+    title: `已服 ${summary.taken}/${summary.due}；已处理率 ${handled}%（跳过 ${summary.skipped}，漏服 ${summary.missed}）`,
+  } as any));
 }
 
 function slotChip(slot: Slot, time: string, mealText: string): HTMLElement {
@@ -332,8 +403,32 @@ function slotChip(slot: Slot, time: string, mealText: string): HTMLElement {
 
 // ============ Task 6: 批量管理模式 ============
 
-async function enterBatchMode(root: HTMLElement): Promise<void> {
+export interface BatchRuleRouteOperations {
+  updateRules: (updates: { id: string; enabled: boolean }[]) => Promise<void>;
+  reschedule: () => Promise<unknown>;
+}
+
+const defaultBatchRuleRouteOperations: BatchRuleRouteOperations = {
+  updateRules: batchUpdateRules,
+  reschedule: rescheduleMedicationReminders,
+};
+
+/** Complete persistent work even if navigation starts, but never write back to a stale page. */
+export async function commitBatchRuleUpdatesForRoute(
+  updates: { id: string; enabled: boolean }[],
+  signal: AbortSignal | undefined,
+  complete: () => void | Promise<void>,
+  operations: BatchRuleRouteOperations = defaultBatchRuleRouteOperations,
+): Promise<void> {
+  await operations.updateRules(updates);
+  await operations.reschedule().catch(() => undefined);
+  if (signal?.aborted) return;
+  await complete();
+}
+
+async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<void> {
   const [meds, rules] = await Promise.all([listMeds(), listRules()]);
+  if (signal?.aborted) return;
   if (meds.length === 0) {
     toast('暂无药品可管理');
     return;
@@ -348,7 +443,10 @@ async function enterBatchMode(root: HTMLElement): Promise<void> {
 
   const cancelBtn = el('button', { class: 'icon-btn', 'aria-label': '退出批量管理' } as any);
   cancelBtn.append(icon('arrow-left'));
-  cancelBtn.onclick = () => renderMedListPage(root);
+  cancelBtn.onclick = () => {
+    if (signal?.aborted) return;
+    void renderMedListPage(root, signal);
+  };
 
   const topRight = el('div', { class: 'topbar-actions', style: 'display:flex;align-items:center;gap:4px' } as any);
   topRight.append(cancelBtn);
@@ -375,10 +473,16 @@ async function enterBatchMode(root: HTMLElement): Promise<void> {
   // 卡片网格
   const grid = el('div', { class: 'meds-grid' });
   const checkboxByMedId = new Map<string, HTMLInputElement>();
+  let batchMedNameSeq = 0;
   for (const m of meds) {
     const card = el('div', { class: 'card med-card med-batch-card' });
     const checkboxWrap = el('label', { class: 'med-batch-checkbox-wrap' });
-    const cb = el('input', { type: 'checkbox', class: 'med-batch-checkbox' } as any) as HTMLInputElement;
+    const medNameId = `med-batch-name-${++batchMedNameSeq}`;
+    const cb = el('input', {
+      type: 'checkbox',
+      class: 'med-batch-checkbox',
+      'aria-labelledby': medNameId,
+    } as any) as HTMLInputElement;
     cb.onchange = () => {
       if (cb.checked) selected.add(m.id);
       else selected.delete(m.id);
@@ -389,7 +493,7 @@ async function enterBatchMode(root: HTMLElement): Promise<void> {
     card.append(checkboxWrap);
 
     const titleWrap = el('div', { class: 'med-card-title-wrap' });
-    titleWrap.append(el('div', { class: 'med-card-name', html: m.name || '未命名' }));
+    titleWrap.append(el('div', { id: medNameId, class: 'med-card-name', html: m.name || '未命名' }));
     const sub = [m.amountPerDose, m.dosageText].filter(Boolean).join(' · ');
     if (sub) titleWrap.append(el('div', { class: 'med-card-sub muted', html: sub }));
     card.append(titleWrap);
@@ -452,6 +556,7 @@ async function enterBatchMode(root: HTMLElement): Promise<void> {
   }
 
   async function setRulesForSelected(enabled: boolean): Promise<void> {
+    if (signal?.aborted) return;
     if (selected.size === 0) {
       toast('请先选择药品');
       return;
@@ -465,12 +570,14 @@ async function enterBatchMode(root: HTMLElement): Promise<void> {
       toast('所选药品没有可操作的提醒');
       return;
     }
-    await batchUpdateRules(updates);
-    toast(`已${enabled ? '启用' : '禁用'} ${updates.length} 条提醒`);
-    renderMedListPage(root);
+    await commitBatchRuleUpdatesForRoute(updates, signal, () => {
+      toast(`已${enabled ? '启用' : '禁用'} ${updates.length} 条提醒`);
+      return renderMedListPage(root, signal);
+    });
   }
 
   async function setSlotForSelected(slot: Slot, enabled: boolean): Promise<void> {
+    if (signal?.aborted) return;
     if (selected.size === 0) {
       toast('请先选择药品');
       return;
@@ -486,8 +593,9 @@ async function enterBatchMode(root: HTMLElement): Promise<void> {
       toast(`所选药品没有「${SLOT_LABEL[slot]}」提醒`);
       return;
     }
-    await batchUpdateRules(updates);
-    toast(`已${enabled ? '启用' : '禁用'} ${updates.length} 条「${SLOT_LABEL[slot]}」提醒`);
-    renderMedListPage(root);
+    await commitBatchRuleUpdatesForRoute(updates, signal, () => {
+      toast(`已${enabled ? '启用' : '禁用'} ${updates.length} 条「${SLOT_LABEL[slot]}」提醒`);
+      return renderMedListPage(root, signal);
+    });
   }
 }

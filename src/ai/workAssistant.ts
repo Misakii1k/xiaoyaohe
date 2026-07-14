@@ -1,5 +1,6 @@
 import type { WorkAiDraft, WorkEntry, WorkProfile } from '../db/schema';
-import { getLlmConfig } from './llmConfig';
+import { getLlmConfig, normalizeAndValidateBaseUrl } from './llmConfig';
+import { requireAiConsent } from './consent';
 
 export class WorkAiError extends Error {
   constructor(message: string, public hint?: string) {
@@ -50,7 +51,9 @@ async function requestWorkAi(kind: WorkAiDraft['kind'], input: string, shape: st
   if (!cfg.baseUrl || !cfg.apiKey) {
     throw new WorkAiError('请先在「设置 → AI 大模型」配置 API 地址和密钥', 'unconfigured');
   }
-  const resp = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+  const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
+  await requireAiConsent('work-data', baseUrl);
+  const resp = await fetch(baseUrl + '/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -65,6 +68,7 @@ async function requestWorkAi(kind: WorkAiDraft['kind'], input: string, shape: st
       response_format: { type: 'json_object' },
       temperature: 0.1,
     }),
+    signal: AbortSignal.timeout(45_000),
   });
   if (!resp.ok) {
     const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };

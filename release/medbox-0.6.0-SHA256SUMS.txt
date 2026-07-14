@@ -1,0 +1,2 @@
+1b4a80d01f8ec6ce6db14b836b185a365bac5e3f0ce22539609bbd1d5a27e634  medbox-0.6.0-web.zip
+c5eb7dcb848f1244846e660de6a9404b691853dab14c0161f69c088926a1cccb  medbox-0.6.0-android-debug.apk

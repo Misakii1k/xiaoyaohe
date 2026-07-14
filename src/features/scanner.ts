@@ -1,5 +1,4 @@
-// 扫码器封装：优先用安卓 Chrome 原生 BarcodeDetector（ML Kit 硬件加速，支持
-// DataMatrix / EAN / Code128 等药盒码），不可用时回退 html5-qrcode。
+// 扫码器封装：优先使用原生 BarcodeDetector，不可用时回退 html5-qrcode。
 import { Html5Qrcode } from 'html5-qrcode';
 
 export interface ScanResult {
@@ -8,11 +7,16 @@ export interface ScanResult {
   format: string;
 }
 
+export type ScannerState = 'running' | 'paused' | 'stopped';
+
 export interface Scanner {
+  readonly state: ScannerState;
+  pause(): Promise<void>;
+  resume(): Promise<void>;
   stop(): Promise<void>;
 }
 
-type OnScan = (r: ScanResult) => void;
+type OnScan = (result: ScanResult) => void;
 
 const FORMATS = [
   'data_matrix',
@@ -26,60 +30,139 @@ const FORMATS = [
   'itf',
 ];
 
+interface ResultGate {
+  readonly state: ScannerState;
+  accept(result: ScanResult, beforeDeliver?: () => void): boolean;
+  pause(): void;
+  resume(): void;
+  stop(): void;
+}
+
+/**
+ * A camera session emits each decoded value at most once. The first new value
+ * pauses delivery before the page callback runs; the page must explicitly
+ * resume the session after the user has reviewed the result.
+ */
+export function createResultGate(onScan: OnScan): ResultGate {
+  let state: ScannerState = 'running';
+  const seen = new Set<string>();
+
+  return {
+    get state() {
+      return state;
+    },
+    accept(result, beforeDeliver) {
+      const raw = result.raw.trim();
+      if (state !== 'running' || !raw || seen.has(raw)) return false;
+      seen.add(raw);
+      state = 'paused';
+      try {
+        beforeDeliver?.();
+      } catch {
+        /* Delivery remains paused even if a camera backend cannot pause video. */
+      }
+      onScan({ ...result, raw });
+      return true;
+    },
+    pause() {
+      if (state === 'running') state = 'paused';
+    },
+    resume() {
+      if (state === 'paused') state = 'running';
+    },
+    stop() {
+      state = 'stopped';
+    },
+  };
+}
+
 async function nativeFormats(): Promise<string[]> {
-  const BD = (window as any).BarcodeDetector;
-  if (!BD) return [];
+  const BarcodeDetector = (window as any).BarcodeDetector;
+  if (!BarcodeDetector) return [];
   try {
-    const supported: string[] = await BD.getSupportedFormats();
-    return FORMATS.filter((f) => supported.includes(f));
+    const supported: string[] = await BarcodeDetector.getSupportedFormats();
+    return FORMATS.filter((format) => supported.includes(format));
   } catch {
     return [];
   }
 }
 
-/** 原生 BarcodeDetector 是否可用并支持常见药盒码 */
 async function nativeSupported(): Promise<boolean> {
-  const formats = await nativeFormats();
-  return formats.length > 0;
+  return (await nativeFormats()).length > 0;
 }
 
 export async function startScan(opts: {
   containerId: string;
   onScan: OnScan;
-  onError?: (msg: string) => void;
+  onError?: (message: string) => void;
 }): Promise<Scanner> {
-  const useNative = await nativeSupported();
-  if (useNative) return startNative(opts);
+  if (await nativeSupported()) return startNative(opts);
   return startHtml5(opts);
 }
 
-/** 从拍照/相册图片中尝试识别码。仅在浏览器支持 BarcodeDetector 时可用。 */
+/** 从拍照/相册图片中尝试识别码，并在原生 API 缺失时回退 html5-qrcode。 */
 export async function scanCodeFromImage(blob: Blob): Promise<ScanResult | null> {
-  const BD = (window as any).BarcodeDetector;
+  const nativeResult = await scanImageWithNativeDetector(blob);
+  if (nativeResult) return nativeResult;
+  return scanImageWithHtml5(blob);
+}
+
+async function scanImageWithNativeDetector(blob: Blob): Promise<ScanResult | null> {
+  const BarcodeDetector = (window as any).BarcodeDetector;
   const formats = await nativeFormats();
-  if (!BD || formats.length === 0) return null;
+  if (!BarcodeDetector || formats.length === 0) return null;
   try {
-    const bmp = await createImageBitmap(blob);
-    const detector = new BD({ formats });
-    const codes = await detector.detect(bmp);
+    const bitmap = await createImageBitmap(blob);
+    const detector = new BarcodeDetector({ formats });
+    const codes = await detector.detect(bitmap);
+    bitmap.close?.();
     const first = codes?.[0];
-    const raw = first?.rawValue ?? '';
+    const raw = String(first?.rawValue ?? '').trim();
     return raw ? { raw, format: first.format || 'unknown' } : null;
   } catch {
     return null;
   }
 }
 
+async function scanImageWithHtml5(blob: Blob): Promise<ScanResult | null> {
+  const host = document.createElement('div');
+  host.id = `scan-file-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
+  host.hidden = true;
+  document.body.append(host);
+  const reader = new Html5Qrcode(host.id);
+  const file = blob instanceof File
+    ? blob
+    : new File([blob], 'barcode-image', { type: blob.type || 'application/octet-stream' });
+
+  try {
+    const result = await reader.scanFileV2(file, false);
+    const raw = String(result.decodedText ?? '').trim();
+    const format = (result as any)?.result?.format?.formatName || 'unknown';
+    return raw ? { raw, format: String(format) } : null;
+  } catch {
+    return null;
+  } finally {
+    try {
+      reader.clear();
+    } catch {
+      /* The file scanner may already have cleared its temporary canvas. */
+    }
+    host.remove();
+  }
+}
+
 async function startNative(opts: {
   containerId: string;
   onScan: OnScan;
-  onError?: (msg: string) => void;
+  onError?: (message: string) => void;
 }): Promise<Scanner> {
-  const BD = (window as any).BarcodeDetector;
-  const formats = (await nativeFormats()).filter((f) => f !== 'itf');
-  const detector = new BD({ formats });
-  const container = document.getElementById(opts.containerId)!;
-  container.innerHTML = '';
+  const BarcodeDetector = (window as any).BarcodeDetector;
+  const formats = (await nativeFormats()).filter((format) => format !== 'itf');
+  const detector = new BarcodeDetector({ formats });
+  const container = document.getElementById(opts.containerId);
+  if (!container) throw new Error('找不到扫码取景框');
+  container.replaceChildren();
+
   const video = document.createElement('video');
   video.setAttribute('playsinline', 'true');
   video.style.width = '100%';
@@ -88,46 +171,66 @@ async function startNative(opts: {
 
   let stream: MediaStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' },
-    });
-  } catch (e) {
-    opts.onError?.('无法打开摄像头，请检查权限');
-    throw e;
+    if (!navigator.mediaDevices?.getUserMedia) throw new DOMException('Camera API unavailable', 'NotSupportedError');
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch (error) {
+    container.replaceChildren();
+    opts.onError?.(cameraErrorMessage(error));
+    throw error;
   }
-  video.srcObject = stream;
-  await video.play();
 
-  let running = true;
-  let lastRaw = '';
-  let lastAt = 0;
+  video.srcObject = stream;
+  try {
+    await video.play();
+  } catch (error) {
+    stream.getTracks().forEach((track) => track.stop());
+    video.srcObject = null;
+    container.replaceChildren();
+    opts.onError?.(cameraErrorMessage(error));
+    throw error;
+  }
+
+  const gate = createResultGate(opts.onScan);
+  let frameId = 0;
+  let detecting = false;
+  const shouldContinue = () => gate.state !== 'stopped';
 
   const tick = async () => {
-    if (!running) return;
-    try {
-      const codes = await detector.detect(video);
-      if (codes && codes.length > 0) {
-        const raw: string = codes[0].rawValue ?? '';
-        const now = Date.now();
-        if (raw && (raw !== lastRaw || now - lastAt > 1500)) {
-          lastRaw = raw;
-          lastAt = now;
-          opts.onScan({ raw, format: codes[0].format || 'unknown' });
-        }
+    if (!shouldContinue()) return;
+    if (gate.state === 'running' && !detecting) {
+      detecting = true;
+      try {
+        const codes = await detector.detect(video);
+        const first = codes?.[0];
+        const raw = String(first?.rawValue ?? '');
+        if (raw) gate.accept({ raw, format: first.format || 'unknown' });
+      } catch {
+        /* A single failed video frame should not end the camera session. */
+      } finally {
+        detecting = false;
       }
-    } catch {
-      /* 单帧失败忽略 */
     }
-    if (running) requestAnimationFrame(tick);
+    if (shouldContinue()) frameId = requestAnimationFrame(tick);
   };
-  requestAnimationFrame(tick);
+  frameId = requestAnimationFrame(tick);
 
   return {
+    get state() {
+      return gate.state;
+    },
+    async pause() {
+      gate.pause();
+    },
+    async resume() {
+      gate.resume();
+    },
     async stop() {
-      running = false;
-      stream.getTracks().forEach((t) => t.stop());
+      if (gate.state === 'stopped') return;
+      gate.stop();
+      cancelAnimationFrame(frameId);
+      stream.getTracks().forEach((track) => track.stop());
       video.srcObject = null;
-      container.innerHTML = '';
+      container.replaceChildren();
     },
   };
 }
@@ -135,40 +238,73 @@ async function startNative(opts: {
 async function startHtml5(opts: {
   containerId: string;
   onScan: OnScan;
-  onError?: (msg: string) => void;
+  onError?: (message: string) => void;
 }): Promise<Scanner> {
-  const h5 = new Html5Qrcode(opts.containerId);
-  let lastRaw = '';
-  let lastAt = 0;
+  const reader = new Html5Qrcode(opts.containerId);
+  const gate = createResultGate(opts.onScan);
   try {
-    await h5.start(
+    await reader.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: 250, height: 250 } },
       (decodedText, result) => {
-        const now = Date.now();
-        if (decodedText && (decodedText !== lastRaw || now - lastAt > 1500)) {
-          lastRaw = decodedText;
-          lastAt = now;
-          const fmt = (result as any)?.result?.format?.formatName || 'unknown';
-          opts.onScan({ raw: decodedText, format: String(fmt) });
-        }
+        const format = (result as any)?.result?.format?.formatName || 'unknown';
+        gate.accept(
+          { raw: decodedText, format: String(format) },
+          () => reader.pause(true),
+        );
       },
       () => {
-        /* 每帧未识别，忽略 */
+        /* An undecodable frame is expected while the camera is moving. */
       },
     );
-  } catch (e) {
-    opts.onError?.('无法打开摄像头，请检查权限');
-    throw e;
+  } catch (error) {
+    gate.stop();
+    try {
+      reader.clear();
+    } catch {
+      /* ignore cleanup failure after start failure */
+    }
+    opts.onError?.(cameraErrorMessage(error));
+    throw error;
   }
+
   return {
+    get state() {
+      return gate.state;
+    },
+    async pause() {
+      if (gate.state !== 'running') return;
+      gate.pause();
+      reader.pause(true);
+    },
+    async resume() {
+      if (gate.state !== 'paused') return;
+      reader.resume();
+      gate.resume();
+    },
     async stop() {
+      if (gate.state === 'stopped') return;
+      gate.stop();
       try {
-        await h5.stop();
-        await h5.clear();
+        if (reader.isScanning) await reader.stop();
+        reader.clear();
       } catch {
-        /* ignore */
+        /* Stop is idempotent and must not block route cleanup. */
       }
     },
   };
+}
+
+function cameraErrorMessage(error: unknown): string {
+  const name = error && typeof error === 'object' && 'name' in error ? String(error.name) : '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    return '相机权限被拒绝。请在系统或浏览器设置中允许相机权限，然后重试。';
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return '没有找到可用摄像头。可以改用相册中的药盒照片。';
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return '摄像头正被其他应用占用。关闭其他相机应用后重试，或改用相册。';
+  }
+  return '无法打开摄像头。请检查相机权限后重试，或改用相册上传。';
 }

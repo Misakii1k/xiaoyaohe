@@ -1,0 +1,36 @@
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const root = resolve(import.meta.dirname, '..');
+const router = readFileSync(join(root, 'src', 'router.ts'), 'utf8');
+const components = readFileSync(join(root, 'src', 'ui', 'components.ts'), 'utf8');
+
+describe('dialog and route lifecycle', () => {
+  it('keeps route transitions decoupled from concrete dialog implementations', () => {
+    expect(router).toContain('export function registerRouteTransitionCleanup');
+    expect(router).toMatch(/finally \{\s*runRouteTransitionCleanups\(\);\s*\}/);
+    expect(components).toContain('registerRouteTransitionCleanup(closeAllDialogs);');
+    expect(router).not.toMatch(/from ['"].*ui\/components['"]/);
+  });
+
+  it('tracks all component dialogs and restores the app only after the last closes', () => {
+    expect(components).toContain('export function closeAllDialogs(): void');
+    expect(components).toContain('Array.from(activeDialogs).reverse()');
+    expect(components).toMatch(
+      /activeDialogs\.delete\(overlay\);[\s\S]*?overlay\.remove\(\);[\s\S]*?restoreAppAfterLastDialog\(\);/,
+    );
+    expect(components).toMatch(/if \(activeDialogs\.size > 0 \|\| !dialogAppState\) return;/);
+  });
+
+  it('announces route errors and focuses the error heading after rendering', () => {
+    const errorRenderer = router.slice(router.indexOf('function renderRouteError'));
+
+    expect(errorRenderer).toContain("card.setAttribute('role', 'alert')");
+    expect(errorRenderer).toContain("card.setAttribute('aria-live', 'assertive')");
+    expect(errorRenderer).toMatch(
+      /rootEl\.replaceChildren\(topbar, page\);\s*announceNavigation\(\);/,
+    );
+    expect(router).toMatch(/heading\.tabIndex = -1;\s*heading\.focus\(\{ preventScroll: true \}\);/);
+  });
+});

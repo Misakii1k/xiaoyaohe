@@ -1,7 +1,7 @@
-// 拍照识药：优先走 Worker；云同步关闭时回退到本机配置的 OpenAI 兼容 LLM。
-import { getSyncConfig } from '../sync/config';
+// 拍照识药：使用用户自带的 OpenAI 兼容 LLM，与云同步解耦。
 import { normalizeMealRelsBySlot, mealRelsFromBySlot, type Slot, type MealRel, type MealRelsBySlot, type MedicationInventory } from '../db/schema';
-import { getLlmConfig } from './llmConfig';
+import { getLlmConfig, normalizeAndValidateBaseUrl } from './llmConfig';
+import { requireAiConsent } from './consent';
 
 export type IdentifyMode = 'medicine_box' | 'prescription_sheet' | 'inventory';
 
@@ -95,28 +95,11 @@ export async function identifyInventoryByBlob(blob: Blob, hint?: string): Promis
 }
 
 async function requestIdentify<T>(blob: Blob, mode: IdentifyMode, hint?: string): Promise<T> {
-  const cfg = getSyncConfig();
   // 压到 1280 长边，质量 0.8，尽量小但保留药盒细节
   const shrunk = await downscaleToJpeg(blob, 1280, 0.8);
   const base64 = await blobToBase64(shrunk);
 
-  if (!cfg) return requestLocalLlm<T>(base64, mode, hint);
-
-  const resp = await fetch(cfg.workerUrl.replace(/\/$/, '') + '/api/identify', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-household': cfg.household,
-      'x-secret': cfg.secret,
-    },
-    body: JSON.stringify({ image: base64, mimeType: 'image/jpeg', hint, mode }),
-  });
-
-  if (!resp.ok) {
-    const data = await resp.json().catch(() => ({})) as { error?: string };
-    throw new IdentifyError(data.error || `AI 服务出错（${resp.status}）`);
-  }
-  return (await resp.json()) as T;
+  return requestLocalLlm<T>(base64, mode, hint);
 }
 
 async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint?: string): Promise<T> {
@@ -127,11 +110,13 @@ async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint?: str
       'unconfigured',
     );
   }
+  const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
+  await requireAiConsent(mode === 'prescription_sheet' ? 'prescription' : 'medicine-photo', baseUrl);
 
   const userText = hint
     ? `请按 ${mode} 模式识别这张图片。补充提示：${hint}`
     : `请按 ${mode} 模式识别这张图片。`;
-  const resp = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+  const resp = await fetch(baseUrl + '/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -152,6 +137,7 @@ async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint?: str
       response_format: { type: 'json_object' },
       temperature: 0.1,
     }),
+    signal: AbortSignal.timeout(45_000),
   });
   if (!resp.ok) {
     const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };

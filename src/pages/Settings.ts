@@ -2,21 +2,36 @@
 // 重构：三大配置卡（同步 / 通知 / AI）改成 iOS 折叠面板（默认收起，标题行带状态徽章 + 箭头）
 import { listLogs, listMeds, listRules } from '../db/local';
 import { listWorkEntries, listWorkProfiles, listWorkSettlements } from '../db/work';
-import { confirmDialog, el, renderPage, toast, icon } from '../ui/components';
-import { backupProviders, buildBackup, previewBackupImport } from '../tools/registry';
+import { Capacitor } from '@capacitor/core';
+import { closeDialog, confirmDialog, el, renderPage, toast, icon, openDialog } from '../ui/components';
 import {
-  CLOUD_SYNC_ENABLED,
-  getSyncConfig,
-  setSyncConfig,
-  clearSyncConfig,
-  genId,
-  type SyncConfig,
-} from '../sync/config';
-import { syncNow, onSync, type SyncResult } from '../sync/syncClient';
+  backupProviders,
+  buildBackup,
+  previewBackupImport,
+  type BackupPreviewResult,
+  type BackupProvider,
+} from '../tools/registry';
+import {
+  SyncV2Api,
+  LegacyV1MigrationHelper,
+  clearSyncV2PublicConfig,
+  createLocalSyncV2Client,
+  createPlatformSyncV2CredentialStore,
+  getSyncV2PublicConfig,
+  parsePairingCode,
+  setSyncV2PublicConfig,
+  type LocalSyncV2ClientBinding,
+  type SyncDeviceSummary,
+  type SyncV2PublicConfig,
+  type SyncV2Role,
+} from '../sync/v2';
 import {
   notificationsSupported,
   getPermission,
+  getExactAlarmCapability,
+  isNativeReminderPlatform,
   requestPermission,
+  requestExactAlarmCapability,
   showNotification,
 } from '../features/notifier';
 import { runOnce as runReminderOnce } from '../features/reminderScheduler';
@@ -30,10 +45,24 @@ import {
   getLlmHealth,
   setLlmHealth,
   DEFAULT_LLM_CONFIG,
+  normalizeAndValidateBaseUrl,
   type LlmHealth,
 } from '../ai/llmConfig';
+import { isNativeSecretStore } from '../ai/secretStore';
+import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
 
-export async function renderSettingsPage(root: HTMLElement): Promise<void> {
+const SYNC_V2_UI_ENABLED = import.meta.env.VITE_SYNC_V2_ENABLED === 'true';
+const settingsPageCleanupByRoot = new WeakMap<HTMLElement, () => void>();
+
+interface SettingsRenderPart {
+  element: HTMLElement;
+  cleanup: () => void;
+}
+
+export async function renderSettingsPage(
+  root: HTMLElement,
+  signal?: AbortSignal,
+): Promise<void | (() => void)> {
   const [meds, rules, logs, workProfiles, workEntries, workSettlements] = await Promise.all([
     listMeds(),
     listRules(),
@@ -42,12 +71,13 @@ export async function renderSettingsPage(root: HTMLElement): Promise<void> {
     listWorkEntries(),
     listWorkSettlements(),
   ]);
+  if (signal?.aborted) return;
 
   const content = el('div', { class: 'page page-light' });
 
   // 数据概览
   const stat = el('div', { class: 'card' });
-  stat.append(el('h3', { html: '数据概览' }));
+  stat.append(el('h2', { html: '数据概览' }));
   stat.append(statRow('💊', '药品数量', meds.length));
   stat.append(statRow('⏰', '提醒规则', rules.length));
   stat.append(statRow('✅', '服药记录', logs.length));
@@ -55,19 +85,40 @@ export async function renderSettingsPage(root: HTMLElement): Promise<void> {
   content.append(stat);
 
   // 三大配置面板（折叠）
-  content.append(renderSyncPanel());
+  content.append(renderSyncPanel(signal));
   content.append(renderReminderPanel());
-  content.append(renderLlmPanel());
+  const llmPanel = renderLlmPanel();
+  content.append(llmPanel.element);
 
-  content.append(renderBackupCard(root));
+  const backupCard = renderBackupCard(root, signal);
+  content.append(backupCard.element);
 
   // 关于
   const about = el('div', { class: 'card' });
-  about.append(el('h3', { html: '关于' }));
-  about.append(el('div', { class: 'muted', html: '日常工具箱 v0.4.0（本地优先版）。吃药提醒、药盒分类和工时收入都可离线使用；AI 识别与安全检查结果仅供参考，不替代医嘱。' }));
+  about.append(el('h2', { html: '关于' }));
+  about.append(el('div', {
+    class: 'muted',
+    html: `日常工具箱 v${__APP_VERSION__}（本地优先版）。吃药提醒、药品管理和工时收入可离线使用；AI 与常见相互作用提示仅供参考，不替代医嘱。`,
+  }));
   content.append(about);
 
+  settingsPageCleanupByRoot.get(root)?.();
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    llmPanel.cleanup();
+    backupCard.cleanup();
+    signal?.removeEventListener('abort', cleanup);
+    if (settingsPageCleanupByRoot.get(root) === cleanup) {
+      settingsPageCleanupByRoot.delete(root);
+    }
+  };
+  settingsPageCleanupByRoot.set(root, cleanup);
+  signal?.addEventListener('abort', cleanup, { once: true });
+
   renderPage({ root, title: '设置', activeTab: 'settings', content });
+  return cleanup;
 }
 
 function statRow(emoji: string, label: string, value: number): HTMLElement {
@@ -78,9 +129,84 @@ function statRow(emoji: string, label: string, value: number): HTMLElement {
   return row;
 }
 
-function renderBackupCard(root: HTMLElement): HTMLElement {
+export interface BackupImportRouteOperations {
+  validateFile: (file: File) => void;
+  readText: (file: File) => Promise<string>;
+  parse: (text: string) => Record<string, unknown>;
+  preview: (raw: unknown) => Promise<BackupPreviewResult>;
+  confirm: (message: string, okText?: string) => Promise<boolean>;
+  providers: readonly Pick<BackupProvider, 'label' | 'import'>[];
+  notify: (message: string, duration?: number) => void;
+  rerender: (signal?: AbortSignal) => void | Promise<void | (() => void)>;
+}
+
+export async function importBackupFileForRoute(
+  root: HTMLElement,
+  file: File,
+  signal?: AbortSignal,
+  operations?: BackupImportRouteOperations,
+): Promise<void> {
+  const ops: BackupImportRouteOperations = operations ?? {
+    validateFile: assertBackupFileSize,
+    readText: (selectedFile) => selectedFile.text(),
+    parse: (text) => parseSafeBackupPayload(JSON.parse(text)),
+    preview: previewBackupImport,
+    confirm: confirmDialog,
+    providers: backupProviders,
+    notify: toast,
+    rerender: (routeSignal) => renderSettingsPage(root, routeSignal),
+  };
+
+  try {
+    ops.validateFile(file);
+    const text = await ops.readText(file);
+    if (signal?.aborted) return;
+    const raw = ops.parse(text);
+
+    const preview = await ops.preview(raw);
+    if (signal?.aborted) return;
+    const totalItems = preview.providers.reduce(
+      (sum, provider) => sum + provider.added + provider.updated + provider.skipped,
+      0,
+    );
+    if (totalItems === 0) {
+      ops.notify('这个备份里没有可导入的数据');
+      return;
+    }
+
+    const summaryLines = preview.providers.map(
+      (provider) =>
+        `${provider.label}：新增 ${provider.added}，更新 ${provider.updated}，跳过 ${provider.skipped}`,
+    );
+    const warningText = preview.warnings.length
+      ? `\n注意：${preview.warnings.slice(0, 5).join('；')}${preview.warnings.length > 5 ? `（共 ${preview.warnings.length} 条）` : ''}`
+      : '';
+    const confirmed = await ops.confirm(
+      `导入备份？\n\n${summaryLines.join('\n')}\n只会合并更新，不会清空本地数据。${warningText}`,
+      '导入',
+    );
+    if (signal?.aborted || !confirmed) return;
+
+    const results: string[] = [];
+    for (const provider of ops.providers) {
+      const result = await provider.import(raw);
+      results.push(
+        `${provider.label} 新增 ${result.added}，更新 ${result.updated}，跳过 ${result.skipped}`,
+      );
+    }
+    if (signal?.aborted) return;
+
+    ops.notify(results.join('；'), 4200);
+    await ops.rerender(signal);
+  } catch (error) {
+    if (signal?.aborted) return;
+    ops.notify('导入失败：' + (error instanceof Error ? error.message : String(error)), 3600);
+  }
+}
+
+function renderBackupCard(root: HTMLElement, signal?: AbortSignal): SettingsRenderPart {
   const io = el('div', { class: 'card' });
-  io.append(el('h3', { html: '本地备份' }));
+  io.append(el('h2', { html: '本地备份' }));
   io.append(el('div', {
     class: 'muted',
     html: '备份包含药品、提醒规则、服药记录和本地工时。导入时按 id + 更新时间合并，不会清空本地数据。',
@@ -88,7 +214,9 @@ function renderBackupCard(root: HTMLElement): HTMLElement {
 
   const exportBtn = el('button', { class: 'btn tonal', html: '导出数据（JSON）', style: 'margin-top:12px' } as any);
   exportBtn.onclick = async () => {
+    if (signal?.aborted) return;
     const data = await buildBackup();
+    if (signal?.aborted) return;
     downloadJson(data, `medbox-backup-${new Date().toISOString().slice(0, 10)}.json`);
   };
 
@@ -98,53 +226,29 @@ function renderBackupCard(root: HTMLElement): HTMLElement {
     accept: 'application/json,.json',
     style: 'display:none',
   } as any) as HTMLInputElement;
-  importBtn.onclick = () => fileInput.click();
+  importBtn.onclick = () => {
+    if (!signal?.aborted) fileInput.click();
+  };
   fileInput.onchange = async () => {
+    if (signal?.aborted) return;
     const file = fileInput.files?.[0];
     fileInput.value = '';
     if (!file) return;
-    try {
-      const raw = JSON.parse(await file.text());
-      // 预扫描：预估每个 provider 的 added/updated/skipped + 收集异常字段
-      const preview = await previewBackupImport(raw);
-      const totalItems = preview.providers.reduce(
-        (sum, p) => sum + p.added + p.updated + p.skipped,
-        0,
-      );
-      if (totalItems === 0) {
-        toast('这个备份里没有可导入的数据');
-        return;
-      }
-
-      // 构建预扫描摘要：每个 provider 的预计新增/更新/跳过
-      const summaryLines = preview.providers.map(
-        (p) => `${p.label}：新增 ${p.added}，更新 ${p.updated}，跳过 ${p.skipped}`,
-      );
-      const warningBlock = preview.warnings.length
-        ? `<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:rgba(255,149,10,0.10);color:#b45309;font-size:13px;line-height:1.5">注意：${preview.warnings.slice(0, 5).map(escapeHtml).join('；')}${preview.warnings.length > 5 ? `（共 ${preview.warnings.length} 条）` : ''}</div>`
-        : '';
-      const ok = await confirmDialog(
-        `导入备份？<br><span style="font-size:15px;font-weight:500;line-height:1.6;display:block;margin-top:10px">${summaryLines.map(escapeHtml).join('<br>')}<br><span style="color:var(--label-secondary)">只会合并更新，不会清空本地数据。</span></span>${warningBlock}`,
-        '导入',
-      );
-      if (!ok) return;
-
-      const results = [];
-      for (const provider of backupProviders) {
-        const r = await provider.import(raw);
-        results.push(`${provider.label} 新增 ${r.added}，更新 ${r.updated}，跳过 ${r.skipped}`);
-      }
-      toast(results.join('；'), 4200);
-      await renderSettingsPage(root);
-    } catch (e) {
-      toast('导入失败：' + (e instanceof Error ? e.message : String(e)), 3600);
-    }
+    await importBackupFileForRoute(root, file, signal);
   };
 
   const row = el('div', { class: 'btn-row backup-actions' });
   row.append(exportBtn, importBtn);
   io.append(row, fileInput);
-  return io;
+  return {
+    element: io,
+    cleanup: () => {
+      exportBtn.onclick = null;
+      importBtn.onclick = null;
+      fileInput.onchange = null;
+      fileInput.value = '';
+    },
+  };
 }
 
 function downloadJson(data: unknown, filename: string): void {
@@ -169,6 +273,7 @@ interface PanelOpts {
   defaultOpen?: boolean;
   renderBody: (body: HTMLElement) => void;
 }
+let panelSeq = 0;
 
 function panel(opts: PanelOpts): HTMLElement {
   const wrap = el('div', {
@@ -176,6 +281,9 @@ function panel(opts: PanelOpts): HTMLElement {
   } as any);
 
   const head = el('button', { class: 'panel-head', type: 'button' } as any);
+  const bodyId = `settings-panel-${++panelSeq}`;
+  head.setAttribute('aria-expanded', String(Boolean(opts.defaultOpen)));
+  head.setAttribute('aria-controls', bodyId);
   const lead = el('span', { class: 'panel-lead' } as any);
   lead.append(el('span', { class: 'panel-icon', html: opts.iconHtml } as any));
   lead.append(el('span', { class: 'panel-title', html: opts.title } as any));
@@ -193,10 +301,17 @@ function panel(opts: PanelOpts): HTMLElement {
   head.append(right);
 
   const body = el('div', { class: 'panel-body' } as any);
+  body.id = bodyId;
+  body.hidden = !opts.defaultOpen;
+  if (!opts.defaultOpen) body.setAttribute('inert', '');
   opts.renderBody(body);
 
   head.onclick = () => {
-    wrap.classList.toggle('open');
+    const open = wrap.classList.toggle('open');
+    head.setAttribute('aria-expanded', String(open));
+    body.hidden = !open;
+    if (open) body.removeAttribute('inert');
+    else body.setAttribute('inert', '');
   };
 
   wrap.append(head, body);
@@ -207,221 +322,543 @@ function setChip(panelEl: HTMLElement, chip: PanelChip): void {
   const c = panelEl.querySelector<HTMLElement>('.panel-chip');
   if (!c) return;
   c.className = 'panel-chip tone-' + chip.tone;
-  c.innerHTML = chip.text;
+  c.textContent = chip.text;
 }
 
-/** ---------------- 云同步面板 ---------------- */
-function renderSyncPanel(): HTMLElement {
-  if (!CLOUD_SYNC_ENABLED) {
+/** ---------------- 端到端加密家庭同步 v2 ---------------- */
+function renderSyncPanel(signal?: AbortSignal): HTMLElement {
+  if (!SYNC_V2_UI_ENABLED) {
     return panel({
-      title: '云同步',
+      title: '加密家庭同步',
       iconHtml: '☁️',
-      chip: { text: '已暂停', tone: 'muted' },
-      renderBody: renderSyncDisabled,
+      chip: { text: '灰度关闭', tone: 'muted' },
+      renderBody: renderSyncV2Disabled,
     });
   }
 
-  const cfg = getSyncConfig();
-  const chip: PanelChip = cfg
-    ? { text: '已绑定', tone: 'ok' }
-    : { text: '未配置', tone: 'muted' };
-  const p = panel({
-    title: '云同步',
+  const configured = getSyncV2PublicConfig() !== null;
+  let p!: HTMLElement;
+  p = panel({
+    title: '加密家庭同步',
     iconHtml: '☁️',
-    chip,
-    renderBody: (body) => buildSyncBody(body, () => {
-      // 重新构建 body
-      body.innerHTML = '';
-      buildSyncBody(body, () => {});
-      const c = getSyncConfig();
-      setChip(p, c ? { text: '已绑定', tone: 'ok' } : { text: '未配置', tone: 'muted' });
-    }),
+    chip: configured ? { text: '已配置', tone: 'ok' } : { text: '未配对', tone: 'muted' },
+    renderBody: (body) => {
+      queueMicrotask(() => void renderSyncV2Body(body, p, signal));
+    },
   });
   return p;
 }
 
-function renderSyncDisabled(body: HTMLElement): void {
+function renderSyncV2Disabled(body: HTMLElement): void {
   body.append(
     el('div', { class: 'banner info' } as any, [
-      el('span', {
-        html: '云同步暂时关闭。药品、服药提醒、扫码分药和本地备份都会继续保存在本机，可离线使用。',
-      }),
-    ])
-  );
-  body.append(
+      el('span', { html: '端到端加密同步 v2 已完成，但当前版本仍处于灰度关闭状态。应用不会连接 Worker。' }),
+    ]),
     el('div', {
       class: 'muted',
       style: 'margin-top:10px;line-height:1.55',
-      html:
-        '当前不会连接 Worker，也不会上传或拉取云端数据。以后需要恢复同步时，可以重新开启云同步开关，已有的本地数据不会被清除。',
-    } as any)
+      html: '药品、用药计划和服药记录将来可选择同步；工时与收入始终只保存在本机。当前可继续使用本地备份。',
+    } as any),
   );
 }
 
-function buildSyncBody(body: HTMLElement, rerender: () => void): void {
-  const cfg = getSyncConfig();
-  if (cfg) {
-    renderSyncConfigured(body, cfg, rerender);
-  } else {
-    renderSyncSetup(body, rerender);
+async function renderSyncV2Body(body: HTMLElement, panelElement: HTMLElement, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return;
+  body.replaceChildren(el('div', { class: 'banner info', html: '正在读取本机同步状态…' }));
+  const config = getSyncV2PublicConfig();
+  if (signal?.aborted) return;
+
+  const rerender = (): void => {
+    if (signal?.aborted) return;
+    void renderSyncV2Body(body, panelElement, signal);
+  };
+  body.replaceChildren();
+  if (!config) {
+    setChip(panelElement, { text: '未配对', tone: 'muted' });
+    renderSyncV2Setup(body, rerender, signal);
+    return;
   }
+  setChip(panelElement, { text: '已配置', tone: 'ok' });
+  await renderSyncV2Configured(body, config, rerender, signal);
 }
 
-function renderSyncConfigured(body: HTMLElement, cfg: SyncConfig, rerender: () => void): void {
+function renderSyncV2Setup(body: HTMLElement, rerender: () => void, signal?: AbortSignal): void {
   body.append(
-    el('div', { class: 'muted', html: '两台手机填同一「共享空间」即看同一份数据。' })
-  );
-
-  const info = el('div', { class: 'list-item', style: 'margin-top:8px' } as any, [
-    el('div', { class: 'grow' }, [
-      el('div', { class: 'name', html: '共享空间' }),
-      el('div', { class: 'muted', html: cfg.household, style: 'word-break:break-all;font-size:13px' } as any),
+    el('div', { class: 'banner info' } as any, [
+      el('span', { html: '同步内容在本机加密后上传，服务端只能看到密文和修订元数据。工时与收入不会进入同步载荷。' }),
     ]),
-    el('span', { class: 'slot-tag', html: cfg.role === 'caregiver' ? '照护者' : '患者' }),
-  ]);
-  body.append(info);
-
-  const status = el('div', { class: 'banner info', style: 'margin-top:10px' } as any, [
-    el('span', { html: '同步状态：—' }),
-  ]);
-  body.append(status);
-  const unsub = onSync((r: SyncResult) => {
-    const span = status.firstChild as HTMLElement;
-    span.innerHTML = syncStatusText(r);
-    status.className = 'banner ' + syncStatusClass(r);
-  });
-  window.addEventListener('hashchange', () => unsub(), { once: true });
-
-  const row = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
-  const syncBtn = el('button', { class: 'btn', html: '立即同步' });
-  syncBtn.onclick = async () => {
-    syncBtn.setAttribute('disabled', 'true');
-    const r = await syncNow();
-    syncBtn.removeAttribute('disabled');
-    toast(r.state === 'ok' ? '已同步 ✓' : r.message);
-  };
-  const shareBtn = el('button', { class: 'btn tonal', html: '分享给对方' });
-  shareBtn.onclick = () => shareConfig(cfg);
-  row.append(syncBtn, shareBtn);
-  body.append(row);
-
-  const unbind = el('button', {
-    class: 'btn text',
-    html: '断开云同步',
-    style: 'margin-top:10px;color:var(--ios-red)',
-  } as any);
-  unbind.onclick = () => {
-    clearSyncConfig();
-    toast('已断开云同步（本地数据保留）');
-    rerender();
-  };
-  body.append(unbind);
-}
-
-function renderSyncSetup(body: HTMLElement, rerender: () => void): void {
-  body.append(
-    el('div', {
-      class: 'muted',
-      html: '需要先部署免费的 Cloudflare Worker，然后把地址填到这里。详见项目说明。',
-    })
   );
 
-  const urlIn = el('input', {
+  const endpoint = el('input', {
     type: 'url',
-    placeholder: 'Worker 地址，如 https://medbox.xxx.workers.dev',
-    style: 'margin-top:10px',
+    inputMode: 'url',
+    required: true,
+    autocomplete: 'url',
+    placeholder: 'https://sync.example.com',
+    value: import.meta.env.VITE_SYNC_V2_ENDPOINT ?? '',
   } as any) as HTMLInputElement;
-
-  const houseRow = el('div', { style: 'display:flex;gap:8px;margin-top:8px' } as any);
-  const houseIn = el('input', {
-    class: 'grow',
+  const deviceName = el('input', {
     type: 'text',
-    placeholder: '共享空间 id（两端相同）',
+    required: true,
+    maxlength: 80,
+    autocomplete: 'off',
+    placeholder: '例如：妈妈的手机',
+    value: '我的手机',
   } as any) as HTMLInputElement;
-  const genBtn = el('button', { class: 'btn tonal small', html: '生成' });
-  genBtn.onclick = () => {
-    houseIn.value = genId();
-    if (!secretIn.value) secretIn.value = genId();
-  };
-  houseRow.append(houseIn, genBtn);
+  body.append(field('同步服务 HTTPS 地址', endpoint), field('本设备名称', deviceName));
 
-  const secretIn = el('input', {
-    type: 'text',
-    placeholder: '共享密钥（与 Worker 的 SYNC_SECRET 一致）',
-    style: 'margin-top:8px',
-  } as any) as HTMLInputElement;
+  let role: SyncV2Role = 'caregiver';
+  const roleControl = createRoleControl(role, (next) => { role = next; });
+  body.append(field('家庭角色', roleControl));
 
-  const roleRow = el('div', { style: 'display:flex;gap:8px;margin-top:8px' } as any);
-  let role: SyncConfig['role'] = 'caregiver';
-  const careBtn = el('button', { class: 'chip on', html: '我是照护者' });
-  const patBtn = el('button', { class: 'chip', html: '我是患者' });
-  careBtn.onclick = () => {
-    role = 'caregiver';
-    careBtn.classList.add('on');
-    patBtn.classList.remove('on');
-  };
-  patBtn.onclick = () => {
-    role = 'patient';
-    patBtn.classList.add('on');
-    careBtn.classList.remove('on');
-  };
-  roleRow.append(careBtn, patBtn);
-
-  body.append(urlIn, houseRow, secretIn, roleRow);
-
-  const save = el('button', { class: 'btn', html: '保存并同步', style: 'margin-top:12px' } as any);
-  save.onclick = async () => {
-    const workerUrl = urlIn.value.trim();
-    const household = houseIn.value.trim();
-    const secret = secretIn.value.trim();
-    if (!/^https?:\/\//.test(workerUrl)) return toast('请填写正确的 Worker 地址');
-    if (!/^[a-z0-9]{6,64}$/.test(household)) return toast('共享空间 id 需为 6-64 位小写字母或数字');
-    if (!secret) return toast('请填写共享密钥');
-    setSyncConfig({ workerUrl, household, secret, role });
-    toast('配置已保存，开始同步…');
+  const createButton = el('button', { class: 'btn', type: 'button', html: '创建加密家庭' } as any);
+  createButton.onclick = () => void runButtonAction(createButton, async () => {
+    const api = new SyncV2Api(endpoint.value.trim());
+    const binding = createLocalSyncV2Client({ api });
+    const created = await binding.createHousehold(deviceName.value.trim(), { signal });
+    setSyncV2PublicConfig({
+      endpoint: created.endpoint,
+      householdId: created.householdId,
+      deviceName: deviceName.value.trim(),
+      role,
+    });
+    await showProtectedValueDialog(
+      '保存家庭恢复码',
+      '恢复码可解密家庭健康数据，服务端无法找回。请离线保存，不要发给无关人员。',
+      created.recoveryCode,
+      '恢复码',
+    );
     rerender();
-    const r = await syncNow();
-    toast(r.state === 'ok' ? '首次同步成功 ✓' : r.message);
-  };
-  body.append(save);
+  });
+  body.append(el('div', { class: 'btn-row sync-v2-actions' }, [createButton]));
+
+  const divider = el('div', { class: 'settings-divider', html: '或使用另一台设备生成的一次性邀请' });
+  const invitation = el('textarea', {
+    rows: 4,
+    maxlength: 4096,
+    autocomplete: 'off',
+    spellcheck: false,
+    placeholder: 'medbox-sync-v2://pair?...',
+  } as any) as HTMLTextAreaElement;
+  body.append(divider, field('一次性配对邀请', invitation));
+  const pairButton = el('button', { class: 'btn tonal', type: 'button', html: '配对本设备' } as any);
+  pairButton.onclick = () => void runButtonAction(pairButton, async () => {
+    const parsed = await parsePairingCode(invitation.value);
+    const binding = createLocalSyncV2Client({ api: new SyncV2Api(parsed.endpoint) });
+    const paired = await binding.pairDevice(invitation.value, deviceName.value.trim(), { signal });
+    setSyncV2PublicConfig({
+      endpoint: paired.endpoint,
+      householdId: paired.householdId,
+      deviceName: deviceName.value.trim(),
+      role,
+    });
+    toast('配对成功，正在准备首次同步');
+    rerender();
+  });
+  body.append(el('div', { class: 'btn-row sync-v2-actions' }, [pairButton]));
+
+  if (!Capacitor.isNativePlatform()) {
+    body.append(el('div', {
+      class: 'muted sync-v2-session-note',
+      html: 'PWA 不持久化设备令牌或数据密钥。刷新或关闭页面后，需要由仍在线的家庭设备重新生成一次性邀请。',
+    }));
+  }
 }
 
-async function shareConfig(cfg: SyncConfig): Promise<void> {
-  const payload = `medbox 云同步配置\nWorker: ${cfg.workerUrl}\n共享空间: ${cfg.household}\n密钥: ${cfg.secret}`;
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: 'medbox 云同步', text: payload });
-      return;
-    } catch {
-      /* 用户取消或不支持，回退复制 */
-    }
-  }
+async function renderSyncV2Configured(
+  body: HTMLElement,
+  config: SyncV2PublicConfig,
+  rerender: () => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const credentialStore = createPlatformSyncV2CredentialStore();
+  const binding = createLocalSyncV2Client({
+    api: new SyncV2Api(config.endpoint),
+    credentialStore,
+    householdId: config.householdId,
+  });
   try {
-    await navigator.clipboard.writeText(payload);
-    toast('已复制配置，发给对方在设置里填入即可');
-  } catch {
-    toast('请手动复制：' + cfg.household);
+    await binding.useHousehold(config.householdId);
+  } catch (error) {
+    body.append(el('div', { class: 'banner warn', html: '本机同步状态不完整：' + errorMessage(error) }));
+    body.append(forgetSyncV2Button(binding, rerender));
+    return;
+  }
+
+  const credentials = await credentialStore.load(config.householdId);
+  const queued = await binding.client.listQueuedMutations();
+  const conflicts = queued.filter((item) => item.status === 'conflict').length;
+  const rejected = queued.filter((item) => item.status === 'rejected').length;
+  let stagedCount = 0;
+  if (credentials) stagedCount = (await binding.client.listStagedChanges()).length;
+
+  const summary = el('div', { class: 'list-item sync-v2-summary' }, [
+    el('div', { class: 'grow' }, [
+      el('div', { class: 'name', html: config.deviceName }),
+      el('div', { class: 'muted sync-v2-id', html: config.householdId }),
+    ]),
+    el('span', { class: 'slot-tag', html: config.role === 'caregiver' ? '照护者' : '患者' }),
+  ]);
+  body.append(summary);
+
+  const status = el('div', {
+    class: credentials ? (conflicts || rejected ? 'banner warn' : 'banner ok') : 'banner warn',
+    html: credentials
+      ? `待发送 ${queued.filter((item) => item.status === 'pending').length}，冲突 ${conflicts}，拒绝 ${rejected}，暂存 ${stagedCount}`
+      : '当前浏览器会话已失去加密凭证，不能同步。请使用另一台已配对设备生成新邀请。',
+  });
+  body.append(status);
+
+  if (!Capacitor.isNativePlatform()) {
+    body.append(el('div', {
+      class: 'muted sync-v2-session-note',
+      html: 'PWA 的设备令牌和数据密钥仅保留在当前会话；刷新或关闭页面后需要重新配对。公开的服务地址、家庭编号和设备名称会保留。',
+    }));
+  }
+
+  if (!credentials) {
+    renderSyncV2Repair(body, config, rerender, signal);
+    body.append(forgetSyncV2Button(binding, rerender));
+    return;
+  }
+
+  const actions = el('div', { class: 'btn-row sync-v2-actions' });
+  const syncButton = el('button', { class: 'btn', type: 'button', html: '立即同步' } as any);
+  syncButton.onclick = () => void runButtonAction(syncButton, async () => {
+    const result = await binding.sync({ signal });
+    if (result.status === 'offline') {
+      toast(`当前离线，${result.pendingCount} 项变更留待重试`);
+    } else if (result.conflicts.length || result.rejected.length) {
+      toast(`同步完成，但有 ${result.conflicts.length} 个冲突、${result.rejected.length} 个拒绝项`, 4200);
+    } else {
+      toast(`同步完成，云端修订 ${result.householdRevision}`);
+    }
+    rerender();
+  });
+  const inviteButton = el('button', { class: 'btn tonal', type: 'button', html: '生成一次性邀请' } as any);
+  inviteButton.onclick = () => void runButtonAction(inviteButton, async () => {
+    const invitation = await binding.createPairingInvitation({ signal });
+    const expiry = new Date(invitation.expiresAt).toLocaleString('zh-CN');
+    await showProtectedValueDialog(
+      '一次性配对邀请',
+      `邀请将在 ${expiry} 失效，使用一次后立即作废。链接片段内含解密材料，请只发给家庭成员。`,
+      invitation.pairingUri,
+      '配对邀请',
+    );
+  });
+  actions.append(syncButton, inviteButton);
+  body.append(actions);
+
+  const deviceArea = el('div', { class: 'sync-v2-devices' });
+  const devicesButton = el('button', { class: 'btn tonal', type: 'button', html: '管理家庭设备' } as any);
+  devicesButton.onclick = () => void runButtonAction(devicesButton, async () => {
+    await renderSyncV2Devices(deviceArea, binding, signal);
+  });
+  const rotateButton = el('button', { class: 'btn tonal', type: 'button', html: '轮换本机令牌' } as any);
+  rotateButton.onclick = () => void runButtonAction(rotateButton, async () => {
+    await binding.client.rotateCurrentDeviceToken({ signal });
+    toast('本机设备令牌已轮换，旧令牌立即失效');
+  });
+  body.append(el('div', { class: 'btn-row sync-v2-actions' }, [devicesButton, rotateButton]), deviceArea);
+  const migrateButton = el('button', {
+    class: 'btn text',
+    type: 'button',
+    html: '从旧版只读同步迁移',
+  } as any);
+  migrateButton.onclick = () => openLegacyMigrationDialog(binding, rerender, signal);
+  body.append(migrateButton);
+  body.append(forgetSyncV2Button(binding, rerender));
+}
+
+function openLegacyMigrationDialog(
+  binding: LocalSyncV2ClientBinding,
+  rerender: () => void,
+  routeSignal?: AbortSignal,
+): void {
+  const title = el('h3', { html: '迁移旧版云端数据' });
+  const note = el('div', {
+    class: 'banner warn',
+    html: '此操作只读取旧 KV 快照，校验后加密写入当前家庭。工时和收入不会迁移，也不会自动删除旧数据。',
+  });
+  const endpoint = el('input', {
+    type: 'url',
+    inputMode: 'url',
+    required: true,
+    autocomplete: 'url',
+    placeholder: '旧 Worker 的 HTTPS 地址',
+  } as any) as HTMLInputElement;
+  const household = el('input', {
+    type: 'text',
+    required: true,
+    maxlength: 64,
+    autocomplete: 'off',
+    placeholder: '旧版共享空间编号',
+  } as any) as HTMLInputElement;
+  const secret = el('input', {
+    type: 'password',
+    required: true,
+    maxlength: 512,
+    autocomplete: 'off',
+    placeholder: '仅本次迁移使用',
+  } as any) as HTMLInputElement;
+  const acknowledgement = el('input', { type: 'checkbox' } as any) as HTMLInputElement;
+  acknowledgement.id = `legacy-migration-confirm-${++settingsFieldSeq}`;
+  acknowledgement.name = acknowledgement.id;
+  const acknowledgementRow = el('label', { class: 'sync-v2-migration-confirm', htmlFor: acknowledgement.id } as any);
+  acknowledgementRow.append(
+    acknowledgement,
+    el('span', { html: '我已确认旧 Worker 仅临时开启只读迁移，并会在数量和摘要核对成功后关闭 v1。' }),
+  );
+  const report = el('div', { class: 'sync-v2-migration-report', role: 'status', 'aria-live': 'polite' } as any);
+  const migrate = el('button', { class: 'btn', type: 'button', html: '读取、加密并核对' } as any);
+  const close = el('button', { class: 'btn text', type: 'button', html: '关闭' } as any);
+  const card = el('div', { class: 'card sync-v2-migration-dialog' }, [
+    title,
+    note,
+    field('旧 Worker 地址', endpoint),
+    field('旧版共享空间', household),
+    field('旧版迁移密钥', secret),
+    acknowledgementRow,
+    report,
+    el('div', { class: 'btn-row' }, [close, migrate]),
+  ]);
+  const controller = new AbortController();
+  const abortFromRoute = (): void => controller.abort(routeSignal?.reason);
+  if (routeSignal?.aborted) abortFromRoute();
+  else routeSignal?.addEventListener('abort', abortFromRoute, { once: true });
+  let overlay: HTMLElement;
+  const cleanup = (): void => {
+    controller.abort();
+    routeSignal?.removeEventListener('abort', abortFromRoute);
+    secret.value = '';
+  };
+  overlay = openDialog(card, { initialFocus: endpoint, onClose: cleanup });
+  close.onclick = () => closeDialog(overlay);
+  migrate.onclick = () => void runButtonAction(migrate, async () => {
+    if (!acknowledgement.checked) throw new Error('请先确认只读迁移和核对要求。');
+    report.className = 'sync-v2-migration-report banner info';
+    report.textContent = '正在读取旧快照并写入加密家庭…';
+    const helper = new LegacyV1MigrationHelper(
+      binding.client,
+      undefined,
+      async (run) => {
+        for (const change of run.confirmedChanges) await binding.adapter.applyRemoteChange(change);
+        await binding.adapter.consumeRunResult(run);
+      },
+    );
+    const result = await helper.migrate({
+      endpoint: endpoint.value.trim(),
+      household: household.value.trim(),
+      secret: secret.value,
+      signal: controller.signal,
+    });
+    secret.value = '';
+    report.className = `sync-v2-migration-report banner ${result.canDisableV1 ? 'ok' : 'warn'}`;
+    report.textContent = [
+      `药品 ${result.sourceCounts.medications}，计划 ${result.sourceCounts.schedules}，服药记录 ${result.sourceCounts.intakes}`,
+      `忽略 pending 记录 ${result.sourceCounts.omittedPendingIntakes}`,
+      `实体核对 ${result.verifiedEntityCount}/${result.expectedEntityCount}`,
+      `期望摘要 ${result.expectedDigest}`,
+      `实测摘要 ${result.verifiedDigest}`,
+      result.canDisableV1
+        ? '数量与摘要一致。现在可以在 Worker 中关闭 v1 只读开关。旧数据未被删除。'
+        : `尚不可关闭 v1：待处理 ${result.pendingMutationIds.length}，冲突 ${result.conflictMutationIds.length}，拒绝 ${result.rejectedMutationIds.length}。`,
+    ].join('\n');
+    report.style.whiteSpace = 'pre-wrap';
+    rerender();
+  });
+}
+
+function renderSyncV2Repair(
+  body: HTMLElement,
+  config: SyncV2PublicConfig,
+  rerender: () => void,
+  signal?: AbortSignal,
+): void {
+  const invitation = el('textarea', {
+    rows: 4,
+    maxlength: 4096,
+    autocomplete: 'off',
+    spellcheck: false,
+    placeholder: '粘贴新的一次性配对邀请',
+  } as any) as HTMLTextAreaElement;
+  body.append(field('重新配对邀请', invitation));
+  const pairButton = el('button', { class: 'btn', type: 'button', html: '重新配对当前浏览器' } as any);
+  pairButton.onclick = () => void runButtonAction(pairButton, async () => {
+    const parsed = await parsePairingCode(invitation.value);
+    if (parsed.householdId !== config.householdId) throw new Error('邀请属于另一个家庭空间。');
+    const binding = createLocalSyncV2Client({ api: new SyncV2Api(parsed.endpoint) });
+    const paired = await binding.pairDevice(invitation.value, config.deviceName, { signal });
+    setSyncV2PublicConfig({ ...config, endpoint: paired.endpoint });
+    toast('本次浏览器会话已重新配对');
+    rerender();
+  });
+  body.append(el('div', { class: 'btn-row sync-v2-actions' }, [pairButton]));
+}
+
+async function renderSyncV2Devices(
+  container: HTMLElement,
+  binding: LocalSyncV2ClientBinding,
+  signal?: AbortSignal,
+): Promise<void> {
+  const result = await binding.client.listDevices({ signal });
+  container.replaceChildren(el('h4', { html: '家庭设备' }));
+  for (const device of result.devices) {
+    const isCurrent = device.id === result.authenticatedDeviceId;
+    const row = el('div', { class: 'list-item sync-v2-device' }, [
+      el('div', { class: 'grow' }, [
+        el('div', { class: 'name', html: device.name }),
+        el('div', {
+          class: 'muted',
+          html: device.revokedAt ? '已撤销' : `加入于 ${formatTimestamp(device.createdAt)}`,
+        }),
+      ]),
+    ]);
+    if (isCurrent) {
+      row.append(el('span', { class: 'slot-tag', html: '本机' }));
+    } else if (!device.revokedAt) {
+      row.append(revokeDeviceButton(device, binding, container, signal));
+    }
+    container.append(row);
   }
 }
 
-function syncStatusText(r: SyncResult): string {
-  const t = r.at ? new Date(r.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
-  switch (r.state) {
-    case 'ok': return `已同步 ✓（${t}）`;
-    case 'syncing': return '同步中…';
-    case 'offline': return '当前离线，联网后自动同步';
-    case 'error': return '同步出错：' + r.message;
-    case 'disabled': return '云同步已暂停，本机数据照常可用';
-    case 'unconfigured': return '未配置';
-    default: return '等待同步';
+function revokeDeviceButton(
+  device: SyncDeviceSummary,
+  binding: LocalSyncV2ClientBinding,
+  container: HTMLElement,
+  signal?: AbortSignal,
+): HTMLButtonElement {
+  const button = el('button', {
+    class: 'btn text small',
+    type: 'button',
+    html: '撤销',
+    'aria-label': `撤销设备 ${device.name}`,
+  } as any);
+  button.onclick = () => void runButtonAction(button, async () => {
+    if (!await confirmDialog(`撤销设备“${device.name}”？该设备的令牌会立即失效。`, '撤销', true)) return;
+    await binding.client.revokeDevice(device.id, { signal });
+    toast('设备已撤销');
+    await renderSyncV2Devices(container, binding, signal);
+  });
+  return button;
+}
+
+function forgetSyncV2Button(
+  binding: LocalSyncV2ClientBinding,
+  rerender: () => void,
+): HTMLButtonElement {
+  const button = el('button', {
+    class: 'btn text sync-v2-forget',
+    type: 'button',
+    html: '忘记此家庭',
+  } as any);
+  button.onclick = () => void runButtonAction(button, async () => {
+    const confirmed = await confirmDialog(
+      '忘记此家庭只会移除本设备的连接和密钥，本机药品与服药记录不会删除。',
+      '忘记家庭',
+      true,
+    );
+    if (!confirmed) return;
+    await binding.forgetHousehold();
+    clearSyncV2PublicConfig();
+    toast('已忘记家庭连接，本机业务数据仍保留');
+    rerender();
+  });
+  return button;
+}
+
+function createRoleControl(initial: SyncV2Role, onChange: (role: SyncV2Role) => void): HTMLElement {
+  const control = el('div', { class: 'chips sync-role-control', role: 'group', 'aria-label': '家庭角色' } as any);
+  const caregiver = el('button', { class: 'chip', type: 'button', html: '照护者' } as any);
+  const patient = el('button', { class: 'chip', type: 'button', html: '患者' } as any);
+  const update = (role: SyncV2Role): void => {
+    caregiver.classList.toggle('on', role === 'caregiver');
+    patient.classList.toggle('on', role === 'patient');
+    caregiver.setAttribute('aria-pressed', String(role === 'caregiver'));
+    patient.setAttribute('aria-pressed', String(role === 'patient'));
+    onChange(role);
+  };
+  caregiver.onclick = () => update('caregiver');
+  patient.onclick = () => update('patient');
+  control.append(caregiver, patient);
+  update(initial);
+  return control;
+}
+
+async function runButtonAction(button: HTMLButtonElement, action: () => Promise<void>): Promise<void> {
+  if (button.disabled) return;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    await action();
+  } catch (error) {
+    toast(errorMessage(error), 4200);
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
   }
 }
 
-function syncStatusClass(r: SyncResult): string {
-  if (r.state === 'ok') return 'ok';
-  if (r.state === 'error') return 'warn';
-  if (r.state === 'disabled') return 'info';
-  return 'info';
+async function showProtectedValueDialog(
+  titleText: string,
+  description: string,
+  value: string,
+  valueLabel: string,
+): Promise<void> {
+  const title = el('h3', { html: titleText });
+  const descriptionElement = el('div', { class: 'muted', html: description });
+  const valueArea = el('textarea', {
+    class: 'protected-value',
+    readOnly: true,
+    rows: 5,
+    value,
+    'aria-label': valueLabel,
+  } as any) as HTMLTextAreaElement;
+  const copy = el('button', { class: 'btn tonal', type: 'button', html: '复制' } as any);
+  const done = el('button', { class: 'btn', type: 'button', html: '已保存，关闭' } as any);
+  const card = el('div', { class: 'card protected-value-dialog' }, [
+    title,
+    descriptionElement,
+    valueArea,
+    el('div', { class: 'btn-row' }, [copy, done]),
+  ]);
+  let overlay: HTMLElement | null = null;
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = (closedByDialog = false): void => {
+      if (settled) return;
+      settled = true;
+      if (overlay && !closedByDialog) closeDialog(overlay);
+      resolve();
+    };
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(value);
+        toast('已复制');
+      } catch {
+        valueArea.focus();
+        valueArea.select();
+        toast('无法自动复制，已选中内容');
+      }
+    };
+    done.onclick = () => finish();
+    overlay = openDialog(card, { onClose: () => finish(true), initialFocus: copy });
+  });
+}
+
+function formatTimestamp(value: number): string {
+  return new Date(value).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    if (/credentials are unavailable|browser session ended/i.test(error.message)) {
+      return '浏览器会话凭证已失效，请重新配对。';
+    }
+    return error.message;
+  }
+  return String(error);
 }
 
 /** ---------------- 通知面板 ---------------- */
@@ -439,7 +876,7 @@ function renderReminderPanel(): HTMLElement {
     iconHtml: '🔔',
     chip,
     renderBody: (body) => buildReminderBody(body, () => {
-      body.innerHTML = '';
+      body.replaceChildren();
       buildReminderBody(body, () => {});
       const perm2 = notificationsSupported() ? getPermission() : 'denied';
       const c: PanelChip = !notificationsSupported()
@@ -468,10 +905,10 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   const perm = getPermission();
   const cls = perm === 'granted' ? 'ok' : perm === 'denied' ? 'warn' : 'info';
   const text = perm === 'granted'
-    ? '已授权 ✓ 到点会弹出系统通知 + 震动'
+    ? '已授权。Android 应用使用原生调度；PWA 受浏览器后台限制。'
     : perm === 'denied'
       ? '通知被拒绝。请到浏览器/系统设置里手动允许通知。'
-      : '未开启：开启后即使应用挂在后台也能按时提醒。';
+      : '未开启。PWA 通知只能尽力送达，关闭浏览器后无法保证。';
   body.append(
     el('div', { class: 'banner ' + cls } as any, [el('span', { html: text })])
   );
@@ -491,7 +928,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     const testBtn = el('button', { class: 'btn', html: '发送测试通知' });
     testBtn.onclick = async () => {
       const ok = await showNotification('🔔 测试提醒', {
-        body: '看到这条说明系统通知工作正常 · 应用挂后台也能响',
+        body: '看到这条说明当前通知通道可用',
         tag: 'medbox-test',
       });
       toast(ok ? '已发送测试通知' : '发送失败');
@@ -505,21 +942,50 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   }
   body.append(row);
 
+  if (perm === 'granted' && isNativeReminderPlatform()) {
+    const exactAlarm = getExactAlarmCapability();
+    if (exactAlarm !== 'granted') {
+      const message = exactAlarm === 'unavailable'
+        ? '当前系统无法确认精确闹钟能力，提醒可能有数分钟延迟。'
+        : '精确闹钟尚未允许；Android 仍会安排提醒，但可能延迟送达。';
+      body.append(
+        el('div', { class: 'banner warn', style: 'margin-top:12px' } as any, [
+          el('span', { html: message }),
+        ]),
+      );
+      if (exactAlarm !== 'unavailable') {
+        const exactRow = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
+        const exactButton = el('button', { class: 'btn tonal', html: '允许精确闹钟' });
+        exactButton.onclick = async () => {
+          const capability = await requestExactAlarmCapability();
+          if (capability === 'granted') {
+            await runReminderOnce();
+            toast('精确闹钟已开启');
+          } else {
+            toast('未开启精确闹钟，将使用系统尽力调度');
+          }
+          rerender();
+        };
+        exactRow.append(exactButton);
+        body.append(exactRow);
+      }
+    }
+  }
+
   body.append(
     el('div', {
       class: 'muted',
       style: 'margin-top:12px;font-size:13px;line-height:1.55',
       html:
-        '小贴士：' +
-        '<br>· 安卓把本应用<b>添加到主屏</b>，并在系统电池里把它加入<b>白名单</b>，挂后台也能按时响。' +
-        '<br>· iOS 需把网页<b>添加到主屏</b>后，从主屏图标启动，才能收到系统通知。' +
-        '<br>· 锁屏 / 应用被完全杀掉时，本地调度可能错过；联网/回到前台后会立即追账补提醒。',
+        '提醒能力：\n· Android 安装版使用原生本地通知，需允许通知和精确闹钟。\n' +
+        '· PWA 仅在浏览器允许的前台/后台时尽力提醒，关闭后不保证送达。\n' +
+        '· 回到应用时会立即补算未处理的任务。',
     } as any)
   );
 }
 
 /** ---------------- AI 大模型面板（支持模型自动检测 + 状态） ---------------- */
-function renderLlmPanel(): HTMLElement {
+function renderLlmPanel(): SettingsRenderPart {
   const initialHealth = getLlmHealth();
   const chip = healthToChip(initialHealth);
   const p = panel({
@@ -535,11 +1001,11 @@ function renderLlmPanel(): HTMLElement {
     setChip(p, healthToChip(h));
   };
   window.addEventListener('medbox:llm-health', onHealth);
-  window.addEventListener('hashchange', () => {
-    window.removeEventListener('medbox:llm-health', onHealth);
-  }, { once: true });
 
-  return p;
+  return {
+    element: p,
+    cleanup: () => window.removeEventListener('medbox:llm-health', onHealth),
+  };
 }
 
 function healthToChip(h: LlmHealth): PanelChip {
@@ -557,12 +1023,12 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   );
 
   const cfg = getLlmConfig();
-  const usingDefault = isUsingDefaultKey();
-  if (usingDefault) {
+  const missingKey = isUsingDefaultKey();
+  if (missingKey) {
     body.append(
       el('div', { class: 'banner info', style: 'margin-top:10px' } as any, [
         el('span', {
-          html: '当前使用默认密钥（来自项目作者预填）。如部署到公开环境请改为你自己的密钥。',
+          html: '尚未配置 AI 密钥。Android 会存入系统安全存储；PWA 刷新或关闭后需重新输入。',
         }),
       ])
     );
@@ -593,7 +1059,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   toggleKey.onclick = () => {
     visible = !visible;
     keyIn.type = visible ? 'text' : 'password';
-    toggleKey.innerHTML = visible ? '隐藏' : '显示';
+    toggleKey.textContent = visible ? '隐藏' : '显示';
   };
   keyWrap.append(keyIn, toggleKey);
   body.append(field('API 密钥', keyWrap));
@@ -613,8 +1079,15 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     html: '刷新',
   } as any);
 
+  const modelControlSeq = ++settingsFieldSeq;
+  modelSel.id = `settings-model-select-${modelControlSeq}`;
+  modelSel.name = modelSel.id;
+  modelIn.id = `settings-model-input-${modelControlSeq}`;
+  modelIn.name = modelIn.id;
   modelRow.append(modelSel, modelIn, refreshBtn);
-  body.append(field('模型', modelRow));
+  const modelField = field('模型', modelRow);
+  const modelLabel = modelField.querySelector<HTMLLabelElement>('label')!;
+  body.append(modelField);
 
   // 状态横条
   const statusBar = el('div', { class: 'llm-status' } as any);
@@ -622,12 +1095,12 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
 
   // === 初始填充：用持久化的健康检查结果 ===
   const persisted = getLlmHealth();
-  populateModelControl(modelSel, modelIn, persisted.models, cfg.model);
+  populateModelControl(modelSel, modelIn, modelLabel, persisted.models, cfg.model);
   applyHealthBar(statusBar, persisted);
 
   refreshBtn.onclick = async () => {
     refreshBtn.setAttribute('disabled', 'true');
-    refreshBtn.innerHTML = '检测中…';
+    refreshBtn.textContent = '检测中…';
     const tmpCfg = {
       baseUrl: urlIn.value.trim() || cfg.baseUrl,
       apiKey: keyIn.value.trim() || cfg.apiKey,
@@ -635,7 +1108,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     };
     try {
       const models = await listModels(tmpCfg);
-      populateModelControl(modelSel, modelIn, models, tmpCfg.model);
+      populateModelControl(modelSel, modelIn, modelLabel, models, tmpCfg.model);
       const h: LlmHealth = {
         state: 'ok',
         message: `已连接 · ${models.length} 个模型`,
@@ -656,11 +1129,11 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
       applyHealthBar(statusBar, h);
       onHealthChange(h);
       // 拉不到列表，让用户手动填
-      populateModelControl(modelSel, modelIn, [], tmpCfg.model);
+      populateModelControl(modelSel, modelIn, modelLabel, [], tmpCfg.model);
       toast('拉模型失败：' + h.message);
     } finally {
       refreshBtn.removeAttribute('disabled');
-      refreshBtn.innerHTML = '刷新';
+      refreshBtn.textContent = '刷新';
     }
   };
 
@@ -671,10 +1144,14 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     const baseUrl = urlIn.value.trim();
     const apiKey = keyIn.value.trim();
     const model = getCurrentModel(modelSel, modelIn);
-    if (!/^https?:\/\//.test(baseUrl)) return toast('请填写正确的 API 地址');
+    try {
+      normalizeAndValidateBaseUrl(baseUrl);
+    } catch (e) {
+      return toast(e instanceof Error ? e.message : '请填写正确的 HTTPS API 地址');
+    }
     if (!apiKey) return toast('请填写 API 密钥');
     if (!model) return toast('请填写或选择模型');
-    setLlmConfig({ baseUrl, apiKey, model });
+    await setLlmConfig({ baseUrl, apiKey, model });
     toast('已保存 ✓');
     // 保存后顺手体检一次
     const h = await pingLlm({ baseUrl, apiKey, model });
@@ -685,7 +1162,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   const test = el('button', { class: 'btn tonal', html: '测试连接' });
   test.onclick = async () => {
     test.setAttribute('disabled', 'true');
-    test.innerHTML = '测试中…';
+    test.textContent = '测试中…';
     try {
       const h = await pingLlm({
         baseUrl: urlIn.value.trim() || cfg.baseUrl,
@@ -698,23 +1175,23 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
       toast(h.state === 'ok' ? '连接成功 ✓' : '失败：' + h.message);
     } finally {
       test.removeAttribute('disabled');
-      test.innerHTML = '测试连接';
+      test.textContent = '测试连接';
     }
   };
   row.append(save, test);
   body.append(row);
 
-  if (!usingDefault) {
+  if (!missingKey) {
     const reset = el('button', {
       class: 'btn text',
       html: '恢复默认配置',
       style: 'margin-top:8px',
     } as any);
-    reset.onclick = () => {
-      resetLlmConfig();
+    reset.onclick = async () => {
+      await resetLlmConfig();
       toast('已恢复默认');
       // 重建 body
-      body.innerHTML = '';
+      body.replaceChildren();
       buildLlmBody(body, onHealthChange);
     };
     body.append(reset);
@@ -725,9 +1202,9 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
       class: 'muted',
       style: 'margin-top:12px;font-size:13px;line-height:1.55',
       html:
-        '· 接口需兼容 OpenAI <code>/chat/completions</code> 协议。' +
-        '<br>· 默认模型 <code>' + DEFAULT_LLM_CONFIG.model + '</code>，也可换成 <code>gpt-4o</code>、<code>claude-3-5-sonnet</code> 等。' +
-        '<br>· 密钥仅保存在本机 localStorage，不上云、不同步。',
+        '· 接口需兼容 OpenAI /chat/completions 协议。\n' +
+        `· 默认模型 ${DEFAULT_LLM_CONFIG.model}，也可换成其他兼容模型。\n` +
+        `· ${isNativeSecretStore() ? 'Android 密钥保存在系统安全存储中。' : 'PWA 密钥仅保留当前会话，刷新后清除。'}`,
     } as any)
   );
 }
@@ -736,6 +1213,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
 function populateModelControl(
   sel: HTMLSelectElement,
   input: HTMLInputElement,
+  label: HTMLLabelElement,
   models: string[] | undefined,
   current: string,
 ): void {
@@ -744,12 +1222,14 @@ function populateModelControl(
     // 回退手填
     sel.style.display = 'none';
     input.style.display = '';
+    label.htmlFor = input.id;
     if (current) input.value = current;
     return;
   }
   sel.style.display = '';
   input.style.display = 'none';
-  sel.innerHTML = '';
+  label.htmlFor = sel.id;
+  sel.replaceChildren();
   const has = list.includes(current);
   if (!has && current) {
     const op = el('option', { value: current, html: current + '（自定义）' } as any);
@@ -777,22 +1257,27 @@ function applyHealthBar(bar: HTMLElement, h: LlmHealth): void {
       ? `连接失败：${h.message}${t ? '（' + t + '）' : ''}`
       : '尚未检测连接，点「测试连接」或「刷新」';
   bar.className = 'llm-status banner ' + cls;
-  bar.innerHTML = '';
+  bar.replaceChildren();
   bar.append(el('span', { html: text }));
 }
 
+let settingsFieldSeq = 0;
 function field(label: string, input: HTMLElement): HTMLElement {
   const f = el('div', { class: 'field' });
-  f.append(el('label', { html: label }));
+  const control = input.matches('input,select,textarea')
+    ? input
+    : input.querySelector<HTMLElement>('input,select,textarea');
+  const labelEl = el('label', { html: label });
+  if (control) {
+    const id = control.id || `settings-field-${++settingsFieldSeq}`;
+    control.id = id;
+    if (!control.getAttribute('name')) control.setAttribute('name', id);
+    labelEl.htmlFor = id;
+  } else if (input.getAttribute('role') === 'group') {
+    labelEl.id = `settings-field-label-${++settingsFieldSeq}`;
+    input.setAttribute('aria-labelledby', labelEl.id);
+  }
+  f.append(labelEl);
   f.append(input);
   return f;
-}
-
-function escapeHtml(value: string): string {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }

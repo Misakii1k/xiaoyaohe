@@ -20,6 +20,7 @@ preview.log
 Thumbs.db
 .vscode/
 .idea/
+.trae/
 
 # 环境变量与密钥（绝对不能提交）
 .env

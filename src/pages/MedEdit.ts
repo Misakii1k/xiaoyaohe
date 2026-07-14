@@ -28,6 +28,7 @@ import {
   type ReminderRule,
   type MealRelsBySlot,
   type MedicationInventory,
+  type LocalDate,
 } from '../db/schema';
 import { el, renderPage, toast, confirmDialog, icon } from '../ui/components';
 import { navigate } from '../router';
@@ -41,15 +42,30 @@ import { parsePrescription, ParsePrescriptionError, type PrescriptionDraft } fro
 import { aHash } from '../features/phash';
 import { takePendingPrefill } from '../ai/pendingPrefill';
 import { normalizeGtin, type ProductKey } from '../features/gs1';
-import { estimateDailyConsumption, estimateDaysLeft } from '../features/inventory';
+import { estimateDailyConsumption, estimateDaysLeft, suggestStructuredDose } from '../features/inventory';
+import {
+  getMedicationExpiryLocalDate,
+  isLocalDate,
+  toLocalDate,
+} from '../domain/medicationSchedule';
+import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 
-export async function renderMedEditPage(root: HTMLElement, medId: string | null): Promise<void> {
+export async function renderMedEditPage(
+  root: HTMLElement,
+  medId: string | null,
+  signal?: AbortSignal,
+): Promise<() => void> {
+  const cleanups: Array<() => void> = [];
+  const cleanup = () => cleanups.splice(0).forEach((dispose) => dispose());
+  const isActive = () => !signal?.aborted;
+  signal?.addEventListener('abort', cleanup, { once: true });
   const editing = medId !== null;
   const existing = editing ? await getMed(medId!) : undefined;
+  if (signal?.aborted) return cleanup;
   if (editing && !existing) {
     toast('没有找到这种药');
     navigate('/meds');
-    return;
+    return cleanup;
   }
 
   const med: Medication = existing ?? {
@@ -67,6 +83,7 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
   };
 
   const existingRules = editing ? await listRulesByMed(med.id) : [];
+  if (!isActive()) return cleanup;
   const ruleTimeBySlot = new Map<Slot, string>();
   for (const r of existingRules) ruleTimeBySlot.set(r.slot, r.timeLocal);
 
@@ -101,12 +118,25 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
   const nameInput = el('input', { type: 'text', value: med.name, placeholder: '例如：阿司匹林肠溶片' });
   const dosageInput = el('input', { type: 'text', value: med.dosageText, placeholder: '例如：100mg/片' });
   const amountInput = el('input', { type: 'text', value: med.amountPerDose, placeholder: '例如：1片 / 半片' });
+  const doseQuantityInput = el('input', {
+    type: 'number',
+    min: '0.0001',
+    step: '0.01',
+    inputMode: 'decimal',
+    value: med.doseQuantity != null ? String(med.doseQuantity) : '',
+    placeholder: '例如：1.5',
+  } as any) as HTMLInputElement;
+  const doseUnitInput = el('input', {
+    type: 'text',
+    value: med.doseUnit || '',
+    placeholder: '片 / 粒 / 袋 / mL',
+  }) as HTMLInputElement;
   const notesInput = el('textarea', { value: med.notes || '', placeholder: '医嘱、注意事项等' });
 
-  // 过期日期（可选），存储为 UTC 毫秒时间戳；input[type=date] 用 yyyy-MM-dd 字符串
+  // 药品有效期是本地日历日期；当天仍可服用，次日才视为过期。
   const expiryDateInput = el('input', {
     type: 'date',
-    value: med.expiryDate ? ymdUtc(med.expiryDate) : '',
+    value: getMedicationExpiryLocalDate(med) ?? '',
   }) as HTMLInputElement;
 
   const slotChips = el('div', { class: 'chips' });
@@ -152,7 +182,14 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
   form.append(buildNluBlock());
   form.append(field('药名', nameInput));
   form.append(field('规格', dosageInput));
-  form.append(field('每次用量', amountInput));
+  form.append(field('原医嘱用量', amountInput));
+  const structuredDose = el('div', { class: 'dose-structure-grid' });
+  structuredDose.append(field('每次剂量数值', doseQuantityInput));
+  structuredDose.append(field('剂量单位', doseUnitInput));
+  form.append(structuredDose);
+  const doseReview = el('div', { class: 'dose-review' });
+  form.append(doseReview);
+  renderDoseReview();
   form.append(field('过期日期（可选）', expiryDateInput));
 
   for (const s of SLOTS) {
@@ -160,6 +197,7 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
       class: 'chip' + (selectedSlots.has(s) ? ' on' : ''),
       html: SLOT_LABEL[s],
       type: 'button',
+      'aria-pressed': String(selectedSlots.has(s)),
     } as any);
     chip.onclick = () => {
       if (selectedSlots.has(s)) {
@@ -170,6 +208,7 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
         if (!selectedMealBySlot.has(s)) selectedMealBySlot.set(s, new Set());
       }
       chip.classList.toggle('on');
+      chip.setAttribute('aria-pressed', String(selectedSlots.has(s)));
       renderScheduleControls();
       refreshDaysLeft();
     };
@@ -184,11 +223,13 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
       class: 'chip sm' + (selectedDays.has(d) ? ' on' : ''),
       html: WEEKDAY_LABEL[d],
       type: 'button',
+      'aria-pressed': String(selectedDays.has(d)),
     } as any);
     chip.onclick = () => {
       if (selectedDays.has(d)) selectedDays.delete(d);
       else selectedDays.add(d);
       chip.classList.toggle('on');
+      chip.setAttribute('aria-pressed', String(selectedDays.has(d)));
       refreshDaysLeft();
     };
     dayChips.append(chip);
@@ -196,7 +237,8 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
   form.append(field('服药星期（不选 = 每天）', dayChips));
 
   // 周期用药配置（吃 N 天停 M 天）
-  const existingCycle = existingRules.find((r) => r.cycle)?.cycle;
+  const existingCycleRule = existingRules.find((r) => r.cycle);
+  const existingCycle = existingCycleRule?.cycle;
   let cycleEnabled = !!existingCycle;
   const cycleCard = el('div', { class: 'sub-card cycle-editor' });
   cycleCard.append(el('div', { class: 'section-title', html: '周期用药' }));
@@ -221,13 +263,19 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     value: String(existingCycle?.restDays ?? 2),
     placeholder: '2',
   } as any) as HTMLInputElement;
+  const cycleStartInput = el('input', {
+    type: 'date',
+    value: existingCycleRule?.cycleStartDate ?? (!existingCycle ? toLocalDate() : ''),
+    required: true,
+  } as any) as HTMLInputElement;
   cycleInputsWrap.append(field('服药天数', activeDaysInput));
   cycleInputsWrap.append(field('停药天数', restDaysInput));
+  cycleInputsWrap.append(field('本周期首个服药日', cycleStartInput));
   cycleCard.append(cycleInputsWrap);
-  cycleInputsWrap.style.display = cycleEnabled ? '' : 'none';
+  setCycleInputsVisibility();
   cycleCheckbox.onchange = () => {
     cycleEnabled = cycleCheckbox.checked;
-    cycleInputsWrap.style.display = cycleEnabled ? '' : 'none';
+    setCycleInputsVisibility();
   };
   form.append(cycleCard);
 
@@ -246,15 +294,19 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
   content.append(form);
 
   // 监听库存/用量输入变化，实时刷新可用天数
-  for (const inp of [remainingInput, amountInput, unitInput]) {
+  for (const inp of [remainingInput, amountInput, doseQuantityInput, doseUnitInput, unitInput]) {
     inp.addEventListener('input', refreshDaysLeft);
   }
+  amountInput.addEventListener('input', renderDoseReview);
+  doseQuantityInput.addEventListener('input', renderDoseReview);
+  doseUnitInput.addEventListener('input', renderDoseReview);
   refreshDaysLeft();
 
   const saveBtn = el('button', { class: 'btn success' });
   saveBtn.append(icon('check'));
   saveBtn.append(el('span', { html: '保存' }));
   saveBtn.onclick = async () => {
+    if (!isActive()) return;
     const name = nameInput.value.trim();
     if (!name) {
       toast('请填写药名');
@@ -263,13 +315,40 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     med.name = name;
     med.dosageText = dosageInput.value.trim();
     med.amountPerDose = amountInput.value.trim();
+    const doseQuantity = readPositiveNumber(doseQuantityInput.value);
+    const doseUnit = doseUnitInput.value.trim();
+    if ((doseQuantity == null) !== !doseUnit) {
+      toast('请同时填写每次剂量数值和单位');
+      (doseQuantity == null ? doseQuantityInput : doseUnitInput).focus();
+      return;
+    }
+    if (doseQuantity != null && doseUnit) {
+      med.doseQuantity = doseQuantity;
+      med.doseUnit = doseUnit;
+      med.doseSourceText = med.amountPerDose;
+      med.doseReviewRequired = false;
+      delete med.doseMigrationSuggestion;
+    } else {
+      delete med.doseQuantity;
+      delete med.doseUnit;
+      delete med.doseSourceText;
+      med.doseMigrationSuggestion = suggestStructuredDose(med.amountPerDose, med.inventory?.unit);
+      med.doseReviewRequired = !!med.amountPerDose;
+      if (med.doseReviewRequired) {
+        const proceed = await confirmDialog(
+          '每次剂量尚未确认，服药打卡不会自动扣减库存。仍要保存为待复核吗？',
+          '保存待复核',
+        );
+        if (!proceed || !isActive()) return;
+      }
+    }
     med.slots = SLOTS.filter((s) => selectedSlots.has(s));
     med.mealRelsBySlot = buildMealRelsBySlot();
     med.mealRels = mealRelsFromBySlot(med.mealRelsBySlot);
     med.daysOfWeek = [...selectedDays].sort();
     med.inventory = readInventory();
     med.notes = notesInput.value.trim();
-    med.expiryDate = readExpiryDate();
+    applyExpiryDate();
     // 回写 dailyConsumption（基于当前已选择的时段 + 用量推算）
     const daily = estimateDailyConsumption(med, buildRulesPreview());
     if (med.inventory && daily > 0) {
@@ -280,13 +359,27 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
 
     // 相互作用检查：合并新药名 + 现有药品名（排除自身）
     const cycle = readCycle();
+    if (cycleEnabled && !cycle) {
+      toast('请填写有效的周期天数');
+      activeDaysInput.focus();
+      return;
+    }
+    const cycleStartDate = cycleEnabled && isLocalDate(cycleStartInput.value)
+      ? cycleStartInput.value
+      : undefined;
+    if (cycleEnabled && !cycleStartDate) {
+      toast('请选择本周期首个服药日');
+      cycleStartInput.focus();
+      return;
+    }
     try {
       const others = (await listMeds()).filter((m) => m.id !== med.id);
+      if (!isActive()) return;
       const allNames = Array.from(new Set([name, ...others.map((m) => m.name)]));
       const hits = checkInteractions(allNames);
       if (hits.length > 0) {
         const msg = buildInteractionWarning(hits);
-        if (!(await confirmDialog(msg, '仍要保存', true))) {
+        if (!(await confirmDialog(msg, '仍要保存', true)) || !isActive()) {
           return;
         }
       }
@@ -295,10 +388,12 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     }
 
     await putMed(med);
-    await syncRules(med.id, selectedSlots, timeInputs, existingRules, cycle);
+    await syncRules(med.id, selectedSlots, timeInputs, existingRules, cycle, cycleStartDate);
+    await rescheduleMedicationReminders().catch(() => undefined);
 
     if (pendingPhoto) await putPhoto({ id: uid(), medId: med.id, blob: pendingPhoto, at: Date.now() });
 
+    if (!isActive()) return;
     toast('已保存');
     navigate('/meds');
   };
@@ -313,7 +408,10 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     delBtn.append(el('span', { html: '删除这种药' }));
     delBtn.onclick = async () => {
       if (await confirmDialog('确定删除这种药及其提醒吗？', '删除', true)) {
+        if (!isActive()) return;
         await softDeleteMed(med.id);
+        await rescheduleMedicationReminders().catch(() => undefined);
+        if (!isActive()) return;
         toast('已删除');
         navigate('/meds');
       }
@@ -327,7 +425,9 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
   backBtn.onclick = () => navigate('/meds');
   content.append(backBtn);
 
+  if (!isActive()) return cleanup;
   renderPage({ root, title: editing ? '编辑药品' : '新增药品', activeTab: 'meds', content });
+  return cleanup;
 
   function buildAiPhotoBlock(): HTMLElement {
     const wrap = el('div', { class: 'inline-actions' });
@@ -343,10 +443,11 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     btn.onclick = () => file.click();
     file.onchange = async () => {
       const f = file.files?.[0];
-      if (!f) return;
+      if (!f || !isActive()) return;
       setButtonBusy(btn, '识别中…');
       try {
         const r = await identifyByBlob(f);
+        if (!isActive()) return;
         if (!r.name) {
           toast('没认出来这是什么药，请手动填写');
           return;
@@ -355,17 +456,20 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
         applyMedToForm();
         try {
           const h = await aHash(f);
+          if (!isActive()) return;
           if (h && !med.identity.photoHashes.includes(h)) med.identity.photoHashes.push(h);
         } catch {
           /* hash 失败不影响 */
         }
+        if (!isActive()) return;
         pendingPhoto = f;
         toast(`已识别为「${r.name}」，请确认时段与库存`);
       } catch (e) {
+        if (!isActive()) return;
         const msg = e instanceof IdentifyError ? e.message : String(e);
         toast('识别失败：' + msg);
       } finally {
-        resetIconButton(btn, 'sparkles', '拍照识别（自动填表）');
+        if (isActive()) resetIconButton(btn, 'sparkles', '拍照识别（自动填表）');
       }
     };
     wrap.append(btn, file);
@@ -374,12 +478,14 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
 
   function buildNluBlock(): HTMLElement {
     const wrap = el('div', { class: 'nlu-box' });
-    const label = el('div', { class: 'nlu-label' });
+    const inputId = 'med-edit-ai-description';
+    const label = el('label', { class: 'nlu-label', htmlFor: inputId });
     label.append(icon('sparkles'));
     label.append(el('span', { html: '用一句话描述（AI 填表）' }));
     wrap.append(label);
 
     const input = el('textarea', {
+      id: inputId,
       class: 'nlu-input',
       placeholder: '例：阿司匹林肠溶片 100mg，早餐前和晚餐后各一片，工作日服用',
       rows: 2,
@@ -397,12 +503,14 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
         { threshold: 0 }
       );
       observer.observe(wrap);
+      cleanups.push(() => observer.disconnect());
     }
 
     const btn = el('button', { class: 'btn nlu-btn', type: 'button' } as any);
     btn.append(icon('sparkles'));
     btn.append(el('span', { html: 'AI 解析并填表' }));
     btn.onclick = async () => {
+      if (!isActive()) return;
       const desc = input.value.trim();
       if (!desc) {
         toast('请先描述这种药');
@@ -411,13 +519,15 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
       setButtonBusy(btn, '解析中…');
       try {
         const draft = await parsePrescription(desc);
+        if (!isActive()) return;
         applyDraftToForm(draft);
         toast(`已填入字段 ✓ 置信度 ${Math.round(draft.confidence * 100)}%`);
       } catch (e) {
+        if (!isActive()) return;
         const msg = e instanceof ParsePrescriptionError ? e.message : String(e);
         toast('AI 填表失败：' + msg);
       } finally {
-        resetIconButton(btn, 'sparkles', 'AI 解析并填表');
+        if (isActive()) resetIconButton(btn, 'sparkles', 'AI 解析并填表');
       }
     };
     wrap.append(btn);
@@ -437,18 +547,20 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     btn.onclick = () => file.click();
     file.onchange = async () => {
       const f = file.files?.[0];
-      if (!f) return;
+      if (!f || !isActive()) return;
       setButtonBusy(btn, '识别库存中…');
       try {
         const r = await identifyInventoryByBlob(f, nameInput.value.trim());
+        if (!isActive()) return;
         if (r.name && !nameInput.value.trim()) nameInput.value = r.name;
         applyInventoryToInputs(r.inventory);
         toast(`已辅助填写库存，置信度 ${Math.round(r.confidence * 100)}%`);
       } catch (e) {
+        if (!isActive()) return;
         const msg = e instanceof IdentifyError ? e.message : String(e);
         toast('库存识别失败：' + msg);
       } finally {
-        resetIconButton(btn, 'camera', '拍票据/药盒辅助填写');
+        if (isActive()) resetIconButton(btn, 'camera', '拍票据/药盒辅助填写');
       }
     };
     wrap.append(btn, file);
@@ -456,7 +568,7 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
   }
 
   function renderScheduleControls(): void {
-    scheduleWrap.innerHTML = '';
+    scheduleWrap.replaceChildren();
     timeInputs.clear();
     for (const s of SLOTS) {
       if (!selectedSlots.has(s)) continue;
@@ -466,12 +578,17 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
       const timeInput = el('input', {
         type: 'time',
         value: ruleTimeBySlot.get(s) || SLOT_DEFAULT_TIME[s],
-      }) as HTMLInputElement;
+        'aria-label': `${SLOT_LABEL[s]}服药时间`,
+      } as any) as HTMLInputElement;
       timeInputs.set(s, timeInput);
       head.append(timeInput);
       row.append(head);
 
-      const mealChips = el('div', { class: 'chips meal-combo-chips' });
+      const mealChips = el('div', {
+        class: 'chips meal-combo-chips',
+        role: 'group',
+        'aria-label': `${SLOT_LABEL[s]}餐食关系`,
+      } as any);
       const relSet = selectedMealBySlot.get(s) ?? new Set<MealRel>();
       selectedMealBySlot.set(s, relSet);
       for (const rel of MEAL_RELS) {
@@ -479,11 +596,13 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
           class: 'chip sm' + (relSet.has(rel) ? ' on' : ''),
           html: MEAL_LABEL[rel],
           type: 'button',
+          'aria-pressed': String(relSet.has(rel)),
         } as any);
         chip.onclick = () => {
           if (relSet.has(rel)) relSet.delete(rel);
           else relSet.add(rel);
           chip.classList.toggle('on');
+          chip.setAttribute('aria-pressed', String(relSet.has(rel)));
         };
         mealChips.append(chip);
       }
@@ -499,6 +618,7 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     if (!nameInput.value.trim()) nameInput.value = med.name;
     if (!dosageInput.value.trim()) dosageInput.value = med.dosageText;
     if (!amountInput.value.trim()) amountInput.value = med.amountPerDose;
+    renderDoseReview();
     syncSlotChipVisuals();
     renderScheduleControls();
   }
@@ -525,6 +645,7 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
       for (const d2 of d.daysOfWeek) selectedDays.add(d2);
       syncDayChipVisuals();
     }
+    renderDoseReview();
   }
 
   function applyMealBySlot(bySlot: MealRelsBySlot, fallback: MealRel[]): void {
@@ -573,22 +694,27 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
 
   function syncSlotChipVisuals(): void {
     const chips = slotChips.querySelectorAll<HTMLButtonElement>('button.chip');
-    SLOTS.forEach((s, i) => chips[i]?.classList.toggle('on', selectedSlots.has(s)));
+    SLOTS.forEach((s, i) => {
+      chips[i]?.classList.toggle('on', selectedSlots.has(s));
+      chips[i]?.setAttribute('aria-pressed', String(selectedSlots.has(s)));
+    });
   }
 
   function syncDayChipVisuals(): void {
     const chips = dayChips.querySelectorAll<HTMLButtonElement>('button.chip');
-    for (let i = 0; i < chips.length; i++) chips[i].classList.toggle('on', selectedDays.has(i));
+    for (let i = 0; i < chips.length; i++) {
+      chips[i].classList.toggle('on', selectedDays.has(i));
+      chips[i].setAttribute('aria-pressed', String(selectedDays.has(i)));
+    }
   }
 
-  /** 读取过期日期，转为 UTC 毫秒时间戳；空值返回 undefined */
-  function readExpiryDate(): number | undefined {
-    const v = expiryDateInput.value;
-    if (!v) return undefined;
-    // input[type=date] 返回 yyyy-MM-dd；按 UTC 0 点解析避免时区漂移
-    const [y, m, d] = v.split('-').map(Number);
-    if (!y || !m || !d) return undefined;
-    return Date.UTC(y, m - 1, d, 0, 0, 0, 0);
+  function applyExpiryDate(): void {
+    if (isLocalDate(expiryDateInput.value)) med.expiryLocalDate = expiryDateInput.value;
+    else delete med.expiryLocalDate;
+    // Once reviewed in the local-date control, the legacy timestamp must not
+    // override the selected calendar date during database normalization.
+    delete med.expiryDate;
+    delete med.expirySourceTimestamp;
   }
 
   /** 读取周期用药配置：开关开启且 activeDays/restDays 都 > 0 才返回，否则 undefined */
@@ -596,7 +722,14 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     if (!cycleEnabled) return undefined;
     const activeDays = readNumber(activeDaysInput.value);
     const restDays = readNumber(restDaysInput.value);
-    if (!activeDays || activeDays <= 0 || restDays == null || restDays < 0) return undefined;
+    if (
+      !activeDays ||
+      activeDays <= 0 ||
+      !Number.isInteger(activeDays) ||
+      restDays == null ||
+      restDays < 0 ||
+      !Number.isInteger(restDays)
+    ) return undefined;
     if (activeDays + restDays <= 0) return undefined;
     return { activeDays, restDays };
   }
@@ -613,6 +746,10 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
         slot: s,
         timeLocal: t,
         enabled: true,
+        cycle: readCycle(),
+        cycleStartDate: cycleEnabled && isLocalDate(cycleStartInput.value)
+          ? cycleStartInput.value
+          : undefined,
         escalate: defaultEscalate(),
         updatedAt: 0,
       });
@@ -627,6 +764,8 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     const previewMed: Medication = {
       ...med,
       amountPerDose: amountInput.value.trim(),
+      doseQuantity: readPositiveNumber(doseQuantityInput.value),
+      doseUnit: doseUnitInput.value.trim() || undefined,
       slots: SLOTS.filter((s) => selectedSlots.has(s)),
       daysOfWeek: [...selectedDays].sort(),
       inventory: { remaining, unit },
@@ -640,11 +779,63 @@ export async function renderMedEditPage(root: HTMLElement, medId: string | null)
     daysLeftHint.style.display = '';
     daysLeftHint.textContent = `约还够 ${days} 天（按当前用量推算）`;
   }
+
+  function setCycleInputsVisibility(): void {
+    cycleInputsWrap.hidden = !cycleEnabled;
+    (cycleInputsWrap as HTMLElement & { inert: boolean }).inert = !cycleEnabled;
+    cycleCheckbox.setAttribute('aria-expanded', String(cycleEnabled));
+  }
+
+  function renderDoseReview(): void {
+    doseReview.replaceChildren();
+    if (readPositiveNumber(doseQuantityInput.value) != null && doseUnitInput.value.trim()) return;
+    const suggestion = suggestStructuredDose(
+      amountInput.value,
+      unitInput?.value || med.inventory?.unit,
+    );
+    const message = el('div', {
+      class: 'banner warn',
+      text: suggestion
+        ? `原医嘱可建议为 ${suggestion.quantity}${suggestion.unit}，确认后才会用于库存扣减。`
+        : '请按医嘱填写明确的剂量数值和单位；未确认时不会自动扣减库存。',
+    });
+    doseReview.append(message);
+    if (!suggestion) return;
+    const accept = el('button', {
+      class: 'btn tonal small',
+      type: 'button',
+      text: '确认使用建议',
+    } as any);
+    accept.onclick = () => {
+      doseQuantityInput.value = String(suggestion.quantity);
+      doseUnitInput.value = suggestion.unit;
+      renderDoseReview();
+      refreshDaysLeft();
+      doseQuantityInput.focus();
+    };
+    doseReview.append(accept);
+  }
 }
 
+let medEditFieldSeq = 0;
 function field(label: string, input: HTMLElement): HTMLElement {
   const f = el('div', { class: 'field' });
-  f.append(el('label', { html: label }));
+  const control = input.matches('input,select,textarea')
+    ? input
+    : input.querySelector<HTMLElement>('input,select,textarea');
+  const labelElement = el('label', { html: label });
+  if (control) {
+    const id = control.id || `med-edit-field-${++medEditFieldSeq}`;
+    control.id = id;
+    if (!control.getAttribute('name')) control.setAttribute('name', id);
+    labelElement.htmlFor = id;
+  } else {
+    const labelId = `med-edit-group-${++medEditFieldSeq}`;
+    labelElement.id = labelId;
+    if (!input.getAttribute('role')) input.setAttribute('role', 'group');
+    input.setAttribute('aria-labelledby', labelId);
+  }
+  f.append(labelElement);
   f.append(input);
   return f;
 }
@@ -691,6 +882,7 @@ async function syncRules(
   timeInputs: Map<Slot, HTMLInputElement>,
   existing: ReminderRule[],
   cycle: { activeDays: number; restDays: number } | undefined,
+  cycleStartDate: LocalDate | undefined,
 ): Promise<void> {
   const existBySlot = new Map<Slot, ReminderRule>();
   for (const r of existing) existBySlot.set(r.slot, r);
@@ -702,6 +894,7 @@ async function syncRules(
       ex.timeLocal = timeLocal;
       ex.enabled = true;
       ex.cycle = cycle;
+      ex.cycleStartDate = cycleStartDate;
       await putRule(ex);
     } else {
       await putRule({
@@ -711,6 +904,7 @@ async function syncRules(
         timeLocal,
         enabled: true,
         cycle,
+        cycleStartDate,
         escalate: defaultEscalate(),
         updatedAt: 0,
       });
@@ -727,42 +921,38 @@ function readNumber(value: string): number | undefined {
   return Number.isFinite(n) && n >= 0 && value.trim() !== '' ? n : undefined;
 }
 
+function readPositiveNumber(value: string): number | undefined {
+  const valueAsNumber = readNumber(value);
+  return valueAsNumber != null && valueAsNumber > 0 ? valueAsNumber : undefined;
+}
+
 /** 严重等级中文 + 描述，用于相互作用警告文案 */
 function severityCn(s: DrugInteraction['severity']): string {
   return s === 'severe' ? '严重' : s === 'moderate' ? '中等' : '轻微';
 }
 
-/** 构造相互作用确认对话框的 HTML 文案 */
+/** 构造纯文本确认文案；本地规则库仅覆盖内置的常见组合。 */
 function buildInteractionWarning(hits: DrugInteraction[]): string {
   const lines = hits.map(
     (h) =>
       `【${severityCn(h.severity)}】${h.drugs.join(' + ')}：${h.description}`,
   );
   return (
-    `检测到 ${hits.length} 条药物相互作用：<br><br>` +
-    lines.join('<br><br>') +
-    '<br><br>仍要保存吗？'
+    `常见相互作用提示命中 ${hits.length} 条（仅覆盖应用内置的有限规则，不替代医生或药师判断）：\n\n` +
+    lines.join('\n\n') +
+    '\n\n仍要保存吗？'
   );
 }
 
 function setButtonBusy(btn: HTMLButtonElement, text: string): void {
   btn.setAttribute('disabled', 'true');
-  btn.innerHTML = '';
+  btn.replaceChildren();
   btn.append(el('span', { html: text }));
 }
 
 function resetIconButton(btn: HTMLButtonElement, iconName: 'sparkles' | 'camera', text: string): void {
   btn.removeAttribute('disabled');
-  btn.innerHTML = '';
+  btn.replaceChildren();
   btn.append(icon(iconName));
   btn.append(el('span', { html: text }));
-}
-
-/** 把 UTC 毫秒时间戳格式化成 input[type=date] 需要的 yyyy-MM-dd 字符串（UTC 视角） */
-function ymdUtc(ms: number): string {
-  const d = new Date(ms);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
 }

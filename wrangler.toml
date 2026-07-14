@@ -1,21 +1,28 @@
-# Cloudflare Worker 配置。部署前需把下面的 KV id 换成你账号里真实的 namespace id。
-# 创建 KV：  npx wrangler kv namespace create MEDBOX
-# 设置密钥：npx wrangler secret put SYNC_SECRET
-# 本地起：  npm run worker:dev      部署：npm run worker:deploy
 name = "medbox"
 main = "worker/index.ts"
-compatibility_date = "2024-11-01"
+compatibility_date = "2026-07-13"
 
-# 同步 / 服药记录 / 推送状态 / WxPusher 绑定都放这个 KV
 [[kv_namespaces]]
 binding = "MEDBOX"
 id = "9ed3684b797147e0a5a26bbf7cd90d34"
-# 本地 wrangler dev 会用内置 miniflare KV，不需要真实 id
 
-# M3 强提醒：每分钟触发（UTC）。Worker 内部自行换算北京时间。
-# 部署 M3 时取消注释：
-# [triggers]
-# crons = ["* * * * *"]
+[[durable_objects.bindings]]
+name = "SYNC_V2_HOUSEHOLDS"
+class_name = "SyncV2Household"
+
+[[durable_objects.bindings]]
+name = "SYNC_V2_RATE_LIMITER"
+class_name = "SyncV2RateLimiter"
+
+[[migrations]]
+tag = "sync-v2-initial"
+new_sqlite_classes = ["SyncV2Household", "SyncV2RateLimiter"]
+
+[vars]
+# Both values must be deliberately configured before the v2 API serves traffic.
+SYNC_V2_ENABLED = "false"
+SYNC_V2_ALLOWED_ORIGINS = ""
+SYNC_V1_READONLY_ENABLED = "false"
 
 [observability]
 enabled = true
