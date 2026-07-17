@@ -25,4 +25,12 @@ describe('today page compact fullscreen contracts', () => {
     expect(styles).toContain('min-inline-size: 0');
     expect(styles).toContain('scroll-margin-block');
   });
+
+  it('cancels only local dose notification tags after recording an intake', () => {
+    const page = source('src/pages/Today.ts');
+
+    expect(page).toContain('closeNotificationsByTag(item.occurrence.id)');
+    expect(page).toContain('closeNotificationsByTag(item.occurrence.legacyLogId)');
+    expect(page).not.toContain("item.occurrence.id + '_care'");
+  });
 });

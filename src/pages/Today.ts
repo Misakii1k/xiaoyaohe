@@ -475,7 +475,6 @@ async function applyActions(
       await sendLowStockReminderIfDue(result.med, result.lowStockMessage);
     }
     void closeNotificationsByTag(item.occurrence.id);
-    void closeNotificationsByTag(item.occurrence.id + '_care');
     void closeNotificationsByTag(item.occurrence.legacyLogId);
   }
 }

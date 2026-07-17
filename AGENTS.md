@@ -28,5 +28,5 @@ This repository is edited from Claude, GPT/Codex, Grok, Trae, and Qoder. Chat hi
 - Commit coherent, tested changes before switching tools. Do not leave important context only in a chat.
 - Before ending, update the tool handoff with scope, files, tests, remaining work, and the latest commit.
 - Merge tested commits into `main`; then merge `main` back into every long-lived tool branch before new work begins.
-- `release/`, browser output, logs, caches, and secrets stay untracked. Design PNG sources use Git LFS.
+- `release/` APK/checksum files, browser output, logs, caches, and secrets stay untracked. Design PNG sources use Git LFS.
 - Preserve the project's existing versioning and packaging policy recorded in `docs/worktrees/README.md`.

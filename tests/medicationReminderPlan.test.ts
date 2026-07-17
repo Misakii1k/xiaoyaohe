@@ -92,10 +92,10 @@ describe('native medication reminder plan', () => {
     ).toEqual([]);
   });
 
-  it('uses the caregiver escalation time without scheduling patient pings', () => {
+  it('keeps the legacy caregiver delay as inert compatibility data', () => {
     const med = medication();
     const reminderRule = rule({
-      escalate: { ...defaultEscalate(), notifyCaregiverAfterMin: 30 },
+      escalate: { ...defaultEscalate(), maxRepeats: 2, notifyCaregiverAfterMin: 1 },
     });
     const revision = createScheduleRevision(med, reminderRule, {
       effectiveDate: '2026-07-13',
@@ -109,12 +109,15 @@ describe('native medication reminder plan', () => {
       logs: [],
       now,
       horizonDays: 1,
-      role: 'caregiver',
     });
 
-    expect(plan).toHaveLength(1);
-    expect(plan[0]).toMatchObject({ key: 'care', tag: 'occurrence:rule-1:2026-07-13_care' });
-    expect(new Date(plan[0].at).getHours()).toBe(8);
-    expect(new Date(plan[0].at).getMinutes()).toBe(30);
+    expect(plan).toHaveLength(3);
+    expect(plan.map(({ key }) => key)).toEqual(['dose', 'repeat-2', 'repeat-3']);
+    expect(plan.map(({ tag }) => tag)).toEqual([
+      'occurrence:rule-1:2026-07-13',
+      'occurrence:rule-1:2026-07-13',
+      'occurrence:rule-1:2026-07-13',
+    ]);
+    expect(plan.every(({ data }) => data?.kind === 'reminder')).toBe(true);
   });
 });

@@ -19,7 +19,7 @@ describe('settings information architecture contracts', () => {
 
   it('uses local Lucide icons and compact, non-glass setting groups', () => {
     const source = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
-    const styles = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8');
+    const styles = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8').replaceAll('\r\n', '\n');
 
     expect(source).toContain("class: 'page page-light settings-page'");
     expect(source).toContain('iconName: IconName');
@@ -33,25 +33,31 @@ describe('settings information architecture contracts', () => {
     expect(styles).toContain('.settings-page {\n  display: block;');
   });
 
-  it('enables encrypted sync without retaining image-generation settings', () => {
+  it('uses App-only local-network family sync with plain-language guidance', () => {
     const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
-    const wrangler = readFileSync(join(root, 'wrangler.toml'), 'utf8');
-    const envExample = readFileSync(join(root, '.env.example'), 'utf8');
-    const productionEnv = readFileSync(join(root, '.env.production'), 'utf8');
+    const lanPanel = readFileSync(join(root, 'src/sync/lan/settingsPanel.ts'), 'utf8');
 
-    expect(settings).toContain('if (SYNC_V2_UI_ENABLED) content.append(renderSyncPanel(signal));');
-    expect(settings).toContain('SYNC_V2_ALLOWED_ORIGINS');
-    expect(settings).not.toContain('灰度关闭');
+    expect(settings).toContain("import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';");
+    expect(settings).toContain('const lanSyncPanel = renderLanSyncSettingsPanel(signal);');
+    expect(settings).toContain('lanSyncPanel.cleanup();');
+    expect(lanPanel).toContain("text: '家庭同步'");
+    expect(lanPanel).toContain('两台手机连着同一个 Wi-Fi 时，可以直接互相传。');
+    expect(lanPanel).toContain("actionButton('send', '显示连接码')");
+    expect(lanPanel).toContain("actionButton('scan', '扫一扫连接', 'tonal')");
+    expect(lanPanel).toContain('result.inventoryConflicts.length');
+    expect(lanPanel).toContain('result.remindersNeedAttention');
+    expect(lanPanel).toContain('请重新打开应用后检查提醒');
+    expect(`${settings}\n${lanPanel}`).not.toMatch(/SYNC_V2|Worker|PWA|WebRTC|SDP|Origin/);
+    expect(settings).not.toContain("from '../sync/v2'");
+    expect(settings).not.toContain("from '@capacitor/core'");
+    expect(settings).not.toContain('openDialog');
+    expect(settings).not.toContain('closeDialog');
+    expect(settings).not.toContain('浏览器');
+    expect(settings).toContain('通知已开启，应用会按计划发送提醒。');
+    expect(settings).toContain('密钥保存在这台手机的安全存储中。');
     expect(settings).not.toContain("from '../ai/imageGen'");
     expect(settings).not.toContain('图像 AI');
     expect(settings).not.toContain('setImageGenConfig');
     expect(settings).not.toContain('resetImageGenConfig');
-
-    expect(wrangler).toContain('SYNC_V2_ENABLED = "true"');
-    expect(wrangler).toContain('https://localhost');
-    expect(wrangler).toContain('http://127.0.0.1:5173');
-    expect(wrangler).not.toMatch(/SYNC_V2_ALLOWED_ORIGINS\s*=\s*"[^"]*\*/);
-    expect(envExample).toContain('VITE_SYNC_V2_ENABLED=true');
-    expect(productionEnv.trim()).toBe('VITE_SYNC_V2_ENABLED=true');
   });
 });

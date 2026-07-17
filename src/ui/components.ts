@@ -1,7 +1,6 @@
 // 通用 UI 组件 / 工具函数（M3，无框架，纯 DOM）
 import { SLOT_LABEL, type Slot } from '../db/schema';
-import { navigate, registerRouteTransitionCleanup } from '../router';
-import { getLastSync, onSync, type SyncState } from '../sync/syncClient';
+import { registerRouteTransitionCleanup } from '../router';
 import { renderAppShell } from '../app/AppShell';
 import { primaryNavigation } from '../app/navigation';
 import { Icon as renderIcon } from './icons/Icon';
@@ -82,48 +81,12 @@ export function topbar(title: string, right?: HTMLElement, left?: HTMLElement): 
   return bar;
 }
 
-/** ---------- 同步状态图标按钮 ---------- */
-/** 把 SyncState 映射为可读中文，用于 aria-label / title */
-function syncStateLabel(state: SyncState): string {
-  switch (state) {
-    case 'syncing': return '正在同步…';
-    case 'ok': return '已云同步';
-    case 'error': return '同步出错，点击查看';
-    case 'offline': return '当前离线';
-    case 'unconfigured': return '未配置云同步';
-    case 'disabled': return '云同步已暂停';
-    default: return '云同步状态';
-  }
-}
-
-/** 创建同步状态图标按钮；点击跳转 /settings */
-export function syncStatusIcon(initialState: SyncState): HTMLElement {
-  const btn = el('button', {
-    class: 'icon-btn sync-status-btn',
-    type: 'button',
-    'aria-label': syncStateLabel(initialState),
-    title: syncStateLabel(initialState),
-  } as any);
-  btn.append(icon('cloud'));
-  applySyncState(btn, initialState);
-  btn.onclick = () => navigate('/settings');
-  return btn;
-}
-
-/** 根据 SyncState 更新按钮外观（class + label） */
-function applySyncState(btn: HTMLElement, state: SyncState): void {
-  btn.className = `icon-btn sync-status-btn sync-state-${state}`;
-  const label = syncStateLabel(state);
-  btn.setAttribute('aria-label', label);
-  btn.setAttribute('title', label);
-}
-
 /** ---------- Snackbar ---------- */
 let toastTimer: number | undefined;
 let toastHideTimer: number | undefined;
 export function toast(msg: string, ms = 2200): void {
   document.querySelectorAll('.toast').forEach((t) => t.remove());
-  const t = el('div', { class: 'toast', html: msg });
+  const t = el('div', { class: 'toast', text: msg });
   t.setAttribute('role', 'status');
   t.setAttribute('aria-live', 'polite');
   t.setAttribute('aria-atomic', 'true');
@@ -464,30 +427,13 @@ export function renderPage(opts: {
   document.title = `${opts.title} · 日常工具箱`;
   const left = opts.topLeft;
 
-  // 右侧：同步状态图标 + 可选的页面级 topRight
-  const syncBtn = syncStatusIcon(getLastSync().state);
-  let right: HTMLElement | undefined;
-  if (opts.topRight) {
-    right = el('div', { class: 'topbar-actions' });
-    right.append(syncBtn, opts.topRight);
-  } else {
-    right = syncBtn;
-  }
-  // 订阅同步状态变化，实时更新图标
-  let unsub: (() => void) | undefined;
-  unsub = onSync((r) => {
-    if (document.body.contains(syncBtn)) applySyncState(syncBtn, r.state);
-    else if (unsub) unsub();
-  });
-  window.addEventListener('hashchange', () => unsub?.(), { once: true });
-
   opts.content.setAttribute('role', 'main');
   opts.content.setAttribute('id', 'main-content');
   opts.content.setAttribute('tabindex', '-1');
   const dock = opts.actionDock ?? (opts.fab ? el('div', {}, [opts.fab]) : undefined);
   renderAppShell({
     root: opts.root,
-    header: topbar(opts.title, right, left),
+    header: topbar(opts.title, opts.topRight, left),
     content: opts.content,
     dock,
     navigation: opts.showTabbar !== false ? tabbar(opts.activeTab) : undefined,

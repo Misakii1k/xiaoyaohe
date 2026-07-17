@@ -1,7 +1,7 @@
 // LLM 配置（OpenAI 兼容 endpoint）
 // 用于"自然语言填表"功能：用户描述 → 结构化处方
 //
-// 地址和模型可持久化；密钥由 SecretStore 保管（Android 安全存储，PWA 仅当前会话）。
+// 地址和模型可持久化；密钥由 Android SecretStore 保管。
 import { clearSessionSecret, getSessionSecret, initializeSecretStore, setSessionSecret } from './secretStore';
 
 const LS_KEY = 'medbox.llmConfig.v1';

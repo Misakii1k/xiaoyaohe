@@ -55,12 +55,25 @@ describe('0.7.0 UI architecture contracts', () => {
   it('renders the initial route before asynchronous secure-storage initialization', () => {
     const main = source('src/main.ts');
     const routerStart = main.indexOf("startRouter(root, '/today');");
-    const secretInitialization = main.indexOf('void initializeLlmSecretStore()');
+    const retiredSyncCleanup = main.indexOf('void cleanupRetiredCloudSyncStorage()');
+    const secretInitialization = main.indexOf('.then(() => initializeLlmSecretStore())');
 
     expect(routerStart).toBeGreaterThan(-1);
-    expect(secretInitialization).toBeGreaterThan(routerStart);
+    expect(retiredSyncCleanup).toBeGreaterThan(routerStart);
+    expect(secretInitialization).toBeGreaterThan(retiredSyncCleanup);
     expect(main).not.toMatch(/await initializeLlmSecretStore\(\)/);
+    expect(main).toContain('.catch(() => undefined)');
     expect(main).toContain('.then(() => silentHealthCheck())');
+  });
+
+  it('renders snackbar messages as text so user and peer names cannot inject markup', () => {
+    const components = source('src/ui/components.ts');
+    const toastSource = components.slice(
+      components.indexOf('export function toast'),
+      components.indexOf('/** ---------- Modal Dialog'),
+    );
+    expect(toastSource).toContain("{ class: 'toast', text: msg }");
+    expect(toastSource).not.toContain('html: msg');
   });
 
   it('does not replay legacy entrance motion when the application shell rerenders', () => {

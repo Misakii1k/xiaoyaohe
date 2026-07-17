@@ -127,7 +127,7 @@ export async function createIdentifySession(_mode: IdentifyMode, kind: AiDataKin
   const cfg = getLlmConfig();
   if (!cfg.baseUrl || !cfg.apiKey) {
     throw new IdentifyError(
-      '请先在「设置 → AI 大模型」配置 API 地址和密钥；云同步关闭时会使用本机 AI 配置识别。',
+      '请先在「设置 → AI 大模型」配置 API 地址和密钥。',
       'unconfigured',
     );
   }

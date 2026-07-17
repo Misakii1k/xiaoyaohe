@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -51,12 +52,12 @@ describe('release version validation', () => {
 
     expect(
       validateReleaseVersions({
-        packageVersion: '0.7.6',
-        lockVersion: '0.7.6',
-        androidVersionName: '0.7.6',
-        androidVersionCode: 13,
+        packageVersion: '0.7.7',
+        lockVersion: '0.7.7',
+        androidVersionName: '0.7.7',
+        androidVersionCode: 14,
       }),
-    ).toEqual({ version: '0.7.6', versionCode: 13 });
+    ).toEqual({ version: '0.7.7', versionCode: 14 });
   });
 
   it('rejects stale Android and lockfile versions', () => {
@@ -149,7 +150,7 @@ describe('ZIP and APK asset verification', () => {
     expect(() => verifyApkWebAssets(dist, extraApk)).toThrow(/unexpected web resources/);
   });
 
-  it('publishes versioned artifacts and a verifiable SHA-256 manifest', () => {
+  it('publishes only the versioned Android artifact and its SHA-256 manifest', () => {
     const root = temporaryDirectory();
     const dist = join(root, 'dist');
     mkdirSync(dist);
@@ -162,23 +163,23 @@ describe('ZIP and APK asset verification', () => {
         { name: 'assets/public/cordova.js', data: Buffer.alloc(0) },
       ]),
     );
+    const obsoleteWebArchive = join(root, 'release', 'medbox-0.7.7-web.zip');
+    mkdirSync(join(root, 'release'), { recursive: true });
+    writeFileSync(obsoleteWebArchive, 'stale web product');
 
     const result = publishReleaseArtifacts({
       root,
-      releaseConfig: { name: 'medbox', version: '0.4.1', versionCode: 4 },
+      releaseConfig: { name: 'medbox', version: '0.7.7', versionCode: 14 },
       variant: 'debug',
       apkFile: apk,
     });
 
-    expect(basename(result.webArchive)).toBe('medbox-0.4.1-web.zip');
-    expect(basename(result.androidArtifact)).toBe('medbox-0.4.1-android-debug.apk');
-    expect(readZipEntries(readFileSync(result.webArchive)).get('index.html')?.toString()).toBe(
-      'release payload',
-    );
+    expect(result).not.toHaveProperty('webArchive');
+    expect(basename(result.androidArtifact)).toBe('medbox-0.7.7-android-debug.apk');
+    expect(existsSync(obsoleteWebArchive)).toBe(false);
     const manifest = readFileSync(result.checksumFile, 'utf8');
-    expect(manifest).toContain(`${sha256(readFileSync(result.webArchive))}  medbox-0.4.1-web.zip`);
-    expect(manifest).toContain(
-      `${sha256(readFileSync(result.androidArtifact))}  medbox-0.4.1-android-debug.apk`,
+    expect(manifest).toBe(
+      `${sha256(readFileSync(result.androidArtifact))}  medbox-0.7.7-android-debug.apk\n`,
     );
   });
 });
@@ -213,12 +214,10 @@ describe('release command orchestration', () => {
     expect(commands.map((command) => command.label)).toEqual([
       'Audit all dependencies',
       'Type-check frontend',
-      'Type-check Worker',
       'Run Vitest suite',
       'Install Playwright Chromium',
       'Run Playwright visual matrix',
-      'Build web application',
-      'Validate Worker deployment bundle',
+      'Build Android WebView assets',
       'Sync Capacitor Android project',
       'Run Android unit tests and assemble APK',
       'Run Android instrumentation tests',
@@ -234,5 +233,47 @@ describe('release command orchestration', () => {
     expect(() => parseReleaseArgs(['--unknown'])).toThrow(/Unknown release option/);
     expect(() => parseReleaseArgs(['--skip-connected-tests'])).toThrow(/Unknown release option/);
     expect(() => parseReleaseArgs(['--android-variant', '../debug'])).toThrow(/Invalid Android variant/);
+  });
+});
+
+describe('Android-only distribution contract', () => {
+  const root = join(import.meta.dirname, '..');
+
+  it('keeps Vite for WebView assets without shipping a PWA product path', () => {
+    const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+    const vite = readFileSync(join(root, 'vite.config.ts'), 'utf8');
+    const tsconfig = readFileSync(join(root, 'tsconfig.json'), 'utf8');
+    const main = readFileSync(join(root, 'src', 'main.ts'), 'utf8');
+
+    expect(packageJson).toMatchObject({
+      version: '0.7.7',
+      description: expect.stringContaining('Android App'),
+      dependencies: { qrcode: expect.any(String) },
+      devDependencies: { '@types/qrcode': expect.any(String) },
+    });
+    expect(packageJson.scripts.package).toBeUndefined();
+    expect(packageJson.scripts['deploy:pages']).toBeUndefined();
+    expect(packageJson.scripts['typecheck:worker']).toBeUndefined();
+    expect(packageJson.scripts['worker:dev']).toBeUndefined();
+    expect(packageJson.scripts['worker:deploy']).toBeUndefined();
+    expect(packageJson.devDependencies['vite-plugin-pwa']).toBeUndefined();
+    expect(packageJson.devDependencies['@cloudflare/workers-types']).toBeUndefined();
+    expect(packageJson.devDependencies.wrangler).toBeUndefined();
+    expect(existsSync(join(root, 'scripts', 'package-dist.mjs'))).toBe(false);
+    expect(existsSync(join(root, 'scripts', 'deploy-pages.cmd'))).toBe(false);
+    expect(existsSync(join(root, 'public', '_headers'))).toBe(false);
+    expect(existsSync(join(root, 'worker'))).toBe(false);
+    expect(existsSync(join(root, 'wrangler.toml'))).toBe(false);
+    expect(existsSync(join(root, '.env.example'))).toBe(false);
+    expect(existsSync(join(root, '.env.production'))).toBe(false);
+    expect(existsSync(join(root, 'src', 'sync', 'v2'))).toBe(false);
+    expect(existsSync(join(root, 'src', 'sync', 'merge.ts'))).toBe(false);
+    expect(existsSync(join(root, 'src', 'sync', 'syncClient.ts'))).toBe(false);
+    expect(vite).not.toContain('VitePWA');
+    expect(vite).not.toContain('manifest:');
+    expect(tsconfig).not.toContain('vite-plugin-pwa/client');
+    expect(main).not.toContain('virtual:pwa-register');
+    expect(main).not.toContain('registerSW');
+    expect(main).not.toContain('startAutoSync');
   });
 });

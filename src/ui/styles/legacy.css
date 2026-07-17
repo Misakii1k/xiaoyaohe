@@ -2147,20 +2147,6 @@ textarea {
   border-top: 0.5px solid var(--separator);
 }
 
-.sync-v2-actions {
-  margin-top: 12px;
-}
-
-.sync-v2-session-note {
-  margin-top: 12px;
-  line-height: 1.55;
-}
-
-.sync-v2-summary {
-  margin-bottom: 10px;
-}
-
-.sync-v2-id,
 .protected-value {
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -2175,20 +2161,6 @@ textarea {
   line-height: 1.45;
 }
 
-.sync-v2-devices h4 {
-  margin: 18px 0 8px;
-  font-size: var(--fs-body);
-}
-
-.sync-v2-device .btn {
-  flex: 0 0 auto;
-}
-
-.sync-v2-forget {
-  margin-top: 10px;
-  color: var(--ios-red);
-}
-
 .protected-value-dialog {
   width: min(560px, calc(100vw - 32px));
 }
@@ -2199,33 +2171,6 @@ textarea {
   min-height: 120px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 13px;
-}
-
-.sync-v2-migration-dialog {
-  width: min(620px, calc(100vw - 32px));
-}
-
-.sync-v2-migration-dialog .field {
-  margin-bottom: 14px;
-}
-
-.sync-v2-migration-confirm {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 8px 0 16px;
-  line-height: 1.5;
-}
-
-.sync-v2-migration-confirm input {
-  flex: 0 0 auto;
-  margin-top: 3px;
-}
-
-.sync-v2-migration-report {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  margin-bottom: 14px;
 }
 
 /* AI 卡里模型选择行 */

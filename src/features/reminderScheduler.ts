@@ -1,4 +1,4 @@
-// PWA 前台尽力提醒：浏览器后台会节流，页面关闭后不保证送达。
+// Android App 由原生闹钟负责后台提醒；这里维护本地计划与前台状态。
 import {
   listMeds,
   listLogs,
@@ -9,7 +9,6 @@ import {
   putPushState,
 } from '../db/local';
 import {
-  SLOT_LABEL,
   type Medication,
   type ReminderRule,
 } from '../db/schema';
@@ -33,7 +32,6 @@ import {
   buildReminderBody,
   buildReminderTitle,
 } from './medicationReminderPlan';
-import { getSyncV2PublicConfig } from '../sync/v2/publicConfig';
 
 const TICK_MS = 60_000;
 let timer: number | null = null;
@@ -58,7 +56,7 @@ export function startReminderScheduler(): void {
   timer = window.setInterval(() => void tick(), TICK_MS);
   // 回到前台立即追一次（设备可能挂起期间错过若干 tick）
   document.addEventListener('visibilitychange', onVisibilityChange);
-  // 联网恢复后追一次（顺便会触发同步走自己的通道）
+  // 联网恢复后追一次，便于系统服务恢复时重建提醒。
   window.addEventListener('online', onOnline);
   window.addEventListener('hashchange', onNavigation);
   window.addEventListener(REMINDER_CAPABILITY_CHANGE_EVENT, onCapabilityChange);
@@ -109,9 +107,8 @@ export async function rescheduleMedicationReminders() {
     listScheduleRevisions(),
     listLogs(),
   ]);
-  const role = getSyncV2PublicConfig()?.role;
   return reconcileScheduledNotifications(
-    buildMedicationReminderPlan({ meds, rules, revisions, logs, role }),
+    buildMedicationReminderPlan({ meds, rules, revisions, logs }),
   );
 }
 
@@ -131,11 +128,9 @@ async function runTick(): Promise<void> {
     listScheduleRevisions(),
     native ? listLogs() : Promise.resolve([]),
   ]);
-  const cfg = getSyncV2PublicConfig();
-  const role = cfg?.role; // 未配置同步则 undefined → 既不当照护者也不当患者，纯单机
   if (native) {
     await reconcileScheduledNotifications(
-      buildMedicationReminderPlan({ meds, rules, revisions, logs, role }),
+      buildMedicationReminderPlan({ meds, rules, revisions, logs }),
     );
     return;
   }
@@ -164,38 +159,18 @@ async function runTick(): Promise<void> {
     const minsSinceLast = (Date.now() - ps.lastSentAt) / 60000;
     const policy = rule.escalate;
 
-    // 患者侧（或未配置同步的单机）发吃药通知；纯照护者不发患者通知（避免吵到照护者）
-    const sendPatientPing = role !== 'caregiver';
-    if (sendPatientPing) {
-      let shouldSend = false;
-      if (ps.count === 0) shouldSend = true;
-      else if (ps.count < policy.maxRepeats + 1 && minsSinceLast >= policy.repeatEveryMin) shouldSend = true;
-      if (shouldSend) {
-        const next = ps.count + 1;
-        const sent = await showNotification(buildReminderTitle(med, next), {
-          body: buildReminderBody(med, entry.revision, minsLate),
-          tag: logId,
-          key: next === 1 ? 'dose' : `repeat-${next}`,
-          data: { kind: 'reminder', logId, occurrenceId: logId, medId: med.id, reminderCount: next },
-        });
-        if (sent) await putPushState({ id: logId, count: next, lastSentAt: Date.now() });
-      }
-    }
-
-    // 照护者升级：超时仍 pending → 提醒照护者去关心
-    if (role === 'caregiver' && minsLate >= policy.notifyCaregiverAfterMin) {
-      const careTag = logId + '_care';
-      const carePs = await getPushState(careTag);
-      // 只发一次升级通知，避免重复打扰照护者
-      if (!carePs || carePs.count === 0) {
-        const sent = await showNotification('⚠️ 患者未确认服药', {
-          body: `${med.name}（${SLOT_LABEL[rule.slot]}）已超 ${minsLate} 分钟未确认`,
-          tag: careTag,
-          key: 'care',
-          data: { kind: 'escalate', logId, occurrenceId: logId, medId: med.id },
-        });
-        if (sent) await putPushState({ id: careTag, count: 1, lastSentAt: Date.now() });
-      }
+    let shouldSend = false;
+    if (ps.count === 0) shouldSend = true;
+    else if (ps.count < policy.maxRepeats + 1 && minsSinceLast >= policy.repeatEveryMin) shouldSend = true;
+    if (shouldSend) {
+      const next = ps.count + 1;
+      const sent = await showNotification(buildReminderTitle(med, next), {
+        body: buildReminderBody(med, entry.revision, minsLate),
+        tag: logId,
+        key: next === 1 ? 'dose' : `repeat-${next}`,
+        data: { kind: 'reminder', logId, occurrenceId: logId, medId: med.id, reminderCount: next },
+      });
+      if (sent) await putPushState({ id: logId, count: next, lastSentAt: Date.now() });
     }
   }
 }

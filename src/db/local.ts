@@ -1,7 +1,5 @@
-// IndexedDB 封装（idb）：离线优先的本地存储 + 待同步队列
+// IndexedDB 封装（idb）：离线优先的本地存储 + 局域网同步元数据
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import { CLOUD_SYNC_ENABLED } from '../sync/config';
-import type { SyncEntityType, SyncMutationOperation } from '../sync/v2/protocol';
 import {
   createScheduleRevision,
   freezeScheduleRevision,
@@ -25,7 +23,6 @@ import {
   defaultEscalate,
   type IntakeLog,
   type StructuredDose,
-  type OutboxItem,
   type PhotoBlob,
   type PushState,
   type Slot,
@@ -48,20 +45,28 @@ export interface MedImportResult {
   scheduleRevisions: ImportBucketResult;
 }
 
-export interface SyncV2EntityMetadata {
+export type SyncLanEntityType = 'medication' | 'reminderRule' | 'schedule' | 'intake';
+
+export interface SyncLanEntityMetadata {
   key: string;
-  householdId: string;
-  entityType: SyncEntityType;
+  kind: 'entity';
+  entityType: SyncLanEntityType;
   entityId: string;
-  serverRevision: number;
-  serverOperation: SyncMutationOperation | null;
-  canonicalPayloadHash: string | null;
-  pendingMutationId?: string;
-  pendingMutationKey?: string;
-  pendingOperation?: SyncMutationOperation;
-  pendingPayloadHash?: string;
-  updatedAt: number;
+  operation: 'upsert' | 'delete';
+  clock: number;
+  deviceId: string;
+  payloadHash: string;
+  tombstone: boolean;
 }
+
+export interface SyncLanCounterMetadata {
+  key: 'counter';
+  kind: 'counter';
+  deviceId: string;
+  clock: number;
+}
+
+export type SyncLanMetadata = SyncLanEntityMetadata | SyncLanCounterMetadata;
 
 export interface MedboxDB extends DBSchema {
   meds: { key: string; value: Medication };
@@ -72,46 +77,49 @@ export interface MedboxDB extends DBSchema {
     indexes: { byMed: string; bySourceRule: string };
   };
   logs: { key: string; value: IntakeLog; indexes: { byDue: number } };
-  outbox: { key: string; value: OutboxItem };
   photos: { key: string; value: PhotoBlob; indexes: { byMed: string } };
   pushStates: { key: string; value: PushState };
-  syncV2Metadata: {
-    key: string;
-    value: SyncV2EntityMetadata;
-    indexes: { byHousehold: string; byPendingMutation: string };
-  };
+  syncLanMetadata: { key: string; value: SyncLanMetadata };
 }
 
 let dbp: Promise<IDBPDatabase<MedboxDB>> | null = null;
 
+export function upgradeMedboxDatabase(d: IDBPDatabase<MedboxDB>, oldVersion: number): void {
+  if (oldVersion < 1) {
+    d.createObjectStore('meds', { keyPath: 'id' });
+    const rules = d.createObjectStore('rules', { keyPath: 'id' });
+    rules.createIndex('byMed', 'medId');
+    const logs = d.createObjectStore('logs', { keyPath: 'id' });
+    logs.createIndex('byDue', 'dueAt');
+    const photos = d.createObjectStore('photos', { keyPath: 'id' });
+    photos.createIndex('byMed', 'medId');
+  }
+  if (oldVersion < 2) {
+    d.createObjectStore('pushStates', { keyPath: 'id' });
+  }
+  if (oldVersion < 4) {
+    const revisions = d.createObjectStore('scheduleRevisions', { keyPath: 'id' });
+    revisions.createIndex('byMed', 'medId');
+    revisions.createIndex('bySourceRule', 'sourceRuleId');
+  }
+  if (oldVersion < 6) {
+    const migrationDatabase = d as unknown as IDBDatabase;
+    if (migrationDatabase.objectStoreNames.contains('outbox')) {
+      migrationDatabase.deleteObjectStore('outbox');
+    }
+    if (migrationDatabase.objectStoreNames.contains('syncV2Metadata')) {
+      migrationDatabase.deleteObjectStore('syncV2Metadata');
+    }
+    if (!d.objectStoreNames.contains('syncLanMetadata')) {
+      d.createObjectStore('syncLanMetadata', { keyPath: 'key' });
+    }
+  }
+}
+
 export function openMedboxDatabase(): Promise<IDBPDatabase<MedboxDB>> {
   if (!dbp) {
-    dbp = openDB<MedboxDB>('medbox', 5, {
-      upgrade(d, oldVersion) {
-        if (oldVersion < 1) {
-          d.createObjectStore('meds', { keyPath: 'id' });
-          const rules = d.createObjectStore('rules', { keyPath: 'id' });
-          rules.createIndex('byMed', 'medId');
-          const logs = d.createObjectStore('logs', { keyPath: 'id' });
-          logs.createIndex('byDue', 'dueAt');
-          d.createObjectStore('outbox', { keyPath: 'id' });
-          const photos = d.createObjectStore('photos', { keyPath: 'id' });
-          photos.createIndex('byMed', 'medId');
-        }
-        if (oldVersion < 2) {
-          d.createObjectStore('pushStates', { keyPath: 'id' });
-        }
-        if (oldVersion < 4) {
-          const revisions = d.createObjectStore('scheduleRevisions', { keyPath: 'id' });
-          revisions.createIndex('byMed', 'medId');
-          revisions.createIndex('bySourceRule', 'sourceRuleId');
-        }
-        if (oldVersion < 5) {
-          const metadata = d.createObjectStore('syncV2Metadata', { keyPath: 'key' });
-          metadata.createIndex('byHousehold', 'householdId');
-          metadata.createIndex('byPendingMutation', 'pendingMutationKey');
-        }
-      },
+    dbp = openDB<MedboxDB>('medbox', 6, {
+      upgrade: upgradeMedboxDatabase,
       blocked() {
         console.warn('IndexedDB 升级被旧页面阻塞，请关闭其他已打开的 medbox 页面后刷新。');
       },
@@ -127,12 +135,6 @@ const db = openMedboxDatabase;
 
 export function uid(): string {
   return crypto.randomUUID();
-}
-
-async function enqueue(kind: OutboxItem['kind'], refId: string): Promise<void> {
-  if (!CLOUD_SYNC_ENABLED) return;
-  const d = await db();
-  await d.put('outbox', { id: `${kind}:${refId}`, kind, refId, at: Date.now() });
 }
 
 // ---- 药品 ----
@@ -152,7 +154,6 @@ export async function putMed(med: Medication): Promise<void> {
   // 清理旧字段，避免 IndexedDB 里残留
   delete (med as any).mealRel;
   await (await db()).put('meds', med);
-  await enqueue('med', med.id);
 }
 
 export class MedicationBatchValidationError extends Error {
@@ -187,7 +188,7 @@ export async function createMedicationBatch(
   if (draftErrors.size > 0) throw new MedicationBatchValidationError(draftErrors);
 
   const d = await db();
-  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'photos', 'outbox'], 'readwrite');
+  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'photos'], 'readwrite');
   const now = Date.now();
   const effectiveDate = toLocalDate(now);
   try {
@@ -201,10 +202,6 @@ export async function createMedicationBatch(
       });
       delete (med as { mealRel?: unknown }).mealRel;
       await tx.objectStore('meds').put(med);
-      if (CLOUD_SYNC_ENABLED) {
-        await tx.objectStore('outbox').put({ id: `med:${med.id}`, kind: 'med', refId: med.id, at: now });
-      }
-
       for (const draftRule of draft.rules.filter((rule) => med.slots.includes(rule.slot))) {
         const rule: ReminderRule = {
           id: draftRule.id,
@@ -224,9 +221,6 @@ export async function createMedicationBatch(
         await tx.objectStore('scheduleRevisions').put(
           createScheduleRevision(med, rule, { effectiveDate, createdAt: now }),
         );
-        if (CLOUD_SYNC_ENABLED) {
-          await tx.objectStore('outbox').put({ id: `rule:${rule.id}`, kind: 'rule', refId: rule.id, at: now });
-        }
       }
 
       if (draft.sourceKind === 'medicine-box' && draft.sourceImage) {
@@ -246,7 +240,7 @@ export async function createMedicationBatch(
 
 export async function softDeleteMed(id: string): Promise<void> {
   const d = await db();
-  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'outbox'], 'readwrite');
+  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions'], 'readwrite');
   const med = await tx.objectStore('meds').get(id);
   if (!med) {
     tx.abort();
@@ -257,9 +251,6 @@ export async function softDeleteMed(id: string): Promise<void> {
   med.deleted = true;
   med.updatedAt = now;
   await tx.objectStore('meds').put(med);
-  if (CLOUD_SYNC_ENABLED) {
-    await tx.objectStore('outbox').put({ id: `med:${id}`, kind: 'med', refId: id, at: now });
-  }
   // 关联提醒一并软删除
   const rules = await tx.objectStore('rules').index('byMed').getAll(id);
   for (const r of rules) {
@@ -269,9 +260,6 @@ export async function softDeleteMed(id: string): Promise<void> {
     await tx.objectStore('scheduleRevisions').put(
       createScheduleRevision(med, r, { effectiveDate: toLocalDate(now), createdAt: now, enabled: false }),
     );
-    if (CLOUD_SYNC_ENABLED) {
-      await tx.objectStore('outbox').put({ id: `rule:${r.id}`, kind: 'rule', refId: r.id, at: now });
-    }
   }
   await tx.done;
 }
@@ -302,7 +290,7 @@ export async function putRule(rule: ReminderRule): Promise<void> {
   }
   rule.updatedAt = now;
   const med = await d.get('meds', rule.medId);
-  const tx = d.transaction(['rules', 'scheduleRevisions', 'outbox'], 'readwrite');
+  const tx = d.transaction(['rules', 'scheduleRevisions'], 'readwrite');
   await tx.objectStore('rules').put(rule);
   if (med) {
     await tx.objectStore('scheduleRevisions').put(
@@ -311,9 +299,6 @@ export async function putRule(rule: ReminderRule): Promise<void> {
         createdAt: now,
       }),
     );
-  }
-  if (CLOUD_SYNC_ENABLED) {
-    await tx.objectStore('outbox').put({ id: `rule:${rule.id}`, kind: 'rule', refId: rule.id, at: now });
   }
   await tx.done;
 }
@@ -326,7 +311,7 @@ export async function deleteRule(id: string): Promise<void> {
   r.deleted = true;
   r.updatedAt = now;
   const med = await d.get('meds', r.medId);
-  const tx = d.transaction(['rules', 'scheduleRevisions', 'outbox'], 'readwrite');
+  const tx = d.transaction(['rules', 'scheduleRevisions'], 'readwrite');
   await tx.objectStore('rules').put(r);
   if (med) {
     await tx.objectStore('scheduleRevisions').put(
@@ -336,9 +321,6 @@ export async function deleteRule(id: string): Promise<void> {
         enabled: false,
       }),
     );
-  }
-  if (CLOUD_SYNC_ENABLED) {
-    await tx.objectStore('outbox').put({ id: `rule:${id}`, kind: 'rule', refId: id, at: now });
   }
   await tx.done;
 }
@@ -448,7 +430,6 @@ export async function getLogForOccurrence(
 export async function putLog(log: IntakeLog): Promise<void> {
   log.updatedAt = Date.now();
   await (await db()).put('logs', log);
-  await enqueue('log', log.id);
 }
 
 export type IntakeAction = 'taken' | 'skipped';
@@ -487,7 +468,7 @@ export async function setOccurrenceAction(
   options: { ackAt?: number; confirmedDose?: StructuredDose } = {},
 ): Promise<IntakeMutationResult> {
   const d = await db();
-  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'logs', 'outbox'], 'readwrite');
+  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'logs'], 'readwrite');
   const medStore = tx.objectStore('meds');
   const logStore = tx.objectStore('logs');
   const medRaw = await medStore.get(occurrence.medId);
@@ -569,14 +550,6 @@ export async function setOccurrenceAction(
   if (inventoryChanged || options.confirmedDose) {
     med.updatedAt = now;
     await medStore.put(med);
-    if (CLOUD_SYNC_ENABLED) {
-      await tx.objectStore('outbox').put({
-        id: `med:${med.id}`,
-        kind: 'med',
-        refId: med.id,
-        at: now,
-      });
-    }
     if (options.confirmedDose) {
       const rules = await tx.objectStore('rules').index('byMed').getAll(med.id);
       for (const rule of rules) {
@@ -616,14 +589,6 @@ export async function setOccurrenceAction(
       updatedAt: now,
     };
     await logStore.put(nextLog);
-    if (CLOUD_SYNC_ENABLED) {
-      await tx.objectStore('outbox').put({
-        id: `log:${nextLog.id}`,
-        kind: 'log',
-        refId: nextLog.id,
-        at: now,
-      });
-    }
   }
   await tx.done;
   return { med, log: nextLog, inventoryChanged, lowStock, lowStockMessage };
@@ -645,45 +610,6 @@ export async function deletePhotosByMed(medId: string): Promise<void> {
   if (photos.length === 0) return;
   const tx = d.transaction('photos', 'readwrite');
   await Promise.all(photos.map((photo) => tx.store.delete(photo.id)));
-  await tx.done;
-}
-
-// ---- 待同步队列 ----
-export async function getOutbox(): Promise<OutboxItem[]> {
-  return (await db()).getAll('outbox');
-}
-
-export async function clearOutboxItems(ids: string[]): Promise<void> {
-  const d = await db();
-  const tx = d.transaction('outbox', 'readwrite');
-  await Promise.all(ids.map((id) => tx.store.delete(id)));
-  await tx.done;
-}
-
-/** 用云端快照覆盖本地（同步拉取后调用）。不触发 outbox，避免回环。 */
-export async function replaceFromSnapshot(
-  meds: Medication[],
-  rules: ReminderRule[],
-  logs: IntakeLog[] = [],
-): Promise<void> {
-  const d = await db();
-  const tx = d.transaction(['meds', 'rules', 'logs'], 'readwrite');
-  // 收到快照时也立刻迁移老字段并补齐时段
-  for (const m of meds) {
-    const inflated = inflateMed({ ...m });
-    delete (inflated as any).mealRel;
-    // 把不在新 SLOTS 集合内的旧 slot 过滤掉
-    inflated.slots = (inflated.slots || []).filter((s) =>
-      (['morning', 'noon', 'evening', 'bedtime'] as Slot[]).includes(s as Slot),
-    );
-    await tx.objectStore('meds').put(inflated as Medication);
-  }
-  for (const r of rules) await tx.objectStore('rules').put(r);
-  for (const l of logs) {
-    if (l && typeof l.id === 'string' && typeof l.dueAt === 'number') {
-      await tx.objectStore('logs').put(l);
-    }
-  }
   await tx.done;
 }
 
