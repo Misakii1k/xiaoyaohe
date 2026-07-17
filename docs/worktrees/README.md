@@ -32,6 +32,8 @@ Then read:
 
 If the directory, branch, or handoff does not match, do not edit until the mismatch is understood.
 
+Each worktree intentionally has its own ignored `node_modules/` and local `.env`. On first use in a new worktree, run `npm ci`. Create local secrets from `.env.example` only when needed; never copy secrets into a tracked file. Do not share one writable `node_modules/` directory between concurrently running tools.
+
 To inspect every workspace at once from the integration repository:
 
 ```powershell
