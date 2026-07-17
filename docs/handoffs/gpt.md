@@ -3,8 +3,9 @@
 Tool: GPT/Codex
 Branch: `workspace/gpt`
 Updated: 2026-07-17
-Status: ready-to-merge
+Status: idle
 Latest implementation commit: `6354dd8 feat: ship app-only LAN family sync`
+Integrated into `main`: `4a0a41e merge: integrate app-only LAN family sync`
 
 ## Goal
 
@@ -46,11 +47,10 @@ Ship Medbox `0.7.7` as an Android App-only release. Family sync must stay on the
 
 ## Uncommitted Changes
 
-Only this handoff update is expected before its documentation commit. Release APK/checksum and browser screenshots are intentionally ignored local artifacts.
+None. Release APK/checksum and browser screenshots are intentionally ignored local artifacts.
 
 ## Remaining Work
 
-- Commit this handoff, merge `workspace/gpt` into clean `main`, update `docs/handoffs/CURRENT.md`, then merge `main` back into all long-lived tool branches.
 - Run installation smoke tests and two-phone LAN transfer tests when Android devices are available. `C:\Android\Sdk\platform-tools\adb.exe devices -l` currently reports no devices.
 
 ## Decisions And Risks
