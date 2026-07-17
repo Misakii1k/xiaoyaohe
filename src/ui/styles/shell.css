@@ -1,0 +1,225 @@
+#app {
+  inline-size: 100%;
+  max-inline-size: none;
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+  margin: 0;
+  padding: 0;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  block-size: 100vh;
+  block-size: 100dvh;
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+  max-inline-size: 840px;
+  margin-inline: auto;
+  background: var(--color-bg);
+}
+
+/* 图 4：顶栏与页面同底色，大号左对齐粗标题，无分隔线 */
+.topbar {
+  position: relative;
+  inset: auto;
+  z-index: 2;
+  min-block-size: calc(60px + var(--safe-top));
+  height: auto;
+  padding: calc(var(--safe-top) + var(--space-2)) max(20px, var(--safe-right)) 0 max(20px, var(--safe-left));
+  background: var(--color-bg);
+  border-block-end: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.topbar h1 {
+  padding-inline: 4px;
+  flex: 0 0 auto;
+  min-inline-size: max-content;
+  white-space: nowrap;
+  font-size: var(--fs-title1);
+  font-weight: 700;
+  letter-spacing: -0.4px;
+}
+
+.topbar .icon-btn {
+  inline-size: var(--tap);
+  block-size: var(--tap);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-main {
+  min-block-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: var(--space-4);
+}
+
+/* Existing pages are column flex layouts. Their sections must overflow the
+ * shell's scroll region instead of shrinking until their text is clipped. */
+.app-main > * { flex: 0 0 auto; }
+
+/* 图 4 改版把部分页面改成 grid 布局；滚动容器高度固定时，
+ * overflow:hidden 的卡片会被 auto 行压扁，强制行高按内容计算。 */
+.app-main { grid-auto-rows: max-content; }
+
+.page {
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: var(--space-4) max(var(--space-4), var(--safe-right)) calc(var(--space-6) + var(--safe-bottom)) max(var(--space-4), var(--safe-left));
+}
+
+.action-dock {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+  padding: var(--space-2) max(var(--space-3), var(--safe-right)) var(--space-2) max(var(--space-3), var(--safe-left));
+  background: var(--color-surface);
+  border-block-start: 1px solid var(--color-border);
+}
+
+.action-dock:empty { display: none; }
+
+/* 图 4：底栏与页面同底色、无背景条，纯图标 + 中央白色圆钮上浮 */
+.tabbar.app-navigation {
+  position: relative;
+  inset: auto;
+  transform: none;
+  inline-size: 100%;
+  max-inline-size: none;
+  min-block-size: calc(58px + var(--safe-bottom));
+  height: auto;
+  margin: 0;
+  padding: var(--space-1) max(var(--space-4), var(--safe-right)) calc(var(--space-1) + var(--safe-bottom)) max(var(--space-4), var(--safe-left));
+  border: 0;
+  border-radius: 0;
+  background: var(--color-bg);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.tabbar.app-navigation::after { display: none; }
+
+.tabbar.app-navigation a {
+  min-inline-size: 0;
+  min-block-size: 52px;
+  padding: 4px 2px;
+  border-radius: var(--radius-sm);
+  color: #a9abb6;
+}
+
+/* 图 4 底栏无文字标签：视觉隐藏、保留无障碍名 */
+.tabbar.app-navigation a span:not(.ic) {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.tabbar.app-navigation a.active {
+  color: var(--color-text);
+  background: transparent;
+}
+
+.tabbar.app-navigation a .ic { background: transparent; box-shadow: none; }
+.tabbar.app-navigation a.active .ic { background: transparent; box-shadow: none; }
+.tabbar.app-navigation a.active .ic svg { stroke-width: 2.3; }
+
+/* 中央扫描项：白色圆钮上浮 + 弥散阴影，对应图 4 底栏中央加号 */
+.tabbar.app-navigation a[href='#/scan'] .ic {
+  display: grid;
+  place-items: center;
+  inline-size: 54px;
+  block-size: 54px;
+  margin-block-start: -26px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 6px 14px rgb(40 42 66 / 10%), 0 16px 32px rgb(40 42 66 / 12%);
+}
+
+.tabbar.app-navigation a[href='#/scan'].active .ic {
+  background: var(--color-surface);
+  color: var(--color-primary);
+}
+
+.toast {
+  inset-block-end: calc(76px + var(--safe-bottom));
+  margin-inline: max(var(--space-3), var(--safe-right));
+}
+
+.overlay {
+  padding: max(20px, var(--safe-top)) max(16px, var(--safe-right)) max(20px, var(--safe-bottom)) max(16px, var(--safe-left));
+}
+
+@media (min-width: 768px) {
+  .app-shell {
+    grid-template-columns: 208px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    max-inline-size: none;
+  }
+
+  .topbar { grid-column: 2; }
+  .app-main { grid-column: 2; grid-row: 2; }
+  .action-dock { grid-column: 2; grid-row: 3; }
+
+  .tabbar.app-navigation {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: var(--space-2);
+    min-block-size: 100dvh;
+    padding: calc(var(--safe-top) + var(--space-4)) var(--space-3) calc(var(--safe-bottom) + var(--space-4)) max(var(--space-3), var(--safe-left));
+    border-block-start: 0;
+    border-inline-end: 1px solid var(--color-border);
+  }
+
+  .tabbar.app-navigation a {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    min-block-size: var(--tap);
+    padding-inline: var(--space-3);
+  }
+
+  /* 侧栏模式恢复文字标签 */
+  .tabbar.app-navigation a span:not(.ic) {
+    position: static;
+    inline-size: auto;
+    block-size: auto;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+
+  /* 侧栏模式还原扫描项为普通导航行 */
+  .tabbar.app-navigation a[href='#/scan'] .ic,
+  .tabbar.app-navigation a[href='#/scan'].active .ic {
+    inline-size: auto;
+    block-size: auto;
+    margin-block-start: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+  }
+
+  .tabbar.app-navigation a.active {
+    background: var(--color-primary-soft);
+    border-radius: var(--radius-md);
+  }
+}

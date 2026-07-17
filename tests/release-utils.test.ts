@@ -42,12 +42,21 @@ describe('release version validation', () => {
   it('accepts the documented package and Android version mapping', () => {
     expect(
       validateReleaseVersions({
-        packageVersion: '0.5.0',
-        lockVersion: '0.5.0',
-        androidVersionName: '0.5.0',
-        androidVersionCode: 5,
+        packageVersion: '0.7.0',
+        lockVersion: '0.7.0',
+        androidVersionName: '0.7.0',
+        androidVersionCode: 7,
       }),
-    ).toEqual({ version: '0.5.0', versionCode: 5 });
+    ).toEqual({ version: '0.7.0', versionCode: 7 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '0.7.6',
+        lockVersion: '0.7.6',
+        androidVersionName: '0.7.6',
+        androidVersionCode: 13,
+      }),
+    ).toEqual({ version: '0.7.6', versionCode: 13 });
   });
 
   it('rejects stale Android and lockfile versions', () => {
@@ -196,9 +205,9 @@ describe('release command orchestration', () => {
     )).toEqual({ command: 'npm', args: ['test'] });
   });
 
-  it('supports local skip-install and variant selection without dropping gates', () => {
+  it('supports local skip-install and variant selection without dropping release gates', () => {
     const options = parseReleaseArgs(['--skip-install', '--android-variant', 'release']);
-    expect(options).toMatchObject({ skipInstall: true, skipConnectedTests: false, variant: 'release' });
+    expect(options).toMatchObject({ skipInstall: true, variant: 'release' });
 
     const commands = createReleaseCommands(options);
     expect(commands.map((command) => command.label)).toEqual([
@@ -206,6 +215,8 @@ describe('release command orchestration', () => {
       'Type-check frontend',
       'Type-check Worker',
       'Run Vitest suite',
+      'Install Playwright Chromium',
+      'Run Playwright visual matrix',
       'Build web application',
       'Validate Worker deployment bundle',
       'Sync Capacitor Android project',
@@ -216,16 +227,12 @@ describe('release command orchestration', () => {
     expect(commands.at(-2)?.args).toEqual(['testReleaseUnitTest', 'assembleRelease']);
     expect(commands.at(-1)?.args).toEqual(['connectedReleaseAndroidTest']);
 
-    const withoutDevice = createReleaseCommands(
-      parseReleaseArgs(['--skip-install', '--skip-connected-tests']),
-    );
-    expect(withoutDevice.map((command) => command.label)).not.toContain(
-      'Run Android instrumentation tests',
-    );
+    expect(commands.map((command) => command.label)).toContain('Run Android instrumentation tests');
   });
 
   it('rejects unknown or unsafe command-line input', () => {
     expect(() => parseReleaseArgs(['--unknown'])).toThrow(/Unknown release option/);
+    expect(() => parseReleaseArgs(['--skip-connected-tests'])).toThrow(/Unknown release option/);
     expect(() => parseReleaseArgs(['--android-variant', '../debug'])).toThrow(/Invalid Android variant/);
   });
 });

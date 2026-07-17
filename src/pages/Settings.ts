@@ -3,7 +3,7 @@
 import { listLogs, listMeds, listRules } from '../db/local';
 import { listWorkEntries, listWorkProfiles, listWorkSettlements } from '../db/work';
 import { Capacitor } from '@capacitor/core';
-import { closeDialog, confirmDialog, el, renderPage, toast, icon, openDialog } from '../ui/components';
+import { closeDialog, confirmDialog, el, renderPage, toast, icon, openDialog, type IconName } from '../ui/components';
 import {
   backupProviders,
   buildBackup,
@@ -49,6 +49,8 @@ import {
   type LlmHealth,
 } from '../ai/llmConfig';
 import { isNativeSecretStore } from '../ai/secretStore';
+import { getAsrConfig, setAsrConfig, resetAsrConfig } from '../ai/asr';
+import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
 
 const SYNC_V2_UI_ENABLED = import.meta.env.VITE_SYNC_V2_ENABLED === 'true';
@@ -73,29 +75,24 @@ export async function renderSettingsPage(
   ]);
   if (signal?.aborted) return;
 
-  const content = el('div', { class: 'page page-light' });
+  const content = el('div', { class: 'page page-light settings-page' });
 
-  // 数据概览
-  const stat = el('div', { class: 'card' });
-  stat.append(el('h2', { html: '数据概览' }));
-  stat.append(statRow('💊', '药品数量', meds.length));
-  stat.append(statRow('⏰', '提醒规则', rules.length));
-  stat.append(statRow('✅', '服药记录', logs.length));
-  stat.append(statRow('💼', '工时记录', workProfiles.length + workEntries.length + workSettlements.length));
-  content.append(stat);
-
-  // 三大配置面板（折叠）
-  content.append(renderSyncPanel(signal));
   content.append(renderReminderPanel());
   const llmPanel = renderLlmPanel();
   content.append(llmPanel.element);
+  content.append(renderAiConsentPanel());
+  if (SYNC_V2_UI_ENABLED) content.append(renderSyncPanel(signal));
 
-  const backupCard = renderBackupCard(root, signal);
+  const backupCard = renderBackupCard(root, signal, {
+    meds: meds.length,
+    rules: rules.length,
+    logs: logs.length,
+    work: workProfiles.length + workEntries.length + workSettlements.length,
+  });
   content.append(backupCard.element);
 
-  // 关于
-  const about = el('div', { class: 'card' });
-  about.append(el('h2', { html: '关于' }));
+  const about = el('section', { class: 'settings-about' });
+  about.append(el('h2', { text: '关于' }));
   about.append(el('div', {
     class: 'muted',
     html: `日常工具箱 v${__APP_VERSION__}（本地优先版）。吃药提醒、药品管理和工时收入可离线使用；AI 与常见相互作用提示仅供参考，不替代医嘱。`,
@@ -119,14 +116,6 @@ export async function renderSettingsPage(
 
   renderPage({ root, title: '设置', activeTab: 'settings', content });
   return cleanup;
-}
-
-function statRow(emoji: string, label: string, value: number): HTMLElement {
-  const row = el('div', { class: 'stat-row' });
-  row.append(el('span', { class: 'ic-circle-sm', html: emoji }));
-  row.append(el('div', { class: 'label', html: label }));
-  row.append(el('div', { class: 'value', html: String(value) }));
-  return row;
 }
 
 export interface BackupImportRouteOperations {
@@ -204,12 +193,22 @@ export async function importBackupFileForRoute(
   }
 }
 
-function renderBackupCard(root: HTMLElement, signal?: AbortSignal): SettingsRenderPart {
-  const io = el('div', { class: 'card' });
-  io.append(el('h2', { html: '本地备份' }));
+function renderBackupCard(
+  root: HTMLElement,
+  signal?: AbortSignal,
+  counts?: { meds: number; rules: number; logs: number; work: number },
+): SettingsRenderPart {
+  const io = el('section', { class: 'settings-section settings-data-card' });
+  io.append(el('h2', { text: '本地数据与备份' }));
+  if (counts) {
+    io.append(el('div', {
+      class: 'muted',
+      html: `本机现有 ${counts.meds} 种药品、${counts.rules} 条提醒规则、${counts.logs} 条服药记录、${counts.work} 条工时数据。`,
+    }));
+  }
   io.append(el('div', {
     class: 'muted',
-    html: '备份包含药品、提醒规则、服药记录和本地工时。导入时按 id + 更新时间合并，不会清空本地数据。',
+    html: '备份会完整包含以上数据。导入时按 id + 更新时间合并，不会清空本地数据。',
   }));
 
   const exportBtn = el('button', { class: 'btn tonal', html: '导出数据（JSON）', style: 'margin-top:12px' } as any);
@@ -268,7 +267,7 @@ interface PanelChip {
 }
 interface PanelOpts {
   title: string;
-  iconHtml: string; // emoji 或 svg 字符串
+  iconName: IconName;
   chip: PanelChip;
   defaultOpen?: boolean;
   renderBody: (body: HTMLElement) => void;
@@ -285,8 +284,8 @@ function panel(opts: PanelOpts): HTMLElement {
   head.setAttribute('aria-expanded', String(Boolean(opts.defaultOpen)));
   head.setAttribute('aria-controls', bodyId);
   const lead = el('span', { class: 'panel-lead' } as any);
-  lead.append(el('span', { class: 'panel-icon', html: opts.iconHtml } as any));
-  lead.append(el('span', { class: 'panel-title', html: opts.title } as any));
+  lead.append(icon(opts.iconName, 'panel-icon'));
+  lead.append(el('span', { class: 'panel-title', text: opts.title } as any));
   head.append(lead);
 
   const right = el('span', { class: 'panel-right' } as any);
@@ -327,39 +326,17 @@ function setChip(panelEl: HTMLElement, chip: PanelChip): void {
 
 /** ---------------- 端到端加密家庭同步 v2 ---------------- */
 function renderSyncPanel(signal?: AbortSignal): HTMLElement {
-  if (!SYNC_V2_UI_ENABLED) {
-    return panel({
-      title: '加密家庭同步',
-      iconHtml: '☁️',
-      chip: { text: '灰度关闭', tone: 'muted' },
-      renderBody: renderSyncV2Disabled,
-    });
-  }
-
   const configured = getSyncV2PublicConfig() !== null;
   let p!: HTMLElement;
   p = panel({
     title: '加密家庭同步',
-    iconHtml: '☁️',
+    iconName: 'cloud-check',
     chip: configured ? { text: '已配置', tone: 'ok' } : { text: '未配对', tone: 'muted' },
     renderBody: (body) => {
       queueMicrotask(() => void renderSyncV2Body(body, p, signal));
     },
   });
   return p;
-}
-
-function renderSyncV2Disabled(body: HTMLElement): void {
-  body.append(
-    el('div', { class: 'banner info' } as any, [
-      el('span', { html: '端到端加密同步 v2 已完成，但当前版本仍处于灰度关闭状态。应用不会连接 Worker。' }),
-    ]),
-    el('div', {
-      class: 'muted',
-      style: 'margin-top:10px;line-height:1.55',
-      html: '药品、用药计划和服药记录将来可选择同步；工时与收入始终只保存在本机。当前可继续使用本地备份。',
-    } as any),
-  );
 }
 
 async function renderSyncV2Body(body: HTMLElement, panelElement: HTMLElement, signal?: AbortSignal): Promise<void> {
@@ -406,6 +383,10 @@ function renderSyncV2Setup(body: HTMLElement, rerender: () => void, signal?: Abo
     value: '我的手机',
   } as any) as HTMLInputElement;
   body.append(field('同步服务 HTTPS 地址', endpoint), field('本设备名称', deviceName));
+  body.append(el('div', {
+    class: 'muted sync-v2-origin-note',
+    html: '如果提示 Origin 不允许，请把本应用的完整 Origin 加入 Worker 的 SYNC_V2_ALLOWED_ORIGINS；协议、域名和端口必须完全一致。Android App 通常是 https://localhost，PWA 使用当前网页的 Origin。',
+  }));
 
   let role: SyncV2Role = 'caregiver';
   const roleControl = createRoleControl(role, (next) => { role = next; });
@@ -578,7 +559,7 @@ function openLegacyMigrationDialog(
   const title = el('h3', { html: '迁移旧版云端数据' });
   const note = el('div', {
     class: 'banner warn',
-    html: '此操作只读取旧 KV 快照，校验后加密写入当前家庭。工时和收入不会迁移，也不会自动删除旧数据。',
+    html: '只是把旧版云端存的药品资料搬过来，核对没问题才写入现在的家庭空间。上班和收入的记录不会搬，旧数据也不会被删。',
   });
   const endpoint = el('input', {
     type: 'url',
@@ -873,7 +854,7 @@ function renderReminderPanel(): HTMLElement {
         : { text: '未开启', tone: 'muted' };
   const p = panel({
     title: '系统通知',
-    iconHtml: '🔔',
+    iconName: 'bell-ring',
     chip,
     renderBody: (body) => buildReminderBody(body, () => {
       body.replaceChildren();
@@ -927,7 +908,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   } else {
     const testBtn = el('button', { class: 'btn', html: '发送测试通知' });
     testBtn.onclick = async () => {
-      const ok = await showNotification('🔔 测试提醒', {
+      const ok = await showNotification('测试提醒', {
         body: '看到这条说明当前通知通道可用',
         tag: 'medbox-test',
       });
@@ -989,8 +970,8 @@ function renderLlmPanel(): SettingsRenderPart {
   const initialHealth = getLlmHealth();
   const chip = healthToChip(initialHealth);
   const p = panel({
-    title: 'AI 大模型',
-    iconHtml: '✨',
+    title: 'AI 服务商',
+    iconName: 'sparkles',
     chip,
     renderBody: (body) => buildLlmBody(body, (h) => setChip(p, healthToChip(h))),
   });
@@ -1009,6 +990,7 @@ function renderLlmPanel(): SettingsRenderPart {
 }
 
 function healthToChip(h: LlmHealth): PanelChip {
+  if (isUsingDefaultKey()) return { text: '未配置', tone: 'muted' };
   if (h.state === 'ok') return { text: '已连接', tone: 'ok' };
   if (h.state === 'error') return { text: '不通', tone: 'warn' };
   return { text: '未检测', tone: 'muted' };
@@ -1028,7 +1010,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     body.append(
       el('div', { class: 'banner info', style: 'margin-top:10px' } as any, [
         el('span', {
-          html: '尚未配置 AI 密钥。Android 会存入系统安全存储；PWA 刷新或关闭后需重新输入。',
+          html: '还没填 AI 密钥。手机 App 里会替您安全保管；网页版为了安全，每次重新打开都要再填一次。',
         }),
       ])
     );
@@ -1137,6 +1119,53 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     }
   };
 
+  // ====== 语音识别（选填）：说话录药 / 小助手说话 ======
+  const asrCfg = getAsrConfig();
+  body.append(el('div', { class: 'section-title', style: 'margin-top:16px', html: '语音识别（选填）' } as any));
+  body.append(
+    el('div', {
+      class: 'muted',
+      html: '腾讯云「一句话识别」（≤60 秒）。小助手按住说话、说话录药都会用。填 AppId + SecretId + SecretKey；一句话识别按次计费，不是实时流式 5 小时套餐。',
+    })
+  );
+
+  const asrAppIdIn = el('input', {
+    type: 'text',
+    inputmode: 'numeric',
+    value: asrCfg.appId,
+    placeholder: '腾讯云 APPID（纯数字）',
+    style: 'margin-top:10px',
+  } as any) as HTMLInputElement;
+  body.append(field('AppId', asrAppIdIn));
+
+  const asrIdIn = el('input', {
+    type: 'text',
+    value: asrCfg.secretId,
+    placeholder: '以 AKID 开头',
+  } as any) as HTMLInputElement;
+  body.append(field('SecretId', asrIdIn));
+
+  const asrKeyWrap = el('div', { style: 'position:relative' } as any);
+  const asrKeyIn = el('input', {
+    type: 'password',
+    value: asrCfg.secretKey,
+    placeholder: '创建密钥时记下的 SecretKey',
+    style: 'padding-right:64px',
+  } as any) as HTMLInputElement;
+  const asrToggleKey = el('button', {
+    class: 'key-toggle',
+    type: 'button',
+    html: '显示',
+  } as any);
+  let asrKeyVisible = false;
+  asrToggleKey.onclick = () => {
+    asrKeyVisible = !asrKeyVisible;
+    asrKeyIn.type = asrKeyVisible ? 'text' : 'password';
+    asrToggleKey.textContent = asrKeyVisible ? '隐藏' : '显示';
+  };
+  asrKeyWrap.append(asrKeyIn, asrToggleKey);
+  body.append(field('SecretKey', asrKeyWrap));
+
   // ====== 操作行 ======
   const row = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
   const save = el('button', { class: 'btn', html: '保存' });
@@ -1151,7 +1180,18 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     }
     if (!apiKey) return toast('请填写 API 密钥');
     if (!model) return toast('请填写或选择模型');
+    const asrAppId = asrAppIdIn.value.trim();
+    const asrSecretId = asrIdIn.value.trim();
+    const asrSecretKey = asrKeyIn.value.trim();
+    const asrFilled = [asrAppId, asrSecretId, asrSecretKey].filter(Boolean).length;
+    if (asrFilled > 0 && asrFilled < 3) {
+      return toast('语音识别要 AppId、SecretId、SecretKey 三项都填，或都留空');
+    }
+    if (asrAppId && !/^\d+$/.test(asrAppId)) {
+      return toast('语音识别的 AppId 应该是纯数字');
+    }
     await setLlmConfig({ baseUrl, apiKey, model });
+    await setAsrConfig({ appId: asrAppId, secretId: asrSecretId, secretKey: asrSecretKey });
     toast('已保存 ✓');
     // 保存后顺手体检一次
     const h = await pingLlm({ baseUrl, apiKey, model });
@@ -1184,11 +1224,12 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   if (!missingKey) {
     const reset = el('button', {
       class: 'btn text',
-      html: '恢复默认配置',
+      html: '清空这些设置，恢复原样',
       style: 'margin-top:8px',
     } as any);
     reset.onclick = async () => {
       await resetLlmConfig();
+      await resetAsrConfig();
       toast('已恢复默认');
       // 重建 body
       body.replaceChildren();
@@ -1207,6 +1248,79 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
         `· ${isNativeSecretStore() ? 'Android 密钥保存在系统安全存储中。' : 'PWA 密钥仅保留当前会话，刷新后清除。'}`,
     } as any)
   );
+}
+
+function aiConsentChip(): PanelChip {
+  const count = getAiConsentRecords().length;
+  return count > 0
+    ? { text: `${count} 项授权`, tone: 'ok' }
+    : { text: '首次询问', tone: 'muted' };
+}
+
+function renderAiConsentPanel(): HTMLElement {
+  let panelElement!: HTMLElement;
+  panelElement = panel({
+    title: 'AI 外发授权',
+    iconName: 'shield',
+    chip: aiConsentChip(),
+    renderBody: (body) => {
+      body.append(
+        el('div', {
+          class: 'muted',
+          text: '药盒、药单和用药信息会按“健康”类别授权；工资、班次和收入按“工时”类别单独授权。同一服务商同一类别只会首次询问。',
+        }),
+        renderAiConsentControls(() => setChip(panelElement, aiConsentChip())),
+      );
+    },
+  });
+  return panelElement;
+}
+
+function renderAiConsentControls(onChanged: () => void): HTMLElement {
+  const wrap = el('div', { class: 'ai-consent-controls' });
+  const title = el('div', { class: 'section-title', html: '已授权的 AI 服务商' });
+  const list = el('div', { class: 'ai-consent-list' });
+  const clear = el('button', { class: 'btn text small', type: 'button', text: '撤销全部授权' } as any);
+  const render = () => {
+    list.replaceChildren();
+    const records = getAiConsentRecords();
+    clear.hidden = records.length === 0;
+    if (records.length === 0) {
+      list.append(el('div', { class: 'muted', html: '尚未保存外发数据授权。首次识别或分析时会显示服务商域名。' }));
+      return;
+    }
+    for (const record of records) {
+      const row = el('div', { class: 'ai-consent-row' });
+      const text = el('div');
+      text.append(el('strong', { text: record.origin }));
+      text.append(el('div', {
+        class: 'muted',
+        text: record.category === 'health'
+          ? '吃药相关（药盒、药单、用药信息）'
+          : record.category === 'work'
+            ? '上班相关（工资、班次和收入）'
+            : '小助手对话（可能带上吃药和上班记录）',
+      }));
+      const revoke = el('button', { class: 'btn text small', type: 'button', text: '撤销' } as any);
+      revoke.onclick = () => {
+        revokeAiConsent(record.origin, record.category);
+        render();
+        onChanged();
+        toast('已撤销该服务商授权');
+      };
+      row.append(text, revoke);
+      list.append(row);
+    }
+  };
+  clear.onclick = () => {
+    clearAiConsents();
+    render();
+    onChanged();
+    toast('已撤销全部 AI 外发授权');
+  };
+  wrap.append(title, list, clear);
+  render();
+  return wrap;
 }
 
 /** 把模型列表填到 select；列表为空时回退到 input。 */

@@ -14,7 +14,6 @@ import {
   type MedicationOccurrence,
   type MedicationScheduleRevision,
   type Slot,
-  type StructuredDose,
 } from '../db/schema';
 import {
   addLocalDays,
@@ -30,22 +29,24 @@ import {
 } from '../domain/medicationSchedule';
 import {
   el,
+  icon,
   renderPage,
   toast,
-  icon,
   progressRing,
   slotTag,
-  badge,
   banner,
   confirmDialog,
 } from '../ui/components';
 import { closeNotificationsByTag } from '../features/notifier';
+import { getMedPhotoUrls } from '../features/medPhotos';
 import {
+  areDoseUnitsCompatible,
   getConfirmedDose,
-  suggestStructuredDose,
 } from '../features/inventory';
 import { sendLowStockReminderIfDue } from '../features/inventoryReminder';
 import { checkInteractions, type DrugInteraction } from '../data/drugInteractions';
+import { createButton } from '../ui/primitives/Button';
+import { createStatusBadge } from '../ui/primitives/StatusBadge';
 
 const EARLY_TAKE_WINDOW_MS = 20 * 60 * 1000;
 
@@ -98,7 +99,11 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   }
   if (signal?.aborted) return;
 
-  const content = el('div', { class: 'page' });
+  // 今日清单每行带药盒照片缩略图，长辈按图找药
+  const photoUrls = await getMedPhotoUrls([...new Set(items.map((item) => item.med.id))]);
+  if (signal?.aborted) return;
+
+  const content = el('div', { class: 'page today-page' });
   const activeItems = items.filter((item) => !item.isRest && item.occurrence);
   const total = activeItems.length;
   const taken = activeItems.filter((item) => item.log?.status === 'taken').length;
@@ -107,28 +112,30 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   const restCount = items.length - activeItems.length;
   const dateStr = `${now.getMonth() + 1}月${now.getDate()}日 ${WEEKDAY_CN[now.getDay()]}`;
 
-  const statWrap = el('div', { class: 'stat-card-wrap' });
-  const stat = el('div', { class: 'card elevated' });
-  const statRow = el('div', { style: 'display:flex;align-items:center;gap:18px' } as never);
-  statRow.append(progressRing(taken, total));
-  const statText = el('div', { style: 'flex:1;min-width:0' } as never);
-  statText.append(el('div', { class: 'muted', html: dateStr }));
-  statText.append(
-    el('div', {
-      class: 'big',
-      html:
-        total === 0
-          ? restCount > 0
-            ? `今天全部为停药期（${restCount} 项）`
-            : '今天没有安排'
-          : `已服 ${taken} · 跳过 ${skipped} · 待服 ${pending}${restCount > 0 ? ` · 停药期 ${restCount}` : ''}`,
-      style: 'margin-top:4px',
-    } as never),
+  const summary = el('section', { class: 'today-summary', 'aria-label': '今日服药概览' } as any);
+  const summaryCopy = el('div', { class: 'today-summary-copy' });
+  summaryCopy.append(el('div', { class: 'today-summary-date', text: dateStr }));
+  summaryCopy.append(el('h2', {
+    class: 'today-summary-title',
+    text:
+      total === 0
+        ? restCount > 0
+          ? `今天全部为停药期（${restCount} 项）`
+          : '今天没有安排'
+        : `待处理 ${pending} 项`,
+  }));
+  const summaryStats = el('div', { class: 'today-summary-stats', role: 'list', 'aria-label': '今日服药统计' } as any);
+  summaryStats.append(
+    summaryMetric('已服', `${taken}/${total}`, 'success'),
+    summaryMetric('待服', String(pending), pending > 0 ? 'warning' : 'muted'),
+    summaryMetric('跳过', String(skipped), skipped > 0 ? 'warning' : 'muted'),
   );
-  statRow.append(statText);
-  stat.append(statRow);
-  statWrap.append(stat);
-  content.append(statWrap);
+  if (restCount > 0) summaryStats.append(summaryMetric('停药期', String(restCount), 'muted'));
+  summaryCopy.append(summaryStats);
+  const progress = el('div', { class: 'today-summary-progress' });
+  progress.append(progressRing(taken, total));
+  summary.append(summaryCopy, progress);
+  content.append(summary);
 
   const cycleReviewCount = new Set(
     projections
@@ -156,9 +163,9 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
         group.earliestTime = item.revision.timeLocal;
       }
     }
-    const grid = el('div', { class: 'slot-grid' });
+    const grid = el('div', { class: 'today-schedule' });
     for (const group of [...groupMap.values()].sort((a, b) => a.earliest - b.earliest)) {
-      grid.append(renderSlotCard(group, () => void renderTodayPage(root, signal), today));
+      grid.append(renderSlotSection(group, () => void renderTodayPage(root, signal), today, photoUrls));
     }
     content.append(grid);
   } else {
@@ -187,14 +194,28 @@ function toTodayItem(
   };
 }
 
+function summaryMetric(
+  label: string,
+  value: string,
+  tone: Parameters<typeof createStatusBadge>[1],
+): HTMLElement {
+  const metric = el('div', { class: 'today-summary-stat', role: 'listitem' } as any);
+  metric.append(el('span', { class: 'today-summary-stat-label', text: label }));
+  const valueNode = el('strong', { class: 'today-summary-stat-value', text: value });
+  valueNode.append(createStatusBadge('', tone));
+  valueNode.lastElementChild?.setAttribute('aria-hidden', 'true');
+  metric.append(valueNode);
+  return metric;
+}
+
 function renderWeekAdherenceCard(
   occurrences: readonly MedicationOccurrence[],
   logs: readonly IntakeLog[],
   today: ReturnType<typeof toLocalDate>,
   now: number,
 ): HTMLElement {
-  const card = el('div', { class: 'card adherence-card' });
-  card.append(el('h2', { html: '近 7 天依从情况' }));
+  const card = el('section', { class: 'today-adherence', 'aria-label': '近 7 天服药情况' } as any);
+  card.append(el('h2', { text: '近 7 天服药情况' }));
   const bars: Array<{
     date: ReturnType<typeof toLocalDate>;
     rate: number;
@@ -219,7 +240,7 @@ function renderWeekAdherenceCard(
 
   const chart = el('div', { class: 'adherence-chart' });
   chart.setAttribute('role', 'list');
-  chart.setAttribute('aria-label', '近 7 天每日依从率');
+  chart.setAttribute('aria-label', '近 7 天每日按时服药比例');
   for (const item of bars) {
     const column = el('div', { class: 'adherence-col' });
     const barWrap = el('div', { class: 'adherence-bar-wrap' });
@@ -240,7 +261,7 @@ function renderWeekAdherenceCard(
       'aria-label',
       item.due === 0
         ? `${Number(month)}月${Number(day)}日，没有已到期安排`
-        : `${Number(month)}月${Number(day)}日，依从率 ${Math.round(item.rate * 100)}%，已服 ${item.taken}，跳过 ${item.skipped}，漏服 ${item.missed}`,
+        : `${Number(month)}月${Number(day)}日，按时服药 ${Math.round(item.rate * 100)}%，已服 ${item.taken}，跳过 ${item.skipped}，漏服 ${item.missed}`,
     );
     column.append(barWrap, label, pct);
     chart.append(column);
@@ -256,16 +277,17 @@ function renderWeekAdherenceCard(
       html:
         overall.due === 0
           ? '近 7 天没有已到期的服药安排'
-          : `依从率 ${adherence}%（已服 ${overall.taken}/${overall.due}） · 已处理率 ${handled}% · 跳过 ${overall.skipped} · 漏服 ${overall.missed}`,
+          : `按时服药 ${adherence}%（已服 ${overall.taken}/${overall.due}） · 已处理 ${handled}% · 跳过 ${overall.skipped} · 漏服 ${overall.missed}`,
     }),
   );
   return card;
 }
 
-function renderSlotCard(
+function renderSlotSection(
   group: SlotGroup,
   refresh: () => void,
   today: ReturnType<typeof toLocalDate>,
+  photoUrls: ReadonlyMap<string, string>,
 ): HTMLElement {
   const activeItems = group.items.filter((item) => !item.isRest && item.occurrence);
   const doneCount = activeItems.filter((item) => isHandled(item.log)).length;
@@ -284,37 +306,46 @@ function renderSlotCard(
   const nextAllowedAt = upcomingPending.length > 0
     ? Math.min(...upcomingPending.map((item) => item.dueAt - EARLY_TAKE_WINDOW_MS))
     : undefined;
-  const card = el('div', {
-    class: `slot-card${allDone ? ' taken' : ''}${skippedCount > 0 && !allTaken ? ' skipped' : ''}`,
+  const card = el('section', {
+    class: `today-slot${allDone ? ' is-complete' : ''}${skippedCount > 0 && !allTaken ? ' is-skipped' : ''}`,
   });
 
-  const head = el('div', { class: 'head' });
+  const head = el('div', { class: 'today-slot-header' });
   head.append(slotTag(group.slot));
   const distinctTimes = new Set(group.items.map((item) => item.revision.timeLocal));
-  head.append(el('span', { class: 'time', html: distinctTimes.size > 1 ? `${group.earliestTime} 起` : group.earliestTime }));
-  head.append(el('span', { class: 'spacer' }));
+  head.append(el('span', { class: 'today-slot-time', text: distinctTimes.size > 1 ? `${group.earliestTime} 起` : group.earliestTime }));
+  head.append(el('span', { class: 'today-slot-spacer' }));
   if (activeItems.length === 0) {
-    head.append(badge('全部停药期'));
+    head.append(createStatusBadge('全部停药期', 'muted'));
   } else if (allDone) {
-    const pill = el('span', { class: 'check-pill' });
-    pill.append(icon(allTaken ? 'check' : 'undo'));
-    pill.append(el('span', { html: allTaken ? '已完成' : `已跳过 ${skippedCount}` }));
-    head.append(pill);
+    head.append(createStatusBadge(allTaken ? '已服完成' : `已跳过 ${skippedCount}`, allTaken ? 'success' : 'warning'));
   } else {
-    head.append(badge(`${activeItems.length - doneCount} 待服`));
+    head.append(createStatusBadge(`${activeItems.length - doneCount} 待服`, 'info'));
   }
   card.append(head);
 
-  const meds = el('div', { class: 'meds' });
+  const meds = el('div', { class: 'today-medication-list' });
   for (const item of group.items) {
     const status = item.log?.status === 'taken' || item.log?.status === 'skipped' ? item.log.status : 'pending';
     const expired = isMedicationExpiredOn(item.med, today);
-    const line = el('div', {
-      class: `med-line med-line-${status}${expired ? ' expired' : ''}${item.isRest ? ' rest-day' : ''}`,
+    const line = el('article', {
+      class: `today-medication-row today-medication-${status}${expired ? ' is-expired' : ''}${item.isRest ? ' is-rest-day' : ''}`,
     });
     if (item.occurrence) line.dataset.occurrenceId = item.occurrence.id;
-    line.append(el('span', { class: 'dot' }));
-    line.append(el('span', { class: 'med-name', html: item.med.name }));
+    line.append(el('span', { class: 'today-medication-marker', 'aria-hidden': 'true' } as any));
+    // 药盒照片缩略图：认盒不认字，没照片时用淡紫药丸占位
+    const photoUrl = photoUrls.get(item.med.id);
+    const thumb = el('span', { class: 'today-medication-thumb' + (photoUrl ? '' : ' is-placeholder'), 'aria-hidden': 'true' } as any);
+    if (photoUrl) {
+      const img = el('img', { alt: '', loading: 'lazy', decoding: 'async' } as any) as HTMLImageElement;
+      img.src = photoUrl;
+      thumb.append(img);
+    } else {
+      thumb.append(icon('pill'));
+    }
+    line.append(thumb);
+    const copy = el('div', { class: 'today-medication-copy' });
+    copy.append(el('div', { class: 'today-medication-name', text: item.med.name }));
     const structuredDose = item.revision.doseQuantity && item.revision.doseUnit
       ? `${item.revision.doseQuantity}${item.revision.doseUnit}`
       : item.med.amountPerDose;
@@ -323,71 +354,70 @@ function renderSlotCard(
       structuredDose,
       formatMealRels([...item.revision.mealRels]),
     ].filter(Boolean).join(' · ');
-    if (details) line.append(el('span', { class: 'dose', html: details }));
-    if (item.isRest) line.append(el('span', { class: 'rest-day-tag', html: '停药期' }));
-    if (status === 'taken') line.append(el('span', { class: 'dose status-text ok', html: '已服' }));
-    if (status === 'skipped') line.append(el('span', { class: 'dose status-text warn', html: '已跳过' }));
-    if (expired) line.append(el('span', { class: 'dose status-text expired-tag', html: '已过期' }));
+    if (details) copy.append(el('div', { class: 'today-medication-meta', text: details }));
+    line.append(copy);
+    const statusWrap = el('div', { class: 'today-medication-status' });
+    if (item.isRest) statusWrap.append(createStatusBadge('停药期', 'muted'));
+    else if (status === 'taken') statusWrap.append(createStatusBadge('已服', 'success'));
+    else if (status === 'skipped') statusWrap.append(createStatusBadge('已跳过', 'warning'));
+    if (expired) statusWrap.append(createStatusBadge('已过期', 'danger'));
+    if (!item.isRest && item.med.inventory && !getConfirmedDose(item.med)) {
+      statusWrap.append(createStatusBadge('剂量待复核', 'warning'));
+    }
+    if (statusWrap.childElementCount > 0) line.append(statusWrap);
     meds.append(line);
   }
   card.append(meds);
 
-  const actions = el('div', { class: 'actions' });
+  const actions = el('div', { class: 'today-slot-actions' });
   if (activeItems.length === 0) {
-    actions.append(el('span', { class: 'muted', html: '今日为停药期，无需服用' }));
+    actions.append(el('span', { class: 'today-slot-empty', text: '今日为停药期，无需服用' }));
   } else if (allDone) {
-    const undo = el('button', { class: 'btn text' });
-    undo.append(icon('undo'));
-    undo.append(el('span', { html: '撤销整段' }));
-    undo.onclick = async () => {
+    const undo = createButton({ label: '撤销本时段', variant: 'text', icon: 'undo' });
+    undo.onclick = () => void (async () => {
       await applyActions(activeItems, undefined);
       toast('已撤销');
       refresh();
-    };
+    })();
     actions.append(undo);
   } else {
-    const takeBtn = el('button', { class: 'btn success' });
-    takeBtn.append(icon('check'));
-    takeBtn.append(
-      el('span', {
-        html:
-          takeableItems.length > 0
-            ? `服用已到时间（${takeableItems.length}）`
-            : eligiblePending.length > 0
-              ? '过期药不可记录服用'
-              : nextAllowedAt != null
-                ? `${formatClock(nextAllowedAt)} 后可服用`
-                : '暂无可服用项',
-      }),
-    );
-    if (takeableItems.length === 0) takeBtn.disabled = true;
-    takeBtn.onclick = async () => {
+    const takeLabel = takeableItems.length > 0
+      ? `服用已到时间（${takeableItems.length}）`
+      : eligiblePending.length > 0
+        ? '过期药不可记录服用'
+        : nextAllowedAt != null
+          ? `${formatClock(nextAllowedAt)} 后可服用`
+          : '暂无可服用项';
+    const takeBtn = createButton({ label: takeLabel, icon: 'check', disabled: takeableItems.length === 0 });
+    takeBtn.classList.add('today-slot-take');
+    takeBtn.onclick = () => void (async () => {
       if (takeableItems.length === 0) return;
       const hits = checkInteractions(takeableItems.map((item) => item.med.name));
       if (hits.length > 0 && !(await confirmDialog(buildTodayInteractionWarning(hits), '仍要记录', true))) {
         return;
       }
-      const confirmations = await prepareDoseConfirmations(takeableItems);
-      if (!confirmations) return;
+      if (!preflightInventoryActions(takeableItems)) return;
       try {
-        await applyActions(takeableItems, 'taken', confirmations);
+        await applyActions(takeableItems, 'taken');
         toast(`${takeableItems.length} 项服药已记录`);
         refresh();
       } catch (error) {
         toast(intakeErrorMessage(error));
       }
-    };
+    })();
 
-    const skipBtn = el('button', { class: 'btn tonal' });
-    skipBtn.append(icon('undo'));
-    skipBtn.append(el('span', { html: eligiblePending.length > 0 ? `跳过已到时间（${eligiblePending.length}）` : '暂无可跳过项' }));
-    if (eligiblePending.length === 0) skipBtn.disabled = true;
-    skipBtn.onclick = async () => {
+    const skipBtn = createButton({
+      label: eligiblePending.length > 0 ? `跳过已到时间（${eligiblePending.length}）` : '暂无可跳过项',
+      variant: 'secondary',
+      icon: 'undo',
+      disabled: eligiblePending.length === 0,
+    });
+    skipBtn.onclick = () => void (async () => {
       if (eligiblePending.length === 0) return;
       await applyActions(eligiblePending, 'skipped');
       toast('已记录为跳过');
       refresh();
-    };
+    })();
     actions.append(takeBtn, skipBtn);
   }
   card.append(actions);
@@ -405,52 +435,39 @@ function buildTodayInteractionWarning(hits: DrugInteraction[]): string {
     .join('\n\n')}\n\n仍要记录为已服用吗？`;
 }
 
-async function prepareDoseConfirmations(
-  items: readonly TodayItem[],
-): Promise<Map<string, StructuredDose> | undefined> {
-  const confirmations = new Map<string, StructuredDose>();
+function preflightInventoryActions(items: readonly TodayItem[]): boolean {
   const countByMed = new Map<string, number>();
   for (const item of items) countByMed.set(item.med.id, (countByMed.get(item.med.id) ?? 0) + 1);
 
   for (const item of items) {
-    if (!item.med.inventory || confirmations.has(item.med.id)) continue;
-    let dose = getConfirmedDose(item.med);
-    if (!dose) {
-      const suggestion = item.med.doseMigrationSuggestion ??
-        suggestStructuredDose(item.med.amountPerDose, item.med.inventory.unit);
-      if (!suggestion) {
-        toast(`${item.med.name} 的每次用量无法可靠识别，请先在药品页确认`);
-        return undefined;
-      }
-      const confirmed = await confirmDialog(
-        `库存扣减需要结构化剂量。是否确认每次 ${suggestion.quantity}${suggestion.unit}？`,
-        '确认剂量',
-      );
-      if (!confirmed) return undefined;
-      dose = suggestion;
-      confirmations.set(item.med.id, dose);
+    if (!item.med.inventory) continue;
+    const dose = getConfirmedDose(item.med);
+    // Intake remains recordable for old free-text doses, but no inventory delta
+    // is created until the user edits the medication into a structured dose.
+    if (!dose) continue;
+    const inventoryUnit = item.med.inventory.unit?.trim();
+    if (inventoryUnit && !areDoseUnitsCompatible(inventoryUnit, dose.unit)) {
+      toast(`${item.med.name} 每次用量的单位和剩余药量的单位对不上，这次先不帮你扣药量`);
+      return false;
     }
     const required = dose.quantity * (countByMed.get(item.med.id) ?? 1);
     if (item.med.inventory.remaining < required) {
       toast(
-        `${item.med.name} 库存不足：需要 ${required}${dose.unit}，剩余 ${item.med.inventory.remaining}${item.med.inventory.unit || dose.unit}`,
+        `${item.med.name} 不够吃了：这次要 ${required}${dose.unit}，只剩 ${item.med.inventory.remaining}${item.med.inventory.unit || dose.unit}，记得补药`,
       );
-      return undefined;
+      return false;
     }
   }
-  return confirmations;
+  return true;
 }
 
 async function applyActions(
   items: readonly TodayItem[],
   action: IntakeAction | undefined,
-  confirmations = new Map<string, StructuredDose>(),
 ): Promise<void> {
   for (const item of items) {
     if (!item.occurrence) continue;
-    const result = await setOccurrenceAction(item.occurrence, action, {
-      confirmedDose: confirmations.get(item.med.id),
-    });
+    const result = await setOccurrenceAction(item.occurrence, action);
     item.med = result.med;
     item.log = result.log;
     if (result.lowStock && result.lowStockMessage) {

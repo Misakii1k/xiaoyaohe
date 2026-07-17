@@ -1,4 +1,3 @@
-import { detectWorkEntryIssues, parseWorkEntryText, parseWorkProfileText, summarizeWorkIncome, WorkAiError } from '../ai/workAssistant';
 import {
   batchMarkSettled,
   calculateWorkIncome,
@@ -22,13 +21,12 @@ import {
   softDeleteWorkProfile,
   workUid,
 } from '../db/work';
-import type { WorkAiDraft, WorkEntry, WorkPayMode, WorkProfile, WorkSettlement } from '../db/schema';
+import type { WorkEntry, WorkPayMode, WorkProfile, WorkSettlement } from '../db/schema';
 import {
   effectiveWorkDurationMs,
   resolveWorkBreakMinutes,
   type WorkRangeIncomeResult,
 } from '../domain/workIncome';
-import { navigate } from '../router';
 import {
   closeDialog,
   confirmDialog,
@@ -38,8 +36,13 @@ import {
   renderPage,
   toast,
 } from '../ui/components';
-import { getLlmConfig } from '../ai/llmConfig';
 import { exportWorkReport } from '../tools/registry';
+import {
+  createDateControl,
+  createDateTimeControl,
+  createSelectControl,
+  createTimeControl,
+} from '../ui/primitives/Pickers';
 
 const LAST_WORK_ENTRY_KEY = 'medbox.lastWorkEntry';
 
@@ -147,7 +150,7 @@ export async function renderWorkLogPage(
   activeWorkPageCleanup = cleanup;
   signal?.addEventListener('abort', cleanup, { once: true });
   if (!lifecycle.isActive()) return cleanup;
-  renderWorkShell(root, '正在载入工时收入...');
+  renderWorkShell(root, '正在打开上班记录…');
   try {
     const now = Date.now();
     const range = filterRange(currentFilter, now);
@@ -185,7 +188,6 @@ export async function renderWorkLogPage(
     const content = el('div', { class: 'page page-light work-page' });
     content.append(renderHero(state));
     content.append(renderTimerCard(state));
-    content.append(renderAiCard(state));
     content.append(renderProfilesCard(state));
     content.append(renderManualEntryCard(state));
     content.append(renderEntriesCard(state));
@@ -193,13 +195,8 @@ export async function renderWorkLogPage(
     // 多选模式底部操作栏
     if (multiSelectMode) content.append(renderBatchActionBar(state));
 
-    const back = el('button', { class: 'icon-btn', type: 'button', title: '返回工具箱', 'aria-label': '返回工具箱' } as any);
-    back.append(icon('arrow-left'));
-    back.onclick = () => {
-      if (state.isActive()) navigate('/tools');
-    };
     if (!state.isActive()) return cleanup;
-    renderPage({ root, title: '工时收入', activeTab: 'work', topLeft: back, content, showTabbar: false });
+    renderPage({ root, title: '工时收入', activeTab: 'work', content });
     if (state.running) {
       tickTimer = window.setInterval(() => {
         if (state.isActive()) updateRunningUi(state);
@@ -207,7 +204,7 @@ export async function renderWorkLogPage(
     }
   } catch (e) {
     if (!lifecycle.isActive()) return cleanup;
-    renderWorkShell(root, e instanceof Error ? e.message : '工时收入载入失败，请刷新后重试。');
+    renderWorkShell(root, e instanceof Error ? e.message : '上班记录没打开，刷新一下再试试。');
   }
   return cleanup;
 }
@@ -215,23 +212,62 @@ export async function renderWorkLogPage(
 function renderWorkShell(root: HTMLElement, message: string): void {
   const content = el('div', { class: 'page page-light work-page' });
   content.append(el('div', { class: 'card' }, [el('div', { class: 'muted', html: message })]));
-  renderPage({ root, title: '工时收入', activeTab: 'work', content, showTabbar: false });
+  renderPage({ root, title: '工时收入', activeTab: 'work', content });
 }
 
 function renderHero(state: WorkPageState): HTMLElement {
-  const heroR = heroRangeFor(state.now);
-  const summary = listWorkIncomeSummary(state.entries, state.profiles, state.settlements, heroR.start, heroR.end, state.now);
-  const card = el('div', { class: 'card work-income-hero' });
-  card.append(el('div', { class: 'muted', html: state.running ? '当前正在记录班次' : '个人收入台账' }));
-  card.append(el('div', { class: 'work-income-main', html: moneyText(summary.estimatedIncome) }));
-  card.append(el('div', { class: 'muted', html: `${heroRangeLabel()}预计 · ${formatDuration(summary.totalMs)} · 出勤 ${summary.attendanceDays} 天` }));
-  const grid = el('div', { class: 'work-income-grid' });
-  grid.append(metric('区间总收入', moneyText(summary.estimatedIncome)));
-  grid.append(metric('待结算', moneyText(summary.pendingIncome)));
-  grid.append(metric('已结算', moneyText(summary.settledIncome)));
-  grid.append(metric('区间工时', formatDuration(summary.totalMs)));
-  card.append(grid);
-  // 区间切换 chip
+  const todayRange = rangeFor('today', state.now);
+  const monthRange = rangeFor('month', state.now);
+  const todaySummary = listWorkIncomeSummary(
+    state.entries,
+    state.profiles,
+    state.settlements,
+    todayRange.start,
+    todayRange.end,
+    state.now,
+  );
+  const monthSummary = listWorkIncomeSummary(
+    state.entries,
+    state.profiles,
+    state.settlements,
+    monthRange.start,
+    monthRange.end,
+    state.now,
+  );
+  const selectedRange = heroRangeFor(state.now);
+  const selectedSummary = listWorkIncomeSummary(
+    state.entries,
+    state.profiles,
+    state.settlements,
+    selectedRange.start,
+    selectedRange.end,
+    state.now,
+  );
+  const overview = el('section', { class: 'work-overview', 'aria-label': '收入概览' } as any);
+  const hero = el('div', { class: 'card work-hero-card' });
+  const heading = el('div', { class: 'work-overview-heading' });
+  heading.append(
+    el('h2', { text: '收入概览' }),
+    el('span', { class: 'muted', text: state.running ? '班次进行中' : '本地记录' }),
+  );
+  const headline = el('div', { class: 'work-hero-headline' });
+  headline.append(
+    el('div', { class: 'work-hero-amount', text: moneyText(selectedSummary.estimatedIncome) }),
+    el('div', {
+      class: 'muted work-hero-caption',
+      text: `${heroRangeLabel()}收入 · ${formatDuration(selectedSummary.totalMs)} · 出勤 ${selectedSummary.attendanceDays} 天`,
+    }),
+  );
+  hero.append(heading, headline, buildIncomeTrend(state));
+
+  const bento = el('div', { class: 'work-bento' });
+  bento.append(
+    metric('本月收入', moneyText(monthSummary.estimatedIncome), `出勤 ${monthSummary.attendanceDays} 天`, 'lilac'),
+    metric('今日工时', formatDuration(todaySummary.totalMs), `今日收入 ${moneyText(todaySummary.estimatedIncome)}`),
+    metric('待结算', moneyText(monthSummary.pendingIncome), '本月还没拿到手的钱'),
+  );
+  overview.append(hero, bento);
+
   const chips: { id: HeroRange; label: string }[] = [
     { id: 'today', label: '今日' },
     { id: 'week', label: '本周' },
@@ -239,7 +275,7 @@ function renderHero(state: WorkPageState): HTMLElement {
     { id: 'custom', label: '自定义' },
   ];
   const chipRow = el('div', {
-    class: 'work-filter-row work-hero-range-row',
+    class: 'work-overview-range',
     role: 'group',
     'aria-label': '收入统计区间',
   } as any);
@@ -261,14 +297,20 @@ function renderHero(state: WorkPageState): HTMLElement {
     };
     chipRow.append(b);
   }
-  card.append(chipRow);
-  // 自定义区间选择
+  hero.append(chipRow);
+
   if (heroRange === 'custom') {
-    const wrap = el('div', { class: 'work-hero-custom' });
-    const startInput = el('input', { type: 'date', class: 'work-hero-date', 'aria-label': '自定义开始日期' } as any) as HTMLInputElement;
-    const endInput = el('input', { type: 'date', class: 'work-hero-date', 'aria-label': '自定义结束日期' } as any) as HTMLInputElement;
-    if (heroCustomStart) startInput.value = toDateInputValue(heroCustomStart);
-    if (heroCustomEnd) endInput.value = toDateInputValue(heroCustomEnd);
+    const wrap = el('div', { class: 'work-overview-custom' });
+    const startPicker = createDateControl({
+      value: heroCustomStart ? toDateInputValue(heroCustomStart) : '',
+      ariaLabel: '自定义开始日期',
+    });
+    const endPicker = createDateControl({
+      value: heroCustomEnd ? toDateInputValue(heroCustomEnd) : '',
+      ariaLabel: '自定义结束日期',
+    });
+    const startInput = startPicker.input as HTMLInputElement;
+    const endInput = endPicker.input as HTMLInputElement;
     const refresh = async () => {
       if (!state.isActive()) return;
       const s = startInput.value ? new Date(startInput.value + 'T00:00:00').getTime() : undefined;
@@ -279,10 +321,63 @@ function renderHero(state: WorkPageState): HTMLElement {
     };
     startInput.onchange = refresh;
     endInput.onchange = refresh;
-    wrap.append(el('span', { class: 'muted', html: '起：' }), startInput, el('span', { class: 'muted', html: '止：' }), endInput);
-    card.append(wrap);
+    wrap.append(el('span', { class: 'muted', text: '开始' }), startPicker.root, el('span', { class: 'muted', text: '结束' }), endPicker.root);
+    hero.append(wrap);
   }
-  return card;
+  return overview;
+}
+
+/** 图 4 Overview 卡折线图：近 7 天每日收入趋势（珊瑚红折线 + 虚线网格） */
+function buildIncomeTrend(state: WorkPageState): HTMLElement {
+  const days: { label: string; amount: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(state.now);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    const start = d.getTime();
+    const summary = listWorkIncomeSummary(state.entries, state.profiles, state.settlements, start, start + 86_399_999, state.now);
+    days.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, amount: summary.estimatedIncome });
+  }
+  const w = 300;
+  const h = 96;
+  const padL = 34;
+  const padR = 8;
+  const padT = 10;
+  const padB = 10;
+  const rawMax = Math.max(...days.map((d) => d.amount));
+  const max = rawMax > 0 ? rawMax * 1.15 : 100;
+  const stepX = (w - padL - padR) / (days.length - 1);
+  const yFor = (v: number) => padT + (h - padT - padB) * (1 - v / max);
+  const xFor = (i: number) => padL + stepX * i;
+  const gridLevels = [max * 0.85, max * 0.5, max * 0.15];
+  const fmtTick = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10_000 ? 0 : 1)}k` : String(Math.round(v)));
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const svgEl = (tag: string, attrs: Record<string, string>) => {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    return node;
+  };
+  const svg = svgEl('svg', { viewBox: `0 0 ${w} ${h}`, preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+  for (const v of gridLevels) {
+    const y = yFor(v).toFixed(1);
+    svg.append(svgEl('line', { x1: String(padL), y1: y, x2: String(w - padR), y2: y, class: 'trend-grid' }));
+    const tick = svgEl('text', { x: String(padL - 6), y, class: 'trend-tick', 'text-anchor': 'end', 'dominant-baseline': 'middle' });
+    tick.textContent = fmtTick(v);
+    svg.append(tick);
+  }
+  const pts = days.map((d, i) => `${xFor(i).toFixed(1)},${yFor(d.amount).toFixed(1)}`).join(' ');
+  svg.append(svgEl('polyline', { points: pts, class: 'trend-line' }));
+  for (let i = 0; i < days.length; i++) {
+    svg.append(svgEl('circle', { cx: xFor(i).toFixed(1), cy: yFor(days[i].amount).toFixed(1), r: '2.6', class: 'trend-dot' }));
+  }
+  const wrap = el('div', { class: 'work-trend' });
+  wrap.setAttribute('role', 'img');
+  wrap.setAttribute(
+    'aria-label',
+    `近 7 天收入趋势：${days.map((d) => `${d.label} ${moneyText(d.amount)}`).join('，')}`,
+  );
+  wrap.append(svg);
+  return wrap;
 }
 
 function heroRangeFor(now: number): { start: number; end: number } {
@@ -308,7 +403,7 @@ function toDateInputValue(ms: number): string {
 }
 
 function renderTimerCard(state: WorkPageState): HTMLElement {
-  const card = el('div', { class: 'card work-timer-card work-primary-card' });
+  const card = el('section', { class: `work-timer-card${state.running ? ' is-running' : ' is-ready'}` });
   const heading = el('div', { class: 'work-card-heading' });
   heading.append(el('h2', { html: state.running ? '正在上班' : '快速打卡' }));
   if (state.running) heading.append(el('span', { class: 'work-status-pill', html: '运行中' }));
@@ -350,8 +445,8 @@ function renderTimerCard(state: WorkPageState): HTMLElement {
   }
 
   if (state.profiles.length === 0) {
-    card.append(el('div', { class: 'muted', html: '先创建一个工作档案，再开始记录班次。' }));
-    const add = el('button', { class: 'btn', html: '新增工作档案' });
+    card.append(el('div', { class: 'muted', html: '先添加一份工作，才能开始打卡。' }));
+    const add = el('button', { class: 'btn', html: '添加工作' });
     add.onclick = () => openProfileDialog(undefined, state);
     card.append(add);
     return card;
@@ -417,55 +512,16 @@ async function maybeAddTaskTemplate(profile: WorkProfile, taskName: string): Pro
   }
 }
 
-function renderAiCard(state: WorkPageState): HTMLElement {
-  const card = el('details', { class: 'card work-ai-card' } as any);
-  const summary = el('summary', { class: 'work-details-summary' });
-  summary.append(el('span', { html: 'AI 助手' }));
-  summary.append(el('span', { class: 'muted', html: '解析文字 · 总结收入 · 发现异常' }));
-  card.append(summary);
-
-  const cfg = getLlmConfig();
-  if (!cfg.apiKey) {
-    card.append(el('div', { class: 'banner info', html: 'AI 未配置。普通记工时不受影响；需要 AI 时到设置页填写 API 密钥。' }));
-    return card;
-  }
-
-  const text = el('textarea', { placeholder: '例如：昨天奶茶店 10 点到 18 点，休息 1 小时，日结 180，已结' } as any) as HTMLTextAreaElement;
-  card.append(fieldWrap('工作描述', text));
-  const row = el('div', { class: 'btn-row', style: 'margin-top:10px' } as any);
-  const parseProfile = el('button', { class: 'btn tonal', html: '解析工作档案' });
-  const parseEntry = el('button', { class: 'btn tonal', html: '解析班次' });
-  const summarize = el('button', { class: 'btn tonal', html: '生成月度总结' });
-  const issues = el('button', { class: 'btn tonal', html: '检查最近异常' });
-  parseProfile.onclick = async () => runAi(parseProfile, state, async () => previewProfileDraft(await parseWorkProfileText(text.value), state));
-  parseEntry.onclick = async () => runAi(parseEntry, state, async () => previewEntryDraft(await parseWorkEntryText(text.value, state.profiles), state));
-  summarize.onclick = async () => {
-    if (!state.isActive()) return;
-    const month = rangeFor('month', state.now);
-    const data = listWorkIncomeSummary(state.entries, state.profiles, state.settlements, month.start, month.end, state.now);
-    await runAi(summarize, state, async () => previewSummaryDraft(await summarizeWorkIncome(data), state));
-  };
-  issues.onclick = async () => {
-    if (!state.isActive()) return;
-    const entry = state.entries[0];
-    if (!entry) return showToast(state, '还没有班次可检查');
-    await runAi(issues, state, async () => previewSummaryDraft(await detectWorkEntryIssues(entry, { profiles: state.profiles, recentEntries: state.entries.slice(0, 20) }), state));
-  };
-  row.append(parseProfile, parseEntry, summarize, issues);
-  card.append(row);
-  return card;
-}
-
 function renderProfilesCard(state: WorkPageState): HTMLElement {
   const card = el('div', { class: 'card work-list-card' });
   const head = el('div', { class: 'work-card-heading' });
-  head.append(el('h2', { html: '工作档案' }));
+  head.append(el('h2', { html: '我的工作' }));
   const add = el('button', { class: 'btn tonal small', html: '新增' });
   add.onclick = () => openProfileDialog(undefined, state);
   head.append(add);
   card.append(head);
   if (state.profiles.length === 0) {
-    card.append(el('div', { class: 'muted', html: '还没有工作档案。固定薪资、时薪、日结都从这里配置。' }));
+    card.append(el('div', { class: 'muted', html: '还没有添加工作。拿月薪的、按小时算的、干一天结一天的，都能加。' }));
     return card;
   }
   const list = el('div', { class: 'work-profile-list' });
@@ -481,10 +537,10 @@ function renderProfilesCard(state: WorkPageState): HTMLElement {
     const del = el('button', { class: 'btn text small danger-text', html: '删除' });
     del.onclick = async () => {
       if (!state.isActive()) return;
-      const ok = await confirmIfActive(state, '删除这个工作档案？已有班次不会被删除。', '删除', true);
+      const ok = await confirmIfActive(state, '删掉这份工作？之前记过的班次都会留着。', '删除', true);
       if (!ok) return;
       await softDeleteWorkProfile(profile.id);
-      showToast(state, '已删除工作档案');
+      showToast(state, '已删掉这份工作');
       await state.refresh();
     };
     actions.append(edit, del);
@@ -497,14 +553,19 @@ function renderProfilesCard(state: WorkPageState): HTMLElement {
 
 function renderManualEntryCard(state: WorkPageState): HTMLElement {
   const card = el('details', { class: 'card work-manual-card' } as any);
-  const summary = el('summary', { class: 'work-details-summary' });
-  summary.append(el('span', { html: '手动补录' }));
-  summary.append(el('span', { class: 'muted', html: '补班次、休息、金额覆盖' }));
+  const summary = el('summary', { class: 'work-details-summary ui-accordion-summary' });
+  const titleWrap = el('span', { class: 'work-details-summary-copy' });
+  titleWrap.append(el('span', { html: '手动补一班' }));
+  titleWrap.append(el('span', { class: 'muted', html: '忘了打卡就在这里补' }));
+  const chevron = el('span', { class: 'ui-accordion-chevron', 'aria-hidden': 'true' } as any);
+  chevron.append(icon('chevron-right'));
+  summary.append(titleWrap, chevron);
   card.append(summary);
   if (state.profiles.length === 0) {
-    card.append(el('div', { class: 'muted', html: '请先新增工作档案。' }));
+    card.append(el('div', { class: 'muted', html: '先在上面新增一份工作，才能补班次。' }));
     return card;
   }
+  card.append(el('div', { class: 'muted work-assistant-hint', html: '也可以点右下角的小助手，直接说"昨天 10 点到 6 点，日结 180"，它会帮你记上。' }));
   const form = renderEntryForm({ state });
   const quick = el('div', { class: 'work-quick-row' });
   const oneHour = el('button', { class: 'chip', type: 'button', html: '刚刚结束 1 小时' } as any);
@@ -749,18 +810,18 @@ function renderSalarySettlements(state: WorkPageState): HTMLElement {
 function renderCompareCard(state: WorkPageState): HTMLElement {
   const card = el('div', { class: 'card work-list-card work-compare-card' });
   const head = el('div', { class: 'work-card-heading' });
-  head.append(el('h2', { html: '按工作档案分组' }));
+  head.append(el('h2', { html: '几份工作各挣多少' }));
   const rangeLabel = el('span', { class: 'muted', html: heroRangeLabel() });
   head.append(rangeLabel);
   card.append(head);
   if (state.profiles.length === 0) {
-    card.append(el('div', { class: 'muted', html: '还没有工作档案。' }));
+    card.append(el('div', { class: 'muted', html: '还没有添加工作。' }));
     return card;
   }
   const heroR = heroRangeFor(state.now);
   // 列表加载是异步的，使用占位后再填充
   const listWrap = el('div', { class: 'work-compare-list' });
-  listWrap.append(el('div', { class: 'muted', html: '载入中...' }));
+  listWrap.append(el('div', { class: 'muted', html: '正在算…' }));
   card.append(listWrap);
   void Promise.all([
     listWorkIncomeByProfile(state.entries, state.profiles, state.settlements, heroR.start, heroR.end, state.now),
@@ -774,20 +835,43 @@ function renderCompareCard(state: WorkPageState): HTMLElement {
       return;
     }
     const latestMap = new Map(latests.map((x) => [x.profileId, x.latest]));
-    for (const row of rows) {
+    const totalIncome = rows.reduce((sum, row) => sum + row.totalIncome, 0);
+    const totalMs = rows.reduce((sum, row) => sum + row.totalMs, 0);
+    const tints = ['tint-gray', '', 'tint-blue', 'tint-pink', 'tint-green', 'tint-orange'];
+    rows.forEach((row, index) => {
+      const share = totalIncome > 0
+        ? Math.round((row.totalIncome / totalIncome) * 100)
+        : totalMs > 0
+          ? Math.round((row.totalMs / totalMs) * 100)
+          : 0;
       const item = el('div', { class: 'work-compare-row' });
-      item.append(el('div', { class: 'work-entry-title', html: row.profileName }));
-      const meta = el('div', { class: 'muted', html: `${moneyText(row.totalIncome)} · ${formatDuration(row.totalMs)} · ${row.entryCount} 班` });
-      item.append(meta);
+      const iconWrap = el('span', { class: `tint-icon ${tints[index % tints.length]}`.trim() });
+      iconWrap.append(icon('briefcase'));
+      const main = el('div', { class: 'work-compare-main' });
+      const titleRow = el('div', { class: 'work-compare-title-row' });
+      titleRow.append(
+        el('span', { class: 'work-entry-title', html: row.profileName }),
+        el('span', { class: 'muted work-compare-share', html: `${share}%` }),
+        el('span', { class: 'work-compare-amount', html: moneyText(row.totalIncome) }),
+      );
+      main.append(titleRow);
+      const meta = el('div', { class: 'muted work-compare-meta', html: `${formatDuration(row.totalMs)} · ${row.entryCount} 班` });
+      main.append(meta);
       const latest = latestMap.get(row.profileId);
       if (latest) {
-        item.append(el('div', { class: 'muted work-compare-latest', html: `最近：${latest.taskName || '班次'} · ${formatDateTime(latest.startAt)}` }));
+        main.append(el('div', { class: 'muted work-compare-latest', html: `最近：${latest.taskName || '班次'} · ${formatDateTime(latest.startAt)}` }));
       }
+      const bar = el('div', { class: 'work-compare-bar' });
+      const fill = el('i');
+      fill.style.inlineSize = `${Math.max(share, 2)}%`;
+      bar.append(fill);
+      main.append(bar);
+      item.append(iconWrap, main);
       listWrap.append(item);
-    }
+    });
   }).catch(() => {
     if (!state.isActive()) return;
-    listWrap.replaceChildren(el('div', { class: 'muted', html: '分组统计载入失败，请稍后重试。' }));
+    listWrap.replaceChildren(el('div', { class: 'muted', html: '这里没算出来，过会儿再看看。' }));
   });
   return card;
 }
@@ -936,7 +1020,7 @@ function openProfileDialog(profile: WorkProfile | undefined, state: WorkPageStat
   if (!state.isActive()) return;
   let overlay: HTMLElement;
   const box = el('div', { class: 'card work-edit-dialog' });
-  box.append(el('h3', { html: profile ? '编辑工作档案' : '新增工作档案' }));
+  box.append(el('h3', { html: profile ? '编辑这份工作' : '添加工作' }));
   const name = inputField('工作名称', 'text', '例如：奶茶店');
   const mode = selectField('薪资模式', [
     { value: 'hourly', label: '时薪' },
@@ -1050,7 +1134,7 @@ function openProfileDialog(profile: WorkProfile | undefined, state: WorkPageStat
     });
     if (!state.isActive()) return;
     closeDialog(overlay);
-    showToast(state, '已保存工作档案');
+    showToast(state, '已保存这份工作');
     await state.refresh();
   };
   row.append(cancel, save);
@@ -1270,110 +1354,44 @@ async function confirmIfActive(
   return state.isActive() && confirmed;
 }
 
-async function runAi(button: HTMLButtonElement, state: WorkPageState, fn: () => Promise<void>): Promise<void> {
-  if (!state.isActive()) return;
-  const old = button.textContent || '';
-  button.setAttribute('disabled', 'true');
-  button.textContent = 'AI 处理中...';
-  try {
-    await fn();
-  } catch (e) {
-    const msg = e instanceof WorkAiError ? e.message : e instanceof Error ? e.message : String(e);
-    showToast(state, 'AI 失败：' + msg, 3600);
-  } finally {
-    if (state.isActive()) {
-      button.removeAttribute('disabled');
-      button.textContent = old;
-    }
-  }
-}
-
-function previewProfileDraft(draft: WorkAiDraft, state: WorkPageState): void {
-  if (!state.isActive()) return;
-  const profile = draft.profile || {};
-  openProfileDialog({
-    id: workUid(),
-    name: String(profile.name || ''),
-    payMode: (profile.payMode === 'salary' || profile.payMode === 'daily' ? profile.payMode : 'hourly') as WorkPayMode,
-    baseAmount: Number(profile.baseAmount || 0),
-    settlementCycle: profile.payMode === 'salary' ? 'month' : profile.payMode === 'daily' ? 'day' : 'entry',
-    expectedWorkDaysPerMonth: Number(profile.expectedWorkDaysPerMonth || 0) || undefined,
-    defaultStartTime: String(profile.defaultStartTime || '09:00'),
-    defaultEndTime: String(profile.defaultEndTime || '18:00'),
-    defaultBreakMinutes: Number(profile.defaultBreakMinutes || 0),
-    note: [String(profile.note || ''), draft.warnings.join('；')].filter(Boolean).join('\n'),
-    updatedAt: Date.now(),
-  }, state);
-}
-
-function previewEntryDraft(draft: WorkAiDraft, state: WorkPageState): void {
-  if (!state.isActive()) return;
-  const raw = draft.entry || draft.entries?.[0];
-  if (!raw) return showToast(state, 'AI 没有解析出班次');
-  const profile = state.profiles.find((p) => p.id === raw.profileId)
-    || state.profiles.find((p) => raw.projectName && p.name.includes(String(raw.projectName)))
-    || state.profiles[0];
-  if (!profile) return showToast(state, '请先创建工作档案');
-  const startAt = parseAiTime((raw as any).startAtText) || Number(raw.startAt) || Date.now() - HOUR;
-  const endAt = parseAiTime((raw as any).endAtText) || Number(raw.endAt) || Date.now();
-  openEntryDialog({
-    id: workUid(),
-    profileId: profile.id,
-    projectName: profile.name,
-    taskName: String(raw.taskName || 'AI 补录'),
-    paySnapshot: createPaySnapshot(profile),
-    startAt,
-    endAt,
-    breakMinutes: Number(raw.breakMinutes ?? profile.defaultBreakMinutes ?? 0),
-    amountOverride: raw.amountOverride !== undefined ? Number(raw.amountOverride) : undefined,
-    settlementStatus: raw.settlementStatus === 'settled' ? 'settled' : 'pending',
-    settledAt: raw.settlementStatus === 'settled' ? Date.now() : undefined,
-    note: [String(raw.note || ''), draft.warnings.join('；')].filter(Boolean).join('\n'),
-    status: 'stopped',
-    updatedAt: Date.now(),
-  }, state);
-}
-
-function previewSummaryDraft(draft: WorkAiDraft, state: WorkPageState): void {
-  if (!state.isActive()) return;
-  const box = el('div', { class: 'card work-edit-dialog' });
-  box.append(el('h3', { html: 'AI 月度总结' }));
-  box.append(el('div', { class: 'muted', html: draft.summary || '暂无总结' }));
-  if (draft.warnings.length) box.append(el('div', { class: 'banner warn', html: draft.warnings.join('；') }));
-  const close = el('button', { class: 'btn', html: '知道了', style: 'margin-top:16px' } as any);
-  box.append(close);
-  if (!state.isActive()) return;
-  const overlay = openDialog(box, { initialFocus: close });
-  close.onclick = () => {
-    if (state.isActive()) closeDialog(overlay);
-  };
-}
-
-function metric(label: string, value: string): HTMLElement {
-  const card = el('div', { class: 'work-income-metric' });
+function metric(label: string, value: string, sub?: string, variant?: 'lilac'): HTMLElement {
+  const card = el('div', { class: `work-income-metric${variant ? ` is-${variant}` : ''}` });
   card.append(el('div', { class: 'muted', html: label }));
   card.append(el('div', { class: 'work-summary-value', html: value }));
+  if (sub) card.append(el('div', { class: 'muted work-metric-sub', html: sub }));
   return card;
 }
 
 function inputField(label: string, type: string, placeholder = ''): { wrap: HTMLElement; input: HTMLInputElement } {
+  if (type === 'time') {
+    const control = createTimeControl({ ariaLabel: label, placeholder: placeholder || '选择时间' });
+    return { wrap: fieldWrap(label, control.root, control.input), input: control.input as HTMLInputElement };
+  }
+  if (type === 'date') {
+    const control = createDateControl({ ariaLabel: label, placeholder: placeholder || '选择日期' });
+    return { wrap: fieldWrap(label, control.root, control.input), input: control.input as HTMLInputElement };
+  }
+  if (type === 'datetime-local') {
+    const control = createDateTimeControl({ ariaLabel: label, placeholder: placeholder || '选择日期和时间' });
+    return { wrap: fieldWrap(label, control.root, control.input), input: control.input as HTMLInputElement };
+  }
   const input = el('input', { type, placeholder } as any) as HTMLInputElement;
-  return { wrap: fieldWrap(label, input), input };
+  return { wrap: fieldWrap(label, input, input), input };
 }
 
 function selectField(label: string, options: { value: string; label: string }[]): { wrap: HTMLElement; input: HTMLSelectElement } {
-  const input = el('select') as HTMLSelectElement;
-  for (const option of options) input.append(el('option', { value: option.value, html: option.label } as any));
-  return { wrap: fieldWrap(label, input), input };
+  const control = createSelectControl({ options, ariaLabel: label, placeholder: '请选择' });
+  return { wrap: fieldWrap(label, control.root, control.select), input: control.select };
 }
 
 let workFieldSeq = 0;
-function fieldWrap(label: string, input: HTMLElement): HTMLElement {
+function fieldWrap(label: string, visible: HTMLElement, control?: HTMLElement): HTMLElement {
   const wrap = el('div', { class: 'field' });
-  const id = input.id || `work-field-${++workFieldSeq}`;
-  input.id = id;
-  if (!input.getAttribute('name')) input.setAttribute('name', id);
-  wrap.append(el('label', { html: label, htmlFor: id } as any), input);
+  const target = control ?? visible;
+  const id = target.id || `work-field-${++workFieldSeq}`;
+  target.id = id;
+  if (!target.getAttribute('name')) target.setAttribute('name', id);
+  wrap.append(el('label', { html: label, htmlFor: id } as any), visible);
   return wrap;
 }
 
@@ -1480,17 +1498,6 @@ function todayAt(time: string): Date {
 function toDateTimeLocal(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function parseAiTime(value: unknown): number | undefined {
-  if (typeof value !== 'string' || !value.trim()) return undefined;
-  const t = Date.parse(value);
-  if (Number.isFinite(t)) return t;
-  const m = value.match(/(\d{1,2})[:点](\d{0,2})/);
-  if (!m) return undefined;
-  const d = new Date();
-  d.setHours(Number(m[1]), Number(m[2] || 0), 0, 0);
-  return d.getTime();
 }
 
 function downloadText(text: string, filename: string, type: string): void {

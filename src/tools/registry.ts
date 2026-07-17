@@ -155,8 +155,20 @@ export const tools: ToolDefinition[] = [
       {
         path: '/meds/new',
         handler: (_p, root, context) =>
-          runLazyRoute(context.signal, () => import('../pages/MedEdit'), (page) =>
-            page.renderMedEditPage(root, null, context.signal)),
+          runLazyRoute(context.signal, () => import('../pages/MedBatchAdd'), (page) =>
+            page.renderMedBatchAddPage(root, context.signal)),
+      },
+      {
+        path: '/meds/batch',
+        handler: (_p, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/MedBatchAdd'), (page) =>
+            page.renderMedBatchAddPage(root, context.signal)),
+      },
+      {
+        path: '/meds/inventory',
+        handler: (_p, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/MedInventory'), (page) =>
+            page.renderMedInventoryPage(root, context.signal)),
       },
       {
         path: '/meds/:id/edit',

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#575CCF</color>
+    <color name="colorPrimaryDark">#464BB8</color>
+    <color name="colorAccent">#575CCF</color>
+    <color name="systemBarSurface">#FFFFFF</color>
+</resources>

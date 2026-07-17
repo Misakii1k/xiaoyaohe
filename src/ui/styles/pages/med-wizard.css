@@ -1,0 +1,276 @@
+/* AirPods 连接式逐药认药向导：底部弹卡 + 弹簧动效 */
+.med-wizard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  align-items: end;
+  padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
+  background: var(--scrim);
+  animation: med-wizard-fade 240ms var(--ease-out);
+}
+
+/* display 规则会盖掉 UA 的 [hidden]，向导内统一补回 */
+.med-wizard-overlay [hidden] { display: none; }
+
+.med-wizard {
+  display: grid;
+  gap: var(--space-3);
+  max-block-size: min(88dvh, 760px);
+  overflow: auto;
+  padding: var(--space-3) var(--space-4) calc(var(--space-5) + var(--safe-bottom));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  animation: med-wizard-rise 560ms var(--ease-spring);
+}
+
+.med-wizard-grabber {
+  justify-self: center;
+  inline-size: 40px;
+  block-size: 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.med-wizard-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.med-wizard-progress { color: var(--color-text-muted); font-size: var(--fs-footnote); font-weight: 600; }
+
+.med-wizard-skip {
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.med-wizard-dots { display: flex; justify-content: center; gap: 6px; }
+
+.med-wizard-dots span {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+  transition: transform 320ms var(--ease-spring), background 200ms var(--ease-out), opacity 200ms var(--ease-out);
+}
+
+.med-wizard-dots span.is-current { background: var(--color-primary); transform: scale(1.4); }
+.med-wizard-dots span.is-done { background: var(--color-primary); opacity: 0.4; }
+
+/* 卡片叠放在同一格子里，切换时新旧卡重叠滑动 */
+.med-wizard-stage { display: grid; overflow: hidden; }
+.med-wizard-stage > * { grid-area: 1 / 1; min-inline-size: 0; }
+
+.med-wizard-card { display: grid; gap: var(--space-3); align-content: start; }
+
+.med-wizard-photo {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  min-block-size: 180px;
+  padding: 0;
+  border: 1.5px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-primary-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.med-wizard-photo.has-photo { border: 0; background: var(--color-surface-muted); }
+.med-wizard-photo-img { inline-size: 100%; block-size: 100%; max-block-size: 260px; object-fit: cover; }
+.med-wizard-photo-img.is-pop { animation: med-wizard-pop 620ms var(--ease-spring); }
+
+.med-wizard-photo-empty {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: center;
+  padding: var(--space-4);
+  color: var(--color-primary);
+}
+
+.med-wizard-photo-empty svg { inline-size: 30px; block-size: 30px; }
+.med-wizard-photo-empty strong { font-size: var(--fs-headline); }
+.med-wizard-photo-empty span { color: var(--color-text-muted); font-size: var(--fs-footnote); }
+
+.med-wizard-name { margin: 0; font-size: var(--fs-title2); line-height: 1.25; overflow-wrap: anywhere; }
+
+.med-wizard-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+.med-wizard-chip {
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--fs-footnote);
+  font-weight: 700;
+}
+
+.med-wizard-dosage { color: var(--color-text-muted); font-size: var(--fs-footnote); }
+
+.med-wizard-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); }
+
+.med-wizard-slot {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  text-align: center;
+  animation: med-wizard-slot-in 460ms var(--ease-spring) backwards;
+}
+
+.med-wizard-slot:nth-child(2) { animation-delay: 50ms; }
+.med-wizard-slot:nth-child(3) { animation-delay: 100ms; }
+.med-wizard-slot:nth-child(4) { animation-delay: 150ms; }
+
+.med-wizard-slot svg { inline-size: 18px; block-size: 18px; }
+.med-wizard-slot.is-active { background: var(--color-primary-soft); color: var(--color-primary); }
+.med-wizard-slot-name { font-size: var(--fs-caption); }
+.med-wizard-slot-amount { font-size: var(--fs-footnote); font-weight: 700; overflow-wrap: anywhere; }
+.med-wizard-slot-amount.is-none { font-weight: 400; opacity: 0.6; }
+.med-wizard-slot-meal { font-size: var(--fs-caption); }
+
+.med-wizard-note { margin: 0; color: var(--color-text-muted); font-size: var(--fs-footnote); line-height: 1.45; }
+
+.med-wizard-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+
+.med-wizard-summary { display: grid; gap: var(--space-2); justify-items: center; text-align: center; }
+
+.med-wizard-check {
+  display: grid;
+  place-items: center;
+  inline-size: 64px;
+  block-size: 64px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
+  animation: med-wizard-pop 620ms var(--ease-spring);
+}
+
+.med-wizard-check svg { inline-size: 30px; block-size: 30px; }
+.med-wizard-sub { margin: 0; color: var(--color-text-muted); font-size: var(--fs-footnote); }
+
+.med-wizard-summary-list {
+  display: grid;
+  gap: var(--space-2);
+  inline-size: 100%;
+  max-block-size: 240px;
+  margin-block-start: var(--space-2);
+  overflow: auto;
+}
+
+.med-wizard-summary-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  text-align: start;
+}
+
+.med-wizard-summary-thumb {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.med-wizard-summary-thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.med-wizard-summary-thumb svg { inline-size: 20px; block-size: 20px; }
+.med-wizard-summary-copy { display: grid; gap: 2px; min-inline-size: 0; }
+.med-wizard-summary-copy strong { font-size: var(--fs-subheadline); overflow-wrap: anywhere; }
+.med-wizard-summary-copy span { color: var(--color-text-muted); font-size: var(--fs-caption); }
+
+/* 逐药切换：旧卡滑出、新卡带弹簧滑入 */
+.med-wizard-stage > .is-enter-forward { animation: med-wizard-in-fwd 420ms var(--ease-spring); }
+.med-wizard-stage > .is-exit-forward { animation: med-wizard-out-fwd 300ms var(--ease-out) forwards; pointer-events: none; }
+.med-wizard-stage > .is-enter-back { animation: med-wizard-in-back 420ms var(--ease-spring); }
+.med-wizard-stage > .is-exit-back { animation: med-wizard-out-back 300ms var(--ease-out) forwards; pointer-events: none; }
+
+@keyframes med-wizard-fade { from { opacity: 0; } }
+@keyframes med-wizard-rise { from { transform: translateY(72px); opacity: 0; } }
+@keyframes med-wizard-pop { from { transform: scale(0.4); opacity: 0; } }
+@keyframes med-wizard-slot-in { from { transform: translateY(14px); opacity: 0; } }
+@keyframes med-wizard-in-fwd { from { transform: translateX(64px); opacity: 0; } }
+@keyframes med-wizard-out-fwd { to { transform: translateX(-64px); opacity: 0; } }
+@keyframes med-wizard-in-back { from { transform: translateX(-64px); opacity: 0; } }
+@keyframes med-wizard-out-back { to { transform: translateX(64px); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .med-wizard-overlay,
+  .med-wizard-overlay * {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .med-wizard-overlay { align-items: center; justify-items: center; padding: var(--space-5); }
+  .med-wizard { inline-size: min(520px, 100%); border-radius: var(--radius-xl); padding-block-end: var(--space-5); }
+}
+
+/* 口述录药弹卡：示例话术 + 文本区 + 话筒按钮（复用 med-wizard 骨架） */
+.voice-entry-example {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  line-height: 1.55;
+}
+
+.voice-entry-text {
+  min-block-size: 128px;
+  padding: var(--space-3);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.voice-entry-text:focus-visible {
+  border-color: var(--color-primary);
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.voice-entry-error { display: grid; gap: var(--space-2); }
+.voice-entry-error:empty { display: none; }
+
+/* 实时字幕：识别中间结果的灰色预览，说完一段定稿才进正文 */
+.voice-entry-interim {
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.voice-entry-interim:empty { display: none; }
+
+/* 正在听：话筒按钮泛主色光圈，一眼看出在收音 */
+.voice-entry .is-listening {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  animation: voice-entry-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes voice-entry-pulse {
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-primary) 16%, transparent); }
+}

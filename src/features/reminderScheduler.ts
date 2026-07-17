@@ -48,9 +48,12 @@ const onCapabilityChange = (): void => void tick();
 export function startReminderScheduler(): void {
   if (timer != null) return;
   if (!notificationsSupported()) return;
-  // Refresh native permission state before the first scheduling pass.
+  // 原生端首次调度延迟一点，给 WebView/插件初始化时间；
+  // 且 Android 上若旧闹钟已顶满，立刻 schedule 会在原生线程直接杀进程。
   void refreshPermission().then((permission) => {
-    if (permission === 'granted') void tick();
+    if (permission !== 'granted') return;
+    const delayMs = isNativeReminderPlatform() ? 1500 : 0;
+    window.setTimeout(() => void tick(), delayMs);
   });
   timer = window.setInterval(() => void tick(), TICK_MS);
   // 回到前台立即追一次（设备可能挂起期间错过若干 tick）

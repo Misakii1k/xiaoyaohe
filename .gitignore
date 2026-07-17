@@ -26,7 +26,15 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!.env.production
 
 # 临时与缓存
 *.tmp
 .cache/
+tmp/imagegen/
+
+# Browser-test sessions, screenshots, traces, and reports
+.playwright-cli/
+output/
+playwright-report/
+test-results/

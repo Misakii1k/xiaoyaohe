@@ -19,9 +19,11 @@ tag = "sync-v2-initial"
 new_sqlite_classes = ["SyncV2Household", "SyncV2RateLimiter"]
 
 [vars]
-# Both values must be deliberately configured before the v2 API serves traffic.
-SYNC_V2_ENABLED = "false"
-SYNC_V2_ALLOWED_ORIGINS = ""
+# v2 is active for Capacitor and local Vite development. Before deploying the
+# PWA, append its exact production Origin (scheme + host + optional port).
+# Never use "*"; wildcard or empty allowlists keep the API fail-closed.
+SYNC_V2_ENABLED = "true"
+SYNC_V2_ALLOWED_ORIGINS = "https://localhost,http://localhost,http://localhost:5173,http://127.0.0.1:5173"
 SYNC_V1_READONLY_ENABLED = "false"
 
 [observability]

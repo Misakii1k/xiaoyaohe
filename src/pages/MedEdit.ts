@@ -7,8 +7,8 @@ import {
   listRulesByMed,
   putRule,
   deleteRule,
-  putPhoto,
 } from '../db/local';
+import { getLatestMedPhotoBlob, getMedPhotoUrl, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
 import { uid } from '../db/local';
 import { checkInteractions, type DrugInteraction } from '../data/drugInteractions';
 import {
@@ -43,12 +43,18 @@ import { aHash } from '../features/phash';
 import { takePendingPrefill } from '../ai/pendingPrefill';
 import { normalizeGtin, type ProductKey } from '../features/gs1';
 import { estimateDailyConsumption, estimateDaysLeft, suggestStructuredDose } from '../features/inventory';
+import { parseExplicitDose } from '../domain/medicationDraft';
 import {
   getMedicationExpiryLocalDate,
   isLocalDate,
   toLocalDate,
 } from '../domain/medicationSchedule';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
+import { createActionDock } from '../ui/primitives/ActionDock';
+import { createButton } from '../ui/primitives/Button';
+import { openBottomSheet } from '../ui/primitives/BottomSheet';
+import { createDateControl, createTimeControl } from '../ui/primitives/Pickers';
+import { openBoxPhotoCropSheet } from '../ui/BoxPhotoCropSheet';
 
 export async function renderMedEditPage(
   root: HTMLElement,
@@ -133,11 +139,13 @@ export async function renderMedEditPage(
   }) as HTMLInputElement;
   const notesInput = el('textarea', { value: med.notes || '', placeholder: '医嘱、注意事项等' });
 
-  // 药品有效期是本地日历日期；当天仍可服用，次日才视为过期。
-  const expiryDateInput = el('input', {
-    type: 'date',
+  // 药品有效期是本地日历日期；当天仍可服用，次日才视为过期。用自绘日期选择，不走安卓原生弹层。
+  const expiryDatePicker = createDateControl({
     value: getMedicationExpiryLocalDate(med) ?? '',
-  }) as HTMLInputElement;
+    ariaLabel: '过期日期',
+    placeholder: '可选，点选日期',
+  });
+  const expiryDateInput = expiryDatePicker.input as HTMLInputElement;
 
   const slotChips = el('div', { class: 'chips' });
   const scheduleWrap = el('div', { class: 'meal-slot-list' });
@@ -178,6 +186,7 @@ export async function renderMedEditPage(
     rows: 2,
   } as any) as HTMLTextAreaElement;
 
+  form.append(buildBoxPhotoBlock());
   form.append(buildAiPhotoBlock());
   form.append(buildNluBlock());
   form.append(field('药名', nameInput));
@@ -189,8 +198,7 @@ export async function renderMedEditPage(
   form.append(structuredDose);
   const doseReview = el('div', { class: 'dose-review' });
   form.append(doseReview);
-  renderDoseReview();
-  form.append(field('过期日期（可选）', expiryDateInput));
+  form.append(field('过期日期（可选）', expiryDatePicker.root));
 
   for (const s of SLOTS) {
     const chip = el('button', {
@@ -263,14 +271,15 @@ export async function renderMedEditPage(
     value: String(existingCycle?.restDays ?? 2),
     placeholder: '2',
   } as any) as HTMLInputElement;
-  const cycleStartInput = el('input', {
-    type: 'date',
+  const cycleStartPicker = createDateControl({
     value: existingCycleRule?.cycleStartDate ?? (!existingCycle ? toLocalDate() : ''),
+    ariaLabel: '本周期首个服药日',
     required: true,
-  } as any) as HTMLInputElement;
+  });
+  const cycleStartInput = cycleStartPicker.input as HTMLInputElement;
   cycleInputsWrap.append(field('服药天数', activeDaysInput));
   cycleInputsWrap.append(field('停药天数', restDaysInput));
-  cycleInputsWrap.append(field('本周期首个服药日', cycleStartInput));
+  cycleInputsWrap.append(field('本周期首个服药日', cycleStartPicker.root));
   cycleCard.append(cycleInputsWrap);
   setCycleInputsVisibility();
   cycleCheckbox.onchange = () => {
@@ -283,9 +292,9 @@ export async function renderMedEditPage(
   inventoryCard.append(el('div', { class: 'section-title', html: '剩余药量' }));
   inventoryCard.append(buildInventoryAiBlock());
   inventoryCard.append(field('当前剩余', remainingInput));
-  inventoryCard.append(field('库存单位', unitInput));
-  inventoryCard.append(field('单盒/单瓶数量', packageQtyInput));
-  inventoryCard.append(field('低库存提醒阈值', lowThresholdInput));
+  inventoryCard.append(field('按什么数（片/粒/袋）', unitInput));
+  inventoryCard.append(field('一盒 / 一瓶有多少', packageQtyInput));
+  inventoryCard.append(field('剩多少时提醒买药', lowThresholdInput));
   inventoryCard.append(daysLeftHint);
   inventoryCard.append(field('来源说明', inventorySourceInput));
   form.append(inventoryCard);
@@ -297,16 +306,20 @@ export async function renderMedEditPage(
   for (const inp of [remainingInput, amountInput, doseQuantityInput, doseUnitInput, unitInput]) {
     inp.addEventListener('input', refreshDaysLeft);
   }
-  amountInput.addEventListener('input', renderDoseReview);
+  amountInput.addEventListener('input', () => {
+    syncExplicitDoseFromText();
+    renderDoseReview();
+  });
   doseQuantityInput.addEventListener('input', renderDoseReview);
   doseUnitInput.addEventListener('input', renderDoseReview);
+  // 初始同步要等 cycleEnabled 等周期状态就绪（refreshDaysLeft 会读取它们）
+  syncExplicitDoseFromText();
+  renderDoseReview();
   refreshDaysLeft();
 
-  const saveBtn = el('button', { class: 'btn success' });
-  saveBtn.append(icon('check'));
-  saveBtn.append(el('span', { html: '保存' }));
+  const saveBtn = createButton({ label: '保存', icon: 'check' });
   saveBtn.onclick = async () => {
-    if (!isActive()) return;
+    if (!isActive() || saveBtn.hasAttribute('disabled')) return;
     const name = nameInput.value.trim();
     if (!name) {
       toast('请填写药名');
@@ -334,13 +347,6 @@ export async function renderMedEditPage(
       delete med.doseSourceText;
       med.doseMigrationSuggestion = suggestStructuredDose(med.amountPerDose, med.inventory?.unit);
       med.doseReviewRequired = !!med.amountPerDose;
-      if (med.doseReviewRequired) {
-        const proceed = await confirmDialog(
-          '每次剂量尚未确认，服药打卡不会自动扣减库存。仍要保存为待复核吗？',
-          '保存待复核',
-        );
-        if (!proceed || !isActive()) return;
-      }
     }
     med.slots = SLOTS.filter((s) => selectedSlots.has(s));
     med.mealRelsBySlot = buildMealRelsBySlot();
@@ -387,25 +393,39 @@ export async function renderMedEditPage(
       // 相互作用检查失败不阻塞保存
     }
 
-    await putMed(med);
-    await syncRules(med.id, selectedSlots, timeInputs, existingRules, cycle, cycleStartDate);
-    await rescheduleMedicationReminders().catch(() => undefined);
+    saveBtn.setAttribute('disabled', 'true');
+    try {
+      await putMed(med);
+      await syncRules(med.id, selectedSlots, timeInputs, existingRules, cycle, cycleStartDate);
+      await rescheduleMedicationReminders().catch(() => undefined);
 
-    if (pendingPhoto) await putPhoto({ id: uid(), medId: med.id, blob: pendingPhoto, at: Date.now() });
+      // 照片失败不能把整条药品保存打成「闪退」：先落药档，再尽力存图
+      let photoFailed = false;
+      if (pendingPhoto) {
+        try {
+          await saveMedPhoto(med.id, pendingPhoto);
+        } catch (error) {
+          photoFailed = true;
+          console.error('saveMedPhoto failed', error);
+        }
+      }
 
-    if (!isActive()) return;
-    toast('已保存');
-    navigate('/meds');
+      if (!isActive()) return;
+      toast(photoFailed ? '药品已保存，但药盒照片没存上，可再拍一张' : '已保存');
+      navigate('/meds');
+    } catch (error) {
+      if (!isActive()) return;
+      const msg = error instanceof Error ? error.message : String(error);
+      toast('保存失败：' + msg);
+    } finally {
+      if (isActive()) saveBtn.removeAttribute('disabled');
+    }
   };
-  content.append(saveBtn);
+  const actionDock = createActionDock([saveBtn]);
+  actionDock.classList.add('medication-editor-dock');
 
   if (editing) {
-    const delBtn = el('button', {
-      class: 'btn outlined',
-      style: 'color:var(--ios-red);border-color:var(--ios-red)',
-    } as any);
-    delBtn.append(icon('trash'));
-    delBtn.append(el('span', { html: '删除这种药' }));
+    const delBtn = createButton({ label: '删除', variant: 'danger', icon: 'trash' });
     delBtn.onclick = async () => {
       if (await confirmDialog('确定删除这种药及其提醒吗？', '删除', true)) {
         if (!isActive()) return;
@@ -416,18 +436,199 @@ export async function renderMedEditPage(
         navigate('/meds');
       }
     };
-    content.append(delBtn);
+    actionDock.append(delBtn);
   }
 
-  const backBtn = el('button', { class: 'btn text' });
-  backBtn.append(icon('arrow-left'));
-  backBtn.append(el('span', { html: '返回' }));
-  backBtn.onclick = () => navigate('/meds');
-  content.append(backBtn);
+  actionDock.append(createButton({ label: '返回', variant: 'text', icon: 'arrow-left', onClick: () => navigate('/meds') }));
 
   if (!isActive()) return cleanup;
-  renderPage({ root, title: editing ? '编辑药品' : '新增药品', activeTab: 'meds', content });
+  renderPage({ root, title: editing ? '编辑药品' : '新增药品', activeTab: 'meds', content, actionDock });
   return cleanup;
+
+  function buildBoxPhotoBlock(): HTMLElement {
+    const wrap = el('div', { class: 'box-photo-block' });
+    const preview = el('button', {
+      class: 'box-photo-preview is-empty',
+      type: 'button',
+      'aria-label': '药盒照片',
+    } as any) as HTMLButtonElement;
+    const img = el('img', { alt: '药盒照片', hidden: true } as any) as HTMLImageElement;
+    const placeholder = el('div', { class: 'box-photo-placeholder' });
+    placeholder.append(icon('camera'));
+    placeholder.append(el('span', { html: '拍一张药盒正面，之后找药看图就行' }));
+    preview.append(img, placeholder);
+
+    /** 当前预览 URL（本地创建的才需要 revoke，库里缓存的留给 medPhotos 管） */
+    let localPreviewUrl: string | null = null;
+    let hasPhoto = Boolean(pendingPhoto) || false;
+    let cropBusy = false;
+
+    const showPhoto = (url: string, options: { local?: boolean } = {}) => {
+      if (localPreviewUrl) {
+        URL.revokeObjectURL(localPreviewUrl);
+        localPreviewUrl = null;
+      }
+      if (options.local) localPreviewUrl = url;
+      img.src = url;
+      img.hidden = false;
+      preview.classList.remove('is-empty');
+      preview.setAttribute('aria-label', '查看药盒照片操作');
+      placeholder.hidden = true;
+      hasPhoto = true;
+      shootBtn.querySelector('span')!.textContent = '重拍药盒';
+      cropBtn.hidden = false;
+    };
+
+    cleanups.push(() => {
+      if (localPreviewUrl) {
+        URL.revokeObjectURL(localPreviewUrl);
+        localPreviewUrl = null;
+      }
+    });
+
+    // 编辑已有药或带预填照片时，异步载入当前照片
+    if (pendingPhoto) {
+      void (async () => {
+        try {
+          const prepared = await prepareBoxPhoto(pendingPhoto!);
+          if (!isActive()) return;
+          pendingPhoto = prepared;
+          showPhoto(URL.createObjectURL(prepared), { local: true });
+        } catch {
+          if (isActive() && pendingPhoto) showPhoto(URL.createObjectURL(pendingPhoto), { local: true });
+        }
+      })();
+    } else if (editing) {
+      void getMedPhotoUrl(med.id).then((url) => {
+        if (url && isActive() && !pendingPhoto) showPhoto(url);
+      });
+    }
+
+    const file = el('input', {
+      type: 'file',
+      accept: 'image/*',
+      style: 'display:none',
+    } as any) as HTMLInputElement;
+    file.setAttribute('capture', 'environment');
+    const shootBtn = el('button', { class: 'btn tonal box-photo-btn', type: 'button' } as any);
+    shootBtn.append(icon('camera'));
+    shootBtn.append(el('span', { html: '裁切药盒图' }));
+    shootBtn.onclick = () => file.click();
+
+    const cropBtn = el('button', {
+      class: 'btn outlined box-photo-btn',
+      type: 'button',
+      hidden: true,
+    } as any) as HTMLButtonElement;
+    cropBtn.append(icon('scan'));
+    cropBtn.append(el('span', { html: '重新裁切' }));
+    cropBtn.onclick = () => void cropExistingPhoto();
+
+    async function cropExistingPhoto(): Promise<void> {
+      if (cropBusy || !isActive()) return;
+      cropBusy = true;
+      setButtonBusy(cropBtn, '正在打开…');
+      try {
+        const source = pendingPhoto ?? (editing ? await getLatestMedPhotoBlob(med.id) : null);
+        if (!isActive()) return;
+        if (!source) {
+          toast('先拍一张药盒照片');
+          return;
+        }
+        const cropped = await openBoxPhotoCropSheet(source, { signal });
+        if (!cropped || !isActive()) return;
+        await usePhoto(cropped);
+        toast('已重新裁切，保存后生效');
+      } catch (error) {
+        if (!isActive()) return;
+        console.error('crop box photo failed', error);
+        toast('裁切失败，请重试');
+      } finally {
+        cropBusy = false;
+        if (isActive()) resetIconButton(cropBtn, 'scan', '重新裁切');
+      }
+    }
+
+    /** 点照片：没图直接拍；有图弹出「重拍 / 重新裁切」 */
+    function openPhotoActions(): void {
+      if (!hasPhoto) {
+        file.click();
+        return;
+      }
+      const retake = createButton({
+        label: '重拍/换一张',
+        variant: 'secondary',
+        icon: 'camera',
+        onClick: () => {
+          sheet.close();
+          file.click();
+        },
+      });
+      const recrop = createButton({
+        label: '重新裁切',
+        icon: 'scan',
+        onClick: () => {
+          sheet.close();
+          void cropExistingPhoto();
+        },
+      });
+      const cancel = createButton({
+        label: '取消',
+        variant: 'text',
+        onClick: () => sheet.close(),
+      });
+      const title = el('div', { class: 'big', html: '药盒照片' });
+      const hint = el('div', {
+        class: 'muted',
+        html: '可以重拍，或拖动四个角重新裁切。所有处理都在本机完成。',
+      });
+      const actions = el('div', { class: 'box-photo-sheet-actions' }, [recrop, retake, cancel]);
+      const sheet = openBottomSheet({
+        label: '药盒照片',
+        content: [title, hint, actions],
+        initialFocus: recrop,
+      });
+    }
+
+    file.onchange = async () => {
+      const f = file.files?.[0];
+      file.value = '';
+      if (!f || !isActive()) return;
+      shootBtn.setAttribute('disabled', 'true');
+      try {
+        const cropped = await openBoxPhotoCropSheet(f, { signal });
+        if (!cropped || !isActive()) return;
+        await usePhoto(cropped, true);
+      } catch (error) {
+        if (!isActive()) return;
+        console.error('prepare cropped box photo failed', error);
+        toast('照片处理失败，请重拍或用整张图');
+      } finally {
+        if (isActive()) shootBtn.removeAttribute('disabled');
+      }
+    };
+
+    async function usePhoto(source: Blob, addIdentityHash = false): Promise<void> {
+      const prepared = await prepareBoxPhoto(source);
+      if (!isActive()) return;
+      pendingPhoto = prepared;
+      showPhoto(URL.createObjectURL(prepared), { local: true });
+      if (!addIdentityHash) return;
+      try {
+        const h = await aHash(prepared);
+        if (h && isActive() && !med.identity.photoHashes.includes(h)) med.identity.photoHashes.push(h);
+      } catch {
+        /* hash 失败不影响保存照片 */
+      }
+    }
+
+    preview.onclick = () => openPhotoActions();
+
+    const btnRow = el('div', { class: 'box-photo-actions' });
+    btnRow.append(shootBtn, cropBtn);
+    wrap.append(preview, btnRow, file);
+    return wrap;
+  }
 
   function buildAiPhotoBlock(): HTMLElement {
     const wrap = el('div', { class: 'inline-actions' });
@@ -462,8 +663,12 @@ export async function renderMedEditPage(
           /* hash 失败不影响 */
         }
         if (!isActive()) return;
-        pendingPhoto = f;
-        toast(`已识别为「${r.name}」，请确认时段与库存`);
+        try {
+          pendingPhoto = await prepareBoxPhoto(f);
+        } catch {
+          pendingPhoto = f;
+        }
+        toast(`认出来了，是「${r.name}」。看一眼吃药时段和剩余药量对不对`);
       } catch (e) {
         if (!isActive()) return;
         const msg = e instanceof IdentifyError ? e.message : String(e);
@@ -481,7 +686,7 @@ export async function renderMedEditPage(
     const inputId = 'med-edit-ai-description';
     const label = el('label', { class: 'nlu-label', htmlFor: inputId });
     label.append(icon('sparkles'));
-    label.append(el('span', { html: '用一句话描述（AI 填表）' }));
+    label.append(el('span', { html: '说一句话，AI 帮你填' }));
     wrap.append(label);
 
     const input = el('textarea', {
@@ -508,7 +713,7 @@ export async function renderMedEditPage(
 
     const btn = el('button', { class: 'btn nlu-btn', type: 'button' } as any);
     btn.append(icon('sparkles'));
-    btn.append(el('span', { html: 'AI 解析并填表' }));
+    btn.append(el('span', { html: '让 AI 帮我填' }));
     btn.onclick = async () => {
       if (!isActive()) return;
       const desc = input.value.trim();
@@ -516,18 +721,18 @@ export async function renderMedEditPage(
         toast('请先描述这种药');
         return;
       }
-      setButtonBusy(btn, '解析中…');
+      setButtonBusy(btn, '正在帮你填…');
       try {
         const draft = await parsePrescription(desc);
         if (!isActive()) return;
         applyDraftToForm(draft);
-        toast(`已填入字段 ✓ 置信度 ${Math.round(draft.confidence * 100)}%`);
+        toast(`已经帮你填好了，有 ${Math.round(draft.confidence * 100)}% 把握，记得核对一遍`);
       } catch (e) {
         if (!isActive()) return;
         const msg = e instanceof ParsePrescriptionError ? e.message : String(e);
-        toast('AI 填表失败：' + msg);
+        toast('这次没填上：' + msg);
       } finally {
-        if (isActive()) resetIconButton(btn, 'sparkles', 'AI 解析并填表');
+        if (isActive()) resetIconButton(btn, 'sparkles', '让 AI 帮我填');
       }
     };
     wrap.append(btn);
@@ -548,17 +753,17 @@ export async function renderMedEditPage(
     file.onchange = async () => {
       const f = file.files?.[0];
       if (!f || !isActive()) return;
-      setButtonBusy(btn, '识别库存中…');
+      setButtonBusy(btn, '正在数药量…');
       try {
         const r = await identifyInventoryByBlob(f, nameInput.value.trim());
         if (!isActive()) return;
         if (r.name && !nameInput.value.trim()) nameInput.value = r.name;
         applyInventoryToInputs(r.inventory);
-        toast(`已辅助填写库存，置信度 ${Math.round(r.confidence * 100)}%`);
+        toast(`已帮你填上剩余药量，有 ${Math.round(r.confidence * 100)}% 把握，记得核对`);
       } catch (e) {
         if (!isActive()) return;
         const msg = e instanceof IdentifyError ? e.message : String(e);
-        toast('库存识别失败：' + msg);
+        toast('这次没认出药量：' + msg);
       } finally {
         if (isActive()) resetIconButton(btn, 'camera', '拍票据/药盒辅助填写');
       }
@@ -575,13 +780,13 @@ export async function renderMedEditPage(
       const row = el('div', { class: 'meal-slot-row' });
       const head = el('div', { class: 'meal-slot-head' });
       head.append(el('span', { class: 'slot-tag slot-' + s, html: SLOT_LABEL[s] }));
-      const timeInput = el('input', {
-        type: 'time',
+      const timePicker = createTimeControl({
         value: ruleTimeBySlot.get(s) || SLOT_DEFAULT_TIME[s],
-        'aria-label': `${SLOT_LABEL[s]}服药时间`,
-      } as any) as HTMLInputElement;
+        ariaLabel: `${SLOT_LABEL[s]}服药时间`,
+      });
+      const timeInput = timePicker.input as HTMLInputElement;
       timeInputs.set(s, timeInput);
-      head.append(timeInput);
+      head.append(timePicker.root);
       row.append(head);
 
       const mealChips = el('div', {
@@ -788,7 +993,16 @@ export async function renderMedEditPage(
 
   function renderDoseReview(): void {
     doseReview.replaceChildren();
-    if (readPositiveNumber(doseQuantityInput.value) != null && doseUnitInput.value.trim()) return;
+    const explicit = parseExplicitDose(amountInput.value);
+    if (readPositiveNumber(doseQuantityInput.value) != null && doseUnitInput.value.trim()) {
+      if (explicit) {
+        doseReview.append(el('div', {
+          class: 'banner ok',
+          text: `看明白了：每次吃 ${explicit.quantity}${explicit.unit}，保存后每次记录吃药会自动扣掉剩余药量。`,
+        }));
+      }
+      return;
+    }
     const suggestion = suggestStructuredDose(
       amountInput.value,
       unitInput?.value || med.inventory?.unit,
@@ -796,24 +1010,18 @@ export async function renderMedEditPage(
     const message = el('div', {
       class: 'banner warn',
       text: suggestion
-        ? `原医嘱可建议为 ${suggestion.quantity}${suggestion.unit}，确认后才会用于库存扣减。`
-        : '请按医嘱填写明确的剂量数值和单位；未确认时不会自动扣减库存。',
+        ? `猜您每次吃 ${suggestion.quantity}${suggestion.unit}，对不对请核实一下；没确认前不会自动扣剩余药量。`
+        : '写清楚每次吃多少（比如 1 片），剩余药量才能自动帮您扣；不清楚就照药盒或医嘱抄。',
     });
     doseReview.append(message);
-    if (!suggestion) return;
-    const accept = el('button', {
-      class: 'btn tonal small',
-      type: 'button',
-      text: '确认使用建议',
-    } as any);
-    accept.onclick = () => {
-      doseQuantityInput.value = String(suggestion.quantity);
-      doseUnitInput.value = suggestion.unit;
-      renderDoseReview();
-      refreshDaysLeft();
-      doseQuantityInput.focus();
-    };
-    doseReview.append(accept);
+  }
+
+  function syncExplicitDoseFromText(): void {
+    const parsed = parseExplicitDose(amountInput.value);
+    if (!parsed) return;
+    doseQuantityInput.value = String(parsed.quantity);
+    doseUnitInput.value = parsed.unit;
+    refreshDaysLeft();
   }
 }
 
@@ -950,7 +1158,7 @@ function setButtonBusy(btn: HTMLButtonElement, text: string): void {
   btn.append(el('span', { html: text }));
 }
 
-function resetIconButton(btn: HTMLButtonElement, iconName: 'sparkles' | 'camera', text: string): void {
+function resetIconButton(btn: HTMLButtonElement, iconName: 'sparkles' | 'camera' | 'scan', text: string): void {
   btn.removeAttribute('disabled');
   btn.replaceChildren();
   btn.append(icon(iconName));

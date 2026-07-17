@@ -55,6 +55,30 @@ export interface InventoryChangeResult {
   message?: string;
 }
 
+export type InventoryStatus = 'unset' | 'empty' | 'low' | 'ok' | 'days_low';
+
+/** Keep every inventory surface on the same explicit-or-derived threshold. */
+export function getLowStockThreshold(med: Medication): number {
+  return med.inventory?.lowThreshold
+    ?? Math.max(1, Math.ceil((med.inventory?.packageQuantity ?? 14) * 0.2));
+}
+
+export function isLowStock(med: Medication): boolean {
+  return !!med.inventory && med.inventory.remaining <= getLowStockThreshold(med);
+}
+
+export function classifyInventoryStatus(
+  med: Medication,
+  rules: ReminderRule[],
+): InventoryStatus {
+  if (!med.inventory) return 'unset';
+  if (med.inventory.remaining <= 0) return 'empty';
+  if (isLowStock(med)) return 'low';
+  const daysLeft = estimateDaysLeft(med, rules);
+  if (daysLeft != null && daysLeft <= 7) return 'days_low';
+  return 'ok';
+}
+
 export function areDoseUnitsCompatible(left: string, right: string): boolean {
   return normalizeDoseUnit(left) === normalizeDoseUnit(right);
 }
@@ -94,7 +118,7 @@ export function deductInventory(med: Medication, confirmedDose = getConfirmedDos
   med.inventory.remaining = next;
   if (!med.inventory.unit) med.inventory.unit = confirmedDose.unit;
 
-  const threshold = med.inventory.lowThreshold ?? Math.max(1, Math.ceil((med.inventory.packageQuantity ?? 14) * 0.2));
+  const threshold = getLowStockThreshold(med);
   const low = next <= threshold;
   const message = low
     ? next <= 0
@@ -112,7 +136,7 @@ export function restoreInventory(med: Medication, quantity: number): boolean {
 
 export function shouldSendLowStockReminder(med: Medication, now = Date.now()): boolean {
   if (!med.inventory) return false;
-  const threshold = med.inventory.lowThreshold ?? Math.max(1, Math.ceil((med.inventory.packageQuantity ?? 14) * 0.2));
+  const threshold = getLowStockThreshold(med);
   if (med.inventory.remaining > threshold) return false;
   const last = med.inventory.lastReminderAt ?? 0;
   return now - last >= LOW_STOCK_REMIND_GAP_MS;

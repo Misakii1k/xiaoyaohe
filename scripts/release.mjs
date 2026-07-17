@@ -15,7 +15,6 @@ function usage() {
 Options:
   --skip-install              Skip npm ci for an already prepared local workspace
   --android-variant <name>    Gradle APK variant (default: debug)
-  --skip-connected-tests      Skip Android device/emulator instrumentation tests
   --dry-run                   Validate configuration and print commands only
   --help                      Show this help`;
 }
@@ -23,7 +22,6 @@ Options:
 export function parseReleaseArgs(args) {
   const options = {
     skipInstall: false,
-    skipConnectedTests: false,
     variant: 'debug',
     dryRun: false,
     help: false,
@@ -31,7 +29,6 @@ export function parseReleaseArgs(args) {
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === '--skip-install') options.skipInstall = true;
-    else if (argument === '--skip-connected-tests') options.skipConnectedTests = true;
     else if (argument === '--dry-run') options.dryRun = true;
     else if (argument === '--help' || argument === '-h') options.help = true;
     else if (argument === '--android-variant') {
@@ -50,7 +47,7 @@ export function parseReleaseArgs(args) {
   return options;
 }
 
-export function createReleaseCommands({ skipInstall, skipConnectedTests, variant }) {
+export function createReleaseCommands({ skipInstall, variant }) {
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
   const gradle = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
@@ -62,6 +59,8 @@ export function createReleaseCommands({ skipInstall, skipConnectedTests, variant
     { label: 'Type-check frontend', command: npm, args: ['run', 'typecheck'] },
     { label: 'Type-check Worker', command: npm, args: ['run', 'typecheck:worker'] },
     { label: 'Run Vitest suite', command: npm, args: ['test'] },
+    { label: 'Install Playwright Chromium', command: npx, args: ['playwright', 'install', 'chromium'] },
+    { label: 'Run Playwright visual matrix', command: npx, args: ['playwright', 'test'] },
     { label: 'Build web application', command: npm, args: ['run', 'build:web'] },
     { label: 'Validate Worker deployment bundle', command: npx, args: ['wrangler', 'deploy', '--dry-run'] },
     { label: 'Sync Capacitor Android project', command: npx, args: ['cap', 'sync', 'android'] },
@@ -72,14 +71,12 @@ export function createReleaseCommands({ skipInstall, skipConnectedTests, variant
       cwd: resolve(root, 'android'),
     },
   );
-  if (!skipConnectedTests) {
-    commands.push({
-      label: 'Run Android instrumentation tests',
-      command: gradle,
-      args: [`connected${gradleVariant}AndroidTest`],
-      cwd: resolve(root, 'android'),
-    });
-  }
+  commands.push({
+    label: 'Run Android instrumentation tests',
+    command: gradle,
+    args: [`connected${gradleVariant}AndroidTest`],
+    cwd: resolve(root, 'android'),
+  });
   return commands;
 }
 
@@ -134,9 +131,6 @@ export function runRelease(args = process.argv.slice(2)) {
 
   const config = readAndValidateReleaseConfig(root);
   console.log(`Release configuration: ${config.name} ${config.version} (Android ${config.versionCode})`);
-  if (options.skipConnectedTests) {
-    console.warn('WARNING: Android instrumentation tests are explicitly skipped for this build.');
-  }
   const commands = createReleaseCommands(options);
   commands.forEach((step, index) => runStep(step, index + 1, commands.length, options.dryRun));
 

@@ -106,11 +106,12 @@ describe('AndroidReminderTransport', () => {
     expect(first).toMatchObject({
       status: 'ok',
       scheduled: 1,
-      cancelled: 0,
       exactAlarm: 'denied',
     });
-    expect(second).toMatchObject({ status: 'ok', scheduled: 0, cancelled: 0 });
-    expect(fake.schedule).toHaveBeenCalledTimes(1);
+    // 策略是「先清空再重建」，所以第二次 reconcile 也会重新 schedule 同一条
+    expect(second).toMatchObject({ status: 'ok', scheduled: 1 });
+    expect(fake.schedule).toHaveBeenCalled();
+    expect(fake.pending).toHaveLength(1);
     expect(fake.pending[0].schedule?.on).toMatchObject({
       year: 2026,
       month: 7,
@@ -154,5 +155,29 @@ describe('AndroidReminderTransport', () => {
     expect(action).toHaveBeenCalledWith({ actionId: 'tap', tag, data: {} });
     expect(fake.pending).toHaveLength(0);
     expect(fake.cancel).toHaveBeenCalled();
+  });
+
+  it('hard-resets when pending alarms already exceed the safe Android ceiling', async () => {
+    const fake = fakePlugin();
+    // 模拟历史残留：pending 远超 400
+    for (let i = 1; i <= 450; i += 1) {
+      fake.pending.push({
+        id: i,
+        title: 'old',
+        body: 'old',
+        schedule: { on: { year: 2026, month: 8, day: 1, hour: 8, minute: 0 } },
+        extra: { __medboxReminder: { owner: 'medbox-medication-reminder-v1', tag: `old:${i}`, key: 'dose', data: {} } },
+      });
+    }
+    const transport = new AndroidReminderTransport(fake.plugin, new MemoryStore(), () => now);
+    const result = await transport.reconcile([
+      { at: now + 60_000, title: 'Dose', body: 'Body', tag: 'occurrence:fresh', key: 'dose' },
+    ]);
+
+    expect(result.status).toBe('ok');
+    expect(result.cancelled).toBeGreaterThanOrEqual(450);
+    expect(result.scheduled).toBe(1);
+    expect(fake.pending).toHaveLength(1);
+    expect(fake.pending[0].title).toBe('Dose');
   });
 });

@@ -9,7 +9,14 @@ import {
 
 const OWNER = 'medbox-medication-reminder-v1';
 const REGISTRY_KEY = 'medbox.reminder.notification-ids.v1';
-const MAX_NATIVE_REMINDERS = 512;
+/**
+ * Android 对单个 uid 的并发闹钟硬顶大约 500（真机 log：Maximum limit of concurrent alarms 500）。
+ * Capacitor Android 在 LocalNotifications.schedule 抛 IllegalStateException 时，
+ * 会在 CapacitorPlugins 线程变成 FATAL EXCEPTION 直接杀进程（JS catch 拦不住）。
+ * 因此必须：1) 调度前先清空旧闹钟；2) 数量远低于 500。
+ */
+const MAX_NATIVE_REMINDERS = 120;
+const SCHEDULE_CHUNK = 20;
 const REGISTRY_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 
 export type ExactAlarmCapability = 'granted' | 'denied' | 'prompt' | 'unavailable';
@@ -193,44 +200,40 @@ export class AndroidReminderTransport implements ReminderTransport {
       desired.set(id, this.toNativeNotification(notification, id, notification.at));
     }
 
+    // 策略：永远「先清空再重建」。增量 diff 在闹钟已顶满时，
+    // Capacitor 原生 schedule 会抛 IllegalStateException 并直接杀进程。
     try {
       const pendingResult = await this.plugin.getPending();
-      const ownedPending = pendingResult.notifications.filter(isOwnedPending);
-      const stale = ownedPending.filter((pending) => {
-        const wanted = desired.get(pending.id);
-        return !wanted || !sameNativeNotification(pending, wanted);
-      });
-      if (stale.length > 0) {
-        await this.plugin.cancel({ notifications: stale.map(({ id }) => ({ id })) });
-      }
-
-      const stillPendingIds = new Set(
-        ownedPending.filter((pending) => !stale.includes(pending)).map(({ id }) => id),
+      const allPending = pendingResult.notifications.filter(
+        (pending) => isOwnedPending(pending) || isLikelyMedicationPending(pending),
       );
-      const missing = [...desired.values()].filter(({ id }) => !stillPendingIds.has(id));
-      for (let offset = 0; offset < missing.length; offset += 50) {
-        await this.plugin.schedule({ notifications: missing.slice(offset, offset + 50) });
-      }
+      // 注册表里历史 id 也一起取消，避免 getPending 漏掉的残留闹钟
+      const registryIds = Object.values(this.readRegistry()).flatMap((entry) => entry.ids);
+      const cancelTargets = [...new Set([...allPending.map(({ id }) => id), ...registryIds])];
+      const cancelled = await this.cancelIds(cancelTargets);
 
-      const idsByTag = new Map<string, number[]>();
-      for (const native of desired.values()) {
-        const envelope = readEnvelope(native.extra);
-        if (!envelope) continue;
-        const ids = idsByTag.get(envelope.tag) ?? [];
-        ids.push(native.id);
-        idsByTag.set(envelope.tag, ids);
-      }
-      for (const [tag, ids] of idsByTag) this.remember(tag, ids);
+      // 清空后再挂；任一分片失败立刻停，绝不让异常冒泡
+      const scheduled = await this.scheduleInChunksSafe([...desired.values()]);
+      this.replaceRegistryFromDesired(
+        new Map([...desired.entries()].filter(([id]) => scheduled.ids.has(id))),
+      );
       this.purgeRegistry();
 
       return {
-        status: 'ok',
-        scheduled: missing.length,
-        cancelled: stale.length,
-        truncated: Math.max(0, future.length - selected.length),
+        status: scheduled.failed === 0 ? 'ok' : scheduled.ids.size > 0 ? 'ok' : 'failed',
+        scheduled: scheduled.ids.size,
+        cancelled,
+        truncated: Math.max(0, future.length - selected.length) + scheduled.skipped,
         exactAlarm,
       };
     } catch {
+      try {
+        const all = (await this.plugin.getPending()).notifications;
+        await this.cancelIds(all.map(({ id }) => id));
+        this.writeRegistry({});
+      } catch {
+        /* ignore */
+      }
       return {
         status: 'failed',
         scheduled: 0,
@@ -276,6 +279,61 @@ export class AndroidReminderTransport implements ReminderTransport {
     return () => void handle.remove();
   }
 
+  /**
+ * 分片调度；任一片失败就停止后续，返回已成功 id。
+ * 注意：部分 Capacitor 版本会把插件异常变成原生线程崩溃，因此调用前必须先 cancel 腾出配额。
+ */
+private async scheduleInChunksSafe(
+    notifications: LocalNotificationSchema[],
+  ): Promise<{ ids: Set<number>; failed: number; skipped: number }> {
+    const ids = new Set<number>();
+    let failed = 0;
+    let skipped = 0;
+    for (let offset = 0; offset < notifications.length; offset += SCHEDULE_CHUNK) {
+      const chunk = notifications.slice(offset, offset + SCHEDULE_CHUNK);
+      if (chunk.length === 0) continue;
+      try {
+        await this.plugin.schedule({ notifications: chunk });
+        for (const item of chunk) ids.add(item.id);
+      } catch {
+        failed += 1;
+        skipped += notifications.length - offset;
+        break;
+      }
+    }
+    return { ids, failed, skipped };
+  }
+
+  private async cancelIds(ids: readonly number[]): Promise<number> {
+    const unique = [...new Set(ids.filter((id) => Number.isInteger(id)))];
+    let cancelled = 0;
+    for (let offset = 0; offset < unique.length; offset += 80) {
+      const chunk = unique.slice(offset, offset + 80);
+      if (chunk.length === 0) continue;
+      await this.plugin.cancel({ notifications: chunk.map((id) => ({ id })) });
+      cancelled += chunk.length;
+    }
+    return cancelled;
+  }
+
+  private replaceRegistryFromDesired(desired: Map<number, LocalNotificationSchema>): void {
+    const idsByTag = new Map<string, number[]>();
+    for (const native of desired.values()) {
+      const envelope = readEnvelope(native.extra);
+      if (!envelope) continue;
+      const ids = idsByTag.get(envelope.tag) ?? [];
+      ids.push(native.id);
+      idsByTag.set(envelope.tag, ids);
+    }
+    // 用本轮 desired 全量覆盖，避免 registry 无限累积历史 id
+    const next: ReminderRegistry = {};
+    const now = this.now();
+    for (const [tag, ids] of idsByTag) {
+      next[tag] = { ids: [...new Set(ids)], updatedAt: now };
+    }
+    this.writeRegistry(next);
+  }
+
   private toNativeNotification(
     notification: ReminderNotification,
     id: number,
@@ -319,9 +377,8 @@ export class AndroidReminderTransport implements ReminderTransport {
 
   private remember(tag: string, ids: readonly number[]): void {
     const registry = this.readRegistry();
-    const oldIds = registry[tag]?.ids ?? [];
     registry[tag] = {
-      ids: [...new Set([...oldIds, ...ids])],
+      ids: [...new Set(ids)],
       updatedAt: this.now(),
     };
     this.writeRegistry(registry);
@@ -491,6 +548,14 @@ function isOwnedPending(notification: PendingLocalNotificationSchema): boolean {
   return readEnvelope(notification.extra)?.owner === OWNER;
 }
 
+/** 没有 envelope 的旧闹钟/异常残留，也尽量纳入清理，避免撞 500 上限 */
+function isLikelyMedicationPending(notification: PendingLocalNotificationSchema): boolean {
+  if (isOwnedPending(notification)) return true;
+  if (readEnvelope(notification.extra)) return true;
+  // Capacitor Local Notifications 未带 owner 时仍可能是本应用排程的
+  return typeof notification.id === 'number' && notification.id > 0;
+}
+
 function readEnvelope(extra: unknown): NativeEnvelope | undefined {
   if (!isRecord(extra)) return undefined;
   const candidate = extra.__medboxReminder;
@@ -504,28 +569,6 @@ function readEnvelope(extra: unknown): NativeEnvelope | undefined {
     key: candidate.key,
     data: isRecord(candidate.data) ? candidate.data : {},
   };
-}
-
-function sameNativeNotification(
-  pending: PendingLocalNotificationSchema,
-  wanted: LocalNotificationSchema,
-): boolean {
-  const pendingEnvelope = readEnvelope(pending.extra);
-  const wantedEnvelope = readEnvelope(wanted.extra);
-  const pendingOn = pending.schedule?.on;
-  const wantedOn = wanted.schedule?.on;
-  return (
-    pending.title === wanted.title &&
-    pending.body === wanted.body &&
-    pendingEnvelope?.tag === wantedEnvelope?.tag &&
-    pendingEnvelope?.key === wantedEnvelope?.key &&
-    pendingOn?.year === wantedOn?.year &&
-    pendingOn?.month === wantedOn?.month &&
-    pendingOn?.day === wantedOn?.day &&
-    pendingOn?.hour === wantedOn?.hour &&
-    pendingOn?.minute === wantedOn?.minute &&
-    (pendingOn?.second ?? 0) === (wantedOn?.second ?? 0)
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

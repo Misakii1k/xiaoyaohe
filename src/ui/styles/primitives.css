@@ -1,0 +1,333 @@
+/* 图 4：白色大圆角卡片，无边框，仅轻阴影分层 */
+.card,
+.slot-card {
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.card::before { display: none; }
+
+/* 图 4 分类行样式：彩色浅底圆形图标 */
+.tint-icon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: var(--radius-full);
+  background: var(--tint-purple-bg);
+  color: var(--tint-purple-fg);
+}
+
+.tint-icon.tint-pink { background: var(--tint-pink-bg); color: var(--tint-pink-fg); }
+.tint-icon.tint-blue { background: var(--tint-blue-bg); color: var(--tint-blue-fg); }
+.tint-icon.tint-green { background: var(--tint-green-bg); color: var(--tint-green-fg); }
+.tint-icon.tint-orange { background: var(--tint-orange-bg); color: var(--tint-orange-fg); }
+.tint-icon.tint-gray { background: var(--tint-gray-bg); color: var(--tint-gray-fg); }
+
+.tint-icon svg { inline-size: 18px; block-size: 18px; }
+
+.btn {
+  min-block-size: var(--tap);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  box-shadow: none;
+  font-size: var(--fs-body);
+}
+
+.btn::before { display: none; }
+.btn:active:not([disabled]) { transform: translateY(1px); box-shadow: none; }
+.btn.tonal { background: var(--color-primary-soft); color: var(--color-primary); border-color: transparent; }
+.btn.outlined { background: var(--color-surface); color: var(--color-primary); border-color: var(--color-primary); }
+.btn.text { background: transparent; color: var(--color-primary); border-color: transparent; }
+
+.icon-btn,
+.interaction-icon {
+  min-inline-size: var(--tap);
+  min-block-size: var(--tap);
+  border-radius: var(--radius-md);
+}
+
+.ui-button,
+.ui-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-block-size: var(--tap);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.ui-button { padding-inline: var(--space-3); }
+.ui-button-primary { background: var(--color-primary); color: #fff; }
+.ui-button-secondary { background: var(--color-surface-muted); color: var(--color-primary); }
+.ui-button-danger { background: var(--color-danger); color: #fff; }
+.ui-button-text { background: transparent; color: var(--color-primary); }
+.ui-icon-button { inline-size: var(--tap); padding: 0; background: transparent; color: var(--color-text); }
+/* 展开列表：新版卡片风，隐藏浏览器/安卓默认三角 */
+.ui-accordion {
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+.ui-accordion + .ui-accordion { margin-block-start: var(--space-2); }
+.ui-accordion-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-block-size: var(--tap);
+  padding: var(--space-3) var(--space-3);
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+.ui-accordion-summary::-webkit-details-marker,
+.ui-accordion-summary::marker { display: none; }
+.ui-accordion-title { min-inline-size: 0; }
+.ui-accordion-chevron {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  transition: transform 180ms ease;
+}
+.ui-accordion-chevron svg { inline-size: 16px; block-size: 16px; }
+.ui-accordion[open] .ui-accordion-chevron { transform: rotate(90deg); color: var(--color-primary); }
+.ui-accordion-body { padding: 0 var(--space-3) var(--space-4); }
+
+/* 自绘时间/日期/下拉：替代安卓 WebView 原生选择器 */
+.ui-picker { position: relative; inline-size: 100%; min-inline-size: 0; }
+.ui-picker-native {
+  position: absolute !important;
+  inset: 0 auto auto 0;
+  inline-size: 1px !important;
+  block-size: 1px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+.ui-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  inline-size: 100%;
+  min-block-size: var(--tap);
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.ui-picker-trigger:active { background: var(--color-surface-muted); }
+.ui-picker-value-text { min-inline-size: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.ui-picker-chevron {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: 20px;
+  line-height: 1;
+  transform: rotate(90deg);
+}
+.ui-picker-sheet-title {
+  margin-block-end: var(--space-3);
+  font-size: var(--fs-title3);
+  font-weight: 700;
+}
+.ui-picker-wheels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: var(--space-2);
+  margin-block-end: var(--space-3);
+}
+.ui-picker-wheel { min-inline-size: 0; }
+.ui-picker-wheel-label {
+  margin-block-end: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+  text-align: center;
+}
+.ui-picker-wheel-list {
+  max-block-size: 220px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  scroll-snap-type: y proximity;
+}
+.ui-picker-wheel-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 100%;
+  min-block-size: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  scroll-snap-align: center;
+}
+.ui-picker-wheel-item.is-selected {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+.ui-picker-options {
+  display: grid;
+  gap: var(--space-2);
+  max-block-size: min(50dvh, 360px);
+  overflow: auto;
+  margin-block-end: var(--space-3);
+}
+.ui-picker-option {
+  min-block-size: var(--tap);
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.ui-picker-option.is-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.ui-picker-quick { margin-block-end: var(--space-2); }
+.ui-picker-sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+.ui-picker-sheet-actions .ui-button { inline-size: 100%; }
+.meal-slot-head .ui-picker { flex: 1 1 auto; min-inline-size: 0; }
+/* 必须高于小助手面板 (130)，否则助手里点「+」弹出的菜单会被盖住点不到 */
+.bottom-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: grid;
+  align-items: end;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: var(--scrim);
+}
+.bottom-sheet {
+  max-block-size: min(80dvh, 720px);
+  overflow: auto;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--color-surface);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-lg);
+}
+.ui-segmented-control { display: inline-grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--space-2); border: 0; border-radius: 0; overflow: visible; }
+.ui-segmented-control button { min-block-size: 38px; border: 0; border-radius: var(--radius-full); background: var(--color-surface-muted); padding-inline: var(--space-3); color: var(--color-text-muted); }
+.ui-segmented-control button.is-selected { background: var(--color-primary); color: #fff; font-weight: 600; }
+.status-badge { display: inline-flex; align-items: center; min-block-size: 24px; padding-inline: 10px; border-radius: var(--radius-full); font-size: var(--fs-caption); font-weight: 600; }
+.status-badge-success { background: var(--tone-ok-bg); color: var(--tone-ok-fg); }
+.status-badge-warning { background: var(--tone-warn-bg); color: var(--tone-warn-fg); }
+.status-badge-danger { background: var(--tone-danger-bg); color: var(--tone-danger-fg); }
+.status-badge-info { background: var(--tone-info-bg); color: var(--tone-info-fg); }
+.status-badge-muted { background: var(--tone-muted-bg); color: var(--tone-muted-fg); }
+.ui-form-field { display: grid; gap: var(--space-1); }
+.ui-form-field > label { font-weight: 600; }
+.ui-form-field-hint { color: var(--color-text-muted); font-size: var(--fs-footnote); }
+.ui-form-field-error { color: var(--color-danger); font-size: var(--fs-footnote); }
+
+.chip,
+.tag-chip,
+.severity,
+.rest-day-tag { border-radius: var(--radius-sm); }
+
+/* 图 4 胶囊为纯文字选中态：去掉旧版勾号、弹跳与蓝色投影 */
+.chip.on {
+  background: var(--color-primary);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: none;
+  animation: none;
+}
+
+.chip.on::before { display: none; }
+
+.muted { color: var(--color-text-muted); font-size: var(--fs-subheadline); }
+.big { font-size: var(--fs-title2); }
+.huge { font-size: var(--fs-largeTitle); }
+
+input,
+select,
+textarea {
+  border-color: var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* 兜底：少数仍用原生 select 的地方，也改成新版外观（不弹系统默认样式） */
+select:not(.ui-picker-native) {
+  appearance: none;
+  -webkit-appearance: none;
+  min-block-size: var(--tap);
+  padding-block: 10px;
+  padding-inline: 14px 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--color-text-muted) 50%),
+    linear-gradient(135deg, var(--color-text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 2px),
+    calc(100% - 12px) calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+input[type='time']:not(.ui-picker-native),
+input[type='date']:not(.ui-picker-native),
+input[type='datetime-local']:not(.ui-picker-native) {
+  appearance: none;
+  -webkit-appearance: none;
+  min-block-size: var(--tap);
+}
+
+/* Route refreshes rebuild these legacy nodes, so entrance motion must not replay. */
+.app-shell .list-item,
+.app-shell .tabbar a.active .ic,
+.app-shell .tabbar a.active span:not(.ic),
+.app-shell .nlu-box::before {
+  animation: none;
+}
+
+.app-shell .nlu-box::before { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

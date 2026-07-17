@@ -2,6 +2,10 @@
 import { SLOT_LABEL, type Slot } from '../db/schema';
 import { navigate, registerRouteTransitionCleanup } from '../router';
 import { getLastSync, onSync, type SyncState } from '../sync/syncClient';
+import { renderAppShell } from '../app/AppShell';
+import { primaryNavigation } from '../app/navigation';
+import { Icon as renderIcon } from './icons/Icon';
+import type { AppIconName } from './icons/iconRegistry';
 
 // One-time CSS injection for spinner & skeleton animations
 if (typeof document !== 'undefined' && !document.getElementById('medbox-spinner-styles')) {
@@ -47,92 +51,12 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** SVG 图标库（line 风格，stroke-width 1.75） */
-export type IconName =
-  | 'pill'
-  | 'list'
-  | 'camera'
-  | 'gear'
-  | 'arrow-left'
-  | 'plus'
-  | 'check'
-  | 'undo'
-  | 'info'
-  | 'warn'
-  | 'edit'
-  | 'bell'
-  | 'cloud'
-  | 'box'
-  | 'sparkles'
-  | 'trash'
-  | 'clock'
-  | 'briefcase'
-  | 'timer'
-  | 'sun'
-  | 'sun-high'
-  | 'sunset'
-  | 'moon'
-  | 'utensils';
-
-const ICON_PATHS: Record<IconName, string> = {
-  pill: '<rect x="2.5" y="8" width="19" height="8" rx="4"/><line x1="12" y1="8" x2="12" y2="16"/>',
-  list:
-    '<line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="4" cy="18" r="1.2"/>',
-  camera:
-    '<path d="M3 8a2 2 0 0 1 2-2h3l1.5-2h5L16 6h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/><circle cx="12" cy="13" r="3.5"/>',
-  gear:
-    '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
-  'arrow-left': '<polyline points="15 18 9 12 15 6"/>',
-  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
-  check: '<polyline points="20 6 9 17 4 12"/>',
-  undo: '<polyline points="9 14 4 9 9 4"/><path d="M4 9h11a5 5 0 0 1 5 5v0a5 5 0 0 1-5 5h-4"/>',
-  info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><circle cx="12" cy="8" r="0.5" fill="currentColor"/>',
-  warn: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="0.5" fill="currentColor"/>',
-  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
-  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
-  cloud: '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
-  box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
-  sparkles:
-    '<path d="M12 3l1.8 4.6L18 9l-4.2 1.5L12 15l-1.8-4.5L6 9l4.2-1.4L12 3z"/><path d="M19 14l.9 2.3L22 17l-2.1.7L19 20l-.9-2.3L16 17l2.1-.7L19 14z"/>',
-  trash:
-    '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>',
-  clock:
-    '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/>',
-  briefcase:
-    '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/>',
-  timer:
-    '<path d="M10 2h4"/><path d="M12 14l3-3"/><circle cx="12" cy="14" r="8"/><path d="M18.5 5.5l1.5-1.5"/>',
-  // 时段语义图标
-  sun: '<circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.9" y1="4.9" x2="6.8" y2="6.8"/><line x1="17.2" y1="17.2" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.8" y2="17.2"/><line x1="17.2" y1="6.8" x2="19.1" y2="4.9"/>',
-  'sun-high':
-    '<circle cx="12" cy="12" r="3.5"/><line x1="12" y1="3" x2="12" y2="6"/><line x1="3" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="21" y2="12"/><line x1="5.6" y1="5.6" x2="7.7" y2="7.7"/><line x1="16.3" y1="7.7" x2="18.4" y2="5.6"/><path d="M2 20h20"/>',
-  sunset:
-    '<path d="M2 18h20"/><path d="M5 18a7 7 0 0 1 14 0"/><line x1="12" y1="3" x2="12" y2="9"/><line x1="4.2" y1="10.2" x2="5.6" y2="11.6"/><line x1="18.4" y1="11.6" x2="19.8" y2="10.2"/><line x1="2" y1="22" x2="22" y2="22"/>',
-  moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
-  utensils:
-    '<path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 0 0 2-2V2"/><line x1="5" y1="11" x2="5" y2="22"/><path d="M18 2v20"/><path d="M18 14c-2 0-3-1-3-4V4a2 2 0 0 1 3-2"/>',
-};
+/** Functional icon names come from the local, version-locked Lucide registry. */
+export type IconName = AppIconName;
 
 /** 返回一个 SVG 元素 */
 export function icon(name: IconName, className?: string): SVGSVGElement {
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '1.75');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.setAttribute('aria-hidden', 'true');
-  if (className) svg.setAttribute('class', className);
-  const parsed = new DOMParser().parseFromString(
-    `<svg xmlns="${ns}">${ICON_PATHS[name]}</svg>`,
-    'image/svg+xml',
-  );
-  for (const child of Array.from(parsed.documentElement.children)) {
-    svg.append(document.importNode(child, true));
-  }
-  return svg;
+  return renderIcon(name, className);
 }
 
 /** 时段语义图标映射 */
@@ -302,8 +226,8 @@ export function openDialog(
   // Make overlay scrollable & top-anchored so virtual keyboard doesn't hide inputs
   overlay.style.alignItems = 'flex-start';
   overlay.style.overflow = 'auto';
-  overlay.style.paddingTop = 'max(28px, env(safe-area-inset-top))';
-  overlay.style.paddingBottom = 'max(28px, env(safe-area-inset-bottom))';
+  overlay.style.paddingTop = 'max(28px, var(--safe-top))';
+  overlay.style.paddingBottom = 'max(28px, var(--safe-bottom))';
 
   const previouslyFocused = opts.returnFocusTo ?? (document.activeElement as HTMLElement | null);
   activeDialogs.add(overlay);
@@ -493,25 +417,19 @@ export function banner(
 
 /** ---------- Bottom Navigation Bar ---------- */
 export function tabbar(active: string): HTMLElement {
-  const tabs: { route: string; ic: IconName; label: string }[] = [
-    { route: 'today', ic: 'pill', label: '今天' },
-    { route: 'meds', ic: 'list', label: '药品' },
-    { route: 'scan', ic: 'camera', label: '扫码分药' },
-    { route: 'settings', ic: 'gear', label: '设置' },
-  ];
   const bar = el('nav', { class: 'tabbar' });
   bar.setAttribute('aria-label', '主导航');
-  for (const t of tabs) {
-    const isActive = active === t.route;
+  for (const item of primaryNavigation) {
+    const isActive = active === item.id;
     const a = el('a', {
-      href: `#/${t.route}`,
+      href: `#${item.href}`,
       class: isActive ? 'active' : '',
     });
     if (isActive) a.setAttribute('aria-current', 'page');
     const ic = el('span', { class: 'ic' });
-    ic.append(icon(t.ic));
+    ic.append(icon(item.icon));
     a.append(ic);
-    a.append(el('span', { html: t.label }));
+    a.append(el('span', { html: item.label }));
     bar.append(a);
   }
   return bar;
@@ -538,14 +456,13 @@ export function renderPage(opts: {
   topLeft?: HTMLElement;
   content: HTMLElement;
   fab?: HTMLElement;
+  actionDock?: HTMLElement;
   showTabbar?: boolean;
 }): void {
   installRipple();
   opts.root.replaceChildren();
   document.title = `${opts.title} · 日常工具箱`;
-  const left = opts.topLeft || (opts.showTabbar !== false && opts.activeTab !== 'tools'
-    ? toolboxButton()
-    : undefined);
+  const left = opts.topLeft;
 
   // 右侧：同步状态图标 + 可选的页面级 topRight
   const syncBtn = syncStatusIcon(getLastSync().state);
@@ -567,24 +484,14 @@ export function renderPage(opts: {
   opts.content.setAttribute('role', 'main');
   opts.content.setAttribute('id', 'main-content');
   opts.content.setAttribute('tabindex', '-1');
-  opts.root.append(topbar(opts.title, right, left));
-  opts.root.append(opts.content);
-  if (opts.fab) opts.root.append(opts.fab);
-  if (opts.showTabbar !== false) opts.root.append(tabbar(opts.activeTab));
-}
-
-function toolboxButton(): HTMLElement {
-  const b = el('button', {
-    class: 'icon-btn',
-    type: 'button',
-    title: '返回工具箱',
-    'aria-label': '返回工具箱',
-  } as any);
-  b.append(icon('box'));
-  b.onclick = () => {
-    location.hash = '#/tools';
-  };
-  return b;
+  const dock = opts.actionDock ?? (opts.fab ? el('div', {}, [opts.fab]) : undefined);
+  renderAppShell({
+    root: opts.root,
+    header: topbar(opts.title, right, left),
+    content: opts.content,
+    dock,
+    navigation: opts.showTabbar !== false ? tabbar(opts.activeTab) : undefined,
+  });
 }
 
 /** ---------- Form field wrapper (label + input + error slot) ---------- */

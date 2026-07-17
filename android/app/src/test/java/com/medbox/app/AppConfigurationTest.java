@@ -10,6 +10,6 @@ public class AppConfigurationTest {
     @Test
     public void buildUsesMedboxApplicationId() {
         assertEquals("com.medbox.app", BuildConfig.APPLICATION_ID);
-        assertTrue(BuildConfig.VERSION_NAME.matches("0\\.[4-6]\\.[0-9]+"));
+        assertTrue(BuildConfig.VERSION_NAME.matches("0\\.[4-7]\\.[0-9]+"));
     }
 }

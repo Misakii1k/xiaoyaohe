@@ -17,6 +17,13 @@ export const VERSION_CODE_BY_VERSION = Object.freeze({
   '0.4.1': 4,
   '0.5.0': 5,
   '0.6.0': 6,
+  '0.7.0': 7,
+  '0.7.1': 8,
+  '0.7.2': 9,
+  '0.7.3': 10,
+  '0.7.4': 11,
+  '0.7.5': 12,
+  '0.7.6': 13,
 });
 
 const ZIP_LOCAL_FILE_HEADER = 0x04034b50;

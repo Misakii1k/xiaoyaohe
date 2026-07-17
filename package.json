@@ -1,6 +1,6 @@
 {
   "name": "medbox",
-  "version": "0.6.0",
+  "version": "0.7.6",
   "private": true,
   "type": "module",
   "description": "日常工具箱：吃药提醒 + 工时记录 (PWA)",
@@ -20,7 +20,7 @@
     "worker:deploy": "wrangler deploy",
     "cap:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
-    "android:debug": "npm run cap:sync && cd android && gradlew assembleDebug"
+    "android:debug": "npm run cap:sync && node scripts/android-debug.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.0",
@@ -29,6 +29,7 @@
     "@capacitor/local-notifications": "^8.2.0",
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.0",
+    "lucide": "1.24.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

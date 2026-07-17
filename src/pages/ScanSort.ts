@@ -1,4 +1,5 @@
-// 扫码分药页：条形码/追溯码、智能扫药盒、批量拍药单。
+// 分药页：主流程是「按顺序分药」——弹卡一盒一盒带着放；
+// 扫码/拍药盒是认不出时的备选，拍药单/口述负责首轮把药录进来。
 import { startScan, scanCodeFromImage, type Scanner } from '../features/scanner';
 import {
   identifyByCode,
@@ -9,13 +10,15 @@ import {
 import { formatExpiry, type ProductKey } from '../features/gs1';
 import {
   deleteRule,
+  createMedicationBatch,
   listMeds,
   listRulesByMed,
+  listScheduleRevisions,
   putMed,
-  putPhoto,
   putRule,
   uid,
 } from '../db/local';
+import { getMedPhotoUrls, saveMedPhoto } from '../features/medPhotos';
 import {
   SLOTS,
   SLOT_DEFAULT_TIME,
@@ -40,9 +43,21 @@ import {
 } from '../ai/identify';
 import { aHash } from '../features/phash';
 import { setPendingPrefill } from '../ai/pendingPrefill';
+import { setPendingMedicationBatch } from '../ai/pendingMedicationBatch';
+import { openMedOnboardWizard } from '../ui/MedOnboardWizard';
+import { openSortWizard, type SortWizardEntry, type SortWizardItem } from '../ui/SortWizard';
+import { openVoiceMedEntry } from '../ui/VoiceMedEntry';
+import { isMedicationExpiredOn, projectScheduleDate, toLocalDate } from '../domain/medicationSchedule';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
+import { applyExplicitDose, createMedicationDraft } from '../domain/medicationDraft';
 
 type ScanMode = 'code' | 'smart' | 'sheet';
+
+const MODE_LABEL: Record<ScanMode, string> = {
+  code: '扫码认药',
+  smart: '拍药盒识别',
+  sheet: '拍药单录入',
+};
 
 interface ContinueAction {
   label: string;
@@ -95,18 +110,22 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
   let scanner: Scanner | null = null;
   let switchSequence = 0;
   let operationSequence = 0;
+  let homeSequence = 0;
+  let sortLaunching = false;
   let handlingLiveResult = false;
   const cameraCapture = new CameraCaptureController();
 
   const content = el('div', { class: 'page scan-workbench' });
-  const modeBar = el('div', {
-    class: 'scan-mode-bar',
-    role: 'tablist',
-    'aria-label': '扫码方式',
-  } as any);
+  // 首屏方式选择：已有药时「按顺序分药」当主入口；还没录药时先引导拍药单/口述录入
+  const home = el('div', { class: 'scan-home' });
+  const backRow = el('div', { class: 'scan-back-row', hidden: true } as any);
+  const backBtn = el('button', { class: 'btn text scan-back-btn', type: 'button' } as any);
+  backBtn.append(icon('arrow-left'));
+  backBtn.append(el('span', { html: '更换方式' }));
+  backRow.append(backBtn);
   const panel = el('div', {
     id: 'scan-mode-panel',
-    role: 'tabpanel',
+    role: 'region',
   } as any);
   const reader = el('div', { id: 'code-reader' });
   const hint = el('div', {
@@ -126,33 +145,9 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
   const smartFile = fileInput('上传药盒照片');
   const sheetFile = fileInput('上传药单照片');
 
-  const buttons: Record<ScanMode, HTMLButtonElement> = {
-    code: modeButton('扫条码', 'box', 'scan-tab-code'),
-    smart: modeButton('智能扫', 'camera', 'scan-tab-smart'),
-    sheet: modeButton('拍药单', 'sparkles', 'scan-tab-sheet'),
-  };
-  const modeOrder: ScanMode[] = ['code', 'smart', 'sheet'];
-
-  for (const key of modeOrder) {
-    buttons[key].onclick = () => void switchMode(key);
-    buttons[key].onkeydown = (event) => {
-      const current = modeOrder.indexOf(key);
-      let next = current;
-      if (event.key === 'ArrowRight') next = (current + 1) % modeOrder.length;
-      else if (event.key === 'ArrowLeft') next = (current - 1 + modeOrder.length) % modeOrder.length;
-      else if (event.key === 'Home') next = 0;
-      else if (event.key === 'End') next = modeOrder.length - 1;
-      else return;
-      event.preventDefault();
-      const nextMode = modeOrder[next];
-      buttons[nextMode].focus();
-      void switchMode(nextMode);
-    };
-  }
-
-  modeBar.append(buttons.code, buttons.smart, buttons.sheet);
   panel.append(reader, hint, resultBox);
-  content.append(modeBar, panel, codeFile, smartFile, sheetFile);
+  content.append(home, backRow, panel, codeFile, smartFile, sheetFile);
+  backBtn.onclick = () => renderHome();
 
   codeFile.onchange = async () => {
     const file = codeFile.files?.[0];
@@ -185,19 +180,210 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     });
   };
 
-  renderPage({ root, title: '扫码分药', activeTab: 'scan', content });
-  void switchMode('code');
+  renderPage({ root, title: '分药', activeTab: 'scan', content });
+  renderHome();
 
   function isOperationCurrent(operation: number, expectedMode: ScanMode): boolean {
     return !disposed && mode === expectedMode && operation === operationSequence;
+  }
+
+  /** 首屏方式选择卡组：录过药主推「按顺序分药」，第一次用主推拍药单/口述录入 */
+  function buildHome(hasMeds: boolean): void {
+    const entryCard = (
+      cls: string,
+      iconName: Parameters<typeof icon>[0],
+      title: string,
+      desc: string,
+      badge: string | null,
+      onClick: () => void,
+    ): HTMLButtonElement => {
+      const card = el('button', { class: `scan-entry-card ${cls}`, type: 'button' } as any) as HTMLButtonElement;
+      const iconWrap = el('span', { class: 'scan-entry-icon', 'aria-hidden': 'true' } as any);
+      iconWrap.append(icon(iconName));
+      card.append(iconWrap);
+      const copy = el('span', { class: 'scan-entry-copy' });
+      const titleRow = el('span', { class: 'scan-entry-title-row' });
+      titleRow.append(el('span', { class: 'scan-entry-title', html: title }));
+      if (badge) titleRow.append(el('span', { class: 'scan-entry-badge', html: badge }));
+      copy.append(titleRow);
+      copy.append(el('span', { class: 'scan-entry-desc', html: desc }));
+      card.append(copy);
+      card.append(icon('chevron-right', 'scan-entry-chevron'));
+      card.onclick = onClick;
+      return card;
+    };
+    const moreBtn = (
+      iconName: Parameters<typeof icon>[0],
+      label: string,
+      onClick: () => void,
+    ): HTMLButtonElement => {
+      const button = el('button', { class: 'btn tonal scan-more-btn', type: 'button' } as any) as HTMLButtonElement;
+      button.append(icon(iconName));
+      button.append(el('span', { html: label }));
+      button.onclick = onClick;
+      return button;
+    };
+
+    home.replaceChildren();
+    const more = el('div', { class: 'scan-more-row' });
+    const moreBtns = el('div', { class: 'scan-more-actions' });
+
+    if (hasMeds) {
+      home.append(
+        entryCard(
+          'scan-entry-hero',
+          'pillbox',
+          '开始分药',
+          '一盒一盒带您放：看照片认药，放哪格、放几粒都写清楚',
+          '日常用',
+          () => void startSortWizard(),
+        ),
+        entryCard(
+          'scan-entry-secondary',
+          'scan',
+          '扫一扫认药',
+          '拿不准手里这盒是什么？对准条码马上告诉您',
+          null,
+          () => void enterMode('code'),
+        ),
+      );
+      more.append(el('span', { class: 'scan-more-label', html: '要加新药，或认不出手里这盒？' }));
+      moreBtns.append(
+        moreBtn('sparkles', '拍药单录入', () => void enterMode('sheet', () => void openSheetCamera())),
+        moreBtn('mic', '说给 AI 听', () => void openVoiceMedEntry()),
+        moreBtn('camera', '拍药盒识别', () => void enterMode('smart', () => void openSmartCamera())),
+        moreBtn('plus', '手动添加', () => navigate('/meds/new')),
+      );
+    } else {
+      home.append(
+        entryCard(
+          'scan-entry-hero',
+          'sparkles',
+          '拍药单，一次录完',
+          '把医生开的药单拍下来，AI 帮您把药名、时段都填好',
+          '第一步',
+          () => void enterMode('sheet', () => void openSheetCamera()),
+        ),
+        entryCard(
+          'scan-entry-secondary',
+          'mic',
+          '说一说，AI 帮您录',
+          '没有药单？像聊天一样说出在吃的药，AI 整理成清单',
+          null,
+          () => void openVoiceMedEntry(),
+        ),
+      );
+      more.append(el('span', { class: 'scan-more-label', html: '其他方式' }));
+      moreBtns.append(
+        moreBtn('camera', '拍药盒识别', () => void enterMode('smart', () => void openSmartCamera())),
+        moreBtn('scan', '扫条码认药', () => void enterMode('code')),
+        moreBtn('plus', '手动添加', () => navigate('/meds/new')),
+      );
+    }
+    more.append(moreBtns);
+    home.append(more);
+  }
+
+  /** 首屏形态跟着数据走：录过药和第一次用看到的不一样 */
+  async function refreshHome(): Promise<void> {
+    const current = ++homeSequence;
+    let hasMeds = false;
+    try {
+      hasMeds = (await listMeds()).length > 0;
+    } catch {
+      /* 读不到就按第一次用展示 */
+    }
+    if (disposed || current !== homeSequence) return;
+    buildHome(hasMeds);
+  }
+
+  /** 按顺序分药：把今天的服药安排按药分组，弹卡一盒一盒带着放 */
+  async function startSortWizard(): Promise<void> {
+    if (disposed || sortLaunching) return;
+    sortLaunching = true;
+    try {
+      const [meds, revisions] = await Promise.all([listMeds(), listScheduleRevisions()]);
+      if (disposed) return;
+      const today = toLocalDate(new Date());
+      const medById = new Map(meds.map((med) => [med.id, med]));
+      const grouped = new Map<string, { entries: SortWizardEntry[]; earliest: number }>();
+      for (const projection of projectScheduleDate(revisions, today)) {
+        const med = medById.get(projection.revision.medId);
+        if (!med) continue;
+        let group = grouped.get(med.id);
+        if (!group) {
+          group = { entries: [], earliest: projection.dueAt };
+          grouped.set(med.id, group);
+        }
+        group.earliest = Math.min(group.earliest, projection.dueAt);
+        if (projection.isRest) continue;
+        group.entries.push({
+          slot: projection.revision.slot,
+          timeLocal: projection.revision.timeLocal,
+          doseLabel: projection.revision.doseQuantity && projection.revision.doseUnit
+            ? `${projection.revision.doseQuantity}${projection.revision.doseUnit}`
+            : med.amountPerDose || '',
+          mealRels: [...projection.revision.mealRels],
+        });
+      }
+      if (grouped.size === 0) {
+        const go = await confirmDialog(
+          '药已经录好了，但还没设服药时段。先去药品里点开每味药，把早中晚设一下，就能按顺序分药了。',
+          '去药品列表',
+        );
+        if (!disposed && go) navigate('/meds');
+        return;
+      }
+      const photoUrls = await getMedPhotoUrls(Array.from(grouped.keys()));
+      if (disposed) return;
+      const items: SortWizardItem[] = Array.from(grouped.entries())
+        .sort((a, b) => a[1].earliest - b[1].earliest)
+        .map(([medId, group]) => ({
+          med: medById.get(medId)!,
+          photoUrl: photoUrls.get(medId),
+          entries: group.entries,
+          isRest: group.entries.length === 0,
+          expired: isMedicationExpiredOn(medById.get(medId)!, today),
+        }));
+      openSortWizard(items);
+    } finally {
+      sortLaunching = false;
+    }
+  }
+
+  /** 回到方式选择首屏：停相机、清结果 */
+  function renderHome(): void {
+    if (disposed) return;
+    switchSequence += 1;
+    operationSequence += 1;
+    cameraCapture.stop();
+    const previous = scanner;
+    scanner = null;
+    if (previous) void previous.stop();
+    reader.style.display = 'none';
+    resultBox.replaceChildren();
+    setResultBusy(resultBox, false);
+    home.hidden = false;
+    backRow.hidden = true;
+    panel.hidden = true;
+    void refreshHome();
+  }
+
+  /** 从首屏进入某个录入方式，可选自动开相机 */
+  async function enterMode(next: ScanMode, after?: () => void): Promise<void> {
+    if (disposed) return;
+    home.hidden = true;
+    backRow.hidden = false;
+    panel.hidden = false;
+    await switchMode(next);
+    if (!disposed && mode === next) after?.();
   }
 
   async function switchMode(next: ScanMode): Promise<void> {
     const currentSwitch = ++switchSequence;
     operationSequence += 1;
     mode = next;
-    updateModeButtons(buttons, mode);
-    panel.setAttribute('aria-labelledby', buttons[mode].id);
+    panel.setAttribute('aria-label', MODE_LABEL[mode]);
     cameraCapture.stop();
     const previous = scanner;
     scanner = null;
@@ -208,16 +394,14 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     setResultBusy(resultBox, false);
     if (mode === 'code') {
       reader.style.display = '';
-      setHint(hint, 'info', '把药盒上的条形码或追溯码对准取景框');
-      let failureMessage = '';
+      setHint(hint, 'info', '对准药盒上的条形码或追溯码，认出后告诉您放哪格');
       try {
         const started = await startScan({
           containerId: reader.id,
           onScan: (result) => void handleLiveScan(result.raw),
-          onError: (message) => {
-            failureMessage = message;
+          onError: () => {
             if (!disposed && mode === 'code' && currentSwitch === switchSequence) {
-              renderScannerUnavailable(message);
+              renderScannerUnavailable();
             }
           },
         });
@@ -228,7 +412,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
         scanner = started;
       } catch {
         if (!disposed && mode === 'code' && currentSwitch === switchSequence) {
-          renderScannerUnavailable(failureMessage || '无法启动摄像头扫码。');
+          renderScannerUnavailable();
         }
       }
       return;
@@ -245,12 +429,12 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     const operation = ++operationSequence;
     setResultBusy(resultBox, true);
     resultBox.replaceChildren(loadingCard('正在查询…', '已暂停取景，正在匹配这个条码'));
-    setHint(hint, 'info', '已扫描，确认结果后可继续');
+    setHint(hint, 'info', '扫到了，正在认这盒药…');
     try {
       navigator.vibrate?.(60);
       const { key, med } = await identifyByCode(raw);
       if (!isOperationCurrent(operation, 'code')) return;
-      const continueAction: ContinueAction = { label: '继续扫描', run: resumeLiveScan };
+      const continueAction: ContinueAction = { label: '继续扫下一盒', run: resumeLiveScan };
       if (med) await showMatched(med, key, resultBox, hint, continueAction, () => isOperationCurrent(operation, 'code'));
       else await showUnknownCode(
         key,
@@ -263,7 +447,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     } catch (error) {
       if (!isOperationCurrent(operation, 'code')) return;
       resultBox.replaceChildren(banner('warn', `条码处理失败：${errorMessage(error)}`));
-      resultBox.append(continueButton({ label: '继续扫描', run: resumeLiveScan }));
+      resultBox.append(continueButton({ label: '继续扫下一盒', run: resumeLiveScan }));
       setHint(hint, 'warn', '条码处理失败');
     } finally {
       if (isOperationCurrent(operation, 'code')) setResultBusy(resultBox, false);
@@ -275,23 +459,22 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     if (disposed || mode !== 'code') return;
     resultBox.replaceChildren();
     setResultBusy(resultBox, false);
-    setHint(hint, 'info', '继续扫描：请移开上一个药盒，再对准下一个条码');
+    setHint(hint, 'info', '认好一盒了，放下它，再拿下一盒对准条码继续');
     if (scanner?.state === 'paused') await scanner.resume();
     else if (!scanner || scanner.state === 'stopped') await switchMode('code');
   }
 
-  function renderScannerUnavailable(message: string): void {
+  function renderScannerUnavailable(): void {
     reader.replaceChildren();
-    setHint(hint, 'warn', '摄像头不可用');
-    resultBox.replaceChildren(banner('warn', message));
-    resultBox.append(
+    setHint(hint, 'info', '相机权限不可用，可从相册识别，或完成授权后重试。');
+    resultBox.replaceChildren(
       actionCard(
-        '无法使用摄像头',
-        '允许相机权限后可重试；也可以直接从相册选择清晰的条码图片。',
-        '重试',
-        () => void switchMode('code'),
+        '相册识别条码',
+        '选择清晰、完整的条码图片，系统会自动识别。',
         '相册识别',
         () => codeFile.click(),
+        '重试',
+        () => void switchMode('code'),
       ),
     );
   }
@@ -456,7 +639,14 @@ async function runPrescriptionSheet(
     const result = await identifyPrescriptionSheetByBlob(file);
     if (!context.isCurrent()) return;
     setHint(hint, result.items.length ? 'ok' : 'warn', result.items.length ? `识别到 ${result.items.length} 种药` : '没有识别到药品');
-    renderPrescriptionBatch(result.items, file, box, hint, context);
+    if (result.items.length > 0) {
+      box.replaceChildren();
+      openMedOnboardWizard(result.items, {
+        onFinish: (photos) => handoffPrescriptionBatch(result.items, photos),
+      });
+      return;
+    }
+    box.replaceChildren(banner('warn', '没有识别到药品，可换一张更清晰的药单。'));
   } catch (error) {
     if (!context.isCurrent()) return;
     const message = error instanceof IdentifyError ? error.message : errorMessage(error);
@@ -468,6 +658,15 @@ async function runPrescriptionSheet(
   } finally {
     if (context.isCurrent()) setResultBusy(box, false);
   }
+}
+
+/** Keep prescription recognition in-memory and defer all persistence to the batch workspace. */
+export function handoffPrescriptionBatch(
+  items: readonly PrescriptionItemDraft[],
+  photos: readonly (Blob | undefined)[] = [],
+): void {
+  setPendingMedicationBatch(items, photos);
+  navigate('/meds/new');
 }
 
 async function showMatched(
@@ -873,9 +1072,9 @@ export async function mergeIdentifyIntoExisting(
   return updated;
 }
 
-function renderPrescriptionBatch(
+export function renderPrescriptionBatch(
   drafts: PrescriptionItemDraft[],
-  file: File,
+  _file: File,
   box: HTMLElement,
   hint: HTMLElement,
   context: { isCurrent: () => boolean; onAddImage: () => void },
@@ -890,9 +1089,9 @@ function renderPrescriptionBatch(
     section.append(el('div', { class: 'big', text: '药单批量审核' }));
     section.append(el('div', {
       class: 'muted',
-      text: '逐项核对名称、规格、剂量和时段；可取消勾选、添加空白项，再一次保存全部选中项。',
+      text: '一项一项对着药单看：药名、每次吃多少、什么时候吃。不要的取消勾选，漏了的点下面补一个，最后一起保存。',
     }));
-    if (!items.length) section.append(el('div', { class: 'muted', text: '没有识别到药品，可添加空白项手动录入。' }));
+    if (!items.length) section.append(el('div', { class: 'muted', text: '这张药单上没认出药，可以点下面的按钮自己补一个。' }));
     for (const item of items) section.append(renderPrescriptionEditor(item, saveItems));
 
     const addBlank = iconButton('plus', '添加空白项', 'btn tonal');
@@ -939,12 +1138,12 @@ function renderPrescriptionBatch(
     render();
     let savedCount = 0;
     try {
-      await persistPrescriptionMedicationBatch(pending, async (med, item) => {
-        await savePhoto(file, med.id);
+      const saved = await persistPrescriptionMedicationBatch(pending);
+      for (const item of pending) {
         item.saved = true;
         item.selected = false;
-        savedCount += 1;
-      });
+      }
+      savedCount = saved.length;
       if (!context.isCurrent()) return;
       setHint(hint, 'ok', `已添加 ${savedCount} 种药，仍可继续审核其他项目`);
       toast(`已添加 ${savedCount} 种药品`);
@@ -1067,35 +1266,30 @@ function medicationFromPrescriptionItem(item: PrescriptionMedicationInput): Medi
 
 export async function persistPrescriptionMedicationBatch<T extends PrescriptionMedicationInput>(
   items: readonly T[],
-  afterSave?: (med: Medication, item: T) => void | Promise<void>,
 ): Promise<Medication[]> {
-  const saved: Medication[] = [];
-  let saveError: unknown;
-  try {
-    for (const item of items) {
-      const med = medicationFromPrescriptionItem(item);
-      await putMed(med);
-      await syncRecognizedMedicationRules(med, []);
-      saved.push(med);
-      await afterSave?.(med, item);
-    }
-  } catch (error) {
-    saveError = error;
-  }
-
-  let rescheduleError: unknown;
-  if (saved.length > 0) {
-    try {
-      await rescheduleMedicationReminders();
-    } catch (error) {
-      rescheduleError = error;
-    }
-  }
-  if (saveError) throw saveError;
-  if (rescheduleError) throw rescheduleError;
-  return saved;
+  const drafts = items.map((item) => {
+    const med = medicationFromPrescriptionItem(item);
+    const draft = createMedicationDraft({
+      id: med.id,
+      sourceKind: 'prescription',
+      medication: med,
+      rules: med.slots.map((slot) => ({
+        id: `${med.id}:rule:${slot}`,
+        slot,
+        timeLocal: SLOT_DEFAULT_TIME[slot],
+        enabled: true,
+      })),
+    });
+    draft.duplicateResolution = 'create';
+    applyExplicitDose(draft);
+    return draft;
+  });
+  const result = await createMedicationBatch(drafts);
+  await rescheduleMedicationReminders().catch(() => undefined);
+  return result.medIds.map((id) => drafts.find((draft) => draft.id === id)!.medication);
 }
 
+/** Keeps existing-medication scan merges on the same rule/revision semantics. */
 async function syncRecognizedMedicationRules(
   med: Medication,
   existingRules: readonly ReminderRule[],
@@ -1109,7 +1303,6 @@ async function syncRecognizedMedicationRules(
       continue;
     }
     existingSlots.add(rule.slot);
-    // putRule snapshots the updated medication even when the time is unchanged.
     await putRule({ ...rule });
   }
 
@@ -1162,7 +1355,7 @@ function rankMeds(meds: Medication[], name: string): Medication[] {
 }
 
 async function savePhoto(blob: Blob, medId: string): Promise<void> {
-  await putPhoto({ id: uid(), medId, blob, at: Date.now() });
+  await saveMedPhoto(medId, blob);
 }
 
 async function tryLocalText(file: File): Promise<string> {
@@ -1356,16 +1549,6 @@ async function captureFrame(video: HTMLVideoElement, filenamePrefix: string): Pr
   });
 }
 
-function updateModeButtons(buttons: Record<ScanMode, HTMLButtonElement>, mode: ScanMode): void {
-  for (const [key, button] of Object.entries(buttons) as [ScanMode, HTMLButtonElement][]) {
-    const selected = key === mode;
-    button.classList.toggle('active', selected);
-    button.setAttribute('aria-selected', selected ? 'true' : 'false');
-    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
-    button.tabIndex = selected ? 0 : -1;
-  }
-}
-
 function fileInput(label: string): HTMLInputElement {
   return el('input', {
     type: 'file',
@@ -1373,24 +1556,6 @@ function fileInput(label: string): HTMLInputElement {
     style: 'display:none',
     'aria-label': label,
   } as any) as HTMLInputElement;
-}
-
-function modeButton(
-  label: string,
-  iconName: 'box' | 'camera' | 'sparkles',
-  id: string,
-): HTMLButtonElement {
-  const button = el('button', {
-    id,
-    class: 'scan-mode-btn',
-    type: 'button',
-    role: 'tab',
-    'aria-controls': 'scan-mode-panel',
-    'aria-selected': 'false',
-    'aria-pressed': 'false',
-  } as any) as HTMLButtonElement;
-  button.append(icon(iconName), el('span', { text: label }));
-  return button;
 }
 
 function actionCard(
@@ -1404,11 +1569,13 @@ function actionCard(
   const card = el('div', { class: 'card scan-action-card' });
   card.append(el('div', { class: 'big', text: title }), el('div', { class: 'muted', text: subtitle }));
   const actions = el('div', { class: 'btn-row scan-actions' });
-  const primary = iconButton(buttonText.includes('相册') ? 'list' : 'camera', buttonText, 'btn success');
+  const actionIcon = (text: string): Parameters<typeof icon>[0] =>
+    text.includes('相册') ? 'image' : text.includes('重试') ? 'retry' : 'camera';
+  const primary = iconButton(actionIcon(buttonText), buttonText, 'btn success');
   primary.onclick = onClick;
   actions.append(primary);
   if (secondaryText && onSecondary) {
-    const secondary = iconButton('list', secondaryText, 'btn tonal');
+    const secondary = iconButton(actionIcon(secondaryText), secondaryText, 'btn tonal');
     secondary.onclick = onSecondary;
     actions.append(secondary);
   }

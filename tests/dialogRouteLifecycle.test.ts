@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(import.meta.dirname, '..');
 const router = readFileSync(join(root, 'src', 'router.ts'), 'utf8');
 const components = readFileSync(join(root, 'src', 'ui', 'components.ts'), 'utf8');
+const bottomSheet = readFileSync(join(root, 'src', 'ui', 'primitives', 'BottomSheet.ts'), 'utf8');
 
 describe('dialog and route lifecycle', () => {
   it('keeps route transitions decoupled from concrete dialog implementations', () => {
@@ -21,6 +22,15 @@ describe('dialog and route lifecycle', () => {
       /activeDialogs\.delete\(overlay\);[\s\S]*?overlay\.remove\(\);[\s\S]*?restoreAppAfterLastDialog\(\);/,
     );
     expect(components).toMatch(/if \(activeDialogs\.size > 0 \|\| !dialogAppState\) return;/);
+  });
+
+  it('closes active bottom sheets during route transitions and releases their listeners', () => {
+    expect(bottomSheet).toContain("import { registerRouteTransitionCleanup } from '../../router';");
+    expect(bottomSheet).toContain('export function closeAllBottomSheets(): void');
+    expect(bottomSheet).toContain('registerRouteTransitionCleanup(closeAllBottomSheets);');
+    expect(bottomSheet).toMatch(
+      /document\.removeEventListener\('keydown', onKeyDown\);[\s\S]*?activeBottomSheets\.delete\(close\);[\s\S]*?overlay\.remove\(\);/,
+    );
   });
 
   it('announces route errors and focuses the error heading after rendering', () => {

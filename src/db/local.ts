@@ -12,6 +12,7 @@ import {
 } from '../domain/medicationSchedule';
 import {
   deductInventory,
+  getConfirmedDose,
   restoreInventory,
   suggestStructuredDose,
 } from '../features/inventory';
@@ -21,6 +22,7 @@ import {
   type MedicationOccurrence,
   type MedicationScheduleRevision,
   type ReminderRule,
+  defaultEscalate,
   type IntakeLog,
   type StructuredDose,
   type OutboxItem,
@@ -28,6 +30,10 @@ import {
   type PushState,
   type Slot,
 } from './schema';
+import {
+  validateMedicationDraft,
+  type MedicationCreateDraft,
+} from '../domain/medicationDraft';
 
 export interface ImportBucketResult {
   added: number;
@@ -147,6 +153,95 @@ export async function putMed(med: Medication): Promise<void> {
   delete (med as any).mealRel;
   await (await db()).put('meds', med);
   await enqueue('med', med.id);
+}
+
+export class MedicationBatchValidationError extends Error {
+  constructor(readonly draftErrors: ReadonlyMap<string, ReturnType<typeof validateMedicationDraft>>) {
+    super('批量药品中存在需要修正的项目');
+    this.name = 'MedicationBatchValidationError';
+  }
+}
+
+export interface MedicationBatchResult {
+  medIds: string[];
+  reminderRescheduleRequired: boolean;
+}
+
+/**
+ * Persists a reviewed medication batch as one all-or-nothing local change.
+ * Reminder delivery is intentionally outside this transaction and is retried
+ * by its scheduler after the durable medication state is committed.
+ */
+export async function createMedicationBatch(
+  drafts: readonly MedicationCreateDraft[],
+): Promise<MedicationBatchResult> {
+  const selected = drafts.filter((draft) => draft.selected && draft.duplicateResolution !== 'skip');
+  if (selected.length === 0) {
+    throw new MedicationBatchValidationError(new Map([['batch', [{ field: 'selected', code: 'none-selected', message: '请至少选择一项药品' }]]]));
+  }
+  const draftErrors = new Map<string, ReturnType<typeof validateMedicationDraft>>();
+  for (const draft of selected) {
+    const errors = validateMedicationDraft(draft);
+    if (errors.length > 0) draftErrors.set(draft.id, errors);
+  }
+  if (draftErrors.size > 0) throw new MedicationBatchValidationError(draftErrors);
+
+  const d = await db();
+  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'photos', 'outbox'], 'readwrite');
+  const now = Date.now();
+  const effectiveDate = toLocalDate(now);
+  try {
+    for (const draft of selected) {
+      const med = normalizeMedication({
+        ...draft.medication,
+        id: draft.id,
+        createdAt: draft.medication.createdAt ?? now,
+        updatedAt: now,
+        identity: { ...draft.medication.identity },
+      });
+      delete (med as { mealRel?: unknown }).mealRel;
+      await tx.objectStore('meds').put(med);
+      if (CLOUD_SYNC_ENABLED) {
+        await tx.objectStore('outbox').put({ id: `med:${med.id}`, kind: 'med', refId: med.id, at: now });
+      }
+
+      for (const draftRule of draft.rules.filter((rule) => med.slots.includes(rule.slot))) {
+        const rule: ReminderRule = {
+          id: draftRule.id,
+          medId: med.id,
+          slot: draftRule.slot,
+          timeLocal: draftRule.timeLocal,
+          enabled: draftRule.enabled,
+          cycle: draftRule.cycle ? { ...draftRule.cycle } : undefined,
+          cycleStartDate: draftRule.cycleStartDate,
+          escalate: defaultEscalate(),
+          updatedAt: now,
+        };
+        if (!rule.cycle) {
+          delete rule.cycleStartDate;
+        }
+        await tx.objectStore('rules').put(rule);
+        await tx.objectStore('scheduleRevisions').put(
+          createScheduleRevision(med, rule, { effectiveDate, createdAt: now }),
+        );
+        if (CLOUD_SYNC_ENABLED) {
+          await tx.objectStore('outbox').put({ id: `rule:${rule.id}`, kind: 'rule', refId: rule.id, at: now });
+        }
+      }
+
+      if (draft.sourceKind === 'medicine-box' && draft.sourceImage) {
+        // 事务里不能 await 画布压缩；调用方应先 prepareBoxPhoto。
+        // 若误传超大原图，仍写入但靠 saveMedPhoto 主路径做强压缩；这里只做单张覆盖。
+        await tx.objectStore('photos').put({ id: `photo:${draft.id}`, medId: med.id, blob: draft.sourceImage, at: now });
+      }
+    }
+    await tx.done;
+  } catch (error) {
+    try { tx.abort(); } catch { /* Transaction may already be closed. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+  return { medIds: selected.map((draft) => draft.id), reminderRescheduleRequired: selected.some((draft) => draft.rules.length > 0) };
 }
 
 export async function softDeleteMed(id: string): Promise<void> {
@@ -438,26 +533,31 @@ export async function setOccurrenceAction(
       );
     }
     if (med.inventory) {
-      const inventoryResult = deductInventory(med);
-      if (inventoryResult.reviewRequired) {
-        tx.abort();
-        void tx.done.catch(() => undefined);
-        throw new MedicationIntakeError(
-          'dose-review-required',
-          inventoryResult.message ?? `${med.name} 的每次用量需要确认`,
-        );
+      // A legacy free-text dose must never block an intake record or be used
+      // to guess an inventory delta. Structured but incompatible doses still
+      // fail atomically so inventory cannot become inconsistent.
+      if (getConfirmedDose(med)) {
+        const inventoryResult = deductInventory(med);
+        if (inventoryResult.reviewRequired) {
+          tx.abort();
+          void tx.done.catch(() => undefined);
+          throw new MedicationIntakeError(
+            'dose-review-required',
+            inventoryResult.message ?? `${med.name} 的剂量需要复核`,
+          );
+        }
+        if (inventoryResult.insufficient) {
+          tx.abort();
+          void tx.done.catch(() => undefined);
+          throw new MedicationIntakeError(
+            'insufficient-inventory',
+            inventoryResult.message ?? `${med.name} 库存不足`,
+          );
+        }
+        inventoryChanged = inventoryResult.changed;
+        lowStock = inventoryResult.low;
+        lowStockMessage = inventoryResult.message;
       }
-      if (inventoryResult.insufficient) {
-        tx.abort();
-        void tx.done.catch(() => undefined);
-        throw new MedicationIntakeError(
-          'insufficient-inventory',
-          inventoryResult.message ?? `${med.name} 库存不足`,
-        );
-      }
-      inventoryChanged = inventoryResult.changed;
-      lowStock = inventoryResult.low;
-      lowStockMessage = inventoryResult.message;
     }
   } else if (previous?.status === 'taken' && action !== 'taken') {
     // Legacy logs without an explicit delta are intentionally not restored.
@@ -509,7 +609,7 @@ export async function setOccurrenceAction(
         action === 'taken'
           ? previous?.status === 'taken'
             ? previous.inventoryDelta
-            : med.inventory
+            : inventoryChanged
               ? med.doseQuantity
               : undefined
           : undefined,
@@ -536,6 +636,16 @@ export async function putPhoto(photo: PhotoBlob): Promise<void> {
 
 export async function getPhotosByMed(medId: string): Promise<PhotoBlob[]> {
   return (await db()).getAllFromIndex('photos', 'byMed', medId);
+}
+
+/** 删除某药的全部本地药盒照片（换图/覆盖时调用，避免历史大图占满磁盘和内存） */
+export async function deletePhotosByMed(medId: string): Promise<void> {
+  const d = await db();
+  const photos = await d.getAllFromIndex('photos', 'byMed', medId);
+  if (photos.length === 0) return;
+  const tx = d.transaction('photos', 'readwrite');
+  await Promise.all(photos.map((photo) => tx.store.delete(photo.id)));
+  await tx.done;
 }
 
 // ---- 待同步队列 ----

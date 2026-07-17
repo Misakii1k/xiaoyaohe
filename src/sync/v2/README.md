@@ -1,6 +1,8 @@
 # Encrypted sync v2
 
-Sync v2 is implemented but deliberately inactive. The existing application switch remains off, and the Worker requires both `SYNC_V2_ENABLED=true` and a valid comma-separated `SYNC_V2_ALLOWED_ORIGINS` value before any v2 request is served.
+Sync v2 is active when the client is built with `VITE_SYNC_V2_ENABLED=true`. The Worker also requires `SYNC_V2_ENABLED=true`, both Durable Object bindings, and a valid comma-separated `SYNC_V2_ALLOWED_ORIGINS` value before any v2 request is served.
+
+The checked-in Worker allowlist covers the Capacitor origin (`https://localhost`) and local Vite development only. Before deploying the PWA, append its exact production Origin, including the scheme and any non-default port. Never use `*`; an empty, invalid, or wildcard allowlist keeps the API fail-closed with `503`.
 
 ## Security model
 

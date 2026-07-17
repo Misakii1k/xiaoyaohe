@@ -1,0 +1,37 @@
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+html,
+body {
+  min-block-size: 100%;
+  margin: 0;
+  background: var(--color-bg);
+}
+
+body {
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+select,
+textarea { font: inherit; }
+
+button,
+a { touch-action: manipulation; }
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid rgb(49 104 213 / 35%);
+  outline-offset: 2px;
+}

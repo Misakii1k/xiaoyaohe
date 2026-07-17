@@ -136,6 +136,43 @@ describe('atomic occurrence actions', () => {
     expect(await getLogForOccurrence(occurrence)).toBeUndefined();
   });
 
+  it('records a taken occurrence without touching inventory when a legacy dose remains unstructured', async () => {
+    const med: Medication = {
+      id: 'med-unstructured-dose',
+      name: '未结构化剂量测试药',
+      dosageText: '10mg/片',
+      amountPerDose: '按医嘱',
+      doseReviewRequired: true,
+      slots: ['morning'],
+      mealRels: [],
+      mealRelsBySlot: {},
+      daysOfWeek: [],
+      inventory: { remaining: 6, unit: '片' },
+      identity: emptyIdentity(),
+      createdAt: Date.now(),
+      updatedAt: 1,
+    };
+    const rule: ReminderRule = {
+      id: 'rule-unstructured-dose',
+      medId: med.id,
+      slot: 'morning',
+      timeLocal: '00:00',
+      enabled: true,
+      escalate: defaultEscalate(),
+      updatedAt: 1,
+    };
+    await putMed(med);
+    await putRule(rule);
+    const revision = (await listScheduleRevisions()).find((item) => item.sourceRuleId === rule.id)!;
+    const occurrence = projectScheduleDate([revision], toLocalDate())[0].occurrence!;
+
+    const result = await setOccurrenceAction(occurrence, 'taken');
+
+    expect(result.inventoryChanged).toBe(false);
+    expect(result.log).toMatchObject({ status: 'taken', inventoryDelta: undefined });
+    expect((await getMed(med.id))?.inventory?.remaining).toBe(6);
+  });
+
   it('imports immutable schedule history without overwriting an existing revision', async () => {
     const revision = {
       id: 'schedule:imported:1:stable',

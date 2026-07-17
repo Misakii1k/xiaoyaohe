@@ -1,0 +1,196 @@
+.medication-batch-page {
+  gap: var(--space-4);
+  padding-block-end: var(--space-5);
+}
+
+.medication-batch-intro h2 { margin: 0; font-size: var(--fs-title2); }
+.medication-batch-intro p { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--fs-subheadline); }
+.medication-batch-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.medication-batch-editor { display: grid; gap: var(--space-3); }
+.medication-draft-card { display: grid; gap: var(--space-3); padding: var(--space-4); }
+.medication-draft-header { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.medication-draft-selection { display: inline-flex; align-items: center; min-inline-size: 0; gap: var(--space-2); font-size: var(--fs-headline); }
+.medication-draft-selection strong { overflow-wrap: anywhere; }
+.medication-draft-selection input { inline-size: 20px; block-size: 20px; accent-color: var(--color-primary); }
+.medication-draft-actions { display: inline-flex; flex: none; gap: 2px; }
+.medication-draft-actions .ui-icon-button { min-inline-size: 36px; min-block-size: 36px; inline-size: 36px; block-size: 36px; }
+.medication-draft-primary, .medication-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.medication-draft-primary > :first-child { grid-column: 1 / -1; }
+.medication-field { display: grid; min-inline-size: 0; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--fs-footnote); }
+.medication-field > input, .medication-field > textarea { inline-size: 100%; min-inline-size: 0; min-block-size: var(--tap); padding: 8px 10px; }
+.medication-field > textarea { min-block-size: 88px; resize: vertical; }
+.dose-inline-status:empty { display: none; }
+.medication-draft-schedule { display: grid; gap: var(--space-2); padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-border); }
+.field-label { color: var(--color-text); font-weight: 600; }
+.medication-slot-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); }
+.medication-slot-buttons button, .medication-duplicate-notice button { min-block-size: 40px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-text-muted); }
+.medication-slot-buttons button.is-selected, .medication-duplicate-notice button.is-selected { border-color: var(--color-primary); background: var(--color-primary-soft); color: var(--color-primary); font-weight: 600; }
+.medication-slot-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.medication-duplicate-notice { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--tone-warn-border); background: var(--tone-warn-bg); color: var(--tone-warn-fg); border-radius: var(--radius-md); font-size: var(--fs-footnote); }
+.medication-duplicate-notice button { min-block-size: 32px; padding-inline: var(--space-2); }
+.medication-detail-grid { margin-block-end: var(--space-3); }
+.medication-cycle-fields { display: grid; gap: var(--space-2); }
+.medication-cycle-row { display: grid; gap: var(--space-2); padding-block: var(--space-2); border-block-start: 1px solid var(--color-border); }
+.medication-cycle-row > label { display: inline-flex; gap: var(--space-2); align-items: center; }
+.medication-recognition-status { color: var(--color-text-muted); font-size: var(--fs-subheadline); }
+
+@media (max-width: 359px) {
+  .medication-draft-primary, .medication-detail-grid, .medication-slot-times { grid-template-columns: 1fr; }
+  .medication-slot-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .medication-duplicate-notice { grid-template-columns: 1fr 1fr; }
+  .medication-duplicate-notice span { grid-column: 1 / -1; }
+}
+.medication-batch-page { display: grid; gap: var(--space-3); }
+.medication-batch-tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.medication-batch-tools .ui-button { flex: 1 1 148px; }
+.medication-recognition-status:empty { display: none; }
+.medication-recognition-status { color: var(--color-text-muted); font-size: var(--fs-footnote); line-height: 1.4; }
+
+.medication-editor-dock .ui-button {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  white-space: nowrap;
+}
+.medication-editor-dock .ui-button-text { flex: 0 1 96px; }
+.medication-draft-card > .ui-accordion { margin-block-start: var(--space-2); }
+.medication-field .ui-picker { inline-size: 100%; }
+.meal-slot-head .ui-picker-trigger { min-block-size: 40px; }
+
+/* 药盒照片：编辑页顶部的大预览区，点预览弹出重拍 / 重新裁切 */
+.box-photo-block { display: grid; gap: var(--space-2); }
+
+.box-photo-preview {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  inline-size: 100%;
+  min-block-size: 148px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+  appearance: none;
+}
+
+.box-photo-sheet-actions {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+.box-photo-sheet-actions .ui-button { inline-size: 100%; }
+
+.box-photo-preview img { inline-size: 100%; max-block-size: 240px; object-fit: cover; }
+
+.box-photo-preview.is-empty {
+  border: 1.5px dashed var(--color-border);
+  background: var(--color-primary-soft);
+}
+
+.box-photo-placeholder {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: center;
+  padding: var(--space-4);
+  color: var(--color-primary);
+  font-size: var(--fs-footnote);
+  text-align: center;
+}
+
+.box-photo-placeholder svg { inline-size: 28px; block-size: 28px; }
+.box-photo-placeholder[hidden] { display: none; }
+.box-photo-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.box-photo-btn { justify-self: start; }
+
+.box-photo-crop-overlay .bottom-sheet {
+  inline-size: min(100%, 720px);
+  max-block-size: calc(100dvh - var(--safe-top));
+  margin-inline: auto;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: var(--space-4);
+}
+
+.box-photo-crop-editor {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.box-photo-crop-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.box-photo-crop-header strong { font-size: var(--fs-headline); }
+.box-photo-crop-status { color: var(--color-text-muted); font-size: var(--fs-footnote); }
+
+.box-photo-crop-stage {
+  position: relative;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  aspect-ratio: var(--box-photo-aspect);
+  margin-inline: auto;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: #111;
+  touch-action: none;
+  user-select: none;
+}
+
+.box-photo-crop-stage > img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+.box-photo-crop-guide {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.box-photo-crop-guide polygon {
+  fill: rgb(255 255 255 / 12%);
+  stroke: #38d996;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.box-photo-crop-handle {
+  position: absolute;
+  inline-size: 30px;
+  block-size: 30px;
+  translate: -50% -50%;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #0f9f68;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 45%);
+  touch-action: none;
+}
+
+.box-photo-crop-handle:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+
+.box-photo-crop-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--space-2);
+}
+
+.box-photo-crop-actions .ui-button { min-inline-size: 0; }
+
+@media (max-width: 420px) {
+  .box-photo-crop-actions { grid-template-columns: 1fr 1fr; }
+  .box-photo-crop-actions .ui-button-text { grid-column: 1 / -1; }
+}

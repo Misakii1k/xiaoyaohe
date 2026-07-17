@@ -1,0 +1,153 @@
+.today-page {
+  display: grid;
+  gap: var(--space-5);
+  padding-block-end: var(--space-7);
+}
+
+/* 图 4 Overview 卡：白色大圆角摘要卡 */
+.today-summary {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: center;
+  overflow: visible;
+  padding: var(--space-5);
+  border-block-end: 0;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.today-summary-copy { min-inline-size: 0; }
+.today-summary-date { color: var(--color-text-muted); font-size: var(--fs-footnote); }
+.today-summary-title { margin: var(--space-1) 0 var(--space-4); font-size: var(--fs-title2); font-weight: 800; letter-spacing: -0.4px; line-height: 1.3; }
+
+/* 进度环放大为悬浮白色圆盘，溢出卡片右上角（页面上下留白 16px，上溢 ≤12px 安全） */
+.today-summary-progress {
+  display: grid;
+  place-items: center;
+  align-self: start;
+  inline-size: 96px;
+  block-size: 96px;
+  margin-block-start: calc(-1 * var(--space-5) - 12px);
+  margin-inline-end: calc(-1 * var(--space-5) + 8px);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  box-shadow: 0 6px 14px rgb(40 42 66 / 10%), 0 18px 36px rgb(40 42 66 / 14%);
+}
+
+.today-summary-progress .progress-ring { inline-size: 74px; block-size: 74px; filter: none; }
+.today-summary-progress .ring-label { font-size: 16px; font-weight: 800; color: var(--color-ink-purple); }
+.today-summary-progress .ring-bg { stroke: #ececf2; }
+.today-summary-progress .ring-fg { stroke: var(--color-primary); }
+
+.today-summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.today-summary-stat { display: grid; gap: 1px; min-inline-size: 48px; }
+.today-summary-stat-label { color: var(--color-text-muted); font-size: var(--fs-caption); }
+.today-summary-stat-value { display: inline-flex; align-items: center; gap: 5px; color: var(--color-text); font-size: var(--fs-body); font-variant-numeric: tabular-nums; }
+.today-summary-stat-value .status-badge { inline-size: 5px; min-block-size: 5px; padding: 0; border-radius: 50%; }
+
+.today-schedule { display: grid; gap: var(--space-4); }
+
+/* 每个服药时段一张白卡 */
+.today-slot {
+  min-inline-size: 0;
+  border-block-end: 0;
+  padding: var(--space-4) var(--space-4) var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.today-slot-header { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; padding-block-end: var(--space-2); }
+.today-slot-header .slot-tag { flex: 0 0 auto; }
+.today-slot-time { color: var(--color-text); font-size: var(--fs-title3); font-weight: 700; font-variant-numeric: tabular-nums; }
+.today-slot-spacer { flex: 1 1 auto; min-inline-size: 0; }
+.today-slot-header .status-badge { flex: 0 0 auto; }
+
+.today-medication-list { border-block-start: 1px solid var(--color-border); }
+.today-medication-row {
+  display: grid;
+  grid-template-columns: 8px 44px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+  padding-block: var(--space-3);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.today-medication-marker { inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--color-primary); }
+
+/* 药盒照片缩略图：让长辈按盒子外观对药 */
+.today-medication-thumb {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.today-medication-thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.today-medication-thumb.is-placeholder svg { inline-size: 20px; block-size: 20px; }
+.today-medication-copy { min-inline-size: 0; }
+.today-medication-name { color: var(--color-text); font-size: var(--fs-body); font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.today-medication-meta { margin-block-start: 2px; color: var(--color-text-muted); font-size: var(--fs-footnote); line-height: 1.35; overflow-wrap: anywhere; }
+.today-medication-status { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; min-inline-size: 0; }
+.today-medication-taken .today-medication-marker { background: var(--color-success); }
+.today-medication-skipped .today-medication-marker { background: var(--color-warning); }
+.today-medication-row.is-expired { margin-inline: -4px; padding-inline: 4px; background: #fff4f4; }
+.today-medication-row.is-expired .today-medication-marker { background: var(--color-danger); }
+.today-medication-row.is-rest-day { opacity: 0.68; }
+.today-medication-row.notification-target { outline: 3px solid var(--color-primary); outline-offset: 2px; scroll-margin-block: var(--space-6); }
+
+.today-slot-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-block-start: var(--space-3); }
+.today-slot-actions .ui-button { flex: 1 1 152px; min-inline-size: 0; text-align: center; }
+.today-slot-actions .ui-button-text { flex: 0 0 auto; }
+.today-slot-empty { color: var(--color-text-muted); font-size: var(--fs-subheadline); }
+
+.today-adherence {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+.today-adherence h2 { margin: 0; font-size: var(--fs-title3); }
+.today-adherence .adherence-chart { height: 126px; }
+
+/* 图 4 图表气质：浅灰横向网格 + 细圆条 + 柔和红绿 */
+.today-adherence .adherence-bar-wrap {
+  height: 84px;
+  background: repeating-linear-gradient(to top, transparent 0 20px, #ecebf1 20px 21px);
+}
+
+.today-adherence .adherence-bar {
+  width: 7px;
+  min-height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+
+.today-adherence .adherence-bar.ok { background: var(--color-success); }
+.today-adherence .adherence-bar.warn { background: var(--color-accent-coral); }
+.today-adherence .adherence-bar.empty { background: #e4e3e9; }
+.today-adherence .adherence-label { font-size: 11px; }
+.today-adherence .adherence-pct { color: var(--color-text-muted); font-weight: 600; font-size: 11px; }
+.today-adherence .adherence-summary { margin: 0; text-align: start; }
+
+@media (min-width: 768px) {
+  .today-page { max-inline-size: 920px; margin-inline: auto; }
+  /* 桌面端不需要向右溢出，圆盘只上浮 */
+  .today-summary-progress { margin-inline-end: calc(-1 * var(--space-2)); }
+  .today-schedule { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
+}

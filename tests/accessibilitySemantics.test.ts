@@ -8,7 +8,8 @@ describe('medication form and selection semantics', () => {
   it('names dynamic schedule controls with their medication slot', () => {
     const source = readFileSync(join(root, 'src', 'pages', 'MedEdit.ts'), 'utf8');
 
-    expect(source).toContain("'aria-label': `${SLOT_LABEL[s]}服药时间`");
+    // 时间控件改为自绘 Picker 后，无障碍标签通过 ariaLabel 传入
+    expect(source).toContain('ariaLabel: `${SLOT_LABEL[s]}服药时间`');
     expect(source).toMatch(
       /class: 'chips meal-combo-chips',[\s\S]*?role: 'group',[\s\S]*?'aria-label': `\$\{SLOT_LABEL\[s\]\}餐食关系`/,
     );
@@ -19,7 +20,7 @@ describe('medication form and selection semantics', () => {
 
     expect(source).toContain("'aria-labelledby': medNameId");
     expect(source).toMatch(
-      /el\('div', \{ id: medNameId, class: 'med-card-name', html: m\.name \|\| '未命名' \}\)/,
+      /el\('div', \{ id: medNameId, class: 'medication-batch-name', text: m\.name \|\| '未命名' \}\)/,
     );
   });
 });

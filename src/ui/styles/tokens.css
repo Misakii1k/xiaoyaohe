@@ -1,0 +1,112 @@
+:root {
+  color-scheme: light;
+
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+
+  /* 参考图 4（浅色卡片 Dashboard）色板，2026-07-15 用户确认；2026-07-16 深度对齐设计稿 */
+  --color-bg: #f1efec;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f2f1f5;
+  --color-text: #23242d;
+  --color-text-muted: #8f92a0;
+  --color-border: #eeedf2;
+  --color-primary: #666dd2;
+  --color-primary-pressed: #5157bd;
+  --color-primary-soft: #edeefc;
+  --color-lilac: #838ae0;
+  --color-ink-purple: #3f4470;
+  --color-success: #2e9e6b;
+  --color-warning: #b66a1e;
+  --color-danger: #d9494f;
+  --color-accent-coral: #e0696b;
+  --color-accent-mint: #4fbdc3;
+
+  /* 彩色浅底圆形图标（图 4 分类行样式） */
+  --tint-purple-bg: #ecedfb;
+  --tint-purple-fg: #666dd2;
+  --tint-pink-bg: #fcebee;
+  --tint-pink-fg: #d05a68;
+  --tint-blue-bg: #e2f4f5;
+  --tint-blue-fg: #35a2a9;
+  --tint-green-bg: #e4f5ec;
+  --tint-green-fg: #23814f;
+  --tint-orange-bg: #fdefdf;
+  --tint-orange-fg: #a3671f;
+  --tint-gray-bg: #f0eff4;
+  --tint-gray-fg: #3f4470;
+
+  --font-sans: 'MiSans', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --fs-caption: 14px;
+  --fs-footnote: 14px;
+  --fs-subheadline: 14px;
+  --fs-body: 16px;
+  --fs-callout: 16px;
+  --fs-headline: 16px;
+  --fs-title3: 18px;
+  --fs-title2: 22px;
+  --fs-title1: 28px;
+  --fs-largeTitle: 32px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 26px;
+  --radius-full: 999px;
+  --tap: 44px;
+  --shadow-sm: 0 2px 8px rgb(40 42 66 / 3%), 0 12px 28px rgb(40 42 66 / 6%);
+  --shadow-md: 0 4px 12px rgb(40 42 66 / 4%), 0 18px 44px rgb(40 42 66 / 9%);
+  --shadow-lg: 0 8px 20px rgb(40 42 66 / 6%), 0 28px 64px rgb(40 42 66 / 14%);
+
+  /* Legacy aliases keep existing page markup readable during the staged migration. */
+  --brand: var(--color-primary);
+  --brand-deep: var(--color-primary-pressed);
+  --brand-soft: #dfe1f9;
+  --ios-blue: var(--color-primary);
+  --ios-green: var(--color-success);
+  --ios-orange: var(--color-warning);
+  --ios-red: var(--color-danger);
+  --label-primary: var(--color-text);
+  --label-secondary: var(--color-text-muted);
+  --label-tertiary: #878a95;
+  --label-quaternary: #aaadb8;
+  --label-on-primary: #ffffff;
+  --separator: var(--color-border);
+  --bg-gradient: var(--color-bg);
+  --glass-thin: var(--color-surface);
+  --glass-regular: var(--color-surface);
+  --glass-thick: var(--color-surface);
+  --glass-border: var(--color-border);
+  --glass-border-strong: var(--color-border);
+  --glass-highlight: none;
+  --glass-highlight-strong: none;
+  --glass-blur: 0px;
+  --glass-blur-heavy: 0px;
+  --glass-saturate: 100%;
+  --scrim: rgb(28 30 38 / 36%);
+  --tone-ok-fg: #17603f;
+  --tone-ok-bg: #e4f5ec;
+  --tone-ok-border: #b9e2cb;
+  --tone-warn-fg: #8a4c0d;
+  --tone-warn-bg: #fdefdf;
+  --tone-warn-border: #ecc794;
+  --tone-info-fg: #4348a8;
+  --tone-info-bg: #eaeafb;
+  --tone-info-border: #c9caf1;
+  --tone-danger-fg: #a32f38;
+  --tone-danger-bg: #fdebec;
+  --tone-danger-border: #f0bcc0;
+  --tone-muted-fg: var(--color-text-muted);
+  --tone-muted-bg: var(--color-surface-muted);
+  --tone-muted-border: var(--color-border);
+}

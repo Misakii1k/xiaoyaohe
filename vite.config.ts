@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { configDefaults, defineConfig } from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
 import { readFileSync } from 'node:fs';
 
@@ -10,6 +10,10 @@ const appPackage = JSON.parse(
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appPackage.version),
+  },
+  test: {
+    // e2e/ 是 Playwright 测试，只能由 npx playwright test 运行
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
   server: {
     host: true, // 允许局域网内手机访问（npm run dev 后用手机打开电脑 IP）
@@ -31,8 +35,8 @@ export default defineConfig({
         lang: 'zh-CN',
         dir: 'ltr',
         // 颜色 / 显示
-        theme_color: '#f2f2f7',
-        background_color: '#f2f2f7',
+        theme_color: '#f2f3f6',
+        background_color: '#f2f3f6',
         display: 'standalone',
         display_override: ['standalone', 'minimal-ui'],
         // 路由 / 身份（PWABuilder 推荐显式声明 id 与 scope）

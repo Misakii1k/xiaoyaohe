@@ -1,9 +1,20 @@
 // 拍照识药：使用用户自带的 OpenAI 兼容 LLM，与云同步解耦。
 import { normalizeMealRelsBySlot, mealRelsFromBySlot, type Slot, type MealRel, type MealRelsBySlot, type MedicationInventory } from '../db/schema';
 import { getLlmConfig, normalizeAndValidateBaseUrl } from './llmConfig';
-import { requireAiConsent } from './consent';
+import { requireAiConsent, type AiDataKind } from './consent';
 
-export type IdentifyMode = 'medicine_box' | 'prescription_sheet' | 'inventory';
+export type IdentifyMode = 'medicine_box' | 'prescription_sheet' | 'medication_batch' | 'inventory';
+
+export interface IdentifySession {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export interface IdentifyRequestOptions {
+  signal?: AbortSignal;
+  session?: IdentifySession;
+}
 
 export interface IdentifyResult {
   name: string;
@@ -72,6 +83,10 @@ const PROMPTS: Record<IdentifyMode, string> = {
     '你是药单识别助手。看一张处方、药单、分药清单或相册上传图片，仅输出严格 JSON，不要 markdown、不要解释。' +
     '把其中每种药分成数组 items，只识别药名、规格、每次剂量、服药时段、餐食关系和必要备注；不确定字段留空。' +
     'JSON 形如：{"items":[{"name":"药名","dosageText":"规格","amountPerDose":"每次用量","slots":["morning","noon","evening","bedtime"],"mealRels":["before","with","after"],"mealRelsBySlot":{"morning":["before"],"noon":["with"],"evening":["after"]},"notes":"备注","confidence":0-1}],"confidence":0-1}。',
+  medication_batch:
+    '你是药品批量识别助手。看一张处方、药单、药盒或标签照片，仅输出严格 JSON，不要 markdown、不要解释。' +
+    '把其中每种药分成数组 items，只识别药名、规格、每次剂量、服药时段、餐食关系和必要备注；不确定字段留空。' +
+    'JSON 形如：{"items":[{"name":"药名","dosageText":"规格","amountPerDose":"每次用量","slots":["morning","noon","evening","bedtime"],"mealRels":["before","with","after"],"mealRelsBySlot":{"morning":["before"],"noon":["with"],"evening":["after"]},"notes":"备注","confidence":0-1}],"confidence":0-1}。',
   inventory:
     '你是药品库存识别助手。看一张购药票据、药盒侧面、药瓶标签或药品照片，仅输出严格 JSON，不要 markdown、不要解释。' +
     '目标是辅助填写剩余药量，只识别药名、包装量、单位、可推断的剩余量和来源说明；不确定字段留空或 0。' +
@@ -82,27 +97,33 @@ export async function identifyByBlob(
   blob: Blob,
   hint?: string,
   mode: IdentifyMode = 'medicine_box',
+  options?: IdentifyRequestOptions,
 ): Promise<IdentifyResult> {
-  return requestIdentify<IdentifyResult>(blob, mode, hint);
+  return requestIdentify<IdentifyResult>(blob, mode, hint, options);
 }
 
-export async function identifyPrescriptionSheetByBlob(blob: Blob, hint?: string): Promise<PrescriptionSheetResult> {
-  return requestIdentify<PrescriptionSheetResult>(blob, 'prescription_sheet', hint);
+export async function identifyPrescriptionSheetByBlob(
+  blob: Blob,
+  hint?: string,
+  options?: IdentifyRequestOptions,
+): Promise<PrescriptionSheetResult> {
+  return requestIdentify<PrescriptionSheetResult>(blob, 'prescription_sheet', hint, options);
 }
 
-export async function identifyInventoryByBlob(blob: Blob, hint?: string): Promise<InventoryIdentifyResult> {
-  return requestIdentify<InventoryIdentifyResult>(blob, 'inventory', hint);
+export async function identifyMedicationBatchByBlob(
+  blob: Blob,
+  hint?: string,
+  options?: IdentifyRequestOptions,
+): Promise<PrescriptionSheetResult> {
+  return requestIdentify<PrescriptionSheetResult>(blob, 'medication_batch', hint, options);
 }
 
-async function requestIdentify<T>(blob: Blob, mode: IdentifyMode, hint?: string): Promise<T> {
-  // 压到 1280 长边，质量 0.8，尽量小但保留药盒细节
-  const shrunk = await downscaleToJpeg(blob, 1280, 0.8);
-  const base64 = await blobToBase64(shrunk);
-
-  return requestLocalLlm<T>(base64, mode, hint);
+export async function identifyInventoryByBlob(blob: Blob, hint?: string, options?: IdentifyRequestOptions): Promise<InventoryIdentifyResult> {
+  return requestIdentify<InventoryIdentifyResult>(blob, 'inventory', hint, options);
 }
 
-async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint?: string): Promise<T> {
+/** Gets consent once and returns a reusable session for multi-image queues. */
+export async function createIdentifySession(_mode: IdentifyMode, kind: AiDataKind = 'medicine-photo'): Promise<IdentifySession> {
   const cfg = getLlmConfig();
   if (!cfg.baseUrl || !cfg.apiKey) {
     throw new IdentifyError(
@@ -111,19 +132,77 @@ async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint?: str
     );
   }
   const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
-  await requireAiConsent(mode === 'prescription_sheet' ? 'prescription' : 'medicine-photo', baseUrl);
+  await requireAiConsent(kind, baseUrl);
+  return { baseUrl, apiKey: cfg.apiKey, model: cfg.model };
+}
 
-  const userText = hint
-    ? `请按 ${mode} 模式识别这张图片。补充提示：${hint}`
-    : `请按 ${mode} 模式识别这张图片。`;
-  const resp = await fetch(baseUrl + '/chat/completions', {
+// 口述录药：把老人随口说的一段话整理成与药单识别相同的 items 结构
+const SPEECH_PROMPT =
+  '你是用药录入助手。用户会口述（或打字）自己在吃的药，语句可能口语化、有停顿词。' +
+  '把其中每种药整理成数组 items，仅输出严格 JSON，不要 markdown、不要解释。' +
+  '只提取药名、规格、每次剂量、服药时段、餐食关系和必要备注；没说到的字段留空，不要编造。' +
+  '口语对应关系：早上/早饭=morning，中午/午饭=noon，晚上/晚饭=evening，睡前=bedtime；' +
+  '"早晚各一片"表示 morning 和 evening 各 1片；"饭前/随餐/饭后"对应 before/with/after。' +
+  'JSON 形如：{"items":[{"name":"药名","dosageText":"规格","amountPerDose":"每次用量","slots":["morning","noon","evening","bedtime"],"mealRels":["before","with","after"],"mealRelsBySlot":{"morning":["before"]},"notes":"备注","confidence":0-1}],"confidence":0-1}。';
+
+/** 把口述/手打的用药描述解析成批量建档草稿；复用药单识别的数据结构 */
+export async function parseMedicationSpeech(
+  text: string,
+  options: IdentifyRequestOptions = {},
+): Promise<PrescriptionSheetResult> {
+  throwIfAborted(options.signal);
+  const session = options.session ?? await createIdentifySession('prescription_sheet', 'prescription');
+  const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: 'Bearer ' + cfg.apiKey,
+      authorization: 'Bearer ' + session.apiKey,
     },
     body: JSON.stringify({
-      model: cfg.model,
+      model: session.model,
+      messages: [
+        { role: 'system', content: SPEECH_PROMPT },
+        { role: 'user', content: `请整理这段用药描述：${text}` },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+    }),
+  }, options.signal);
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
+    const msg = typeof data.error === 'string'
+      ? data.error
+      : data.error?.message || `AI 服务出错（${resp.status}）`;
+    throw new IdentifyError(msg);
+  }
+  const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+  const raw = payload.choices?.[0]?.message?.content ?? '';
+  const parsed = tryParseJson(raw);
+  if (!parsed) throw new IdentifyError('AI 返回无法解析');
+  return normalizePrescriptionSheet(parsed);
+}
+
+async function requestIdentify<T>(blob: Blob, mode: IdentifyMode, hint?: string, options: IdentifyRequestOptions = {}): Promise<T> {
+  throwIfAborted(options.signal);
+  // 压到 1280 长边，质量 0.8，尽量小但保留药盒细节
+  const shrunk = await downscaleToJpeg(blob, 1280, 0.8);
+  throwIfAborted(options.signal);
+  const base64 = await blobToBase64(shrunk);
+  return requestLocalLlm<T>(base64, mode, hint, options.session ?? await createIdentifySession(mode), options.signal);
+}
+
+async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint: string | undefined, session: IdentifySession, signal?: AbortSignal): Promise<T> {
+  const userText = hint
+    ? `请按 ${mode} 模式识别这张图片。补充提示：${hint}`
+    : `请按 ${mode} 模式识别这张图片。`;
+  const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + session.apiKey,
+    },
+    body: JSON.stringify({
+      model: session.model,
       messages: [
         { role: 'system', content: PROMPTS[mode] },
         {
@@ -137,8 +216,7 @@ async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint?: str
       response_format: { type: 'json_object' },
       temperature: 0.1,
     }),
-    signal: AbortSignal.timeout(45_000),
-  });
+  }, signal);
   if (!resp.ok) {
     const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
     const msg = typeof data.error === 'string'
@@ -154,7 +232,7 @@ async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint?: str
 }
 
 function normalizeResult(raw: Record<string, unknown>, mode: IdentifyMode): IdentifyResult | PrescriptionSheetResult | InventoryIdentifyResult {
-  if (mode === 'prescription_sheet') return normalizePrescriptionSheet(raw);
+  if (mode === 'prescription_sheet' || mode === 'medication_batch') return normalizePrescriptionSheet(raw);
   if (mode === 'inventory') return normalizeInventory(raw);
   return normalizeMedicineBox(raw);
 }
@@ -197,7 +275,7 @@ function normalizePrescriptionSheet(raw: Record<string, unknown>): PrescriptionS
       slots,
       mealRels: mealRelsFromBySlot(bySlot),
       mealRelsBySlot: bySlot,
-      notes: str(obj.notes),
+      notes: str(obj.notes, 1000),
       confidence: conf(obj.confidence, 0.6),
     });
   }
@@ -266,13 +344,13 @@ function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {};
 }
 
-function str(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
+function str(value: unknown, maxLength = 160): string {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
 }
 
-function strArr(value: unknown): string[] {
+function strArr(value: unknown, maxItems = 16, maxLength = 160): string[] {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim())
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).slice(0, maxItems).map((item) => item.trim().slice(0, maxLength))
     : [];
 }
 
@@ -295,6 +373,23 @@ async function blobToBase64(blob: Blob): Promise<string> {
     r.onerror = () => reject(r.error);
     r.readAsDataURL(blob);
   });
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, externalSignal?: AbortSignal): Promise<Response> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  externalSignal?.addEventListener('abort', abort, { once: true });
+  const timeout = window.setTimeout(abort, 45_000);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', abort);
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException('识别已取消', 'AbortError');
 }
 
 /** 按比例缩到 maxSide 长边，输出 JPEG。失败回退原图 */

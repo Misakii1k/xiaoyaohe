@@ -16,8 +16,9 @@ import {
 } from '../domain/medicationSchedule';
 import type { ScheduledReminderNotification } from './reminderTransport';
 
-const DEFAULT_HORIZON_DAYS = 14;
-const MAX_REPEATS_PER_OCCURRENCE = 12;
+// 真机 Android 闹钟上限约 500；预排窗口与重复次数必须压在安全范围内
+const DEFAULT_HORIZON_DAYS = 7;
+const MAX_REPEATS_PER_OCCURRENCE = 3;
 
 export interface MedicationReminderPlanInput {
   meds: readonly Medication[];
