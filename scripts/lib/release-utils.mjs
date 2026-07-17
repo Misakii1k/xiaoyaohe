@@ -24,6 +24,7 @@ export const VERSION_CODE_BY_VERSION = Object.freeze({
   '0.7.4': 11,
   '0.7.5': 12,
   '0.7.6': 13,
+  '0.7.7': 14,
 });
 
 const ZIP_LOCAL_FILE_HEADER = 0x04034b50;
@@ -409,20 +410,15 @@ export function publishReleaseArtifacts({ root, releaseConfig, variant, apkFile 
   const verification = verifyApkWebAssets(distDirectory, apkFile);
   const releaseDirectory = join(root, 'release');
   const base = `${releaseConfig.name}-${releaseConfig.version}`;
-  const webArchive = join(releaseDirectory, `${base}-web.zip`);
+  const obsoleteWebArchive = join(releaseDirectory, `${base}-web.zip`);
   const androidArtifact = join(releaseDirectory, `${base}-android-${variant}.apk`);
   const checksumFile = join(releaseDirectory, `${base}-SHA256SUMS.txt`);
 
-  const archive = createZipBuffer(collectDirectoryEntries(distDirectory));
-  atomicWrite(webArchive, archive);
+  rmSync(obsoleteWebArchive, { force: true });
   atomicCopy(apkFile, androidArtifact);
 
-  const artifacts = [webArchive, androidArtifact];
-  const checksums = artifacts
-    .map((file) => `${sha256(readFileSync(file))}  ${basename(file)}`)
-    .sort((left, right) => left.localeCompare(right, 'en'))
-    .join('\n');
-  atomicWrite(checksumFile, Buffer.from(`${checksums}\n`, 'utf8'));
+  const checksum = `${sha256(readFileSync(androidArtifact))}  ${basename(androidArtifact)}`;
+  atomicWrite(checksumFile, Buffer.from(`${checksum}\n`, 'utf8'));
 
-  return { webArchive, androidArtifact, checksumFile, verification };
+  return { androidArtifact, checksumFile, verification };
 }

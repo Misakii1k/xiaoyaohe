@@ -29,7 +29,7 @@ export async function seedVisualFixtures(page: Page): Promise<void> {
     localStorage.removeItem('medbox.llmHealth.v1');
     sessionStorage.clear();
 
-    const medsDb = await open('medbox', 5, (database) => {
+    const medsDb = await open('medbox', 6, (database) => {
       if (!database.objectStoreNames.contains('meds')) database.createObjectStore('meds', { keyPath: 'id' });
       if (!database.objectStoreNames.contains('rules')) {
         const rules = database.createObjectStore('rules', { keyPath: 'id' });
@@ -44,19 +44,16 @@ export async function seedVisualFixtures(page: Page): Promise<void> {
         const logs = database.createObjectStore('logs', { keyPath: 'id' });
         logs.createIndex('byDue', 'dueAt');
       }
-      if (!database.objectStoreNames.contains('outbox')) database.createObjectStore('outbox', { keyPath: 'id' });
       if (!database.objectStoreNames.contains('photos')) {
         const photos = database.createObjectStore('photos', { keyPath: 'id' });
         photos.createIndex('byMed', 'medId');
       }
       if (!database.objectStoreNames.contains('pushStates')) database.createObjectStore('pushStates', { keyPath: 'id' });
-      if (!database.objectStoreNames.contains('syncV2Metadata')) {
-        const metadata = database.createObjectStore('syncV2Metadata', { keyPath: 'key' });
-        metadata.createIndex('byHousehold', 'householdId');
-        metadata.createIndex('byPendingMutation', 'pendingMutationKey');
+      if (!database.objectStoreNames.contains('syncLanMetadata')) {
+        database.createObjectStore('syncLanMetadata', { keyPath: 'key' });
       }
     });
-    const medStores = ['meds', 'rules', 'scheduleRevisions', 'logs', 'outbox', 'photos', 'pushStates', 'syncV2Metadata'];
+    const medStores = ['meds', 'rules', 'scheduleRevisions', 'logs', 'photos', 'pushStates', 'syncLanMetadata'];
     const medTransaction = medsDb.transaction(medStores, 'readwrite');
     for (const store of medStores) medTransaction.objectStore(store).clear();
 

@@ -425,20 +425,16 @@ private async scheduleInChunksSafe(
   }
 }
 
-export class WebReminderTransport implements ReminderTransport {
+/** Browser builds are development previews only; reminders require the Android app. */
+export class UnsupportedBrowserReminderTransport implements ReminderTransport {
   readonly platform = 'web' as const;
 
   isSupported(): boolean {
-    return (
-      typeof window !== 'undefined' &&
-      'Notification' in window &&
-      typeof navigator !== 'undefined' &&
-      'serviceWorker' in navigator
-    );
+    return false;
   }
 
   getPermission(): NotificationPermission {
-    return this.isSupported() ? Notification.permission : 'denied';
+    return 'denied';
   }
 
   async refreshPermission(): Promise<NotificationPermission> {
@@ -446,8 +442,7 @@ export class WebReminderTransport implements ReminderTransport {
   }
 
   async requestPermission(): Promise<NotificationPermission> {
-    if (!this.isSupported()) return 'denied';
-    return Notification.requestPermission();
+    return 'denied';
   }
 
   getExactAlarmCapability(): ExactAlarmCapability {
@@ -462,30 +457,8 @@ export class WebReminderTransport implements ReminderTransport {
     return 'unavailable';
   }
 
-  async show(notification: ReminderNotification): Promise<boolean> {
-    if (this.getPermission() !== 'granted') return false;
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      const options: NotificationOptions = {
-        body: notification.body,
-        tag: notification.tag,
-        requireInteraction: true,
-        silent: notification.silent ?? false,
-        icon: '/icons/icon-192.png',
-        data: notification.data,
-        ...({
-          vibrate: [400, 200, 400, 200, 400],
-          badge: '/icons/icon-192.png',
-        } as Record<string, unknown>),
-      };
-      await registration.showNotification(notification.title, options);
-      if (!notification.silent && typeof navigator.vibrate === 'function') {
-        navigator.vibrate([400, 200, 400, 200, 400]);
-      }
-      return true;
-    } catch {
-      return false;
-    }
+  async show(): Promise<boolean> {
+    return false;
   }
 
   async reconcile(): Promise<ReminderReconcileResult> {
@@ -498,19 +471,12 @@ export class WebReminderTransport implements ReminderTransport {
     };
   }
 
-  async cancelByTag(tag: string): Promise<void> {
-    if (!this.isSupported()) return;
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      const notifications = await registration.getNotifications({ tag });
-      for (const notification of notifications) notification.close();
-    } catch {
-      // Ignore a disappearing service worker during navigation/update.
-    }
+  async cancelByTag(): Promise<void> {
+    // No-op: browser previews do not own notification state.
   }
 
   async addActionListener(): Promise<() => void> {
-    // Generated PWA service workers cannot guarantee click routing once closed.
+    // No-op: browser previews never receive notification actions.
     return () => undefined;
   }
 }
@@ -520,7 +486,7 @@ let transport: ReminderTransport | undefined;
 export function getReminderTransport(): ReminderTransport {
   transport ??= isAndroidNative()
     ? new AndroidReminderTransport()
-    : new WebReminderTransport();
+    : new UnsupportedBrowserReminderTransport();
   return transport;
 }
 

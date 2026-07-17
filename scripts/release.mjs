@@ -57,12 +57,10 @@ export function createReleaseCommands({ skipInstall, variant }) {
   commands.push(
     { label: 'Audit all dependencies', command: npm, args: ['audit', '--audit-level=low'] },
     { label: 'Type-check frontend', command: npm, args: ['run', 'typecheck'] },
-    { label: 'Type-check Worker', command: npm, args: ['run', 'typecheck:worker'] },
     { label: 'Run Vitest suite', command: npm, args: ['test'] },
     { label: 'Install Playwright Chromium', command: npx, args: ['playwright', 'install', 'chromium'] },
     { label: 'Run Playwright visual matrix', command: npx, args: ['playwright', 'test'] },
-    { label: 'Build web application', command: npm, args: ['run', 'build:web'] },
-    { label: 'Validate Worker deployment bundle', command: npx, args: ['wrangler', 'deploy', '--dry-run'] },
+    { label: 'Build Android WebView assets', command: npm, args: ['run', 'build:web'] },
     { label: 'Sync Capacitor Android project', command: npx, args: ['cap', 'sync', 'android'] },
     {
       label: 'Run Android unit tests and assemble APK',
@@ -153,7 +151,6 @@ export function runRelease(args = process.argv.slice(2)) {
       `(aggregate ${artifacts.verification.aggregateHash}).`,
   );
   console.log('Release artifacts:');
-  console.log(`- ${artifacts.webArchive}`);
   console.log(`- ${artifacts.androidArtifact}`);
   console.log(`- ${artifacts.checksumFile}`);
 }

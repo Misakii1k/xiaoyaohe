@@ -1,9 +1,8 @@
-// 设置页（M1：本地数据概览 + 导出/导入；M2 云同步绑定；M3 系统通知 + 调度）
-// 重构：三大配置卡（同步 / 通知 / AI）改成 iOS 折叠面板（默认收起，标题行带状态徽章 + 箭头）
+// Android 设置页：系统提醒、AI、局域网家庭同步、本地备份和应用信息。
+// 主要配置使用折叠面板，默认收起并在标题行显示当前状态。
 import { listLogs, listMeds, listRules } from '../db/local';
 import { listWorkEntries, listWorkProfiles, listWorkSettlements } from '../db/work';
-import { Capacitor } from '@capacitor/core';
-import { closeDialog, confirmDialog, el, renderPage, toast, icon, openDialog, type IconName } from '../ui/components';
+import { confirmDialog, el, renderPage, toast, icon, type IconName } from '../ui/components';
 import {
   backupProviders,
   buildBackup,
@@ -11,20 +10,6 @@ import {
   type BackupPreviewResult,
   type BackupProvider,
 } from '../tools/registry';
-import {
-  SyncV2Api,
-  LegacyV1MigrationHelper,
-  clearSyncV2PublicConfig,
-  createLocalSyncV2Client,
-  createPlatformSyncV2CredentialStore,
-  getSyncV2PublicConfig,
-  parsePairingCode,
-  setSyncV2PublicConfig,
-  type LocalSyncV2ClientBinding,
-  type SyncDeviceSummary,
-  type SyncV2PublicConfig,
-  type SyncV2Role,
-} from '../sync/v2';
 import {
   notificationsSupported,
   getPermission,
@@ -48,12 +33,11 @@ import {
   normalizeAndValidateBaseUrl,
   type LlmHealth,
 } from '../ai/llmConfig';
-import { isNativeSecretStore } from '../ai/secretStore';
 import { getAsrConfig, setAsrConfig, resetAsrConfig } from '../ai/asr';
 import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
+import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
 
-const SYNC_V2_UI_ENABLED = import.meta.env.VITE_SYNC_V2_ENABLED === 'true';
 const settingsPageCleanupByRoot = new WeakMap<HTMLElement, () => void>();
 
 interface SettingsRenderPart {
@@ -81,7 +65,8 @@ export async function renderSettingsPage(
   const llmPanel = renderLlmPanel();
   content.append(llmPanel.element);
   content.append(renderAiConsentPanel());
-  if (SYNC_V2_UI_ENABLED) content.append(renderSyncPanel(signal));
+  const lanSyncPanel = renderLanSyncSettingsPanel(signal);
+  content.append(lanSyncPanel.element);
 
   const backupCard = renderBackupCard(root, signal, {
     meds: meds.length,
@@ -105,6 +90,7 @@ export async function renderSettingsPage(
     if (cleaned) return;
     cleaned = true;
     llmPanel.cleanup();
+    lanSyncPanel.cleanup();
     backupCard.cleanup();
     signal?.removeEventListener('abort', cleanup);
     if (settingsPageCleanupByRoot.get(root) === cleanup) {
@@ -324,524 +310,6 @@ function setChip(panelEl: HTMLElement, chip: PanelChip): void {
   c.textContent = chip.text;
 }
 
-/** ---------------- 端到端加密家庭同步 v2 ---------------- */
-function renderSyncPanel(signal?: AbortSignal): HTMLElement {
-  const configured = getSyncV2PublicConfig() !== null;
-  let p!: HTMLElement;
-  p = panel({
-    title: '加密家庭同步',
-    iconName: 'cloud-check',
-    chip: configured ? { text: '已配置', tone: 'ok' } : { text: '未配对', tone: 'muted' },
-    renderBody: (body) => {
-      queueMicrotask(() => void renderSyncV2Body(body, p, signal));
-    },
-  });
-  return p;
-}
-
-async function renderSyncV2Body(body: HTMLElement, panelElement: HTMLElement, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) return;
-  body.replaceChildren(el('div', { class: 'banner info', html: '正在读取本机同步状态…' }));
-  const config = getSyncV2PublicConfig();
-  if (signal?.aborted) return;
-
-  const rerender = (): void => {
-    if (signal?.aborted) return;
-    void renderSyncV2Body(body, panelElement, signal);
-  };
-  body.replaceChildren();
-  if (!config) {
-    setChip(panelElement, { text: '未配对', tone: 'muted' });
-    renderSyncV2Setup(body, rerender, signal);
-    return;
-  }
-  setChip(panelElement, { text: '已配置', tone: 'ok' });
-  await renderSyncV2Configured(body, config, rerender, signal);
-}
-
-function renderSyncV2Setup(body: HTMLElement, rerender: () => void, signal?: AbortSignal): void {
-  body.append(
-    el('div', { class: 'banner info' } as any, [
-      el('span', { html: '同步内容在本机加密后上传，服务端只能看到密文和修订元数据。工时与收入不会进入同步载荷。' }),
-    ]),
-  );
-
-  const endpoint = el('input', {
-    type: 'url',
-    inputMode: 'url',
-    required: true,
-    autocomplete: 'url',
-    placeholder: 'https://sync.example.com',
-    value: import.meta.env.VITE_SYNC_V2_ENDPOINT ?? '',
-  } as any) as HTMLInputElement;
-  const deviceName = el('input', {
-    type: 'text',
-    required: true,
-    maxlength: 80,
-    autocomplete: 'off',
-    placeholder: '例如：妈妈的手机',
-    value: '我的手机',
-  } as any) as HTMLInputElement;
-  body.append(field('同步服务 HTTPS 地址', endpoint), field('本设备名称', deviceName));
-  body.append(el('div', {
-    class: 'muted sync-v2-origin-note',
-    html: '如果提示 Origin 不允许，请把本应用的完整 Origin 加入 Worker 的 SYNC_V2_ALLOWED_ORIGINS；协议、域名和端口必须完全一致。Android App 通常是 https://localhost，PWA 使用当前网页的 Origin。',
-  }));
-
-  let role: SyncV2Role = 'caregiver';
-  const roleControl = createRoleControl(role, (next) => { role = next; });
-  body.append(field('家庭角色', roleControl));
-
-  const createButton = el('button', { class: 'btn', type: 'button', html: '创建加密家庭' } as any);
-  createButton.onclick = () => void runButtonAction(createButton, async () => {
-    const api = new SyncV2Api(endpoint.value.trim());
-    const binding = createLocalSyncV2Client({ api });
-    const created = await binding.createHousehold(deviceName.value.trim(), { signal });
-    setSyncV2PublicConfig({
-      endpoint: created.endpoint,
-      householdId: created.householdId,
-      deviceName: deviceName.value.trim(),
-      role,
-    });
-    await showProtectedValueDialog(
-      '保存家庭恢复码',
-      '恢复码可解密家庭健康数据，服务端无法找回。请离线保存，不要发给无关人员。',
-      created.recoveryCode,
-      '恢复码',
-    );
-    rerender();
-  });
-  body.append(el('div', { class: 'btn-row sync-v2-actions' }, [createButton]));
-
-  const divider = el('div', { class: 'settings-divider', html: '或使用另一台设备生成的一次性邀请' });
-  const invitation = el('textarea', {
-    rows: 4,
-    maxlength: 4096,
-    autocomplete: 'off',
-    spellcheck: false,
-    placeholder: 'medbox-sync-v2://pair?...',
-  } as any) as HTMLTextAreaElement;
-  body.append(divider, field('一次性配对邀请', invitation));
-  const pairButton = el('button', { class: 'btn tonal', type: 'button', html: '配对本设备' } as any);
-  pairButton.onclick = () => void runButtonAction(pairButton, async () => {
-    const parsed = await parsePairingCode(invitation.value);
-    const binding = createLocalSyncV2Client({ api: new SyncV2Api(parsed.endpoint) });
-    const paired = await binding.pairDevice(invitation.value, deviceName.value.trim(), { signal });
-    setSyncV2PublicConfig({
-      endpoint: paired.endpoint,
-      householdId: paired.householdId,
-      deviceName: deviceName.value.trim(),
-      role,
-    });
-    toast('配对成功，正在准备首次同步');
-    rerender();
-  });
-  body.append(el('div', { class: 'btn-row sync-v2-actions' }, [pairButton]));
-
-  if (!Capacitor.isNativePlatform()) {
-    body.append(el('div', {
-      class: 'muted sync-v2-session-note',
-      html: 'PWA 不持久化设备令牌或数据密钥。刷新或关闭页面后，需要由仍在线的家庭设备重新生成一次性邀请。',
-    }));
-  }
-}
-
-async function renderSyncV2Configured(
-  body: HTMLElement,
-  config: SyncV2PublicConfig,
-  rerender: () => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const credentialStore = createPlatformSyncV2CredentialStore();
-  const binding = createLocalSyncV2Client({
-    api: new SyncV2Api(config.endpoint),
-    credentialStore,
-    householdId: config.householdId,
-  });
-  try {
-    await binding.useHousehold(config.householdId);
-  } catch (error) {
-    body.append(el('div', { class: 'banner warn', html: '本机同步状态不完整：' + errorMessage(error) }));
-    body.append(forgetSyncV2Button(binding, rerender));
-    return;
-  }
-
-  const credentials = await credentialStore.load(config.householdId);
-  const queued = await binding.client.listQueuedMutations();
-  const conflicts = queued.filter((item) => item.status === 'conflict').length;
-  const rejected = queued.filter((item) => item.status === 'rejected').length;
-  let stagedCount = 0;
-  if (credentials) stagedCount = (await binding.client.listStagedChanges()).length;
-
-  const summary = el('div', { class: 'list-item sync-v2-summary' }, [
-    el('div', { class: 'grow' }, [
-      el('div', { class: 'name', html: config.deviceName }),
-      el('div', { class: 'muted sync-v2-id', html: config.householdId }),
-    ]),
-    el('span', { class: 'slot-tag', html: config.role === 'caregiver' ? '照护者' : '患者' }),
-  ]);
-  body.append(summary);
-
-  const status = el('div', {
-    class: credentials ? (conflicts || rejected ? 'banner warn' : 'banner ok') : 'banner warn',
-    html: credentials
-      ? `待发送 ${queued.filter((item) => item.status === 'pending').length}，冲突 ${conflicts}，拒绝 ${rejected}，暂存 ${stagedCount}`
-      : '当前浏览器会话已失去加密凭证，不能同步。请使用另一台已配对设备生成新邀请。',
-  });
-  body.append(status);
-
-  if (!Capacitor.isNativePlatform()) {
-    body.append(el('div', {
-      class: 'muted sync-v2-session-note',
-      html: 'PWA 的设备令牌和数据密钥仅保留在当前会话；刷新或关闭页面后需要重新配对。公开的服务地址、家庭编号和设备名称会保留。',
-    }));
-  }
-
-  if (!credentials) {
-    renderSyncV2Repair(body, config, rerender, signal);
-    body.append(forgetSyncV2Button(binding, rerender));
-    return;
-  }
-
-  const actions = el('div', { class: 'btn-row sync-v2-actions' });
-  const syncButton = el('button', { class: 'btn', type: 'button', html: '立即同步' } as any);
-  syncButton.onclick = () => void runButtonAction(syncButton, async () => {
-    const result = await binding.sync({ signal });
-    if (result.status === 'offline') {
-      toast(`当前离线，${result.pendingCount} 项变更留待重试`);
-    } else if (result.conflicts.length || result.rejected.length) {
-      toast(`同步完成，但有 ${result.conflicts.length} 个冲突、${result.rejected.length} 个拒绝项`, 4200);
-    } else {
-      toast(`同步完成，云端修订 ${result.householdRevision}`);
-    }
-    rerender();
-  });
-  const inviteButton = el('button', { class: 'btn tonal', type: 'button', html: '生成一次性邀请' } as any);
-  inviteButton.onclick = () => void runButtonAction(inviteButton, async () => {
-    const invitation = await binding.createPairingInvitation({ signal });
-    const expiry = new Date(invitation.expiresAt).toLocaleString('zh-CN');
-    await showProtectedValueDialog(
-      '一次性配对邀请',
-      `邀请将在 ${expiry} 失效，使用一次后立即作废。链接片段内含解密材料，请只发给家庭成员。`,
-      invitation.pairingUri,
-      '配对邀请',
-    );
-  });
-  actions.append(syncButton, inviteButton);
-  body.append(actions);
-
-  const deviceArea = el('div', { class: 'sync-v2-devices' });
-  const devicesButton = el('button', { class: 'btn tonal', type: 'button', html: '管理家庭设备' } as any);
-  devicesButton.onclick = () => void runButtonAction(devicesButton, async () => {
-    await renderSyncV2Devices(deviceArea, binding, signal);
-  });
-  const rotateButton = el('button', { class: 'btn tonal', type: 'button', html: '轮换本机令牌' } as any);
-  rotateButton.onclick = () => void runButtonAction(rotateButton, async () => {
-    await binding.client.rotateCurrentDeviceToken({ signal });
-    toast('本机设备令牌已轮换，旧令牌立即失效');
-  });
-  body.append(el('div', { class: 'btn-row sync-v2-actions' }, [devicesButton, rotateButton]), deviceArea);
-  const migrateButton = el('button', {
-    class: 'btn text',
-    type: 'button',
-    html: '从旧版只读同步迁移',
-  } as any);
-  migrateButton.onclick = () => openLegacyMigrationDialog(binding, rerender, signal);
-  body.append(migrateButton);
-  body.append(forgetSyncV2Button(binding, rerender));
-}
-
-function openLegacyMigrationDialog(
-  binding: LocalSyncV2ClientBinding,
-  rerender: () => void,
-  routeSignal?: AbortSignal,
-): void {
-  const title = el('h3', { html: '迁移旧版云端数据' });
-  const note = el('div', {
-    class: 'banner warn',
-    html: '只是把旧版云端存的药品资料搬过来，核对没问题才写入现在的家庭空间。上班和收入的记录不会搬，旧数据也不会被删。',
-  });
-  const endpoint = el('input', {
-    type: 'url',
-    inputMode: 'url',
-    required: true,
-    autocomplete: 'url',
-    placeholder: '旧 Worker 的 HTTPS 地址',
-  } as any) as HTMLInputElement;
-  const household = el('input', {
-    type: 'text',
-    required: true,
-    maxlength: 64,
-    autocomplete: 'off',
-    placeholder: '旧版共享空间编号',
-  } as any) as HTMLInputElement;
-  const secret = el('input', {
-    type: 'password',
-    required: true,
-    maxlength: 512,
-    autocomplete: 'off',
-    placeholder: '仅本次迁移使用',
-  } as any) as HTMLInputElement;
-  const acknowledgement = el('input', { type: 'checkbox' } as any) as HTMLInputElement;
-  acknowledgement.id = `legacy-migration-confirm-${++settingsFieldSeq}`;
-  acknowledgement.name = acknowledgement.id;
-  const acknowledgementRow = el('label', { class: 'sync-v2-migration-confirm', htmlFor: acknowledgement.id } as any);
-  acknowledgementRow.append(
-    acknowledgement,
-    el('span', { html: '我已确认旧 Worker 仅临时开启只读迁移，并会在数量和摘要核对成功后关闭 v1。' }),
-  );
-  const report = el('div', { class: 'sync-v2-migration-report', role: 'status', 'aria-live': 'polite' } as any);
-  const migrate = el('button', { class: 'btn', type: 'button', html: '读取、加密并核对' } as any);
-  const close = el('button', { class: 'btn text', type: 'button', html: '关闭' } as any);
-  const card = el('div', { class: 'card sync-v2-migration-dialog' }, [
-    title,
-    note,
-    field('旧 Worker 地址', endpoint),
-    field('旧版共享空间', household),
-    field('旧版迁移密钥', secret),
-    acknowledgementRow,
-    report,
-    el('div', { class: 'btn-row' }, [close, migrate]),
-  ]);
-  const controller = new AbortController();
-  const abortFromRoute = (): void => controller.abort(routeSignal?.reason);
-  if (routeSignal?.aborted) abortFromRoute();
-  else routeSignal?.addEventListener('abort', abortFromRoute, { once: true });
-  let overlay: HTMLElement;
-  const cleanup = (): void => {
-    controller.abort();
-    routeSignal?.removeEventListener('abort', abortFromRoute);
-    secret.value = '';
-  };
-  overlay = openDialog(card, { initialFocus: endpoint, onClose: cleanup });
-  close.onclick = () => closeDialog(overlay);
-  migrate.onclick = () => void runButtonAction(migrate, async () => {
-    if (!acknowledgement.checked) throw new Error('请先确认只读迁移和核对要求。');
-    report.className = 'sync-v2-migration-report banner info';
-    report.textContent = '正在读取旧快照并写入加密家庭…';
-    const helper = new LegacyV1MigrationHelper(
-      binding.client,
-      undefined,
-      async (run) => {
-        for (const change of run.confirmedChanges) await binding.adapter.applyRemoteChange(change);
-        await binding.adapter.consumeRunResult(run);
-      },
-    );
-    const result = await helper.migrate({
-      endpoint: endpoint.value.trim(),
-      household: household.value.trim(),
-      secret: secret.value,
-      signal: controller.signal,
-    });
-    secret.value = '';
-    report.className = `sync-v2-migration-report banner ${result.canDisableV1 ? 'ok' : 'warn'}`;
-    report.textContent = [
-      `药品 ${result.sourceCounts.medications}，计划 ${result.sourceCounts.schedules}，服药记录 ${result.sourceCounts.intakes}`,
-      `忽略 pending 记录 ${result.sourceCounts.omittedPendingIntakes}`,
-      `实体核对 ${result.verifiedEntityCount}/${result.expectedEntityCount}`,
-      `期望摘要 ${result.expectedDigest}`,
-      `实测摘要 ${result.verifiedDigest}`,
-      result.canDisableV1
-        ? '数量与摘要一致。现在可以在 Worker 中关闭 v1 只读开关。旧数据未被删除。'
-        : `尚不可关闭 v1：待处理 ${result.pendingMutationIds.length}，冲突 ${result.conflictMutationIds.length}，拒绝 ${result.rejectedMutationIds.length}。`,
-    ].join('\n');
-    report.style.whiteSpace = 'pre-wrap';
-    rerender();
-  });
-}
-
-function renderSyncV2Repair(
-  body: HTMLElement,
-  config: SyncV2PublicConfig,
-  rerender: () => void,
-  signal?: AbortSignal,
-): void {
-  const invitation = el('textarea', {
-    rows: 4,
-    maxlength: 4096,
-    autocomplete: 'off',
-    spellcheck: false,
-    placeholder: '粘贴新的一次性配对邀请',
-  } as any) as HTMLTextAreaElement;
-  body.append(field('重新配对邀请', invitation));
-  const pairButton = el('button', { class: 'btn', type: 'button', html: '重新配对当前浏览器' } as any);
-  pairButton.onclick = () => void runButtonAction(pairButton, async () => {
-    const parsed = await parsePairingCode(invitation.value);
-    if (parsed.householdId !== config.householdId) throw new Error('邀请属于另一个家庭空间。');
-    const binding = createLocalSyncV2Client({ api: new SyncV2Api(parsed.endpoint) });
-    const paired = await binding.pairDevice(invitation.value, config.deviceName, { signal });
-    setSyncV2PublicConfig({ ...config, endpoint: paired.endpoint });
-    toast('本次浏览器会话已重新配对');
-    rerender();
-  });
-  body.append(el('div', { class: 'btn-row sync-v2-actions' }, [pairButton]));
-}
-
-async function renderSyncV2Devices(
-  container: HTMLElement,
-  binding: LocalSyncV2ClientBinding,
-  signal?: AbortSignal,
-): Promise<void> {
-  const result = await binding.client.listDevices({ signal });
-  container.replaceChildren(el('h4', { html: '家庭设备' }));
-  for (const device of result.devices) {
-    const isCurrent = device.id === result.authenticatedDeviceId;
-    const row = el('div', { class: 'list-item sync-v2-device' }, [
-      el('div', { class: 'grow' }, [
-        el('div', { class: 'name', html: device.name }),
-        el('div', {
-          class: 'muted',
-          html: device.revokedAt ? '已撤销' : `加入于 ${formatTimestamp(device.createdAt)}`,
-        }),
-      ]),
-    ]);
-    if (isCurrent) {
-      row.append(el('span', { class: 'slot-tag', html: '本机' }));
-    } else if (!device.revokedAt) {
-      row.append(revokeDeviceButton(device, binding, container, signal));
-    }
-    container.append(row);
-  }
-}
-
-function revokeDeviceButton(
-  device: SyncDeviceSummary,
-  binding: LocalSyncV2ClientBinding,
-  container: HTMLElement,
-  signal?: AbortSignal,
-): HTMLButtonElement {
-  const button = el('button', {
-    class: 'btn text small',
-    type: 'button',
-    html: '撤销',
-    'aria-label': `撤销设备 ${device.name}`,
-  } as any);
-  button.onclick = () => void runButtonAction(button, async () => {
-    if (!await confirmDialog(`撤销设备“${device.name}”？该设备的令牌会立即失效。`, '撤销', true)) return;
-    await binding.client.revokeDevice(device.id, { signal });
-    toast('设备已撤销');
-    await renderSyncV2Devices(container, binding, signal);
-  });
-  return button;
-}
-
-function forgetSyncV2Button(
-  binding: LocalSyncV2ClientBinding,
-  rerender: () => void,
-): HTMLButtonElement {
-  const button = el('button', {
-    class: 'btn text sync-v2-forget',
-    type: 'button',
-    html: '忘记此家庭',
-  } as any);
-  button.onclick = () => void runButtonAction(button, async () => {
-    const confirmed = await confirmDialog(
-      '忘记此家庭只会移除本设备的连接和密钥，本机药品与服药记录不会删除。',
-      '忘记家庭',
-      true,
-    );
-    if (!confirmed) return;
-    await binding.forgetHousehold();
-    clearSyncV2PublicConfig();
-    toast('已忘记家庭连接，本机业务数据仍保留');
-    rerender();
-  });
-  return button;
-}
-
-function createRoleControl(initial: SyncV2Role, onChange: (role: SyncV2Role) => void): HTMLElement {
-  const control = el('div', { class: 'chips sync-role-control', role: 'group', 'aria-label': '家庭角色' } as any);
-  const caregiver = el('button', { class: 'chip', type: 'button', html: '照护者' } as any);
-  const patient = el('button', { class: 'chip', type: 'button', html: '患者' } as any);
-  const update = (role: SyncV2Role): void => {
-    caregiver.classList.toggle('on', role === 'caregiver');
-    patient.classList.toggle('on', role === 'patient');
-    caregiver.setAttribute('aria-pressed', String(role === 'caregiver'));
-    patient.setAttribute('aria-pressed', String(role === 'patient'));
-    onChange(role);
-  };
-  caregiver.onclick = () => update('caregiver');
-  patient.onclick = () => update('patient');
-  control.append(caregiver, patient);
-  update(initial);
-  return control;
-}
-
-async function runButtonAction(button: HTMLButtonElement, action: () => Promise<void>): Promise<void> {
-  if (button.disabled) return;
-  button.disabled = true;
-  button.setAttribute('aria-busy', 'true');
-  try {
-    await action();
-  } catch (error) {
-    toast(errorMessage(error), 4200);
-  } finally {
-    button.disabled = false;
-    button.removeAttribute('aria-busy');
-  }
-}
-
-async function showProtectedValueDialog(
-  titleText: string,
-  description: string,
-  value: string,
-  valueLabel: string,
-): Promise<void> {
-  const title = el('h3', { html: titleText });
-  const descriptionElement = el('div', { class: 'muted', html: description });
-  const valueArea = el('textarea', {
-    class: 'protected-value',
-    readOnly: true,
-    rows: 5,
-    value,
-    'aria-label': valueLabel,
-  } as any) as HTMLTextAreaElement;
-  const copy = el('button', { class: 'btn tonal', type: 'button', html: '复制' } as any);
-  const done = el('button', { class: 'btn', type: 'button', html: '已保存，关闭' } as any);
-  const card = el('div', { class: 'card protected-value-dialog' }, [
-    title,
-    descriptionElement,
-    valueArea,
-    el('div', { class: 'btn-row' }, [copy, done]),
-  ]);
-  let overlay: HTMLElement | null = null;
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = (closedByDialog = false): void => {
-      if (settled) return;
-      settled = true;
-      if (overlay && !closedByDialog) closeDialog(overlay);
-      resolve();
-    };
-    copy.onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(value);
-        toast('已复制');
-      } catch {
-        valueArea.focus();
-        valueArea.select();
-        toast('无法自动复制，已选中内容');
-      }
-    };
-    done.onclick = () => finish();
-    overlay = openDialog(card, { onClose: () => finish(true), initialFocus: copy });
-  });
-}
-
-function formatTimestamp(value: number): string {
-  return new Date(value).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    if (/credentials are unavailable|browser session ended/i.test(error.message)) {
-      return '浏览器会话凭证已失效，请重新配对。';
-    }
-    return error.message;
-  }
-  return String(error);
-}
-
 /** ---------------- 通知面板 ---------------- */
 function renderReminderPanel(): HTMLElement {
   const perm = notificationsSupported() ? getPermission() : 'denied';
@@ -877,7 +345,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   if (!notificationsSupported()) {
     body.append(
       el('div', { class: 'banner warn' } as any, [
-        el('span', { html: '当前浏览器不支持系统通知。建议在手机 Chrome / Safari 中"添加到主屏"后使用。' }),
+        el('span', { html: '当前手机无法使用系统通知。请更新应用，并在系统设置中允许通知。' }),
       ])
     );
     return;
@@ -886,10 +354,10 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   const perm = getPermission();
   const cls = perm === 'granted' ? 'ok' : perm === 'denied' ? 'warn' : 'info';
   const text = perm === 'granted'
-    ? '已授权。Android 应用使用原生调度；PWA 受浏览器后台限制。'
+    ? '通知已开启，应用会按计划发送提醒。'
     : perm === 'denied'
-      ? '通知被拒绝。请到浏览器/系统设置里手动允许通知。'
-      : '未开启。PWA 通知只能尽力送达，关闭浏览器后无法保证。';
+      ? '通知被拒绝。请到系统设置中允许通知。'
+      : '通知尚未开启，开启后才能按时收到提醒。';
   body.append(
     el('div', { class: 'banner ' + cls } as any, [el('span', { html: text })])
   );
@@ -958,9 +426,9 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       class: 'muted',
       style: 'margin-top:12px;font-size:13px;line-height:1.55',
       html:
-        '提醒能力：\n· Android 安装版使用原生本地通知，需允许通知和精确闹钟。\n' +
-        '· PWA 仅在浏览器允许的前台/后台时尽力提醒，关闭后不保证送达。\n' +
-        '· 回到应用时会立即补算未处理的任务。',
+        '提醒说明：\n· 请允许通知和精确闹钟。\n' +
+        '· 如果系统限制应用在后台运行，提醒可能稍有延迟。\n' +
+        '· 回到应用时会自动检查遗漏的任务。',
     } as any)
   );
 }
@@ -1245,7 +713,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
       html:
         '· 接口需兼容 OpenAI /chat/completions 协议。\n' +
         `· 默认模型 ${DEFAULT_LLM_CONFIG.model}，也可换成其他兼容模型。\n` +
-        `· ${isNativeSecretStore() ? 'Android 密钥保存在系统安全存储中。' : 'PWA 密钥仅保留当前会话，刷新后清除。'}`,
+        '· 密钥保存在这台手机的安全存储中。',
     } as any)
   );
 }

@@ -1446,9 +1446,9 @@ async function openCameraCapture(opts: {
   preview.append(video, frame);
   card.append(preview);
 
-  const capture = iconButton('camera', '拍照', 'btn success camera-shutter');
-  const album = iconButton('list', '相册上传', 'btn tonal');
-  const closeButton = iconButton('undo', '返回', 'btn outlined');
+  const capture = iconButton('camera', '拍照', 'btn camera-shutter');
+  const album = iconButton('image', '相册上传', 'btn tonal');
+  const closeButton = iconButton('arrow-left', '返回', 'btn text');
   const actions = el('div', { class: 'camera-actions' });
   actions.append(capture, album, closeButton);
   card.append(actions);
@@ -1457,12 +1457,17 @@ async function openCameraCapture(opts: {
   const close = (restore: boolean) => {
     if (closed) return;
     closed = true;
+    document.body.classList.remove('camera-capture-active');
     opts.controller.detach(stopWithoutRestore);
     stream?.getTracks().forEach((track) => track.stop());
     video.srcObject = null;
-    if (restore && opts.isActive()) opts.onClose();
+    if (restore && opts.isActive()) {
+      opts.onClose();
+      opts.box.querySelector<HTMLButtonElement>('button')?.focus();
+    }
   };
   if (!opts.controller.attach(sessionId, stopWithoutRestore)) return;
+  document.body.classList.add('camera-capture-active');
 
   closeButton.onclick = () => close(true);
   album.onclick = () => {
@@ -1482,6 +1487,7 @@ async function openCameraCapture(opts: {
   };
 
   opts.box.replaceChildren(card);
+  capture.focus();
   setHint(opts.hint, 'info', '正在打开相机…');
   setResultBusy(opts.box, true);
   try {
@@ -1571,7 +1577,7 @@ function actionCard(
   const actions = el('div', { class: 'btn-row scan-actions' });
   const actionIcon = (text: string): Parameters<typeof icon>[0] =>
     text.includes('相册') ? 'image' : text.includes('重试') ? 'retry' : 'camera';
-  const primary = iconButton(actionIcon(buttonText), buttonText, 'btn success');
+  const primary = iconButton(actionIcon(buttonText), buttonText, 'btn');
   primary.onclick = onClick;
   actions.append(primary);
   if (secondaryText && onSecondary) {

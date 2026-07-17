@@ -2,9 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Medication, ReminderRule } from '../src/db/schema';
 import { defaultEscalate, emptyIdentity } from '../src/db/schema';
 import { createScheduleRevision, toLocalDate } from '../src/domain/medicationSchedule';
+import type { ScheduledReminderNotification } from '../src/features/reminderTransport';
 
 const mocks = vi.hoisted(() => ({
-  reconcile: vi.fn(async () => ({ scheduled: 1, cancelled: 0 })),
+  reconcile: vi.fn(async (_notifications: readonly ScheduledReminderNotification[]) => ({
+    scheduled: 1,
+    cancelled: 0,
+  })),
   show: vi.fn(async () => true),
   getLog: vi.fn(async () => undefined),
 }));
@@ -58,10 +62,6 @@ vi.mock('../src/features/notifier', () => ({
   showNotification: mocks.show,
 }));
 
-vi.mock('../src/sync/config', () => ({
-  getSyncConfig: vi.fn(() => undefined),
-}));
-
 import { runOnce } from '../src/features/reminderScheduler';
 
 describe('native reminder scheduler', () => {
@@ -75,6 +75,9 @@ describe('native reminder scheduler', () => {
     await runOnce();
 
     expect(mocks.reconcile).toHaveBeenCalledOnce();
+    const notifications = mocks.reconcile.mock.calls[0][0];
+    expect(notifications.length).toBeGreaterThan(0);
+    expect(notifications.every(({ tag, data }) => !tag.endsWith('_care') && data?.kind === 'reminder')).toBe(true);
     expect(mocks.getLog).not.toHaveBeenCalled();
     expect(mocks.show).not.toHaveBeenCalled();
   });

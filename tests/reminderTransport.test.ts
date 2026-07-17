@@ -8,6 +8,7 @@ import type {
 } from '@capacitor/local-notifications';
 import {
   AndroidReminderTransport,
+  UnsupportedBrowserReminderTransport,
   notificationIdFor,
   type KeyValueStore,
 } from '../src/features/reminderTransport';
@@ -75,6 +76,45 @@ function fakePlugin(permission: 'granted' | 'denied' = 'granted') {
     },
   };
 }
+
+describe('UnsupportedBrowserReminderTransport', () => {
+  it('reports browser previews as unsupported and keeps every operation inert', async () => {
+    const transport = new UnsupportedBrowserReminderTransport();
+    const listener = vi.fn();
+
+    expect(transport.platform).toBe('web');
+    expect(transport.isSupported()).toBe(false);
+    expect(transport.getPermission()).toBe('denied');
+    await expect(transport.refreshPermission()).resolves.toBe('denied');
+    await expect(transport.requestPermission()).resolves.toBe('denied');
+    expect(transport.getExactAlarmCapability()).toBe('unavailable');
+    await expect(transport.checkExactAlarmCapability()).resolves.toBe('unavailable');
+    await expect(transport.requestExactAlarmCapability()).resolves.toBe('unavailable');
+    await expect(
+      transport.show({ title: 'Dose', body: 'Body', tag: 'occurrence:preview' }),
+    ).resolves.toBe(false);
+    await expect(
+      transport.reconcile([
+        {
+          at: Date.now() + 60_000,
+          title: 'Dose',
+          body: 'Body',
+          tag: 'occurrence:preview',
+        },
+      ]),
+    ).resolves.toEqual({
+      status: 'unsupported',
+      scheduled: 0,
+      cancelled: 0,
+      truncated: 0,
+      exactAlarm: 'unavailable',
+    });
+    await expect(transport.cancelByTag('occurrence:preview')).resolves.toBeUndefined();
+    const cleanup = await transport.addActionListener(listener);
+    cleanup();
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
 
 describe('AndroidReminderTransport', () => {
   const now = new Date(2026, 6, 13, 7, 0, 0).getTime();

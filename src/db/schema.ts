@@ -285,14 +285,6 @@ export interface DataSnapshot {
   updatedAt: number;
 }
 
-/** 待同步变更队列项 */
-export interface OutboxItem {
-  id: string;
-  kind: 'med' | 'rule' | 'log';
-  refId: string;
-  at: number;
-}
-
 /** 本地存储的药盒原图（不上云） */
 export interface PhotoBlob {
   id: string;

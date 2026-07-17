@@ -1,23 +1,18 @@
 {
   "name": "medbox",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "private": true,
   "type": "module",
-  "description": "日常工具箱：吃药提醒 + 工时记录 (PWA)",
+  "description": "日常工具箱：吃药提醒 + 工时记录 Android App",
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "typecheck:worker": "tsc --noEmit -p worker/tsconfig.json",
     "test": "vitest run",
     "test:release": "vitest run tests/release-utils.test.ts",
     "build:web": "vite build",
     "build": "npm run typecheck && npm run build:web",
-    "package": "npm run build && node scripts/package-dist.mjs",
     "release": "node scripts/release.mjs",
     "preview": "vite preview --host",
-    "deploy:pages": "wrangler pages deploy dist --project-name=medbox-pwa --commit-dirty=true",
-    "worker:dev": "wrangler dev",
-    "worker:deploy": "wrangler deploy",
     "cap:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
     "android:debug": "npm run cap:sync && node scripts/android-debug.mjs"
@@ -30,17 +25,16 @@
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.0",
     "lucide": "1.24.0",
+    "qrcode": "^1.5.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.1",
-    "@cloudflare/workers-types": "^5.20260713.1",
     "@playwright/test": "^1.61.1",
+    "@types/qrcode": "^1.5.6",
     "fake-indexeddb": "^6.2.5",
     "typescript": "^5.6.3",
     "vite": "^6.0.7",
-    "vite-plugin-pwa": "^0.21.1",
-    "vitest": "^4.1.0",
-    "wrangler": "^4.110.0"
+    "vitest": "^4.1.0"
   }
 }

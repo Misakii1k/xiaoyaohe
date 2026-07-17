@@ -32,6 +32,32 @@ describe('scanner workbench visual contracts', () => {
     expect(styles).toContain('padding-inline: var(--space-3)');
   });
 
+  it('uses the shared primary, tonal, and text hierarchy for camera actions', () => {
+    const page = readFileSync(join(root, 'src/pages/ScanSort.ts'), 'utf8');
+    const styles = readFileSync(join(root, 'src/ui/styles/pages/scanner.css'), 'utf8');
+    const cameraFlow = page.slice(
+      page.indexOf('async function openCameraCapture'),
+      page.indexOf('function renderCameraUnavailable'),
+    );
+
+    expect(cameraFlow).toContain("'拍照', 'btn camera-shutter'");
+    expect(cameraFlow).toContain("iconButton('image', '相册上传', 'btn tonal')");
+    expect(cameraFlow).toContain("iconButton('arrow-left', '返回', 'btn text')");
+    expect(cameraFlow).not.toContain("'btn success camera-shutter'");
+    expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(styles).toContain('grid-column: 1 / -1');
+    expect(styles).toContain('background: var(--color-primary-pressed)');
+    expect(styles).toContain('color: var(--color-primary-pressed)');
+    expect(styles).toContain('max-inline-size: 620px');
+    expect(styles).toContain('.camera-actions .btn:focus-visible');
+    expect(styles).toContain('outline: 3px solid var(--color-primary-pressed)');
+    expect(cameraFlow).toContain("document.body.classList.add('camera-capture-active')");
+    expect(cameraFlow).toContain("document.body.classList.remove('camera-capture-active')");
+    expect(cameraFlow).toContain('capture.focus()');
+    expect(cameraFlow).toContain("opts.box.querySelector<HTMLButtonElement>('button')?.focus()");
+    expect(styles).toContain('body.camera-capture-active .ai-launcher');
+  });
+
   it('uses one concise recovery path when the camera is unavailable', () => {
     const page = readFileSync(join(root, 'src/pages/ScanSort.ts'), 'utf8');
     const unavailable = page.slice(

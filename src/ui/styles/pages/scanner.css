@@ -123,6 +123,8 @@
 .camera-capture-card {
   display: grid;
   gap: var(--space-3);
+  inline-size: 100%;
+  max-inline-size: 620px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -131,8 +133,14 @@
 }
 
 .camera-preview { border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: none; }
-.camera-actions { gap: var(--space-2); }
+.camera-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
 .camera-actions .btn {
+  inline-size: 100%;
+  min-inline-size: 0;
   min-block-size: var(--tap);
   gap: var(--space-2);
   padding-inline: var(--space-3);
@@ -141,7 +149,30 @@
   box-shadow: none;
 }
 
+.camera-actions .btn:focus-visible {
+  outline: 3px solid var(--color-primary-pressed);
+  outline-offset: 2px;
+}
+
+.camera-actions .camera-shutter {
+  grid-column: 1 / -1;
+  border-color: var(--color-primary-pressed);
+  background: var(--color-primary-pressed);
+  color: #fff;
+}
+
+.camera-actions .btn.tonal,
+.camera-actions .btn.text {
+  inline-size: 100%;
+  color: var(--color-primary-pressed);
+}
+
+body.camera-capture-active .ai-launcher {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 @media (min-width: 768px) {
   .scan-workbench { max-inline-size: 920px; margin-inline: auto; }
-  .camera-preview { max-inline-size: 620px; }
 }

@@ -27,7 +27,6 @@ export interface MedicationReminderPlanInput {
   logs: readonly IntakeLog[];
   now?: number;
   horizonDays?: number;
-  role?: 'patient' | 'caregiver';
 }
 
 /** Build a deterministic OS schedule. No database or plugin calls occur here. */
@@ -38,7 +37,6 @@ export function buildMedicationReminderPlan({
   logs,
   now = Date.now(),
   horizonDays = DEFAULT_HORIZON_DAYS,
-  role,
 }: MedicationReminderPlanInput): ScheduledReminderNotification[] {
   const startDate = toLocalDate(now);
   const days = Math.max(1, Math.min(60, Math.floor(horizonDays)));
@@ -55,25 +53,6 @@ export function buildMedicationReminderPlan({
     if (!med || !rule || !revision || isMedicationExpiredOn(med, occurrence.localDate)) continue;
     const log = findLogForOccurrence(occurrence, logs);
     if (log?.status === 'taken' || log?.status === 'skipped') continue;
-
-    if (role === 'caregiver') {
-      const at = occurrence.dueAt + safeMinutes(rule.escalate.notifyCaregiverAfterMin) * 60_000;
-      if (at <= now) continue;
-      notifications.push({
-        at,
-        title: '⚠️ 患者未确认服药',
-        body: `${med.name}（${SLOT_LABEL[rule.slot]}）已超 ${safeMinutes(rule.escalate.notifyCaregiverAfterMin)} 分钟未确认`,
-        tag: occurrence.id + '_care',
-        key: 'care',
-        data: {
-          kind: 'escalate',
-          logId: occurrence.id,
-          occurrenceId: occurrence.id,
-          medId: med.id,
-        },
-      });
-      continue;
-    }
 
     const repeatEveryMin = Math.max(1, safeMinutes(rule.escalate.repeatEveryMin));
     const repeatCount = Math.min(

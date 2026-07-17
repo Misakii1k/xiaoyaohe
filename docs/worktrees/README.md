@@ -56,7 +56,6 @@ From the integration worktree:
 git status --short --branch
 git merge --no-ff workspace/<tool>
 npm run typecheck
-npm run typecheck:worker
 npm test
 ```
 
@@ -64,10 +63,10 @@ Run broader browser/Android gates when affected. After integration, enter each t
 
 ## Files And Artifacts
 
-- `release/` APK/ZIP/checksum files are local deliverables and ignored unless a release policy explicitly changes.
+- `release/` APK/checksum files are local deliverables and ignored unless a release policy explicitly changes.
 - `design/**/*.png` uses Git LFS so original assets are shared without inflating normal Git objects.
 - `.trae/specs/` is tracked historical context; other `.trae/` local metadata stays ignored.
-- `.env` and tool caches remain local; `.env.example` and `.env.production` are the tracked public configuration templates.
+- `.env` and tool caches remain local and untracked. The App-only build has no tracked environment template.
 - Screenshots and Playwright traces stay under ignored output folders.
 
 ## Version And Packaging Policy

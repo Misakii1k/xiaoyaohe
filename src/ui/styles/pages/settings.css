@@ -110,6 +110,88 @@
 
 .settings-page .banner { box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 
+.lan-sync-note { margin: var(--space-3) 0; }
+
+.lan-sync-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+}
+
+.lan-sync-actions .btn,
+.lan-sync-scan-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.lan-sync-actions .btn svg,
+.lan-sync-scan-actions .btn svg { inline-size: 19px; block-size: 19px; flex: 0 0 auto; }
+
+.lan-sync-actions .btn:disabled {
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.lan-sync-status { margin-block-start: var(--space-3); }
+.lan-sync-status.muted { min-block-size: 24px; }
+
+body.lan-sync-panel-active .ai-launcher {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lan-sync-sheet-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-title3);
+  text-align: center;
+}
+
+.lan-sync-qr {
+  display: block;
+  inline-size: min(320px, 100%);
+  block-size: auto;
+  aspect-ratio: 1;
+  margin-inline: auto;
+  border: 1px solid var(--color-border);
+  background: #fff;
+}
+
+.lan-sync-countdown { min-block-size: 24px; margin-block: var(--space-2) var(--space-3); text-align: center; }
+
+.lan-sync-reader {
+  inline-size: 100%;
+  min-block-size: 260px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: #111;
+}
+
+.lan-sync-reader video { display: block; inline-size: 100%; aspect-ratio: 1; object-fit: cover; }
+.lan-sync-scan-actions { margin-block-start: var(--space-3); }
+
+@media (max-width: 359px) {
+  .lan-sync-actions { grid-template-columns: 1fr; }
+
+  .settings-page .panel-head,
+  .settings-page .panel-lead { gap: var(--space-2); }
+
+  .settings-page .panel-title {
+    overflow: visible;
+    white-space: normal;
+    text-align: start;
+    text-overflow: clip;
+    line-height: 1.2;
+  }
+
+  .settings-page .panel-chip { padding-inline: 6px; }
+}
+
 @media (min-width: 768px) {
   .settings-page { max-inline-size: 920px; margin-inline: auto; }
 }
