@@ -1,0 +1,17 @@
+Clean flat vector illustration, minimal UI onboarding graphic style, like a modern app
+empty-state SVG. Solid single-color background: the whole canvas painted one uniform flat
+magenta #FF00FF with nothing on it — a plain solid color fill only.
+Single centered subject: a smartphone drawn front-facing in soft semi-flat 2D with light
+paper-layer depth. On its screen: a camera viewfinder with four thin dark-blue corner
+brackets, and inside the viewfinder two plain blank rectangular boxes side by side — one
+soft misty blue #9DB8E8 box and one mint green #6CBFA3 box — both fully inside the
+brackets, not cropped, with clear space around them.
+Subject colors only: white, misty blue #9DB8E8, deep blue #3168D5, mint green #6CBFA3,
+one tiny coral #E27A72 dot as the camera lens accent.
+Composition: horizontal 4:3, phone exactly centered, about 20% plain margin around it.
+The illustration is completely self-contained inside the phone silhouette — the magenta
+area stays totally empty and undecorated, like an export with a placeholder background
+color.
+No shadows on the background. No text, no letters, no numbers, no icons scattered
+around, no confetti, no stars, no sparkles, no dots, no symbols in the margin, no brand,
+no watermark, no people, no hands.

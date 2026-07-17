@@ -1,0 +1,19 @@
+Soft paper-craft semi-flat 2D instructional illustration for a medicine-box photo scan
+guide screen. Subjects: one smartphone shown straight-on from the front, its screen
+showing a camera viewfinder with four corner focus brackets, and inside the viewfinder
+two plain unbranded medicine boxes with completely blank surfaces, fully inside the frame
+with clear margin around them, not cropped. Conveys "place the whole medicine box inside
+the frame".
+Style: gentle light paper-craft layers, semi-flat 2D, clear bold outlines, same style
+family as matching empty-state illustrations.
+Color palette strictly: white, soft misty blue #9DB8E8 and #3168D5, mint green #6CBFA3,
+a small touch of coral #E27A72.
+Composition: horizontal 4:3, front view, phone centered, generous 20% safe margin around
+the illustration.
+Shadows: only very short light shadows between paper elements; nothing casts shadow onto
+the background.
+Background: one single completely flat solid magenta #FF00FF filling the entire canvas,
+absolutely uniform, no gradient, no texture, no floor.
+Strictly no readable packaging text, no letters, no numbers, no medicine brand, no logo,
+no human figures, no hands, no medical emblem, no red cross, no watermark, no gradient
+orbs, no bokeh, no complex background scenery.

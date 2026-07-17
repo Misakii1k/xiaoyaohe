@@ -1,0 +1,17 @@
+Soft paper-craft semi-flat 2D illustration for an empty state in a medication management
+app. Subjects, and nothing else: one weekly pill organizer box with EXACTLY SEVEN empty
+compartments arranged in one single horizontal row of 7 equal square cells (a classic
+7-day pill box), one blank calendar page with empty grid cells only, and one small round
+coral check-mark token leaning nearby.
+Style: gentle light paper-craft layers, semi-flat 2D, flat colors with crisp edges, clean
+and friendly, soft rounded shapes.
+Color palette strictly limited to: white, soft misty blue #9DB8E8, deep blue #3168D5,
+mint green #6CBFA3, one small coral #E27A72 accent.
+Composition: horizontal 4:3, subjects grouped in the center, generous 20% empty safe
+margin on all sides, must stay readable when displayed only 240 pixels wide.
+Shadows: only tiny soft shadows between overlapping paper elements; absolutely no shadow
+cast onto the background.
+Background: one single completely flat solid magenta #FF00FF filling the whole canvas,
+perfectly uniform like a chroma-key screen, no gradient, no texture, no vignette.
+Strictly forbidden: any text, letters, numbers, day labels, logo, human figures, medicine
+brand, red cross or plus symbol, watermark, gradient orbs, bokeh, complex background.

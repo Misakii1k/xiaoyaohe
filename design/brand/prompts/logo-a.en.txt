@@ -1,0 +1,14 @@
+Minimalist original logo mark for a daily-life toolbox mobile app. Four rounded-corner
+geometric modules assemble into one compact open toolbox / cube shape; the negative space
+between the modules subtly suggests a checkmark tick. Flat 2D vector style, clean bold
+geometry, modern productivity-tool character, no skeuomorphism, no glass effect.
+Single centered mark, square composition, the mark occupies about 65% of the canvas with
+even margin on all sides, silhouette must stay readable at very small icon size.
+Color palette strictly: deep blue #3168D5 as dominant color, mint green #6CBFA3 as
+secondary, at most one small coral #E27A72 accent shape.
+Background: one single completely flat solid magenta color #FF00FF filling the entire
+canvas edge to edge, absolutely uniform, no gradient, no vignette, no texture, no ground
+plane, no reflection, and the mark casts no shadow onto the background.
+Strictly no text, no letters, no numbers, no typography, no trademark, no red cross, no
+pill as the main subject, no watermark, no thin fragile lines, no intricate detail, no 3D,
+no glow, no bokeh.

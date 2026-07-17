@@ -1,0 +1,13 @@
+Abstract daily-schedule tool logo mark built from exactly three rounded-corner blocks plus
+one clean checkmark notch cut out of a block; the overall outer silhouette faintly reads
+as a storage box. Expresses planning, recording and completing everyday tasks, not a
+medical-only product. Flat 2D vector style, restrained, trustworthy, full generous
+shapes with bold silhouette.
+Single centered mark, square composition, mark covers about 65% of the canvas, silhouette
+safe for circle and rounded-square cropping, still readable when tiny.
+Color palette strictly: deep blue #3168D5, mint green #6CBFA3 and white only. No purple,
+no dominant gradient.
+Background: one single completely flat solid magenta #FF00FF across the whole canvas,
+perfectly uniform, no gradient, no texture, no shadow cast on it, no ground.
+Strictly no text, no letters, no numbers, no human figures, no medicine branding, no
+watermark, no fine grain texture, no drop shadow, no complex gradient, no 3D, no glow.

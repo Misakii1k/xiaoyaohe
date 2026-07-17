@@ -4,6 +4,9 @@ node_modules/
 # 构建产物
 dist/
 dev-dist/
+release/*.apk
+release/*.zip
+release/*-SHA256SUMS.txt
 
 # Cloudflare / Wrangler 本地状态
 .wrangler/
@@ -20,7 +23,9 @@ preview.log
 Thumbs.db
 .vscode/
 .idea/
-.trae/
+.trae/*
+!.trae/specs/
+!.trae/specs/**
 
 # 环境变量与密钥（绝对不能提交）
 .env
