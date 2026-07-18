@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { findAssistantTool } from '../src/ai/assistantTools';
 
 describe('assistant structured output tools', () => {
+  it('exposes only the bounded Exa web-search capability', () => {
+    const tool = findAssistantTool('web_search_exa');
+    expect(tool).toBeDefined();
+    expect(tool?.parameters).toMatchObject({
+      properties: {
+        query: { maxLength: 500 },
+        numResults: { maximum: 5 },
+      },
+    });
+  });
   it('normalizes model-provided information cards', async () => {
     const tool = findAssistantTool('present_card');
     expect(tool).toBeDefined();

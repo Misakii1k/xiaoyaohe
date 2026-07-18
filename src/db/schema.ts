@@ -139,6 +139,18 @@ export interface MedicationInventory {
   dailyConsumption?: number;
 }
 
+export type MedicationReminderMode = 'strong' | 'fullscreen-short' | 'fullscreen-persistent';
+
+export const MEDICATION_REMINDER_MODE_LABEL: Record<MedicationReminderMode, string> = {
+  strong: '增强通知',
+  'fullscreen-short': '短时全屏',
+  'fullscreen-persistent': '持续全屏',
+};
+
+export function normalizeMedicationReminderMode(value: unknown): MedicationReminderMode {
+  return value === 'fullscreen-short' || value === 'fullscreen-persistent' ? value : 'strong';
+}
+
 /** 药品 */
 export interface Medication {
   id: string;
@@ -163,6 +175,8 @@ export interface Medication {
   mealRelsBySlot: MealRelsBySlot;
   /** 服药星期 [0..6]（0=周日）；空数组 = 每天 */
   daysOfWeek: number[];
+  /** 同一种药的所有提醒时间共用一个提醒强度。 */
+  reminderMode: MedicationReminderMode;
   /** 剩余药量（第一版：按药品总库存） */
   inventory?: MedicationInventory;
   notes?: string;
@@ -377,7 +391,7 @@ export interface WorkAiDraft {
  * 把旧字段 (mealRel 单值, with_meal slot) 升级到新字段 (mealRels[] 多选, 4 时段)。
  * 幂等：已经是新版结构的 Medication 不会被改坏。
  */
-export function inflateMed<T extends Partial<Medication> & { slots?: any; mealRel?: any; mealRels?: any; mealRelsBySlot?: any }>(m: T): T {
+export function inflateMed<T extends Partial<Medication> & { slots?: any; mealRel?: any; mealRels?: any; mealRelsBySlot?: any; reminderMode?: any }>(m: T): T {
   if (!Array.isArray(m.slots)) m.slots = [];
   // mealRels 字段补齐
   if (!Array.isArray(m.mealRels)) {
@@ -400,5 +414,6 @@ export function inflateMed<T extends Partial<Medication> & { slots?: any; mealRe
   m.mealRels = mealRelsFromBySlot(m.mealRelsBySlot as MealRelsBySlot) as any;
   if (!m.identity) m.identity = emptyIdentity() as any;
   if (!Array.isArray(m.daysOfWeek)) m.daysOfWeek = [] as any;
+  m.reminderMode = normalizeMedicationReminderMode(m.reminderMode) as any;
   return m;
 }

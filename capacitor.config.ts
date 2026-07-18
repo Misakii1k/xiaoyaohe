@@ -4,6 +4,7 @@ const config: CapacitorConfig = {
   appId: 'com.medbox.app',
   appName: '日常工具箱',
   webDir: 'dist',
+  loggingBehavior: 'none',
   server: {
     androidScheme: 'https',
   },

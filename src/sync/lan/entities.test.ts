@@ -194,6 +194,7 @@ function medication(id: string, name: string): Medication {
     mealRels: [],
     mealRelsBySlot: {},
     daysOfWeek: [],
+    reminderMode: 'strong',
     identity: {
       ...emptyIdentity(),
       gtins: ['gtin-1'],
@@ -216,6 +217,7 @@ function medicationPayload(id: string, name: string): LanMedicationPayload {
     mealRels: [],
     mealRelsBySlot: {},
     daysOfWeek: [],
+    reminderMode: 'strong',
     identity: { gtins: [], rawCodes: [], ocrNames: [] },
     createdAt: 1,
   };

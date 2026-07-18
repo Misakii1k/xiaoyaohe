@@ -69,6 +69,7 @@
   display: flex;
   flex-direction: column;
   max-block-size: min(76dvh, 640px);
+  overflow: hidden;
   margin-inline: auto;
   max-inline-size: 560px;
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
@@ -478,37 +479,63 @@
   box-shadow: var(--shadow-lg);
 }
 
-/* 按住说话遮罩 */
+/* 面板内的按住说话反馈区 */
 .ai-voice-overlay {
-  position: fixed;
-  z-index: 170;
-  inset: 0;
+  flex: 0 0 auto;
   display: grid;
+  grid-template-columns: auto auto minmax(42px, auto);
+  grid-template-areas:
+    "glyph wave timer"
+    "hint hint hint";
   place-content: center;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
   justify-items: center;
-  background: rgb(28 30 38 / 55%);
+  min-block-size: 150px;
+  padding: var(--space-3);
+  border-block: 1px solid rgb(255 255 255 / 22%);
+  background: var(--color-primary);
   color: #fff;
   pointer-events: none;
 }
 
 .ai-voice-overlay[hidden] { display: none !important; }
 
-.ai-voice-overlay.is-cancel { background: rgb(120 30 36 / 55%); }
+.ai-panel.is-voice-active .ai-chat-log { min-block-size: 72px; }
+.ai-panel.is-voice-active .ai-quick { display: none; }
+
+.ai-voice-overlay.is-cancel { background: var(--color-danger, #ae2f37); }
+
+.ai-voice-glyph {
+  grid-area: glyph;
+  display: grid;
+  place-items: center;
+  inline-size: 48px;
+  block-size: 48px;
+  border: 1px solid rgb(255 255 255 / 42%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 14%);
+}
+
+.ai-voice-glyph svg { inline-size: 26px; block-size: 26px; }
 
 .ai-voice-timer {
-  font-size: var(--fs-title1);
+  grid-area: timer;
+  min-inline-size: 42px;
+  font-size: var(--fs-title2);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
 .ai-voice-hint {
+  grid-area: hint;
   font-size: var(--fs-subheadline);
   font-weight: 600;
   opacity: 0.95;
 }
 
 .ai-voice-wave {
+  grid-area: wave;
   display: inline-flex;
   gap: 5px;
   align-items: end;
@@ -530,6 +557,15 @@
 .ai-voice-wave i:nth-child(5) { block-size: 14px; animation-delay: 0.05s; }
 
 .ai-voice-overlay.is-cancel .ai-voice-wave i { background: #ffb4b8; }
+
+@media (max-width: 359px) {
+  .ai-voice-overlay { min-block-size: 140px; gap: var(--space-2); }
+  .ai-voice-glyph { inline-size: 42px; block-size: 42px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-voice-wave i { animation: none; }
+}
 
 @keyframes ai-voice-bar {
   0%, 100% { transform: scaleY(0.55); opacity: 0.7; }

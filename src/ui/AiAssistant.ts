@@ -152,7 +152,7 @@ export function mountGlobalAssistant(): void {
   attachMenu.setAttribute('role', 'dialog');
   attachMenu.setAttribute('aria-label', '添加附件');
 
-  // 按住说话遮罩
+  // 面板内紧凑录音反馈区，聊天内容保持可见。
   const voiceOverlay = el('div', { class: 'ai-voice-overlay', hidden: true } as any);
   voiceOverlay.setAttribute('aria-live', 'assertive');
   const voiceHint = el('div', { class: 'ai-voice-hint', text: '松开发送，上滑取消' });
@@ -160,13 +160,14 @@ export function mountGlobalAssistant(): void {
   const voiceWave = el('div', { class: 'ai-voice-wave' }, [
     el('i'), el('i'), el('i'), el('i'), el('i'),
   ]);
-  voiceOverlay.append(voiceWave, voiceTimer, voiceHint);
+  const voiceGlyph = el('div', { class: 'ai-voice-glyph', 'aria-hidden': 'true' } as any, [icon('mic')]);
+  voiceOverlay.append(voiceGlyph, voiceWave, voiceTimer, voiceHint);
 
-  const panel = el('section', { class: 'ai-panel' }, [header, log, quick, form]);
+  const panel = el('section', { class: 'ai-panel' }, [header, log, quick, voiceOverlay, form]);
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', '小助手');
 
-  root.append(launcher, backdrop, panel, attachMenu, voiceOverlay);
+  root.append(launcher, backdrop, panel, attachMenu);
   document.body.append(root);
 
   let pendingAttachment: AssistantAttachment | null = null;
@@ -415,6 +416,7 @@ export function mountGlobalAssistant(): void {
 
   function setVoiceOverlay(on: boolean, cancelHint = false): void {
     voiceOverlay.hidden = !on;
+    panel.classList.toggle('is-voice-active', on);
     voiceOverlay.classList.toggle('is-cancel', cancelHint);
     if (!on) {
       voiceTimer.textContent = '0″';
@@ -427,7 +429,7 @@ export function mountGlobalAssistant(): void {
     if (busy || recognizing || holdActive) return;
     if (!isAsrConfigured()) {
       const go = await confirmDialog(
-        '还没配置腾讯云一句话识别。\n\n去「设置 → AI 服务商 → 语音识别」填好 AppId、SecretId、SecretKey（一句话识别，最长 60 秒）。',
+        '语音服务尚未部署到当前版本。可在「设置 → AI 服务商」查看脱敏状态。',
         '去设置',
       );
       if (go) { closePanel(); navigate('/settings'); }
@@ -493,7 +495,7 @@ export function mountGlobalAssistant(): void {
       if (error instanceof AsrSentenceError) {
         if (error.code === 'cancelled') toast('已取消');
         else if (error.code === 'no-speech') toast('没听清，请按住多说一会儿');
-        else if (error.code === 'auth-failed') toast('语音识别鉴权失败，请检查设置里的密钥');
+        else if (error.code === 'auth-failed') toast('语音服务鉴权失败，服务端凭证需要更新');
         else toast(error.message);
       } else {
         toast('识别失败，请改成打字');

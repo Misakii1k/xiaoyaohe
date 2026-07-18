@@ -14,6 +14,7 @@ const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const timeLocal = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 const slot = z.enum(['morning', 'noon', 'evening', 'bedtime']);
 const mealRel = z.enum(['before', 'with', 'after']);
+const reminderMode = z.enum(['strong', 'fullscreen-short', 'fullscreen-persistent']);
 const stringList = z.array(shortText).max(1_000);
 
 const identitySchema = z.object({
@@ -52,6 +53,7 @@ const medicationSchema = z.object({
   mealRels: z.array(mealRel).max(3),
   mealRelsBySlot: z.partialRecord(slot, z.array(mealRel).max(3)),
   daysOfWeek: z.array(z.number().int().min(0).max(6)).max(7),
+  reminderMode: reminderMode.optional().default('strong'),
   inventory: inventorySchema.optional(),
   notes: shortText.optional(),
   expiryDate: nonNegativeNumber.optional(),

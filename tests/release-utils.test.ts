@@ -246,7 +246,7 @@ describe('Android-only distribution contract', () => {
     const main = readFileSync(join(root, 'src', 'main.ts'), 'utf8');
 
     expect(packageJson).toMatchObject({
-      version: '0.7.7',
+      version: '0.7.8',
       description: expect.stringContaining('Android App'),
       dependencies: { qrcode: expect.any(String) },
       devDependencies: { '@types/qrcode': expect.any(String) },

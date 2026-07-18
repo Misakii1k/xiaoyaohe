@@ -1,6 +1,6 @@
 import { confirmDialog } from '../ui/components';
 
-export type AiDataKind = 'medicine-photo' | 'prescription' | 'work-data' | 'assistant-chat' | 'voice-medication';
+export type AiDataKind = 'medicine-photo' | 'prescription' | 'work-data' | 'assistant-chat' | 'voice-medication' | 'web-search';
 export type AiConsentCategory = 'health' | 'work' | 'assistant';
 
 export interface StoredAiConsent {
@@ -20,7 +20,7 @@ const KIND_LABEL: Record<AiConsentCategory, string> = {
 };
 
 export function consentCategoryFor(kind: AiDataKind): AiConsentCategory {
-  if (kind === 'assistant-chat') return 'assistant';
+  if (kind === 'assistant-chat' || kind === 'web-search') return 'assistant';
   return kind === 'work-data' ? 'work' : 'health';
 }
 
