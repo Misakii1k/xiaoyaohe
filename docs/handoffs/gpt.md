@@ -3,8 +3,8 @@
 Tool: GPT/Codex
 Branch: `workspace/gpt`
 Updated: 2026-07-18
-Status: ready-to-merge; external ASR deployment and connected-device acceptance remain
-Latest implementation commit: `38873ef feat: strengthen reminders and assistant services`
+Status: ready-to-merge; external ASR proxy deployment remains
+Latest implementation commit: `11eac9e fix: keep hold-to-talk responsive without asr proxy`
 
 ## Goal
 
@@ -27,13 +27,16 @@ Ship stronger per-medication reminders, move Tencent speech recognition behind a
 - `gradlew testDebugUnitTest assembleDebug`: passed.
 - Exa public MCP integration: initialization, `tools/list`, and a real no-key `web_search_exa` call passed.
 - Playwright with local Chrome at 320x720 and 1280x900: recorder remained inside the panel, did not overlap the composer, had no horizontal overflow, and emitted no console errors.
+- Android 16/API 36 physical device: `0.7.8` installed over `0.7.7` without clearing data; all 13 medications and 19 reminder rules remained.
+- Physical hold-to-talk acceptance: pointer-down displayed the themed compact recorder inside the assistant, `RECORD_AUDIO` was actively running, pointer-up stopped recording, and the unavailable-proxy message appeared without Android's text-selection toolbar.
+- Physical notification acceptance: both high-importance channels used alarm audio and vibration, the test notification exposed Taken/Snooze/Skip actions, and exact reminder alarms were scheduled.
+- Physical Logcat acceptance: no app crash and no `SecretId`, `SecretKey`, `Authorization`, or Base64 audio content was emitted.
 - APK verification: 32 embedded WebView files; artifact `release/medbox-0.7.8-android-debug.apk`.
-- APK SHA-256: `6e1a9152e67a0833f2b6cb14326e89db5d2581a315ab5242af0ecbd5bfc8c3ef`.
+- APK SHA-256: `c4bba6760ed9850f50201be4495bae4bf3894775915f0cebf9869f36e9dc2571`.
 
 ## External Follow-Ups
 
 - Deploy `server/tencent-asr-proxy.mjs` behind HTTPS with a newly created valid Tencent `SecretId`/`SecretKey`, then build with `VITE_ASR_PROXY_URL=https://host/api/speech/tencent`. The supplied credential note did not contain a usable SecretKey and the previously tested SecretId returned `AuthFailure.SecretIdNotFound`.
-- Run installation and lock-screen acceptance on the API 36 phone. `adb devices -l` was empty during final verification, so connected instrumentation and physical reminder/ASR interaction could not run.
 - The Exa public no-key endpoint is best effort and may rate-limit or change policy; the app already reports retryable failures without promising permanent free availability.
 
 ## Notes
