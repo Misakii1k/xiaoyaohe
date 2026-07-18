@@ -4,7 +4,7 @@ Tool: GPT/Codex
 Branch: `workspace/gpt`
 Updated: 2026-07-18
 Status: ready-to-merge; Tencent proxy deployment remains optional when using the device fallback
-Latest implementation commit: `005d5ac feat: make assistant streaming and speech search resilient`
+Latest implementation commit: `4c38500 feat: add structured assistant cards`
 
 ## Goal
 
@@ -21,6 +21,7 @@ Ship stronger per-medication reminders, move Tencent speech recognition behind a
 - Added the official MCP SDK Streamable HTTP client for the public no-key Exa endpoint, bounded `web_search_exa`, per-origin consent, retry/timeout/rate-limit handling, untrusted-content instructions, and Markdown source cards.
 - Added an MCP HTTP JSON-RPC fallback for WebViews that cannot consume the streaming transport, explicit search-command execution when a model omits tool calls, and direct source excerpts in the rendered card.
 - Added OpenAI-compatible SSE streaming for assistant text with non-streaming compatibility fallback and partial-result preservation.
+- Added structured assistant cards for medication plans, adherence/work statistics, notices, and Exa search sources, with semantic icons, status badges, facts, Markdown, and responsive layouts.
 - Bumped the app to `0.7.8` / Android `versionCode 15` and generated the verified debug APK.
 
 ## Verification
@@ -30,13 +31,14 @@ Ship stronger per-medication reminders, move Tencent speech recognition behind a
 - `gradlew testDebugUnitTest assembleDebug`: passed.
 - Exa public MCP integration: initialization, `tools/list`, and a real no-key `web_search_exa` call passed.
 - Playwright with local Chrome at 320x720 and 1280x900: recorder remained inside the panel, did not overlap the composer, had no horizontal overflow, and emitted no console errors.
+- Playwright card regression at phone-390 and desktop viewports: medication, statistics, and search cards rendered with positive dimensions and stayed within the assistant panel without horizontal overflow.
 - Android 16/API 36 physical device: `0.7.8` installed over `0.7.7` without clearing data; all 13 medications and 19 reminder rules remained.
 - Physical hold-to-talk acceptance: pointer-down displayed the themed compact recorder inside the assistant, `RECORD_AUDIO` was actively running, pointer-up stopped recording, and the unavailable-proxy message appeared without Android's text-selection toolbar.
 - Native speech fallback acceptance: the custom `NativeSpeech` Capacitor bridge compiled, installed, and started on the API 36 device; silence correctly returned the no-speech state without a crash.
 - Physical notification acceptance: both high-importance channels used alarm audio and vibration, the test notification exposed Taken/Snooze/Skip actions, and exact reminder alarms were scheduled.
 - Physical Logcat acceptance: no app crash and no `SecretId`, `SecretKey`, `Authorization`, or Base64 audio content was emitted.
 - APK verification: 32 embedded WebView files; artifact `release/medbox-0.7.8-android-debug.apk`.
-- APK SHA-256: `647e36f29b57e66697e30d93c85690e28c03f41eaaa39e8b63bf14fc86edee1a`.
+- APK SHA-256: `f92c1a97f96253cf2fa2c8e99cba93b996c7b6240f718e40ee764fdefd01888e`.
 
 ## External Follow-Ups
 
