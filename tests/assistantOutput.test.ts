@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { extractExplicitWebSearchQuery } from '../src/ai/assistant';
 import { findAssistantTool } from '../src/ai/assistantTools';
 
 describe('assistant structured output tools', () => {
+  it('extracts explicit search commands for direct MCP execution', () => {
+    expect(extractExplicitWebSearchQuery('帮我联网搜索 腾讯云一句话识别')).toBe('腾讯云一句话识别');
+    expect(extractExplicitWebSearchQuery('请帮我搜索 Exa MCP')).toBe('Exa MCP');
+    expect(extractExplicitWebSearchQuery('查一下：Exa MCP')).toBe('Exa MCP');
+    expect(extractExplicitWebSearchQuery('今天要吃什么药？')).toBeUndefined();
+  });
+
   it('exposes only the bounded Exa web-search capability', () => {
     const tool = findAssistantTool('web_search_exa');
     expect(tool).toBeDefined();

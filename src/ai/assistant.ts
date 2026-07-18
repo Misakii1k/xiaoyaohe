@@ -62,6 +62,8 @@ export interface AssistantTurnResult {
 export interface AssistantTurnEvents {
   /** 工具开始执行时的提示，例如「正在看今天的吃药安排」 */
   onToolStart?: (name: string, label: string) => void;
+  /** 模型流式输出文字片段；服务商不支持流式时不会调用。 */
+  onText?: (text: string) => void;
   /** 会改数据的工具执行前先问用户，返回 false 表示取消 */
   confirmTool: (message: string) => Promise<boolean>;
   signal?: AbortSignal;
@@ -112,7 +114,13 @@ export async function runAssistantTurn(
   events: AssistantTurnEvents,
 ): Promise<AssistantTurnResult> {
   const cfg = getLlmConfig();
+  const explicitSearchQuery = extractExplicitWebSearchQuery(history[history.length - 1]?.content ?? '');
   if (!cfg.baseUrl || !cfg.apiKey) {
+    if (explicitSearchQuery) {
+      const blocks: AssistantContentBlock[] = [];
+      await runExplicitWebSearch(explicitSearchQuery, events, blocks);
+      return { markdown: '已完成联网搜索，结果和来源已列在上方。', blocks };
+    }
     throw new AssistantError('unconfigured', '还没连接 AI 服务。到「设置 → AI 智能识别」填好服务地址和密钥，小助手就能陪你聊了。');
   }
   const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
@@ -134,9 +142,37 @@ export async function runAssistantTurn(
       content: last.role === 'user' ? buildUserContent(last.content, events.attachment) : last.content,
     });
   }
+  if (explicitSearchQuery) {
+    await runExplicitWebSearch(explicitSearchQuery, events, blocks);
+    messages.push({
+      role: 'system',
+      content: '本轮联网搜索结果已经直接展示给用户。不要重复调用 web_search_exa；回答只补充必要的概括，不要编造搜索结果中没有的事实。',
+    });
+  }
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
-    const reply = await requestChat(baseUrl, cfg.apiKey, cfg.model, messages, events.signal, round < MAX_TOOL_ROUNDS);
+    let reply: WireReply;
+    try {
+      reply = await requestChat(
+        baseUrl,
+        cfg.apiKey,
+        cfg.model,
+        messages,
+        events.signal,
+        round < MAX_TOOL_ROUNDS,
+        events.onText,
+      );
+    } catch (error) {
+      // A completed web search or card should remain visible even if the model
+      // times out while producing its final prose response.
+      if (blocks.length > 0) {
+        return {
+          markdown: '已完成联网查询，详细结果和来源已列在上方。',
+          blocks,
+        };
+      }
+      throw error;
+    }
     const toolCalls = reply.tool_calls?.filter((c) => c.type === 'function') ?? [];
     if (toolCalls.length === 0) {
       const text = textOf(reply.content).trim();
@@ -152,6 +188,36 @@ export async function runAssistantTurn(
     }
   }
   throw new AssistantError('service', '这个问题查了太多轮还没查完，换个更具体的问法试试。');
+}
+
+/** Recognize an explicit search command so MCP works even when the model omits tool_calls. */
+export function extractExplicitWebSearchQuery(text: string): string | undefined {
+  const match = text.trim().match(/^(?:请|麻烦)?\s*(?:帮我)?\s*(?:联网)?\s*(?:搜索|查找|查询|搜一下|查一下|上网查)(?:一下)?\s*[：:，,、\s]*(.+)$/i);
+  const query = match?.[1]?.trim().slice(0, 500);
+  return query || undefined;
+}
+
+async function runExplicitWebSearch(
+  query: string,
+  events: AssistantTurnEvents,
+  blocks: AssistantContentBlock[],
+): Promise<void> {
+  const tool = findAssistantTool('web_search_exa');
+  if (!tool) return;
+  events.onToolStart?.(tool.name, tool.label);
+  try {
+    const result = await tool.run({ query, numResults: 5 });
+    const block = contentBlockOf(result);
+    if (block) blocks.push(block);
+  } catch (error) {
+    blocks.push({
+      type: 'card',
+      eyebrow: '联网搜索',
+      title: '暂时无法返回搜索结果',
+      body: error instanceof Error ? error.message : '公共搜索服务暂时不可用，请稍后重试。',
+      tone: 'warning',
+    });
+  }
 }
 
 function contentBlockOf(result: unknown): AssistantContentBlock | undefined {
@@ -213,6 +279,8 @@ async function requestChat(
   messages: readonly WireMessage[],
   external: AbortSignal | undefined,
   allowTools: boolean,
+  onText?: (text: string) => void,
+  stream = true,
 ): Promise<WireReply> {
   let response: Response;
   try {
@@ -223,6 +291,7 @@ async function requestChat(
         model,
         messages,
         temperature: 0.3,
+        stream,
         ...(allowTools
           ? {
               tools: assistantTools.map((t) => ({
@@ -243,17 +312,109 @@ async function requestChat(
     throw new AssistantError('service', '连不上 AI 服务，检查一下网络或设置里的服务地址。');
   }
 
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  if (response.ok && stream && contentType.includes('text/event-stream') && response.body) {
+    return readStreamingReply(response.body, onText);
+  }
+
   const data = (await response.json().catch(() => ({}))) as {
     choices?: { message?: { content?: unknown; tool_calls?: WireToolCall[] } }[];
     error?: { message?: string };
   };
   if (!response.ok) {
     const detail = data.error?.message || `服务返回 ${response.status}`;
+    if (stream && /stream(?:ing)?\s*(is\s*)?(not supported|unsupported)|unknown field/i.test(detail)) {
+      return requestChat(baseUrl, apiKey, model, messages, external, allowTools, onText, false);
+    }
     throw new AssistantError('service', `AI 服务出错了：${detail}`);
   }
   const message = data.choices?.[0]?.message;
   if (!message) throw new AssistantError('service', 'AI 服务返回的内容看不懂，稍后再试一次。');
   return { content: message.content, tool_calls: message.tool_calls };
+}
+
+interface StreamToolAccumulator {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+export async function readStreamingReply(
+  body: ReadableStream<Uint8Array>,
+  onText?: (text: string) => void,
+): Promise<WireReply> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let eventData: string[] = [];
+  let text = '';
+  const toolCalls: StreamToolAccumulator[] = [];
+  let done = false;
+
+  const consumeEvent = (payload: string): void => {
+    if (!payload || payload === '[DONE]') return;
+    let data: {
+      choices?: Array<{
+        delta?: { content?: unknown; tool_calls?: Array<{
+          index?: number;
+          id?: string;
+          type?: 'function';
+          function?: { name?: string; arguments?: string };
+        }> };
+        message?: { content?: unknown; tool_calls?: WireToolCall[] };
+      }>;
+    };
+    try { data = JSON.parse(payload) as typeof data; } catch { return; }
+    const choice = data.choices?.[0];
+    if (!choice) return;
+    const deltaText = textOf(choice.delta?.content ?? choice.message?.content);
+    if (deltaText) {
+      text += deltaText;
+      onText?.(deltaText);
+    }
+    const deltas = choice.delta?.tool_calls ?? choice.message?.tool_calls ?? [];
+    for (const delta of deltas) {
+      const streamDelta = delta as {
+        index?: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      };
+      const index = typeof streamDelta.index === 'number' ? streamDelta.index : toolCalls.length;
+      const current = toolCalls[index] ?? {
+        id: streamDelta.id ?? `stream-tool-${index}`,
+        type: 'function' as const,
+        function: { name: '', arguments: '' },
+      };
+      if (streamDelta.id) current.id = streamDelta.id;
+      if (streamDelta.function?.name) current.function.name += streamDelta.function.name;
+      if (streamDelta.function?.arguments) current.function.arguments += streamDelta.function.arguments;
+      toolCalls[index] = current;
+    }
+  };
+
+  const consumeLine = (line: string): void => {
+    if (line.startsWith('data:')) eventData.push(line.slice(5).trimStart());
+    else if (line === '') {
+      consumeEvent(eventData.join('\n'));
+      eventData = [];
+    }
+  };
+
+  while (!done) {
+    const chunk = await reader.read();
+    done = chunk.done;
+    buffer += decoder.decode(chunk.value ?? new Uint8Array(), { stream: !done });
+    let newline = buffer.indexOf('\n');
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline).replace(/\r$/, '');
+      buffer = buffer.slice(newline + 1);
+      consumeLine(line);
+      newline = buffer.indexOf('\n');
+    }
+  }
+  if (buffer) consumeLine(buffer.replace(/\r$/, ''));
+  consumeEvent(eventData.join('\n'));
+  return { content: text, tool_calls: toolCalls.length ? toolCalls : undefined };
 }
 
 /** 兼容 content 为字符串或分段数组两种返回格式 */

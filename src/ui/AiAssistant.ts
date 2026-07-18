@@ -629,6 +629,8 @@ export function mountGlobalAssistant(): void {
     const status = addStatus(attachment?.kind === 'image' ? '正在看图' : '正在想');
     busy = new AbortController();
     setBusy(true);
+    let streamedMessage: HTMLElement | null = null;
+    let streamedText = '';
     try {
       const reply = await runAssistantTurn(history, {
         signal: busy.signal,
@@ -637,9 +639,21 @@ export function mountGlobalAssistant(): void {
         onToolStart: (_name, label) => {
           status.update(label);
         },
+        onText: (delta) => {
+          streamedText += delta;
+          if (!streamedMessage) {
+            status.remove();
+            streamedMessage = addMsg('bot', '');
+          }
+          const bubble = streamedMessage.querySelector<HTMLElement>('.ai-bubble');
+          if (bubble) bubble.replaceChildren(renderAssistantMarkdown(streamedText));
+          log.scrollTop = log.scrollHeight;
+        },
       });
       history.push({ role: 'assistant', content: reply.markdown });
       status.remove();
+      const liveMessage = streamedMessage as HTMLElement | null;
+      if (liveMessage !== null) liveMessage.remove();
       addAssistantReply(reply);
     } catch (e) {
       status.remove();

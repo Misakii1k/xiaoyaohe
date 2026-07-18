@@ -1,9 +1,25 @@
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
 import { requireAiConsent } from './consent';
 
 const HEALTH_KEY = 'medbox.asrHealth.v1';
 const MAX_SENTENCE_SECONDS = 60;
 const MAX_AUDIO_BYTES = 3 * 1024 * 1024;
+
+interface NativeSpeechPlugin {
+  start(options: { language: string }): Promise<{ text?: string; cancelled?: boolean }>;
+  stop(): Promise<void>;
+  abort(): Promise<void>;
+}
+
+const nativeSpeech = registerPlugin<NativeSpeechPlugin>('NativeSpeech');
+
+export function isNativeSpeechFallbackAvailable(): boolean {
+  try {
+    return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('NativeSpeech');
+  } catch {
+    return false;
+  }
+}
 
 export interface SpeechRecognitionLike {
   lang: string;
@@ -236,6 +252,7 @@ export function createHoldToTalkSession(options: {
   let audioContext: AudioContext | null = null;
   let sourceNode: MediaStreamAudioSourceNode | null = null;
   let processor: ScriptProcessorNode | null = null;
+  let nativeRecognition: Promise<{ text?: string; cancelled?: boolean }> | null = null;
   const chunks: Int16Array[] = [];
 
   const cleanup = () => {
@@ -262,6 +279,13 @@ export function createHoldToTalkSession(options: {
     async start() {
       if (recording) return;
       chunks.length = 0;
+      if (!isAsrConfigured() && isNativeSpeechFallbackAvailable()) {
+        nativeRecognition = nativeSpeech.start({ language: 'zh-CN' });
+        recording = true;
+        startedAt = Date.now();
+        tickTimer = window.setInterval(() => options.onTick?.(Math.floor((Date.now() - startedAt) / 1000)), 200);
+        return;
+      }
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
@@ -296,6 +320,31 @@ export function createHoldToTalkSession(options: {
       if (!recording && chunks.length === 0) return null;
       recording = false;
       const elapsed = (Date.now() - startedAt) / 1000;
+      const nativeRequest = nativeRecognition;
+      nativeRecognition = null;
+      if (nativeRequest) {
+        if (cancel) {
+          await nativeSpeech.abort().catch(() => undefined);
+          await nativeRequest.catch(() => undefined);
+          cleanup();
+          return null;
+        }
+        await nativeSpeech.stop().catch(() => undefined);
+        cleanup();
+        try {
+          const result = await nativeRequest;
+          const text = (result.text ?? '').trim();
+          if (result.cancelled) return null;
+          if (!text) throw new AsrSentenceError('没听清，请再说一次', 'no-speech');
+          return text;
+        } catch (error) {
+          if (error instanceof AsrSentenceError) throw error;
+          const code = (error as { code?: string })?.code;
+          if (code === 'NOT_ALLOWED') throw new AsrSentenceError('没有麦克风权限', 'not-allowed');
+          if (code === 'NO_SPEECH') throw new AsrSentenceError('没听清，请再说一次', 'no-speech');
+          throw new AsrSentenceError('设备语音识别暂时不可用，请检查网络或系统语音服务', 'service-unavailable');
+        }
+      }
       cleanup();
       if (cancel) return null;
       const total = chunks.reduce((count, chunk) => count + chunk.length, 0);

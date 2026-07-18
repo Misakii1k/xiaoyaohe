@@ -36,7 +36,7 @@ import {
   normalizeAndValidateBaseUrl,
   type LlmHealth,
 } from '../ai/llmConfig';
-import { getAsrHealth, getAsrProxyUrl } from '../ai/asr';
+import { getAsrHealth, getAsrProxyUrl, isNativeSpeechFallbackAvailable } from '../ai/asr';
 import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
 import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
@@ -628,7 +628,11 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     style: 'margin-top:10px',
   } as any);
   const diagnostic = [
-    asrEndpoint ? asrHealth.message : '生产语音代理尚未配置',
+    asrEndpoint
+      ? asrHealth.message
+      : isNativeSpeechFallbackAvailable()
+        ? '腾讯云代理尚未配置，当前使用设备语音识别备用通道'
+        : '生产语音代理尚未配置',
     asrHealth.code ? `错误码 ${asrHealth.code}` : '',
     asrHealth.requestId ? `RequestId ${asrHealth.requestId}` : '',
     asrHealth.at ? new Date(asrHealth.at).toLocaleString() : '',
