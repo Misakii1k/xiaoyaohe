@@ -29,6 +29,36 @@ export interface AssistantAttachment {
   textExcerpt?: string;
 }
 
+export interface AssistantCardFact {
+  label: string;
+  value: string;
+}
+
+export interface AssistantCardBlock {
+  type: 'card';
+  title: string;
+  eyebrow?: string;
+  body?: string;
+  tone?: 'neutral' | 'success' | 'warning';
+  facts?: AssistantCardFact[];
+}
+
+export interface AssistantNavigationBlock {
+  type: 'navigation';
+  title: string;
+  description?: string;
+  actionLabel: string;
+  path: string;
+  icon?: 'calendar' | 'pill' | 'plus' | 'scan' | 'briefcase' | 'gear';
+}
+
+export type AssistantContentBlock = AssistantCardBlock | AssistantNavigationBlock;
+
+export interface AssistantTurnResult {
+  markdown: string;
+  blocks: AssistantContentBlock[];
+}
+
 export interface AssistantTurnEvents {
   /** 工具开始执行时的提示，例如「正在看今天的吃药安排」 */
   onToolStart?: (name: string, label: string) => void;
@@ -54,6 +84,8 @@ const SYSTEM_PROMPT = [
   '6. 用户想去某个功能页面时，用 open_page 带他过去。',
   '7. 工具返回"用户取消"时，礼貌收尾就好，不要重试同一个操作。',
   '8. 用户可能发来药盒照片、票据或文本文件：结合图片/文件内容回答；药名以包装文字为准，看不清就如实说。',
+  '9. 正文支持 Markdown，可用短标题、列表、表格、引用和加粗；不要输出 HTML，也不要用代码块包住普通回答。',
+  '10. 有一组关键数字或结论时，可调用 present_card 展示信息卡片；需要引导用户进入应用页面时，调用 open_page 生成可点击的跳转卡片。跳转卡片出现不代表页面已经打开。',
 ].join('\n');
 
 interface WireToolCall {
@@ -73,11 +105,11 @@ interface WireMessage {
   tool_call_id?: string;
 }
 
-/** 发一轮用户消息，跑完工具循环，返回助手的最终答复文本。 */
+/** 发一轮用户消息，跑完工具循环，返回 Markdown 正文和结构化内容块。 */
 export async function runAssistantTurn(
   history: readonly AssistantExchange[],
   events: AssistantTurnEvents,
-): Promise<string> {
+): Promise<AssistantTurnResult> {
   const cfg = getLlmConfig();
   if (!cfg.baseUrl || !cfg.apiKey) {
     throw new AssistantError('unconfigured', '还没连接 AI 服务。到「设置 → AI 智能识别」填好服务地址和密钥，小助手就能陪你聊了。');
@@ -86,6 +118,7 @@ export async function runAssistantTurn(
   await requireAiConsent('assistant-chat', baseUrl);
 
   const now = new Date();
+  const blocks: AssistantContentBlock[] = [];
   const prior = history.slice(-MAX_HISTORY);
   const messages: WireMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
@@ -107,15 +140,36 @@ export async function runAssistantTurn(
     if (toolCalls.length === 0) {
       const text = textOf(reply.content).trim();
       if (!text) throw new AssistantError('service', 'AI 服务这次没有给出回复，稍后再试一次吧。');
-      return text;
+      return { markdown: text, blocks };
     }
     messages.push({ role: 'assistant', content: textOf(reply.content) || null, tool_calls: toolCalls });
     for (const call of toolCalls) {
       const result = await executeToolCall(call, events);
+      const block = contentBlockOf(result);
+      if (block) blocks.push(block);
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
     }
   }
   throw new AssistantError('service', '这个问题查了太多轮还没查完，换个更具体的问法试试。');
+}
+
+function contentBlockOf(result: unknown): AssistantContentBlock | undefined {
+  if (!result || typeof result !== 'object') return undefined;
+  const ui = (result as { ui?: unknown }).ui;
+  if (!ui || typeof ui !== 'object') return undefined;
+  const type = (ui as { type?: unknown }).type;
+  if (type === 'card' && typeof (ui as { title?: unknown }).title === 'string') {
+    return ui as AssistantCardBlock;
+  }
+  if (
+    type === 'navigation'
+    && typeof (ui as { title?: unknown }).title === 'string'
+    && typeof (ui as { path?: unknown }).path === 'string'
+    && typeof (ui as { actionLabel?: unknown }).actionLabel === 'string'
+  ) {
+    return ui as AssistantNavigationBlock;
+  }
+  return undefined;
 }
 
 async function executeToolCall(call: WireToolCall, events: AssistantTurnEvents): Promise<unknown> {

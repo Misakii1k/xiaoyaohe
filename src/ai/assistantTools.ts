@@ -33,7 +33,7 @@ import {
 } from '../domain/medicationSchedule';
 import { estimateDaysLeft } from '../features/inventory';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
-import { navigate } from '../router';
+import type { AssistantCardBlock, AssistantNavigationBlock } from './assistant';
 
 export interface AssistantTool {
   name: string;
@@ -48,6 +48,7 @@ export interface AssistantTool {
 
 const SLOT_VALUES: Slot[] = ['morning', 'noon', 'evening', 'bedtime'];
 const TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+const MAX_CARD_TEXT = 600;
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
@@ -409,12 +410,74 @@ const PAGE_TARGETS: Record<string, { path: string; label: string }> = {
   settings: { path: '/settings', label: '设置' },
 };
 
+const PAGE_ICONS: Record<string, AssistantNavigationBlock['icon']> = {
+  today: 'calendar',
+  meds: 'pill',
+  add_med: 'plus',
+  scan: 'scan',
+  work: 'briefcase',
+  settings: 'gear',
+};
+
+const presentCard: AssistantTool = {
+  name: 'present_card',
+  label: '整理重点信息',
+  description: '把已经查到的一组关键结论或数字整理成一张信息卡片。卡片之外仍需给一句简短正文。不要用它代替数据查询。',
+  parameters: {
+    type: 'object',
+    properties: {
+      eyebrow: { type: 'string', description: '卡片顶部短标签，如「本月工时」' },
+      title: { type: 'string', description: '卡片主标题' },
+      body: { type: 'string', description: '可选的 Markdown 简短说明' },
+      tone: { type: 'string', enum: ['neutral', 'success', 'warning'], description: '普通、顺利或需要注意' },
+      facts: {
+        type: 'array',
+        maxItems: 6,
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string', description: '指标名' },
+            value: { type: 'string', description: '指标值' },
+          },
+          required: ['label', 'value'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['title'],
+    additionalProperties: false,
+  },
+  async run(args) {
+    const facts = Array.isArray(args.facts)
+      ? args.facts.flatMap((item) => {
+          if (!item || typeof item !== 'object') return [];
+          const label = str((item as Record<string, unknown>).label).slice(0, 40);
+          const value = str((item as Record<string, unknown>).value).slice(0, 100);
+          return label && value ? [{ label, value }] : [];
+        }).slice(0, 6)
+      : [];
+    const requestedTone = str(args.tone);
+    const tone: AssistantCardBlock['tone'] = requestedTone === 'success' || requestedTone === 'warning'
+      ? requestedTone
+      : 'neutral';
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      title: str(args.title).slice(0, 80) || '重点信息',
+      eyebrow: str(args.eyebrow).slice(0, 40) || undefined,
+      body: str(args.body).slice(0, MAX_CARD_TEXT) || undefined,
+      tone,
+      facts,
+    };
+    return { ok: true, ui };
+  },
+};
+
 export const OPEN_PAGE_TOOL_NAME = 'open_page';
 
 const openPage: AssistantTool = {
   name: OPEN_PAGE_TOOL_NAME,
-  label: '帮忙打开页面',
-  description: '带用户跳到应用里的某个页面：today=今天清单，meds=药品列表，add_med=添加药品，scan=分药（扫码认药/拍药盒/拍药单录入），work=工时记录，settings=设置。',
+  label: '准备页面入口',
+  description: '给用户展示一个可点击的应用内页面跳转卡片：today=今天清单，meds=药品列表，add_med=添加药品，scan=分药（扫码认药/拍药盒/拍药单录入），work=工时记录，settings=设置。此工具只展示入口，不会立刻跳页。',
   parameters: {
     type: 'object',
     properties: { page: { type: 'string', enum: Object.keys(PAGE_TARGETS) } },
@@ -422,10 +485,18 @@ const openPage: AssistantTool = {
     additionalProperties: false,
   },
   async run(args) {
-    const target = PAGE_TARGETS[str(args.page)];
+    const page = str(args.page);
+    const target = PAGE_TARGETS[page];
     if (!target) return { ok: false, 提示: '没有这个页面' };
-    navigate(target.path);
-    return { ok: true, 已打开: target.label };
+    const ui: AssistantNavigationBlock = {
+      type: 'navigation',
+      title: target.label,
+      description: `前往「${target.label}」继续操作`,
+      actionLabel: '打开页面',
+      path: target.path,
+      icon: PAGE_ICONS[page],
+    };
+    return { ok: true, ui };
   },
 };
 
@@ -438,6 +509,7 @@ export const assistantTools: readonly AssistantTool[] = [
   getWorkReport,
   addWorkRecord,
   shiftControl,
+  presentCard,
   openPage,
 ];
 

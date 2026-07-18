@@ -6,9 +6,9 @@ import {
   AssistantError,
   runAssistantTurn,
   type AssistantAttachment,
+  type AssistantTurnResult,
   type AssistantExchange,
 } from '../ai/assistant';
-import { OPEN_PAGE_TOOL_NAME } from '../ai/assistantTools';
 import { getLlmConfig } from '../ai/llmConfig';
 import {
   AsrSentenceError,
@@ -18,6 +18,7 @@ import {
 } from '../ai/asr';
 import { createButton } from './primitives/Button';
 import { compressBoxPhoto } from '../features/medPhotos';
+import { renderAssistantBlock, renderAssistantMarkdown } from './assistantContent';
 
 const GREETING = '你好呀，我是小助手。想知道今天吃什么药、这个月挣了多少，或者让我帮你记一笔，直接说就行。也能拍照、发文件、按住说话。';
 const QUICK_PROMPTS = [
@@ -568,8 +569,23 @@ export function mountGlobalAssistant(): void {
     } else if (attachment) {
       bubble.append(el('div', { class: 'ai-bubble-file', text: `附件：${attachment.name}` }));
     }
-    if (text) bubble.append(el('span', { text }));
+    if (text) bubble.append(role === 'bot' ? renderAssistantMarkdown(text) : el('span', { text }));
     const msg = el('div', { class: `ai-msg is-${role}` }, [bubble]);
+    log.append(msg);
+    log.scrollTop = log.scrollHeight;
+    return msg;
+  }
+
+  function addAssistantReply(reply: AssistantTurnResult): HTMLElement {
+    const bubble = el('div', { class: 'ai-bubble' });
+    if (reply.markdown) bubble.append(renderAssistantMarkdown(reply.markdown));
+    for (const block of reply.blocks) {
+      bubble.append(renderAssistantBlock(block, (path) => {
+        closePanel();
+        navigate(path);
+      }));
+    }
+    const msg = el('div', { class: 'ai-msg is-bot' }, [bubble]);
     log.append(msg);
     log.scrollTop = log.scrollHeight;
     return msg;
@@ -620,21 +636,18 @@ export function mountGlobalAssistant(): void {
     const status = addStatus(attachment?.kind === 'image' ? '正在看图' : '正在想');
     busy = new AbortController();
     setBusy(true);
-    let leftForPage = false;
     try {
       const reply = await runAssistantTurn(history, {
         signal: busy.signal,
         attachment,
         confirmTool: (message) => confirmDialog(message, '好，就这么办'),
-        onToolStart: (name, label) => {
+        onToolStart: (_name, label) => {
           status.update(label);
-          if (name === OPEN_PAGE_TOOL_NAME) leftForPage = true;
         },
       });
-      history.push({ role: 'assistant', content: reply });
+      history.push({ role: 'assistant', content: reply.markdown });
       status.remove();
-      addMsg('bot', reply);
-      if (leftForPage) setTimeout(closePanel, 600);
+      addAssistantReply(reply);
     } catch (e) {
       status.remove();
       history.pop();
@@ -651,5 +664,38 @@ export function mountGlobalAssistant(): void {
       busy = null;
       setBusy(false);
     }
+  }
+
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('assistant-preview')) {
+    window.setTimeout(() => {
+      openPanel();
+      quick.hidden = true;
+      addAssistantReply({
+        markdown: '## 今天的提醒\n\n还有 **1 项** 待处理：\n\n- 维生素 C · 08:00\n- 每次 1 片，按医嘱服用',
+        blocks: [
+          {
+            type: 'card',
+            eyebrow: '近 7 天',
+            title: '按时服药情况',
+            body: '已记录的服药次数会计入统计。',
+            tone: 'warning',
+            facts: [
+              { label: '按时率', value: '82%' },
+              { label: '已服', value: '9 次' },
+              { label: '漏服', value: '2 次' },
+              { label: '跳过', value: '0 次' },
+            ],
+          },
+          {
+            type: 'navigation',
+            title: '工时记录',
+            description: '查看本月收入和班次',
+            actionLabel: '打开页面',
+            path: '/work',
+            icon: 'briefcase',
+          },
+        ],
+      });
+    }, 0);
   }
 }
