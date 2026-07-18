@@ -31,11 +31,13 @@ import {
   projectScheduleDate,
   toLocalDate,
 } from '../domain/medicationSchedule';
-import { estimateDaysLeft } from '../features/inventory';
+import { classifyInventoryStatus, estimateDaysLeft } from '../features/inventory';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import type {
   AssistantCardBlock,
   AssistantCardIcon,
+  AssistantCardItem,
+  AssistantCardItemStatus,
   AssistantCardVariant,
   AssistantNavigationBlock,
 } from './assistant';
@@ -55,8 +57,9 @@ export interface AssistantTool {
 const SLOT_VALUES: Slot[] = ['morning', 'noon', 'evening', 'bedtime'];
 const TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 const MAX_CARD_TEXT = 600;
-const CARD_VARIANTS: AssistantCardVariant[] = ['summary', 'medication', 'stats', 'search', 'notice'];
-const CARD_ICONS: AssistantCardIcon[] = ['pill', 'calendar', 'clock', 'briefcase', 'timer', 'scan', 'bell', 'check', 'warn', 'sparkles', 'info'];
+const CARD_VARIANTS: AssistantCardVariant[] = ['summary', 'medication', 'stats', 'search', 'notice', 'inventory'];
+const CARD_ICONS: AssistantCardIcon[] = ['pill', 'box', 'calendar', 'clock', 'briefcase', 'timer', 'scan', 'bell', 'bell-ring', 'check', 'warn', 'sparkles', 'info'];
+const CARD_ITEM_STATUSES: AssistantCardItemStatus[] = ['pending', 'success', 'skipped', 'warning', 'muted'];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
@@ -110,9 +113,24 @@ const getTodayPlan: AssistantTool = {
     });
     const active = items.filter((i) => i.状态 !== '停药期');
     const pending = active.filter((i) => i.状态 === '还没吃');
-    const cardItems = active.slice(0, 5).map((item) =>
-      `- **${item.时间}** ${item.药名} · ${item.每次用量} · ${item.状态}`,
-    );
+    const medicationItems: AssistantCardItem[] = active.slice(0, 6).map((item) => {
+      const status: AssistantCardItemStatus = item.状态 === '已吃'
+        ? 'success'
+        : item.状态 === '已跳过'
+          ? 'skipped'
+          : item.状态 === '还没吃'
+            ? 'pending'
+            : 'muted';
+      return {
+        title: item.药名,
+        subtitle: `${item.时间} · ${item.每次用量}${item.饭前饭后 !== '不限' ? ` · ${item.饭前饭后}` : ''}`,
+        status,
+        statusLabel: item.状态,
+        icon: 'pill',
+      };
+    });
+    const next = pending[0];
+    const hiddenCount = Math.max(0, active.length - medicationItems.length);
     const ui: AssistantCardBlock = {
       type: 'card',
       variant: 'medication',
@@ -121,11 +139,15 @@ const getTodayPlan: AssistantTool = {
       title: pending.length > 0 ? '今天的用药安排' : '今天的用药已处理',
       badge: pending.length > 0 ? `${pending.length} 待处理` : '全部完成',
       tone: pending.length > 0 ? 'warning' : 'success',
-      body: cardItems.length > 0 ? cardItems.join('\n') : '今天没有需要处理的用药安排。',
+      body: next
+        ? `下一次是 **${next.时间} ${next.药名}**。${hiddenCount > 0 ? ` 还有 ${hiddenCount} 项安排未展开。` : ''}`
+        : active.length > 0 ? '今天的用药安排都已经处理。' : '今天没有需要处理的用药安排。',
       facts: [
+        { label: '下一次', value: next ? `${next.时间} ${next.药名}` : '无' },
         { label: '已服', value: `${active.filter((i) => i.状态 === '已吃').length} 项` },
         { label: '待服', value: `${pending.length} 项` },
       ],
+      items: medicationItems,
     };
     return {
       ui,
@@ -145,7 +167,54 @@ const listMyMedications: AssistantTool = {
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   async run() {
     const [meds, rules] = await Promise.all([listMeds(), listRules()]);
-    return meds.map((med) => {
+    const medicationRows = meds.map((med): AssistantCardItem => {
+      const medRules = rules.filter((r) => r.medId === med.id && !r.deleted && r.enabled);
+      const daysLeft = estimateDaysLeft(med, medRules);
+      const inventoryStatus = classifyInventoryStatus(med, medRules);
+      const inventoryLabel = inventoryStatus === 'empty'
+        ? '库存已空'
+        : inventoryStatus === 'low'
+          ? `仅剩 ${med.inventory?.remaining ?? 0}${med.inventory?.unit || ''}`
+          : inventoryStatus === 'days_low'
+            ? `约 ${daysLeft} 天`
+            : inventoryStatus === 'ok'
+              ? `库存 ${med.inventory?.remaining ?? 0}${med.inventory?.unit || ''}`
+              : '未设置库存';
+      const status: AssistantCardItemStatus = inventoryStatus === 'empty' || inventoryStatus === 'low' || inventoryStatus === 'days_low'
+        ? 'warning'
+        : inventoryStatus === 'ok'
+          ? 'success'
+          : 'muted';
+      const reminderTimes = medRules.map((r) => r.timeLocal).slice(0, 2).join(' · ');
+      return {
+        title: med.name,
+        subtitle: [med.dosageText, med.amountPerDose ? `每次 ${med.amountPerDose}` : '', reminderTimes].filter(Boolean).join(' · '),
+        meta: inventoryLabel,
+        status,
+        statusLabel: status === 'warning' ? '需补充' : status === 'success' ? '正常' : '未设置',
+        icon: 'pill',
+      };
+    });
+    const attentionCount = medicationRows.filter((row) => row.status === 'warning').length;
+    const hiddenMedicationCount = Math.max(0, medicationRows.length - 8);
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'inventory',
+      icon: 'box',
+      eyebrow: `药箱 · ${medicationRows.length} 种药物`,
+      title: medicationRows.length > 0 ? '我的药物' : '还没有登记药物',
+      badge: attentionCount > 0 ? `${attentionCount} 项需补充` : '状态正常',
+      tone: attentionCount > 0 ? 'warning' : 'neutral',
+      body: medicationRows.length > 0
+        ? `每张药物条目显示规格、提醒时间和库存状态。${hiddenMedicationCount > 0 ? ` 还有 ${hiddenMedicationCount} 种药物未展开。` : ''}`
+        : '可以先添加药物，再让小助手帮你整理服药安排。',
+      items: medicationRows.slice(0, 8),
+      facts: [
+        { label: '药物数', value: `${medicationRows.length} 种` },
+        { label: '需留意', value: `${attentionCount} 项` },
+      ],
+    };
+    const details = meds.map((med) => {
       const medRules = rules.filter((r) => r.medId === med.id && !r.deleted && r.enabled);
       const daysLeft = estimateDaysLeft(med, medRules);
       return {
@@ -159,6 +228,7 @@ const listMyMedications: AssistantTool = {
         备注: med.notes || undefined,
       };
     });
+    return { ui, 药物: details };
   },
 };
 
@@ -492,9 +562,27 @@ const presentCard: AssistantTool = {
       title: { type: 'string', description: '卡片主标题' },
       body: { type: 'string', description: '可选的 Markdown 简短说明' },
       tone: { type: 'string', enum: ['neutral', 'success', 'warning'], description: '普通、顺利或需要注意' },
-      variant: { type: 'string', enum: CARD_VARIANTS, description: '卡片样式：summary=摘要，medication=用药，stats=统计，search=联网来源，notice=提醒' },
+      variant: { type: 'string', enum: CARD_VARIANTS, description: '卡片样式：summary=摘要，medication=用药，stats=统计，search=联网来源，notice=提醒，inventory=药物库存' },
       icon: { type: 'string', enum: CARD_ICONS, description: '卡片图标语义' },
       badge: { type: 'string', maxLength: 24, description: '右上角状态徽标，例如待服、已完成、82%' },
+      items: {
+        type: 'array',
+        maxItems: 8,
+        description: '可选的可扫读条目，适合药物、库存或提醒清单',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: '条目主标题' },
+            subtitle: { type: 'string', description: '规格、时间或补充说明' },
+            meta: { type: 'string', description: '右侧短信息' },
+            status: { type: 'string', enum: CARD_ITEM_STATUSES, description: 'pending=待处理，success=已完成，skipped=已跳过，warning=需要留意，muted=普通' },
+            statusLabel: { type: 'string', description: '状态显示文案' },
+            icon: { type: 'string', enum: CARD_ICONS, description: '条目图标' },
+          },
+          required: ['title'],
+          additionalProperties: false,
+        },
+      },
       facts: {
         type: 'array',
         maxItems: 6,
@@ -513,6 +601,24 @@ const presentCard: AssistantTool = {
     additionalProperties: false,
   },
   async run(args) {
+    const items: AssistantCardItem[] = Array.isArray(args.items)
+      ? args.items.flatMap((item) => {
+          if (!item || typeof item !== 'object') return [];
+          const raw = item as Record<string, unknown>;
+          const title = str(raw.title).slice(0, 80);
+          if (!title) return [];
+          const requestedStatus = str(raw.status) as AssistantCardItemStatus;
+          const requestedIcon = str(raw.icon) as AssistantCardIcon;
+          return [{
+            title,
+            subtitle: str(raw.subtitle).slice(0, 140) || undefined,
+            meta: str(raw.meta).slice(0, 60) || undefined,
+            status: CARD_ITEM_STATUSES.includes(requestedStatus) ? requestedStatus : 'muted',
+            statusLabel: str(raw.statusLabel).slice(0, 24) || undefined,
+            icon: CARD_ICONS.includes(requestedIcon) ? requestedIcon : undefined,
+          }];
+        }).slice(0, 8)
+      : [];
     const facts = Array.isArray(args.facts)
       ? args.facts.flatMap((item) => {
           if (!item || typeof item !== 'object') return [];
@@ -539,6 +645,7 @@ const presentCard: AssistantTool = {
       icon: cardIcon,
       badge: str(args.badge).slice(0, 24) || undefined,
       facts,
+      items,
     };
     return { ok: true, ui };
   },

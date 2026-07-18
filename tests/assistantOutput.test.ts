@@ -29,16 +29,29 @@ describe('assistant structured output tools', () => {
       title: '收入概览',
       tone: 'unexpected',
       body: '**估算值**，以实际结算为准。',
+      variant: 'inventory',
+      icon: 'box',
+      badge: '1 项需补充',
+      items: [
+        { title: '阿司匹林', subtitle: '100mg · 每次 1 片', meta: '库存 28 片', status: 'success', statusLabel: '正常', icon: 'pill' },
+        { title: '', status: 'warning' },
+      ],
       facts: [
         { label: '工时', value: '42 小时' },
         { label: '收入', value: '3,280 元' },
         { label: '', value: '不会显示' },
       ],
-    }) as { ui: { type: string; tone: string; facts: unknown[] } };
+    }) as { ui: { type: string; tone: string; variant: string; icon: string; badge: string; items: unknown[]; facts: unknown[] } };
 
     expect(result.ui).toMatchObject({
       type: 'card',
       tone: 'neutral',
+      variant: 'inventory',
+      icon: 'box',
+      badge: '1 项需补充',
+      items: [
+        { title: '阿司匹林', subtitle: '100mg · 每次 1 片', meta: '库存 28 片', status: 'success', statusLabel: '正常', icon: 'pill' },
+      ],
       facts: [
         { label: '工时', value: '42 小时' },
         { label: '收入', value: '3,280 元' },

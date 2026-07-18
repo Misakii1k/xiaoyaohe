@@ -5,6 +5,8 @@ test('renders assistant card variants without overflowing narrow panels', async 
   const panel = page.locator('.ai-panel');
   await expect(page.locator('.ai-root.is-open .ai-panel')).toBeVisible();
   await expect(panel.locator('.ai-content-card.is-medication')).toBeVisible();
+  await expect(panel.locator('.ai-content-card.is-medication .ai-card-item')).toHaveCount(3);
+  await expect(panel.locator('.ai-content-card.is-inventory')).toBeVisible();
   await expect(panel.locator('.ai-content-card.is-stats')).toBeVisible();
   await expect(panel.locator('.ai-content-card.is-search')).toBeVisible();
 
@@ -23,7 +25,7 @@ test('renders assistant card variants without overflowing narrow panels', async 
   });
 
   expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewportWidth);
-  expect(layout.cards.length).toBeGreaterThanOrEqual(3);
+  expect(layout.cards.length).toBeGreaterThanOrEqual(4);
   expect(layout.cards.every((card) => card.right <= layout.panelRight + 1)).toBe(true);
   expect(layout.cards.every((card) => card.width > 0 && card.height > 0)).toBe(true);
   await testInfo.attach(`${testInfo.project.name}-assistant-cards`, {

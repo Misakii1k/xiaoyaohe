@@ -72,6 +72,27 @@ export function renderAssistantBlock(
   ]);
   const card = el('article', { class: `ai-content-card is-${tone} is-${variant}` }, [heading]);
   if (block.body) card.append(renderAssistantMarkdown(block.body));
+  if (block.items?.length) {
+    const items = el('div', { class: 'ai-card-items' });
+    for (const item of block.items) {
+      const status = item.status ?? 'muted';
+      const statusLabel = item.statusLabel ?? defaultItemStatusLabel(status);
+      const itemMeta = el('div', { class: 'ai-card-item-meta' }, [
+        ...(item.meta ? [el('span', { class: 'ai-card-item-value', text: item.meta })] : []),
+        ...(statusLabel ? [el('span', { class: `ai-card-item-status is-${status}`, text: statusLabel })] : []),
+      ]);
+      const row = el('div', { class: `ai-card-item is-${status}` }, [
+        el('span', { class: 'ai-card-item-icon' }, [icon(item.icon ?? defaultItemIcon(variant, status))]),
+        el('div', { class: 'ai-card-item-copy' }, [
+          el('strong', { text: item.title }),
+          ...(item.subtitle ? [el('span', { text: item.subtitle })] : []),
+        ]),
+        itemMeta,
+      ]);
+      items.append(row);
+    }
+    card.append(items);
+  }
   if (block.facts?.length) {
     const facts = el('dl', { class: 'ai-card-facts' });
     for (const fact of block.facts) {
@@ -86,8 +107,25 @@ function defaultCardIcon(variant: AssistantCardVariant, tone: AssistantCardBlock
   if (tone === 'warning') return 'warn';
   if (tone === 'success') return 'check';
   if (variant === 'medication') return 'pill';
+  if (variant === 'inventory') return 'box';
   if (variant === 'stats') return 'timer';
   if (variant === 'search') return 'scan';
   if (variant === 'notice') return 'info';
   return 'sparkles';
+}
+
+function defaultItemIcon(variant: AssistantCardVariant, status: string): IconName {
+  if (status === 'success') return 'check';
+  if (status === 'warning') return 'warn';
+  if (status === 'skipped') return 'close';
+  if (variant === 'inventory') return 'pill';
+  return 'clock';
+}
+
+function defaultItemStatusLabel(status: string): string | undefined {
+  if (status === 'pending') return '待处理';
+  if (status === 'success') return '已完成';
+  if (status === 'skipped') return '已跳过';
+  if (status === 'warning') return '需留意';
+  return undefined;
 }
