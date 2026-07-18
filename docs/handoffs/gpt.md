@@ -2,60 +2,54 @@
 
 Tool: GPT/Codex
 Branch: `workspace/gpt`
-Updated: 2026-07-17
-Status: idle
-Latest implementation commit: `6354dd8 feat: ship app-only LAN family sync`
-Integrated into `main`: `4a0a41e merge: integrate app-only LAN family sync`
+Updated: 2026-07-18
+Status: ready-to-merge
+Latest implementation commit: `1fae9f1 feat: enrich assistant response rendering`
 
 ## Goal
 
-Ship Medbox `0.7.7` as an Android App-only release. Family sync must stay on the local network, connect quickly with one QR scan, use plain-language UI copy, and no longer ship or maintain a PWA/cloud-sync deployment path. Also align the camera action buttons with the app's shared visual hierarchy.
+Improve the global assistant's output presentation with safe Markdown, structured information cards, and user-controlled in-app navigation cards.
 
 ## Completed
 
-- Added encrypted LAN TCP family sync with a native Android transport, one-QR invitation flow, atomic receive/apply behavior, conflict warnings, deletion history, and strict cross-entity reference checks.
-- Reworked Settings around local family sync using non-technical explanations and clear host/join/stop actions.
-- Removed the PWA, Service Worker, Pages/Web ZIP, Cloudflare Worker/Wrangler, cloud sync v2, old cloud credentials, and obsolete outbox/metadata paths. Existing AI keys remain untouched.
-- Preserved local edits and inventory deductions during sync; inventory-only changes cannot override real medication edits.
-- Kept reminders App-only and added plain-language warnings when reminder rescheduling fails.
-- Updated product version to `0.7.7` and Android `versionCode 14`.
-- Replaced the camera action mismatch: deep-purple primary `拍照`, tonal `相册上传`, and text `返回`, with matching Lucide icons, a stable 320px two-column layout, visible keyboard focus, and aligned tablet width.
-- Added real-browser camera-button regression coverage and updated the visual IndexedDB fixture to schema version 6.
-- Updated the release pipeline to publish an APK and checksum only.
+- Changed assistant turns from plain strings to Markdown plus typed content blocks.
+- Added safe GFM rendering with DOMPurify; active content, embedded media, inline styles, and unsafe link protocols are blocked.
+- Added `present_card` for compact summaries with neutral, success, and warning states plus up to six facts.
+- Changed `open_page` from immediate navigation to a clickable internal navigation card; clicking closes the assistant and follows the controlled route.
+- Added responsive card, Markdown, table, quote, code, and navigation styles for mobile and desktop.
+- Added an explicit development-only `?assistant-preview=1` fixture for browser QA; production builds keep it disabled.
+- Added structured-output tool tests and installed `marked` and `dompurify`.
 
 ## Files Changed
 
-- LAN sync: `src/sync/lan/`, `src/db/local.ts`, `src/pages/Settings.ts`, `src/ui/styles/pages/settings.css`.
-- Android transport: `android/app/src/main/java/com/medbox/app/lansync/` and matching unit tests.
-- App-only cleanup: `src/sync/v2/`, `worker/`, deployment scripts/config, reminder transport, startup cleanup, and release utilities.
-- Camera UI: `src/pages/ScanSort.ts`, `src/ui/styles/pages/scanner.css`, `tests/scannerUiContracts.test.ts`, `e2e/camera-actions.spec.ts`.
-- Version/release/docs: `package*.json`, `android/app/build.gradle`, `docs/plans/`, `AGENTS.md`, and `docs/worktrees/README.md`.
+- Response protocol and prompt: `src/ai/assistant.ts`.
+- Card/navigation tools: `src/ai/assistantTools.ts`.
+- Markdown and block renderer: `src/ui/assistantContent.ts`.
+- Chat integration and development preview: `src/ui/AiAssistant.ts`.
+- Responsive presentation: `src/ui/styles/pages/assistant.css`.
+- Tests and dependencies: `tests/assistantOutput.test.ts`, `package.json`, `package-lock.json`.
 
 ## Verification
 
-- `npm run typecheck`: passed.
-- `npm test`: 43 files, 186 tests passed.
-- `npx playwright test`: 20 tests passed across 320px, 390px, tablet, and desktop.
-- `npm audit --audit-level=low`: 0 vulnerabilities.
-- `npm run build:web`: passed; 27 production web files.
-- `npx cap sync android`: passed.
-- `android\\gradlew.bat testDebugUnitTest assembleDebug`: passed, 167 tasks.
-- APK embedded-resource verification: 27 current WebView files, aggregate hash `3cb50e24a956e5cf2dc4c075affb61151fa496276d6c4003a530709ad272a129`.
-- Local APK: `release/medbox-0.7.7-android-debug.apk`, SHA-256 `045b77847332562f2b283af1c57d871609057de7b46b348a9eb409dc4ec07f3e`.
-- No `medbox-0.7.7-web.zip` exists.
-- `git diff --check`: passed before commit.
+- `npm test`: 44 files, 188 tests passed.
+- `npm run build`: typecheck and production Vite build passed.
+- `npm install` audit: 0 vulnerabilities.
+- In-app Browser QA at 320x720 and 1280x900: no horizontal overflow, no console warnings/errors, Markdown semantic nodes and both card types rendered.
+- Navigation interaction: clicking the `工时记录` card changed the route to `#/work` and closed the assistant panel.
+- `git diff --check`: passed before the implementation commit.
 
 ## Uncommitted Changes
 
-None. Release APK/checksum and browser screenshots are intentionally ignored local artifacts.
+None.
 
 ## Remaining Work
 
-- Run installation smoke tests and two-phone LAN transfer tests when Android devices are available. `C:\Android\Sdk\platform-tools\adb.exe devices -l` currently reports no devices.
+- Merge `workspace/gpt` into `main` from the integration worktree.
+- Optionally verify real model behavior against each configured OpenAI-compatible provider; browser QA used the development preview because no AI key was configured.
 
 ## Decisions And Risks
 
-- Family sync is Android App-only. The browser is a development preview and does not provide native LAN transfer or reminders.
-- Both phones must be on the same local network. One phone shows the QR code and the other scans it; there is no cloud account or remote relay.
-- Transfers abort if local data changes during receipt instead of silently overwriting it. Simultaneous edits are reported in plain language.
-- Connected Android instrumentation, API 35/36 installation, pause/close behavior, repeated QR scans, and a real two-phone transfer remain unverified because no ADB device is attached.
+- This is a small UI and assistant-protocol change, so version remains `0.7.7`; no Android package rebuild was required.
+- Markdown images and embedded media are intentionally blocked to avoid remote tracking requests from model output.
+- Navigation cards only expose predefined internal routes; model output cannot supply an arbitrary path.
+- Card generation depends on tool-calling support from the configured model. Markdown remains available when a provider does not call `present_card`.
