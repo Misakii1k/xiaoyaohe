@@ -13,7 +13,6 @@ import { getLlmConfig } from '../ai/llmConfig';
 import {
   AsrSentenceError,
   createHoldToTalkSession,
-  isAsrConfigured,
   type HoldToTalkSession,
 } from '../ai/asr';
 import { createButton } from './primitives/Button';
@@ -427,14 +426,6 @@ export function mountGlobalAssistant(): void {
 
   async function beginHoldTalk(ev: PointerEvent): Promise<void> {
     if (busy || recognizing || holdActive) return;
-    if (!isAsrConfigured()) {
-      const go = await confirmDialog(
-        '语音服务尚未部署到当前版本。可在「设置 → AI 服务商」查看脱敏状态。',
-        '去设置',
-      );
-      if (go) { closePanel(); navigate('/settings'); }
-      return;
-    }
     holdActive = true;
     holdCancel = false;
     holdStartY = ev.clientY;

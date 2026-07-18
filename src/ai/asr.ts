@@ -261,7 +261,6 @@ export function createHoldToTalkSession(options: {
     elapsedSeconds: () => recording ? Math.floor((Date.now() - startedAt) / 1000) : 0,
     async start() {
       if (recording) return;
-      if (!isAsrConfigured()) throw new AsrSentenceError('语音服务尚未部署，请稍后再试', 'unconfigured');
       chunks.length = 0;
       try {
         stream = await navigator.mediaDevices.getUserMedia({

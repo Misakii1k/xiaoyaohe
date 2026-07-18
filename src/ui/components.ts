@@ -284,6 +284,8 @@ export function confirmDialog(message: string, okText = '确定', danger = false
       onClose: () => close(false, true),
       initialFocus: danger ? cancel : ok,
     });
+    overlay.classList.add('confirm-dialog-overlay');
+    overlay.addEventListener('contextmenu', (event) => event.preventDefault(), { capture: true });
   });
 }
 

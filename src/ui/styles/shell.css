@@ -161,6 +161,13 @@
   padding: max(20px, var(--safe-top)) max(16px, var(--safe-right)) max(20px, var(--safe-bottom)) max(16px, var(--safe-left));
 }
 
+.confirm-dialog-overlay,
+.confirm-dialog-overlay * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 @media (min-width: 768px) {
   .app-shell {
     grid-template-columns: 208px minmax(0, 1fr);
