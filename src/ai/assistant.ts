@@ -34,12 +34,29 @@ export interface AssistantCardFact {
   value: string;
 }
 
+export type AssistantCardVariant = 'summary' | 'medication' | 'stats' | 'search' | 'notice';
+export type AssistantCardIcon =
+  | 'pill'
+  | 'calendar'
+  | 'clock'
+  | 'briefcase'
+  | 'timer'
+  | 'scan'
+  | 'bell'
+  | 'check'
+  | 'warn'
+  | 'sparkles'
+  | 'info';
+
 export interface AssistantCardBlock {
   type: 'card';
   title: string;
   eyebrow?: string;
   body?: string;
   tone?: 'neutral' | 'success' | 'warning';
+  variant?: AssistantCardVariant;
+  icon?: AssistantCardIcon;
+  badge?: string;
   facts?: AssistantCardFact[];
 }
 

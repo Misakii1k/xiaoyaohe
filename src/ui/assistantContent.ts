@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import type { AssistantContentBlock } from '../ai/assistant';
-import { el, icon } from './components';
+import type { AssistantCardBlock, AssistantCardVariant, AssistantContentBlock } from '../ai/assistant';
+import { el, icon, type IconName } from './components';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -59,14 +59,18 @@ export function renderAssistantBlock(
   }
 
   const tone = block.tone ?? 'neutral';
-  const heading = el('div', { class: 'ai-card-heading' }, [
-    el('span', { class: 'ai-card-icon' }, [icon(tone === 'warning' ? 'warn' : tone === 'success' ? 'check' : 'sparkles')]),
-    el('div', {}, [
-      ...(block.eyebrow ? [el('span', { class: 'ai-card-eyebrow', text: block.eyebrow })] : []),
-      el('h3', { text: block.title }),
-    ]),
+  const variant = block.variant ?? (tone === 'warning' ? 'notice' : 'summary');
+  const headingIcon = block.icon ?? defaultCardIcon(variant, tone);
+  const titleGroup = el('div', { class: 'ai-card-title-group' }, [
+    ...(block.eyebrow ? [el('span', { class: 'ai-card-eyebrow', text: block.eyebrow })] : []),
+    el('h3', { text: block.title }),
   ]);
-  const card = el('article', { class: `ai-content-card is-${tone}` }, [heading]);
+  const heading = el('div', { class: 'ai-card-heading' }, [
+    el('span', { class: 'ai-card-icon' }, [icon(headingIcon)]),
+    titleGroup,
+    ...(block.badge ? [el('span', { class: 'ai-card-badge', text: block.badge })] : []),
+  ]);
+  const card = el('article', { class: `ai-content-card is-${tone} is-${variant}` }, [heading]);
   if (block.body) card.append(renderAssistantMarkdown(block.body));
   if (block.facts?.length) {
     const facts = el('dl', { class: 'ai-card-facts' });
@@ -76,4 +80,14 @@ export function renderAssistantBlock(
     card.append(facts);
   }
   return card;
+}
+
+function defaultCardIcon(variant: AssistantCardVariant, tone: AssistantCardBlock['tone']): IconName {
+  if (tone === 'warning') return 'warn';
+  if (tone === 'success') return 'check';
+  if (variant === 'medication') return 'pill';
+  if (variant === 'stats') return 'timer';
+  if (variant === 'search') return 'scan';
+  if (variant === 'notice') return 'info';
+  return 'sparkles';
 }
