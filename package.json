@@ -1,9 +1,9 @@
 {
-  "name": "medbox",
-  "version": "0.7.8",
+  "name": "xiaoyaohe",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
-  "description": "日常工具箱：吃药提醒 + 工时记录 Android App",
+  "description": "小药盒：吃药提醒、药品管理与库存记录 Android App",
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",

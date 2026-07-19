@@ -12,6 +12,7 @@ import {
 } from './features/reminderActions';
 import { migrateOversizedMedPhotos } from './features/medPhotos';
 import { cleanupRetiredCloudSyncStorage } from './sync/retiredCloudStorage';
+import { cleanupRetiredWorkStorage } from './sync/retiredWorkStorage';
 
 // Register notification click routing before the router starts. The target is
 // retained so the Today page can focus the exact occurrence when it supports it.
@@ -69,7 +70,10 @@ if (!root) {
 }
 
 // 密钥恢复依赖原生安全存储；不能让它阻塞首屏路由和页面骨架。
-void cleanupRetiredCloudSyncStorage()
+void Promise.all([
+  cleanupRetiredCloudSyncStorage(),
+  cleanupRetiredWorkStorage(),
+])
   .catch(() => undefined)
   .then(() => initializeLlmSecretStore())
   .then(() => silentHealthCheck())

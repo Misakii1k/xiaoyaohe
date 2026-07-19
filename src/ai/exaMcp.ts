@@ -26,7 +26,7 @@ async function connectClient(): Promise<McpClient> {
         import('@modelcontextprotocol/sdk/client/index.js'),
         import('@modelcontextprotocol/sdk/client/streamableHttp.js'),
       ]);
-      const client = new Client({ name: 'medbox-exa-client', version: '0.7.8' });
+      const client = new Client({ name: 'medbox-exa-client', version: '0.8.0' });
       const transport = new StreamableHTTPClientTransport(new URL(EXA_MCP_URL));
       await client.connect(transport);
       const listed = await client.listTools(undefined, { timeout: 10_000, maxTotalTimeout: 10_000 });
@@ -113,7 +113,7 @@ async function initializeHttpSession(): Promise<string> {
     params: {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'medbox-exa-http-fallback', version: '0.7.8' },
+      clientInfo: { name: 'medbox-exa-http-fallback', version: '0.8.0' },
     },
   });
   const sessionId = response.sessionId;

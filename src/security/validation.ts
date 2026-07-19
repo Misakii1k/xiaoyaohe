@@ -121,58 +121,6 @@ const scheduleRevisionSchema = z.object({
   reviewFlags: z.array(z.enum(['cycle-start-missing', 'dose-unstructured'])).max(2),
 }).passthrough();
 
-const paySnapshotSchema = z.object({
-  mode: z.enum(['salary', 'hourly', 'daily']),
-  amount: nonNegativeNumber,
-  profileName: shortText,
-}).passthrough();
-
-const workProfileSchema = z.object({
-  id,
-  name: shortText,
-  payMode: z.enum(['salary', 'hourly', 'daily']),
-  baseAmount: nonNegativeNumber,
-  settlementCycle: z.enum(['month', 'day', 'entry']),
-  expectedWorkDaysPerMonth: finiteNumber.positive().optional(),
-  defaultStartTime: timeLocal.optional(),
-  defaultEndTime: timeLocal.optional(),
-  defaultBreakMinutes: nonNegativeNumber.optional(),
-  note: shortText.optional(),
-  taskTemplates: z.array(shortText).max(10).optional(),
-  updatedAt: nonNegativeNumber,
-  deleted: z.boolean().optional(),
-}).passthrough();
-
-const workEntrySchema = z.object({
-  id,
-  projectName: shortText,
-  taskName: shortText,
-  profileId: id.optional(),
-  paySnapshot: paySnapshotSchema.optional(),
-  startAt: nonNegativeNumber,
-  endAt: nonNegativeNumber.optional(),
-  breakMinutes: nonNegativeNumber,
-  note: shortText.optional(),
-  tags: z.array(shortText).max(100).optional(),
-  status: z.enum(['running', 'stopped']),
-  amountOverride: nonNegativeNumber.optional(),
-  settlementStatus: z.enum(['pending', 'settled']).optional(),
-  settledAt: nonNegativeNumber.optional(),
-  updatedAt: nonNegativeNumber,
-  deleted: z.boolean().optional(),
-}).passthrough();
-
-const workSettlementSchema = z.object({
-  id,
-  profileId: id,
-  periodKey: shortText.min(1),
-  amount: nonNegativeNumber,
-  status: z.enum(['pending', 'settled']),
-  settledAt: nonNegativeNumber.optional(),
-  updatedAt: nonNegativeNumber,
-  deleted: z.boolean().optional(),
-}).passthrough();
-
 const backupSchema = z.object({
   app: z.literal('medbox').optional(),
   version: z.number().int().positive().optional(),
@@ -185,9 +133,6 @@ const backupSchema = z.object({
   rules: z.array(reminderRuleSchema).max(MAX_ARRAY_ITEMS).optional(),
   logs: z.array(intakeLogSchema).max(MAX_ARRAY_ITEMS).optional(),
   scheduleRevisions: z.array(scheduleRevisionSchema).max(MAX_ARRAY_ITEMS).optional(),
-  workProfiles: z.array(workProfileSchema).max(MAX_ARRAY_ITEMS).optional(),
-  workEntries: z.array(workEntrySchema).max(MAX_ARRAY_ITEMS).optional(),
-  workSettlements: z.array(workSettlementSchema).max(MAX_ARRAY_ITEMS).optional(),
 }).passthrough();
 
 export function assertBackupFileSize(file: File): void {

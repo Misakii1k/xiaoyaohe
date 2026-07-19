@@ -12,10 +12,9 @@ export interface AppModule {
 }
 
 const medicationTool = tools.find((tool) => tool.id === 'meds');
-const workTool = tools.find((tool) => tool.id === 'work');
 
-if (!medicationTool || !workTool) {
-  throw new Error('Built-in medication and work modules must be registered.');
+if (!medicationTool) {
+  throw new Error('The built-in medication module must be registered.');
 }
 
 export const appModules: readonly AppModule[] = [
@@ -26,14 +25,6 @@ export const appModules: readonly AppModule[] = [
     navItem: { label: '药品', icon: 'pill', href: '/meds', order: 2 },
     backupProvider: medicationTool.backupProvider,
     getSummary: medicationTool.getSummary,
-  },
-  {
-    id: 'work',
-    title: '工时',
-    routes: workTool.routes,
-    navItem: { label: '工时', icon: 'briefcase', href: '/work', order: 4 },
-    backupProvider: workTool.backupProvider,
-    getSummary: workTool.getSummary,
   },
   {
     id: 'settings',

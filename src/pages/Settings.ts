@@ -1,7 +1,6 @@
 // Android 设置页：系统提醒、AI、局域网家庭同步、本地备份和应用信息。
 // 主要配置使用折叠面板，默认收起并在标题行显示当前状态。
 import { listLogs, listMeds, listRules } from '../db/local';
-import { listWorkEntries, listWorkProfiles, listWorkSettlements } from '../db/work';
 import { confirmDialog, el, renderPage, toast, icon, type IconName } from '../ui/components';
 import {
   backupProviders,
@@ -52,13 +51,10 @@ export async function renderSettingsPage(
   root: HTMLElement,
   signal?: AbortSignal,
 ): Promise<void | (() => void)> {
-  const [meds, rules, logs, workProfiles, workEntries, workSettlements] = await Promise.all([
+  const [meds, rules, logs] = await Promise.all([
     listMeds(),
     listRules(),
     listLogs(),
-    listWorkProfiles(),
-    listWorkEntries(),
-    listWorkSettlements(),
   ]);
   if (signal?.aborted) return;
 
@@ -75,7 +71,6 @@ export async function renderSettingsPage(
     meds: meds.length,
     rules: rules.length,
     logs: logs.length,
-    work: workProfiles.length + workEntries.length + workSettlements.length,
   });
   content.append(backupCard.element);
 
@@ -83,7 +78,7 @@ export async function renderSettingsPage(
   about.append(el('h2', { text: '关于' }));
   about.append(el('div', {
     class: 'muted',
-    html: `日常工具箱 v${__APP_VERSION__}（本地优先版）。吃药提醒、药品管理和工时收入可离线使用；AI 与常见相互作用提示仅供参考，不替代医嘱。`,
+    html: `小药盒 v${__APP_VERSION__}（本地优先版）。吃药提醒、药品管理和库存记录可离线使用；AI 与常见相互作用提示仅供参考，不替代医嘱。`,
   }));
   content.append(about);
 
@@ -185,14 +180,14 @@ export async function importBackupFileForRoute(
 function renderBackupCard(
   root: HTMLElement,
   signal?: AbortSignal,
-  counts?: { meds: number; rules: number; logs: number; work: number },
+  counts?: { meds: number; rules: number; logs: number },
 ): SettingsRenderPart {
   const io = el('section', { class: 'settings-section settings-data-card' });
   io.append(el('h2', { text: '本地数据与备份' }));
   if (counts) {
     io.append(el('div', {
       class: 'muted',
-      html: `本机现有 ${counts.meds} 种药品、${counts.rules} 条提醒规则、${counts.logs} 条服药记录、${counts.work} 条工时数据。`,
+      html: `本机现有 ${counts.meds} 种药品、${counts.rules} 条提醒规则、${counts.logs} 条服药记录。`,
     }));
   }
   io.append(el('div', {
@@ -205,7 +200,7 @@ function renderBackupCard(
     if (signal?.aborted) return;
     const data = await buildBackup();
     if (signal?.aborted) return;
-    downloadJson(data, `medbox-backup-${new Date().toISOString().slice(0, 10)}.json`);
+    downloadJson(data, `xiaoyaohe-backup-${new Date().toISOString().slice(0, 10)}.json`);
   };
 
   const importBtn = el('button', { class: 'btn', html: '导入备份', style: 'margin-top:10px' } as any);
@@ -729,7 +724,7 @@ function renderAiConsentPanel(): HTMLElement {
       body.append(
         el('div', {
           class: 'muted',
-          text: '药盒、药单和用药信息会按“健康”类别授权；工资、班次和收入按“工时”类别单独授权。同一服务商同一类别只会首次询问。',
+          text: '药盒、药单和用药信息会按“健康”类别授权；小助手对话和联网搜索按“助手”类别授权。同一服务商同一类别只会首次询问。',
         }),
         renderAiConsentControls(() => setChip(panelElement, aiConsentChip())),
       );
@@ -759,9 +754,7 @@ function renderAiConsentControls(onChanged: () => void): HTMLElement {
         class: 'muted',
         text: record.category === 'health'
           ? '吃药相关（药盒、药单、用药信息）'
-          : record.category === 'work'
-            ? '上班相关（工资、班次和收入）'
-            : '小助手对话（可能带上吃药和上班记录）',
+          : '小助手对话与联网搜索',
       }));
       const revoke = el('button', { class: 'btn text small', type: 'button', text: '撤销' } as any);
       revoke.onclick = () => {

@@ -19,12 +19,12 @@ import { createButton } from './primitives/Button';
 import { compressBoxPhoto } from '../features/medPhotos';
 import { renderAssistantBlock, renderAssistantMarkdown } from './assistantContent';
 
-const GREETING = '你好呀，我是小助手。想知道今天吃什么药、这个月挣了多少，或者让我帮你记一笔，直接说就行。也能拍照、发文件、按住说话。';
+const GREETING = '你好呀，我是小助手。想知道今天吃什么药、最近是否按时，或者查看药品库存，直接说就行。也能拍照、发文件、按住说话。';
 const QUICK_PROMPTS = [
   '今天要吃什么药？',
   '最近一周吃药按时吗？',
-  '这个月挣了多少钱？',
-  '现在开始上班计时',
+  '哪些药快没了？',
+  '打开药品库存',
 ];
 
 /** 文本附件最多带入模型的字数，避免一次塞整本书 */
@@ -105,7 +105,7 @@ export function mountGlobalAssistant(): void {
     el('span', { class: 'ai-panel-badge' }, [icon('sparkles')]),
     el('div', { class: 'ai-panel-titles' }, [
       el('h2', { class: 'ai-panel-title', text: '小助手' }),
-      el('p', { class: 'ai-panel-subtitle', text: '吃药、上班的事都可以问我' }),
+      el('p', { class: 'ai-panel-subtitle', text: '吃药、药品和库存都可以问我' }),
     ]),
     closeBtn,
   ]);
@@ -746,11 +746,11 @@ export function mountGlobalAssistant(): void {
           },
           {
             type: 'navigation',
-            title: '工时记录',
-            description: '查看本月收入和班次',
+            title: '药品库存',
+            description: '查看余量和低库存提醒',
             actionLabel: '打开页面',
-            path: '/work',
-            icon: 'briefcase',
+            path: '/meds/inventory',
+            icon: 'box',
           },
         ],
       });

@@ -25,10 +25,10 @@ describe('assistant structured output tools', () => {
     expect(tool).toBeDefined();
 
     const result = await tool!.run({
-      eyebrow: '本月工时',
-      title: '收入概览',
+      eyebrow: '药品库存',
+      title: '库存概览',
       tone: 'unexpected',
-      body: '**估算值**，以实际结算为准。',
+      body: '**库存记录**，请按实际余量及时更新。',
       variant: 'inventory',
       icon: 'box',
       badge: '1 项需补充',
@@ -37,8 +37,8 @@ describe('assistant structured output tools', () => {
         { title: '', status: 'warning' },
       ],
       facts: [
-        { label: '工时', value: '42 小时' },
-        { label: '收入', value: '3,280 元' },
+        { label: '药品', value: '6 种' },
+        { label: '需补充', value: '1 种' },
         { label: '', value: '不会显示' },
       ],
     }) as { ui: { type: string; tone: string; variant: string; icon: string; badge: string; items: unknown[]; facts: unknown[] } };
@@ -53,8 +53,8 @@ describe('assistant structured output tools', () => {
         { title: '阿司匹林', subtitle: '100mg · 每次 1 片', meta: '库存 28 片', status: 'success', statusLabel: '正常', icon: 'pill' },
       ],
       facts: [
-        { label: '工时', value: '42 小时' },
-        { label: '收入', value: '3,280 元' },
+        { label: '药品', value: '6 种' },
+        { label: '需补充', value: '1 种' },
       ],
     });
   });

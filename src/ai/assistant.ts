@@ -40,7 +40,6 @@ export type AssistantCardIcon =
   | 'box'
   | 'calendar'
   | 'clock'
-  | 'briefcase'
   | 'timer'
   | 'scan'
   | 'bell'
@@ -80,7 +79,7 @@ export interface AssistantNavigationBlock {
   description?: string;
   actionLabel: string;
   path: string;
-  icon?: 'calendar' | 'pill' | 'plus' | 'scan' | 'briefcase' | 'gear';
+  icon?: 'calendar' | 'pill' | 'plus' | 'scan' | 'box' | 'gear';
 }
 
 export type AssistantContentBlock = AssistantCardBlock | AssistantNavigationBlock;
@@ -107,13 +106,13 @@ const MAX_HISTORY = 12;
 const REQUEST_TIMEOUT_MS = 45_000;
 
 const SYSTEM_PROMPT = [
-  '你是「小药盒」应用里的贴身小助手，帮用户照看吃药提醒和上班工时两件事。',
+  '你是「小药盒」应用里的贴身小助手，帮用户照看吃药提醒、药品和库存。',
   '说话规则：',
   '1. 用中文短句，像家里人聊天一样，不用专业术语；重点数字可以用短列表。',
-  '2. 涉及用户自己的数据（今天吃什么药、吃没吃、挣了多少）时，先调用工具查真实数据，不要凭空猜。',
-  '3. 帮忙记吃药、改提醒、记班次这类操作，应用会自动弹窗跟用户确认，你直接调用工具即可，不必反复追问。',
+  '2. 涉及用户自己的数据（今天吃什么药、吃没吃、库存多少）时，先调用工具查真实数据，不要凭空猜。',
+  '3. 帮忙记吃药、改提醒这类操作，应用会自动弹窗跟用户确认，你直接调用工具即可，不必反复追问。',
   '4. 你不是医生：不判断病情，不建议加药、减药、停药或换药。被问到这类问题时，提醒用户去问医生或药师。',
-  '5. 金额单位是元，时间用 24 小时制。今天的日期会在对话开头告诉你。',
+  '5. 时间用 24 小时制。今天的日期会在对话开头告诉你。',
   '6. 用户想去某个功能页面时，用 open_page 带他过去。',
   '7. 工具返回"用户取消"时，礼貌收尾就好，不要重试同一个操作。',
   '8. 用户可能发来药盒照片、票据或文本文件：结合图片/文件内容回答；药名以包装文字为准，看不清就如实说。',

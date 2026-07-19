@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseSafeBackupPayload } from '../src/security/validation';
+import { backupProviders, countBackupPayload } from '../src/tools/registry';
 
 function validMedication(name = '测试药') {
   return {
@@ -34,9 +35,22 @@ describe('backup runtime validation', () => {
       meds: [{ ...validMedication(), daysOfWeek: [8] }],
     })).toThrow(/meds\.0\.daysOfWeek\.0/);
 
+  });
+
+  it('accepts legacy work fields as ignored compatibility input', () => {
     expect(() => parseSafeBackupPayload({
       app: 'medbox',
       workEntries: [{ id: 'entry-1', startAt: 'not-a-number' }],
-    })).toThrow(/workEntries\.0/);
+    })).not.toThrow();
+  });
+
+  it('keeps legacy work fields out of medication backup providers and counts', async () => {
+    expect(backupProviders.map((provider) => provider.key)).toEqual(['meds']);
+    await expect(countBackupPayload({
+      meds: [validMedication()],
+      workProfiles: [{ id: 'legacy-profile' }],
+      workEntries: [{ id: 'legacy-entry' }],
+      workSettlements: [{ id: 'legacy-settlement' }],
+    })).resolves.toEqual({ meds: 1, rules: 0, logs: 0, scheduleRevisions: 0 });
   });
 });

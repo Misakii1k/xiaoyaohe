@@ -426,7 +426,7 @@ export function renderPage(opts: {
 }): void {
   installRipple();
   opts.root.replaceChildren();
-  document.title = `${opts.title} · 日常工具箱`;
+  document.title = `${opts.title} · 小药盒`;
   const left = opts.topLeft;
 
   opts.content.setAttribute('role', 'main');

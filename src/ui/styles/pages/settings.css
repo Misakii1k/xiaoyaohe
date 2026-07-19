@@ -53,7 +53,7 @@
   color: var(--color-primary);
 }
 
-/* 旧版 svg 撑满 36px 圆导致图标过大过挤；按工时页 tint-icon 比例收小加粗 */
+/* 旧版 svg 撑满 36px 圆导致图标过大过挤；按共享 tint-icon 比例收小加粗 */
 .settings-page .panel-icon svg {
   inline-size: 19px;
   block-size: 19px;

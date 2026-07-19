@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.medbox.app',
-  appName: '日常工具箱',
+  appName: '小药盒',
   webDir: 'dist',
   loggingBehavior: 'none',
   server: {

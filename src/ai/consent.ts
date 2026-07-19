@@ -1,7 +1,7 @@
 import { confirmDialog } from '../ui/components';
 
-export type AiDataKind = 'medicine-photo' | 'prescription' | 'work-data' | 'assistant-chat' | 'voice-medication' | 'web-search';
-export type AiConsentCategory = 'health' | 'work' | 'assistant';
+export type AiDataKind = 'medicine-photo' | 'prescription' | 'assistant-chat' | 'voice-medication' | 'web-search';
+export type AiConsentCategory = 'health' | 'assistant';
 
 export interface StoredAiConsent {
   version: 2;
@@ -15,13 +15,12 @@ const sessionApprovals = new Set<string>();
 
 const KIND_LABEL: Record<AiConsentCategory, string> = {
   health: '药盒、药单或用药信息',
-  work: '工资、班次和工时信息',
-  assistant: '你和小助手的对话内容（可能包含吃药和上班记录）',
+  assistant: '你和小助手的对话内容',
 };
 
 export function consentCategoryFor(kind: AiDataKind): AiConsentCategory {
   if (kind === 'assistant-chat' || kind === 'web-search') return 'assistant';
-  return kind === 'work-data' ? 'work' : 'health';
+  return 'health';
 }
 
 export async function requireAiConsent(kind: AiDataKind, baseUrl: string): Promise<void> {
@@ -80,7 +79,7 @@ function isStoredConsent(value: unknown): value is StoredAiConsent {
   const item = value as Partial<StoredAiConsent>;
   return item.version === 2
     && typeof item.origin === 'string'
-    && (item.category === 'health' || item.category === 'work' || item.category === 'assistant')
+    && (item.category === 'health' || item.category === 'assistant')
     && typeof item.grantedAt === 'number';
 }
 

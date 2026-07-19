@@ -24,7 +24,7 @@ describe('LAN sync entity boundary', () => {
     raw.expirySourceTimestamp = raw.expiryDate;
     raw.mealRel = 'with';
     raw.identity.photoHashes = ['private-photo-hash'];
-    raw.workEntries = [{ project: 'WORK_PRIVATE_MARKER', income: 88_888 }];
+    raw.privateEntries = [{ marker: 'PRIVATE_LOCAL_MARKER' }];
     raw.aiApiKey = 'secret-ai-key';
     raw.pushState = { permission: 'granted' };
 
@@ -40,7 +40,7 @@ describe('LAN sync entity boundary', () => {
     expect(selected).not.toHaveProperty('mealRel');
     expect(selected).not.toHaveProperty('updatedAt');
     expect(selected.identity).not.toHaveProperty('photoHashes');
-    expect(JSON.stringify(selected)).not.toContain('WORK_PRIVATE_MARKER');
+    expect(JSON.stringify(selected)).not.toContain('PRIVATE_LOCAL_MARKER');
     expect(JSON.stringify(selected)).not.toContain('secret-ai-key');
   });
 
@@ -52,7 +52,7 @@ describe('LAN sync entity boundary', () => {
       { expiryDate: 1 },
       { expirySourceTimestamp: 1 },
       { mealRel: 'with' },
-      { workEntries: [{ income: 1 }] },
+      { privateEntries: [{ marker: 'private' }] },
       { aiSecret: 'secret' },
       { pushState: {} },
       { photos: ['data:image/png;base64,private'] },

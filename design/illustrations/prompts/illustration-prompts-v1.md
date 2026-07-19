@@ -1,4 +1,4 @@
-# 日常工具箱 空状态与引导插画提示词 v1
+# 小药盒 空状态与引导插画提示词 v1
 
 来源：`docs/plans/2026-07-14-medbox-0.7.0-ui-and-medication-batch.md` 第 8 节。
 
@@ -22,20 +22,7 @@ Constraints: 无药名、无文字数字、无人物、无品牌、无红十字�
 
 发送文件：`empty-medications.en.txt`
 
-## 8.2 无工时记录（empty-work）
-
-```text
-Use case: stylized-concept
-Asset type: 工时记录页面空状态插画
-Primary request: 简洁秒表、无文字日历页、清单和一条小型趋势线，表达“尚无工时记录”。
-Style: 与药品空状态完全一致的柔和浅色纸艺和半扁平二维。
-Composition: 横向 4:3，主体居中，保留足够中文说明区域。
-Constraints: 无文字数字、无人物、无货币符号、无品牌和水印。
-```
-
-发送文件：`empty-work.en.txt`
-
-## 8.3 扫码引导（scan-guide）
+## 8.2 扫码引导（scan-guide）
 
 ```text
 Use case: stylized-concept

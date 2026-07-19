@@ -9,17 +9,6 @@ import {
   putRule,
   setOccurrenceAction,
 } from '../db/local';
-import {
-  createPaySnapshot,
-  getRunningWorkEntry,
-  listWorkEntries,
-  listWorkIncomeSummary,
-  listWorkProfiles,
-  listWorkSettlements,
-  putWorkEntry,
-  startWorkEntry,
-  workUid,
-} from '../db/work';
 import { SLOT_LABEL, formatMealRels, type Slot } from '../db/schema';
 import {
   addLocalDays,
@@ -58,7 +47,7 @@ const SLOT_VALUES: Slot[] = ['morning', 'noon', 'evening', 'bedtime'];
 const TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 const MAX_CARD_TEXT = 600;
 const CARD_VARIANTS: AssistantCardVariant[] = ['summary', 'medication', 'stats', 'search', 'notice', 'inventory'];
-const CARD_ICONS: AssistantCardIcon[] = ['pill', 'box', 'calendar', 'clock', 'briefcase', 'timer', 'scan', 'bell', 'bell-ring', 'check', 'warn', 'sparkles', 'info'];
+const CARD_ICONS: AssistantCardIcon[] = ['pill', 'box', 'calendar', 'clock', 'timer', 'scan', 'bell', 'bell-ring', 'check', 'warn', 'sparkles', 'info'];
 const CARD_ITEM_STATUSES: AssistantCardItemStatus[] = ['pending', 'success', 'skipped', 'warning', 'muted'];
 
 function str(v: unknown): string {
@@ -365,180 +354,12 @@ const setReminderTime: AssistantTool = {
   },
 };
 
-function workRange(range: string, now: number): { start: number; end: number; label: string } {
-  const today = toLocalDate(now);
-  if (range === 'week') {
-    const start = localDayBounds(addLocalDays(today, -6)).start;
-    return { start, end: localDayBounds(today).end, label: '最近 7 天' };
-  }
-  if (range === 'month') {
-    const d = new Date(now);
-    const start = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
-    return { start, end: localDayBounds(today).end, label: '本月' };
-  }
-  const bounds = localDayBounds(today);
-  return { ...bounds, label: '今天' };
-}
-
-const getWorkReport: AssistantTool = {
-  name: 'get_work_report',
-  label: '算算上班和收入',
-  description: '统计某个时间范围（today/week/month）的上班时长、估算收入、还没结的钱、出勤天数。回答"这个月挣了多少"类问题用它。',
-  parameters: {
-    type: 'object',
-    properties: { range: { type: 'string', enum: ['today', 'week', 'month'], description: '统计范围，默认 month' } },
-    additionalProperties: false,
-  },
-  async run(args) {
-    const now = Date.now();
-    const { start, end, label } = workRange(str(args.range) || 'month', now);
-    const [entries, profiles, settlements] = await Promise.all([
-      listWorkEntries(),
-      listWorkProfiles(),
-      listWorkSettlements(),
-    ]);
-    const summary = listWorkIncomeSummary(entries, profiles, settlements, start, end, now);
-    const running = await getRunningWorkEntry();
-    const hours = Math.round((summary.totalMs / 3_600_000) * 10) / 10;
-    const ui: AssistantCardBlock = {
-      type: 'card',
-      variant: 'stats',
-      icon: 'briefcase',
-      eyebrow: label,
-      title: '工时与收入',
-      badge: running ? '正在上班' : '已结算可查',
-      tone: running ? 'neutral' : 'success',
-      body: running ? '当前有一班正在进行，结束后收入会更新。' : '按本地工时记录估算，最终以实际结算为准。',
-      facts: [
-        { label: '工时', value: `${hours} 小时` },
-        { label: '估算收入', value: `${summary.estimatedIncome} 元` },
-        { label: '待结', value: `${summary.pendingIncome} 元` },
-        { label: '出勤', value: `${summary.attendanceDays} 天` },
-      ],
-    };
-    return {
-      ui,
-      范围: label,
-      上班时长: `${hours} 小时`,
-      估算收入: `${summary.estimatedIncome} 元`,
-      还没结的钱: `${summary.pendingIncome} 元`,
-      出勤天数: summary.attendanceDays,
-      正在上班: running ? `是（从 ${new Date(running.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 开始）` : '否',
-    };
-  },
-};
-
-function parseLocalDateTime(date: string, time: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !TIME_RE.test(time)) return null;
-  const t = new Date(`${date}T${time.length === 4 ? `0${time}` : time}:00`);
-  return Number.isNaN(t.getTime()) ? null : t.getTime();
-}
-
-const addWorkRecord: AssistantTool = {
-  name: 'add_work_record',
-  label: '帮忙补一条上班记录',
-  description: '补记一条已经结束的班次：哪天、几点到几点、休息多少分钟、有没有当场结钱。用户说"昨天 10 点到 6 点"这类话时用它。日期用 YYYY-MM-DD，时间用 HH:mm。',
-  parameters: {
-    type: 'object',
-    properties: {
-      date: { type: 'string', description: '上班日期 YYYY-MM-DD，用户说"今天/昨天"时换算成具体日期' },
-      startTime: { type: 'string', description: '开始时间 HH:mm' },
-      endTime: { type: 'string', description: '结束时间 HH:mm；跨夜时可配合 endDate' },
-      endDate: { type: 'string', description: '结束日期 YYYY-MM-DD，通宵班才需要填' },
-      breakMinutes: { type: 'integer', minimum: 0, description: '中间休息分钟数，默认 0' },
-      profileName: { type: 'string', description: '工作名称（对应已有的工作档案），不填用第一个' },
-      settled: { type: 'boolean', description: '钱是否已经结了，默认没结' },
-      amountOverride: { type: 'number', description: '这一班实际拿到的钱（元），日结说了具体数就填' },
-      note: { type: 'string', description: '备注' },
-    },
-    required: ['date', 'startTime', 'endTime'],
-    additionalProperties: false,
-  },
-  confirm(args) {
-    return `补记一条班次：${str(args.date)} ${str(args.startTime)}~${str(args.endTime)}${args.settled ? '（已结钱）' : ''}，确定记上吗？`;
-  },
-  async run(args) {
-    const profiles = await listWorkProfiles();
-    if (profiles.length === 0) return { ok: false, 提示: '还没有建过工作，先到「工时」页新增一个工作，或告诉用户去建' };
-    const name = str(args.profileName).toLowerCase();
-    const profile = (name ? profiles.find((p) => p.name.toLowerCase().includes(name)) : undefined) ?? profiles[0];
-    const startAt = parseLocalDateTime(str(args.date), str(args.startTime));
-    const endAt = parseLocalDateTime(str(args.endDate) || str(args.date), str(args.endTime));
-    if (startAt == null || endAt == null) return { ok: false, 提示: '日期或时间格式不对：日期 YYYY-MM-DD，时间 HH:mm' };
-    const finalEnd = endAt > startAt ? endAt : endAt + 24 * 3_600_000;
-    const settled = args.settled === true;
-    await putWorkEntry({
-      id: workUid(),
-      profileId: profile.id,
-      projectName: profile.name,
-      taskName: str(args.note) ? str(args.note).slice(0, 20) : '小助手补记',
-      paySnapshot: createPaySnapshot(profile),
-      startAt,
-      endAt: finalEnd,
-      breakMinutes: Math.max(0, Number(args.breakMinutes) || 0),
-      amountOverride: typeof args.amountOverride === 'number' && args.amountOverride > 0 ? args.amountOverride : undefined,
-      settlementStatus: settled ? 'settled' : 'pending',
-      settledAt: settled ? Date.now() : undefined,
-      note: str(args.note) || undefined,
-      status: 'stopped',
-      updatedAt: Date.now(),
-    });
-    return { ok: true, 已记录: `${profile.name} ${str(args.date)} ${str(args.startTime)}~${str(args.endTime)}${settled ? '，已结钱' : ''}` };
-  },
-};
-
-const shiftControl: AssistantTool = {
-  name: 'shift_control',
-  label: '开始或结束上班打卡',
-  description: '现在开始上班（打卡计时）或结束当前正在进行的班次。',
-  parameters: {
-    type: 'object',
-    properties: {
-      action: { type: 'string', enum: ['start', 'stop'], description: 'start=现在开始上班，stop=现在下班' },
-      profileName: { type: 'string', description: '开始上班时选哪份工作，不填用第一个' },
-    },
-    required: ['action'],
-    additionalProperties: false,
-  },
-  confirm(args) {
-    return args.action === 'stop' ? '现在记录下班？' : '现在开始记录上班？';
-  },
-  async run(args) {
-    if (args.action === 'stop') {
-      const running = await getRunningWorkEntry();
-      if (!running) return { ok: false, 提示: '现在没有正在进行的班次' };
-      running.endAt = Date.now();
-      running.status = 'stopped';
-      await putWorkEntry(running);
-      const hours = Math.round(((running.endAt - running.startAt) / 3_600_000) * 10) / 10;
-      return { ok: true, 已下班: `这一班大约 ${hours} 小时` };
-    }
-    const profiles = await listWorkProfiles();
-    if (profiles.length === 0) return { ok: false, 提示: '还没有建过工作，先到「工时」页新增一个' };
-    const name = str(args.profileName).toLowerCase();
-    const profile = (name ? profiles.find((p) => p.name.toLowerCase().includes(name)) : undefined) ?? profiles[0];
-    const result = await startWorkEntry({
-      id: workUid(),
-      profileId: profile.id,
-      projectName: profile.name,
-      taskName: '',
-      paySnapshot: createPaySnapshot(profile),
-      startAt: Date.now(),
-      breakMinutes: profile.defaultBreakMinutes ?? 0,
-      status: 'running',
-      updatedAt: Date.now(),
-    });
-    if (!result.started) return { ok: false, 提示: '已经有一班在进行中了，先结束它' };
-    return { ok: true, 已开始: `「${profile.name}」开始计时` };
-  },
-};
-
 const PAGE_TARGETS: Record<string, { path: string; label: string }> = {
   today: { path: '/today', label: '今天的吃药清单' },
   meds: { path: '/meds', label: '药品列表' },
   add_med: { path: '/meds/new', label: '添加药品' },
   scan: { path: '/scan', label: '分药' },
-  work: { path: '/work', label: '工时记录' },
+  inventory: { path: '/meds/inventory', label: '库存' },
   settings: { path: '/settings', label: '设置' },
 };
 
@@ -547,7 +368,7 @@ const PAGE_ICONS: Record<string, AssistantNavigationBlock['icon']> = {
   meds: 'pill',
   add_med: 'plus',
   scan: 'scan',
-  work: 'briefcase',
+  inventory: 'box',
   settings: 'gear',
 };
 
@@ -558,7 +379,7 @@ const presentCard: AssistantTool = {
   parameters: {
     type: 'object',
     properties: {
-      eyebrow: { type: 'string', description: '卡片顶部短标签，如「本月工时」' },
+      eyebrow: { type: 'string', description: '卡片顶部短标签，如「今日用药」' },
       title: { type: 'string', description: '卡片主标题' },
       body: { type: 'string', description: '可选的 Markdown 简短说明' },
       tone: { type: 'string', enum: ['neutral', 'success', 'warning'], description: '普通、顺利或需要注意' },
@@ -700,7 +521,7 @@ export const OPEN_PAGE_TOOL_NAME = 'open_page';
 const openPage: AssistantTool = {
   name: OPEN_PAGE_TOOL_NAME,
   label: '准备页面入口',
-  description: '给用户展示一个可点击的应用内页面跳转卡片：today=今天清单，meds=药品列表，add_med=添加药品，scan=分药（扫码认药/拍药盒/拍药单录入），work=工时记录，settings=设置。此工具只展示入口，不会立刻跳页。',
+  description: '给用户展示一个可点击的应用内页面跳转卡片：today=今天清单，meds=药品列表，add_med=添加药品，scan=分药（扫码认药/拍药盒/拍药单录入），inventory=库存，settings=设置。此工具只展示入口，不会立刻跳页。',
   parameters: {
     type: 'object',
     properties: { page: { type: 'string', enum: Object.keys(PAGE_TARGETS) } },
@@ -729,9 +550,6 @@ export const assistantTools: readonly AssistantTool[] = [
   getAdherenceReport,
   markMedication,
   setReminderTime,
-  getWorkReport,
-  addWorkRecord,
-  shiftControl,
   webSearchExa,
   presentCard,
   openPage,
