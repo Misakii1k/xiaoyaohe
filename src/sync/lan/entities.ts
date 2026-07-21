@@ -15,6 +15,8 @@ import {
 export const LAN_SYNC_SCHEMA_VERSION = 1 as const;
 export const LAN_SYNC_MAX_ENTRIES = 10_000;
 export const LAN_SYNC_MAX_JSON_BYTES = 5 * 1024 * 1024;
+/** 含 extras（照片 base64 等）的整条消息上限 */
+export const LAN_SYNC_MAX_MESSAGE_BYTES = 15 * 1024 * 1024;
 
 const MAX_TEXT_LENGTH = 10_000;
 const MAX_LIST_ITEMS = 1_000;
