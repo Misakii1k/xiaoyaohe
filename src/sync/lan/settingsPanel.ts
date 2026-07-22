@@ -3,6 +3,7 @@ import { scanCodeFromImage, startScan, type Scanner } from '../../features/scann
 import { el, icon, toast } from '../../ui/components';
 import { openBottomSheet, type BottomSheetHandle } from '../../ui/primitives/BottomSheet';
 import { isLanSyncAvailable } from './nativeTransport';
+import type { LanSyncContentOptions } from './extras';
 import {
   getLanSyncDeviceName,
   getLastLanSyncResult,
@@ -74,10 +75,25 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   } as any);
   renderLastResult(status, lastResult);
 
+  // 额外同步内容勾选
+  const photosCheckbox = el('input', { type: 'checkbox', id: `lan-sync-photos-${panelSequence}` } as any) as HTMLInputElement;
+  const apiCheckbox = el('input', { type: 'checkbox', id: `lan-sync-api-${panelSequence}` } as any) as HTMLInputElement;
+  const extrasFieldset = el('fieldset', { class: 'lan-sync-extras' }, [
+    el('legend', { text: '额外同步（可选）' }),
+    el('label', { class: 'lan-sync-extras-item', htmlFor: photosCheckbox.id } as any, [
+      photosCheckbox,
+      el('span', { text: '药品照片' }),
+    ]),
+    el('label', { class: 'lan-sync-extras-item', htmlFor: apiCheckbox.id } as any, [
+      apiCheckbox,
+      el('span', { text: 'AI 接口配置' }),
+    ]),
+  ]);
+
   const showCode = actionButton('send', '显示连接码');
   const scanCode = actionButton('scan', '扫一扫连接', 'tonal');
   const actions = el('div', { class: 'btn-row lan-sync-actions' }, [showCode, scanCode]);
-  body.append(info, inventoryNote, nameField, actions, status);
+  body.append(info, inventoryNote, nameField, extrasFieldset, actions, status);
   if (!available) {
     showCode.disabled = true;
     scanCode.disabled = true;
@@ -141,10 +157,12 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     setStatus(status, 'info', '正在准备连接码');
     try {
       const deviceName = setLanSyncDeviceName(nameInput.value);
+      const syncOptions = getSyncOptions();
       const session = await startLanSyncHost({
         signal: routeSignal,
         deviceName,
         onProgress: (progress) => setProgress(status, progress),
+        syncOptions,
       });
       if (disposed) {
         await session.close();
@@ -301,6 +319,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
         const result = await joinLanSyncHost(raw, {
           signal: controller.signal,
           deviceName: setLanSyncDeviceName(nameInput.value),
+          syncOptions: getSyncOptions(),
           onProgress: (progress) => {
             scanStatus.className = 'banner info';
             scanStatus.textContent = progress.message;
@@ -320,6 +339,13 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
         await scanner?.resume();
       }
     }
+  }
+
+  function getSyncOptions(): LanSyncContentOptions | undefined {
+    const photos = photosCheckbox.checked;
+    const apiConfig = apiCheckbox.checked;
+    if (!photos && !apiConfig) return undefined;
+    return { photos, apiConfig };
   }
 
   function setActionsBusy(busy: boolean): void {

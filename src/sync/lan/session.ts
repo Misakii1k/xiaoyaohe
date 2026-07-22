@@ -28,11 +28,17 @@ import {
   type LanSyncMergeResult,
   type LanSyncSnapshot,
 } from './store';
+import {
+  applySyncExtras,
+  collectSyncExtras,
+  syncExtrasSchema,
+  type LanSyncContentOptions,
+} from './extras';
 
 const DEVICE_ID_KEY = 'medbox.lan-sync.device-id.v1';
 const DEVICE_NAME_KEY = 'medbox.lan-sync.device-name.v1';
 const LAST_RESULT_KEY = 'medbox.lan-sync.last-result.v1';
-const FRAME_TIMEOUT_MS = 30_000;
+const FRAME_TIMEOUT_MS = 90_000;
 
 export type LanSyncProgressStage = 'waiting' | 'connecting' | 'transferring' | 'complete';
 
@@ -60,6 +66,8 @@ export interface LanSyncSessionOptions {
   signal?: AbortSignal;
   onProgress?: (progress: LanSyncProgress) => void;
   deviceName?: string;
+  /** 可选同步内容（照片、API 配置） */
+  syncOptions?: LanSyncContentOptions;
 }
 
 interface LanSyncDevice {
@@ -87,6 +95,7 @@ const joinPayloadSchema = z.object({
   version: z.literal(1),
   device: deviceSchema,
   snapshot: z.unknown(),
+  extras: z.unknown().optional(),
 }).strict();
 
 const resultPayloadSchema = z.object({
@@ -96,6 +105,7 @@ const resultPayloadSchema = z.object({
   snapshot: z.unknown(),
   conflictCount: z.number().int().nonnegative(),
   inventoryConflicts: z.array(z.string().max(80)).max(1_000),
+  extras: z.unknown().optional(),
 }).strict();
 
 const ackPayloadSchema = z.object({
@@ -136,6 +146,7 @@ export async function startLanSyncHost(
       resolveDevice(options.deviceName),
       controller.signal,
       options.onProgress,
+      options.syncOptions,
     ).finally(async () => {
       await dependencies.transport.close(connection.connectionId).catch(() => false);
       await inbox.dispose();
@@ -175,6 +186,9 @@ export async function joinLanSyncHost(
     options.onProgress?.({ stage: 'transferring', message: '正在传送' });
     const device = resolveDevice(options.deviceName);
     const snapshot = await dependencies.createSnapshot(device.id, invitation.sessionId);
+    const extras = options.syncOptions
+      ? await collectSyncExtras(options.syncOptions)
+      : undefined;
     await dependencies.transport.send({
       connectionId,
       data: await encryptLanSyncMessage(key, messageMetadata(invitation.sessionId, 'joiner', 1, 'join'), {
@@ -182,6 +196,7 @@ export async function joinLanSyncHost(
         version: 1,
         device,
         snapshot,
+        ...(extras ? { extras } : {}),
       }),
     });
 
@@ -208,6 +223,11 @@ export async function joinLanSyncHost(
     ));
     const mergedSnapshot = dependencies.parseSnapshot(resultPayload.snapshot);
     await dependencies.applySnapshot(mergedSnapshot, snapshot);
+    // 应用主机端发来的可选内容（照片、API 配置）
+    if (resultPayload.extras) {
+      const parsed = syncExtrasSchema.safeParse(resultPayload.extras);
+      if (parsed.success) await applySyncExtras(parsed.data);
+    }
     const remindersNeedAttention = await checkRemindersAfterSync(dependencies);
     await dependencies.transport.send({
       connectionId,
@@ -291,6 +311,7 @@ async function runHostSession(
   device: LanSyncDevice,
   signal: AbortSignal,
   onProgress?: (progress: LanSyncProgress) => void,
+  syncOptions?: LanSyncContentOptions,
 ): Promise<LanSyncSessionResult> {
   const key = await deriveLanSyncSessionKey(invitation.secret, invitation.sessionId);
   let connected = false;
@@ -324,7 +345,16 @@ async function runHostSession(
       throw new Error('两台手机里的同一条资料无法核对，本次没有写入。');
     }
     await dependencies.applySnapshot(merged.snapshot, localSnapshot);
+    // 应用加入端发来的可选内容（照片、API 配置）
+    if (joinPayload.extras) {
+      const parsed = syncExtrasSchema.safeParse(joinPayload.extras);
+      if (parsed.success) await applySyncExtras(parsed.data);
+    }
     const remindersNeedAttention = await checkRemindersAfterSync(dependencies);
+    // 收集主机端的可选内容回传给加入端
+    const hostExtras = syncOptions
+      ? await collectSyncExtras(syncOptions)
+      : undefined;
     await dependencies.transport.send({
       connectionId,
       data: await encryptLanSyncMessage(key, messageMetadata(invitation.sessionId, 'host', 1, 'result'), {
@@ -334,6 +364,7 @@ async function runHostSession(
         snapshot: merged.snapshot,
         conflictCount: merged.conflicts.length,
         inventoryConflicts: merged.inventoryConflicts,
+        ...(hostExtras ? { extras: hostExtras } : {}),
       }),
     });
     const acknowledgement = await inbox.waitForFrame(connectionId, signal, FRAME_TIMEOUT_MS);
