@@ -4,13 +4,21 @@ Tool: Claude
 Branch: `workspace/claude`（本次工作直接提交在 `main`，沿用近几轮 UI/功能提交的既有做法；`workspace/claude` 尚未追平 main）
 Updated: 2026-07-22
 Status: idle
-Latest commit: `522e161 feat: choose overwrite version during LAN sync with recommendation`
+Latest commit: `ba212fc ui: remove inventory button from meds list topbar`
 
 ## Goal
 
-本轮已完成三组已验证、已提交的工作（197/197 测试通过，类型检查干净），目前无活跃任务。
+应用户请求去掉药品页顶栏的「库存」胶囊按钮。库存入口仍保留在底部导航 tab。已验证、已提交，目前无活跃任务。
 
 ## What Landed on `main` (2026-07-22)
+
+4. `ba212fc ui: remove inventory button from meds list topbar`
+   - `src/pages/MedList.ts`：删除顶栏 `inventoryBtn = topbarPill({ icon: 'box', label: '库存', ... })` 声明，`topRight.append(...)` 改为只剩 `batchBtn, addBtn`。药品列表页顶栏现仅「批量管理」「添加药品」两按钮。
+   - 底部导航 tab 的库存入口（`src/app/navigation.ts` 的 `inventory` 项）**未动**，用户明确指「药品页的库存按钮」即顶栏胶囊。
+   - 浏览器验证：刷新 `/meds`，顶栏只剩两个按钮；无 console 报错。
+   - `npm test`：45 文件 / 197 通过；`npm run typecheck`：干净。
+
+## Earlier Work (2026-07-22)
 
 1. `0e012af build: configure Android release signing via local keystore`
    - `android/app/build.gradle`：新增 `signingConfigs.release` + `buildTypes.release.signingConfig`，仅在 `app/keystore.properties` 存在时启用，main 的 debug-only 构建不受影响。
