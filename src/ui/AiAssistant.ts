@@ -570,15 +570,20 @@ export function mountGlobalAssistant(): void {
   }
 
   function addAssistantReply(reply: AssistantTurnResult): HTMLElement {
-    const bubble = el('div', { class: 'ai-bubble' });
-    if (reply.markdown) bubble.append(renderAssistantMarkdown(reply.markdown));
-    for (const block of reply.blocks) {
-      bubble.append(renderAssistantBlock(block, (path) => {
-        closePanel();
-        navigate(path);
-      }));
+    const msg = el('div', { class: 'ai-msg is-bot' });
+    if (reply.markdown) {
+      msg.append(el('div', { class: 'ai-bubble' }, [renderAssistantMarkdown(reply.markdown)]));
     }
-    const msg = el('div', { class: 'ai-msg is-bot' }, [bubble]);
+    if (reply.blocks.length) {
+      const cards = el('div', { class: 'ai-cards' });
+      for (const block of reply.blocks) {
+        cards.append(renderAssistantBlock(block, (path) => {
+          closePanel();
+          navigate(path);
+        }));
+      }
+      msg.append(cards);
+    }
     log.append(msg);
     log.scrollTop = log.scrollHeight;
     return msg;

@@ -135,8 +135,18 @@
   overscroll-behavior: contain;
 }
 
-.ai-msg { display: flex; }
+.ai-msg { display: flex; flex-direction: column; gap: var(--space-2); }
 .ai-msg.is-user { justify-content: flex-end; }
+
+/* 同一条助手回复里卡片独占一区，与 markdown 文字气泡分离，避免堆叠难读 */
+.ai-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  inline-size: 100%;
+  max-inline-size: 92%;
+  align-self: flex-start;
+}
 
 .ai-bubble {
   display: inline-flex;
@@ -404,7 +414,7 @@
 .ai-content-card,
 .ai-navigation-card {
   inline-size: 100%;
-  margin-block-start: var(--space-2);
+  margin-block-start: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
