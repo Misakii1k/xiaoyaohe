@@ -328,35 +328,68 @@ export function emptyState(
 
 /** ---------- 进度环 ---------- */
 export function progressRing(value: number, total: number): HTMLElement {
-  const wrap = el('div', { class: 'progress-ring' });
+  const safeTotal = Math.max(0, total);
+  const safeValue = Math.max(0, Math.min(value, safeTotal || value));
+  const ratio = safeTotal > 0 ? Math.min(1, safeValue / safeTotal) : 0;
+  const wrap = el('div', {
+    class:
+      'progress-ring'
+      + (safeTotal === 0 ? ' is-empty' : ratio >= 1 ? ' is-done' : ratio > 0 ? ' is-active' : ' is-pending'),
+  });
   wrap.setAttribute('role', 'progressbar');
   wrap.setAttribute('aria-valuemin', '0');
-  wrap.setAttribute('aria-valuemax', String(Math.max(0, total)));
-  wrap.setAttribute('aria-valuenow', String(Math.max(0, value)));
-  wrap.setAttribute('aria-label', `已完成 ${value} 项，共 ${total} 项`);
+  wrap.setAttribute('aria-valuemax', String(safeTotal));
+  wrap.setAttribute('aria-valuenow', String(safeValue));
+  wrap.setAttribute('aria-label', `已完成 ${safeValue} 项，共 ${safeTotal} 项`);
+  wrap.style.setProperty('--ring-progress', String(ratio));
+
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('viewBox', '0 0 80 80');
-  const bg = document.createElementNS(ns, 'circle');
-  bg.setAttribute('class', 'ring-bg');
-  bg.setAttribute('cx', '40');
-  bg.setAttribute('cy', '40');
-  bg.setAttribute('r', '32');
-  svg.append(bg);
-  const r = 32;
-  const c = 2 * Math.PI * r;
-  const ratio = total > 0 ? Math.min(1, value / total) : 0;
+  svg.setAttribute('viewBox', '0 0 96 96');
+
+  // Soft fill disc under the stroke so the ring feels like a badge, not a wire.
+  const disc = document.createElementNS(ns, 'circle');
+  disc.setAttribute('class', 'ring-disc');
+  disc.setAttribute('cx', '48');
+  disc.setAttribute('cy', '48');
+  disc.setAttribute('r', '36');
+  svg.append(disc);
+
+  const track = document.createElementNS(ns, 'circle');
+  track.setAttribute('class', 'ring-bg');
+  track.setAttribute('cx', '48');
+  track.setAttribute('cy', '48');
+  track.setAttribute('r', '36');
+  track.setAttribute('pathLength', '100');
+  svg.append(track);
+
   const fg = document.createElementNS(ns, 'circle');
   fg.setAttribute('class', 'ring-fg');
-  fg.setAttribute('cx', '40');
-  fg.setAttribute('cy', '40');
-  fg.setAttribute('r', String(r));
-  fg.setAttribute('stroke-dasharray', String(c));
-  fg.setAttribute('stroke-dashoffset', String(c * (1 - ratio)));
+  fg.setAttribute('cx', '48');
+  fg.setAttribute('cy', '48');
+  fg.setAttribute('r', '36');
+  fg.setAttribute('pathLength', '100');
+  // pathLength=100 → dasharray "progress 100", offset 0 from 12 o'clock after CSS rotate.
+  const progress = Math.round(ratio * 100);
+  fg.setAttribute('stroke-dasharray', `${progress} 100`);
+  fg.setAttribute('stroke-dashoffset', '0');
   svg.append(fg);
-  wrap.append(svg);
-  wrap.append(el('div', { class: 'ring-label', html: `${value}/${total}` }));
+
+  const label = el('div', { class: 'ring-label' });
+  if (safeTotal === 0) {
+    label.append(
+      el('span', { class: 'ring-value', text: '—' }),
+      el('span', { class: 'ring-caption', text: '无安排' }),
+    );
+  } else {
+    label.append(
+      el('span', { class: 'ring-value', text: `${safeValue}/${safeTotal}` }),
+      el('span', { class: 'ring-caption', text: ratio >= 1 ? '已完成' : '完成' }),
+    );
+  }
+
+  wrap.append(svg, label);
   return wrap;
 }
 
