@@ -22,7 +22,11 @@ import {
   showNotification,
 } from '../features/notifier';
 import { fireNativeMedicationAlarmNow, nativeMedicationAlarmAvailable } from '../features/nativeMedicationAlarm';
-import { runOnce as runReminderOnce } from '../features/reminderScheduler';
+import {
+  isAppNotificationsEnabled,
+  setAppNotificationsEnabled,
+} from '../features/notificationPreference';
+import { runOnce as runReminderOnce, rescheduleMedicationReminders } from '../features/reminderScheduler';
 import {
   getLlmConfig,
   setLlmConfig,
@@ -310,31 +314,24 @@ function setChip(panelEl: HTMLElement, chip: PanelChip): void {
 }
 
 /** ---------------- 通知面板 ---------------- */
+function reminderPanelChip(): PanelChip {
+  if (!notificationsSupported()) return { text: '不支持', tone: 'warn' };
+  if (!isAppNotificationsEnabled()) return { text: '已暂停', tone: 'muted' };
+  const perm = getPermission();
+  if (perm === 'granted') return { text: '已开启', tone: 'ok' };
+  if (perm === 'denied') return { text: '被拒绝', tone: 'warn' };
+  return { text: '未开启', tone: 'muted' };
+}
+
 function renderReminderPanel(): HTMLElement {
-  const perm = notificationsSupported() ? getPermission() : 'denied';
-  const chip: PanelChip = !notificationsSupported()
-    ? { text: '不支持', tone: 'warn' }
-    : perm === 'granted'
-      ? { text: '已开启', tone: 'ok' }
-      : perm === 'denied'
-        ? { text: '被拒绝', tone: 'warn' }
-        : { text: '未开启', tone: 'muted' };
   const p = panel({
     title: '系统通知',
     iconName: 'bell-ring',
-    chip,
+    chip: reminderPanelChip(),
     renderBody: (body) => buildReminderBody(body, () => {
       body.replaceChildren();
       buildReminderBody(body, () => {});
-      const perm2 = notificationsSupported() ? getPermission() : 'denied';
-      const c: PanelChip = !notificationsSupported()
-        ? { text: '不支持', tone: 'warn' }
-        : perm2 === 'granted'
-          ? { text: '已开启', tone: 'ok' }
-          : perm2 === 'denied'
-            ? { text: '被拒绝', tone: 'warn' }
-            : { text: '未开启', tone: 'muted' };
-      setChip(p, c);
+      setChip(p, reminderPanelChip());
     }),
   });
   return p;
@@ -346,6 +343,48 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       el('div', { class: 'banner warn' } as any, [
         el('span', { html: '当前手机无法使用系统通知。请更新应用，并在系统设置中允许通知。' }),
       ])
+    );
+    return;
+  }
+
+  const appEnabled = isAppNotificationsEnabled();
+  const toggleRow = el('label', {
+    class: 'settings-toggle-row',
+    style: 'display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:12px 14px;border-radius:14px;background:var(--color-surface-muted,#f2f1f5);',
+  } as any);
+  const toggleCopy = el('div', { style: 'min-width:0' } as any);
+  toggleCopy.append(
+    el('div', { style: 'font-weight:700;color:var(--color-text)', text: '应用内用药提醒' } as any),
+    el('div', {
+      class: 'muted',
+      style: 'font-size:13px;line-height:1.45;margin-top:2px',
+      text: appEnabled ? '开启后按计划发送系统通知与全屏提醒' : '已暂停：不再调度和弹出用药提醒',
+    } as any),
+  );
+  const toggle = el('input', {
+    type: 'checkbox',
+    role: 'switch',
+    'aria-label': '应用内用药提醒',
+  } as any) as HTMLInputElement;
+  toggle.checked = appEnabled;
+  toggle.onchange = async () => {
+    setAppNotificationsEnabled(toggle.checked);
+    try {
+      await rescheduleMedicationReminders();
+    } catch {
+      /* reschedule best-effort */
+    }
+    toast(toggle.checked ? '已开启应用内提醒' : '已暂停应用内提醒');
+    rerender();
+  };
+  toggleRow.append(toggleCopy, toggle);
+  body.append(toggleRow);
+
+  if (!appEnabled) {
+    body.append(
+      el('div', { class: 'banner info' } as any, [
+        el('span', { html: '应用内提醒已关闭。系统通知权限可保留，但不会再发送用药提醒。' }),
+      ]),
     );
     return;
   }

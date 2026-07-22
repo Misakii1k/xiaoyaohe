@@ -28,6 +28,10 @@ import {
   showNotification,
 } from './notifier';
 import {
+  NOTIFICATION_PREF_CHANGE_EVENT,
+  isAppNotificationsEnabled,
+} from './notificationPreference';
+import {
   buildMedicationReminderPlan,
   buildReminderBody,
   buildReminderTitle,
@@ -42,6 +46,7 @@ const onVisibilityChange = (): void => {
 const onOnline = (): void => void tick();
 const onNavigation = (): void => void tick();
 const onCapabilityChange = (): void => void tick();
+const onNotificationPrefChange = (): void => void tick();
 
 export function startReminderScheduler(): void {
   if (timer != null) return;
@@ -60,6 +65,7 @@ export function startReminderScheduler(): void {
   window.addEventListener('online', onOnline);
   window.addEventListener('hashchange', onNavigation);
   window.addEventListener(REMINDER_CAPABILITY_CHANGE_EVENT, onCapabilityChange);
+  window.addEventListener(NOTIFICATION_PREF_CHANGE_EVENT, onNotificationPrefChange);
 }
 
 export function stopReminderScheduler(): void {
@@ -71,6 +77,7 @@ export function stopReminderScheduler(): void {
   window.removeEventListener('online', onOnline);
   window.removeEventListener('hashchange', onNavigation);
   window.removeEventListener(REMINDER_CAPABILITY_CHANGE_EVENT, onCapabilityChange);
+  window.removeEventListener(NOTIFICATION_PREF_CHANGE_EVENT, onNotificationPrefChange);
 }
 
 /**
@@ -101,6 +108,10 @@ export async function rescheduleMedicationReminders() {
   if (!isNativeReminderPlatform()) return undefined;
   await refreshPermission();
   if (getPermission() !== 'granted') return undefined;
+  if (!isAppNotificationsEnabled()) {
+    // Clear OS schedules when the in-app switch is off.
+    return reconcileScheduledNotifications([]);
+  }
   const [meds, rules, revisions, logs] = await Promise.all([
     listMeds(),
     listRules(),
@@ -121,6 +132,12 @@ async function tick(): Promise<void> {
 
 async function runTick(): Promise<void> {
   if (getPermission() !== 'granted') return;
+  if (!isAppNotificationsEnabled()) {
+    if (isNativeReminderPlatform()) {
+      await reconcileScheduledNotifications([]);
+    }
+    return;
+  }
   const native = isNativeReminderPlatform();
   const [meds, rules, revisions, logs] = await Promise.all([
     listMeds(),
