@@ -52,6 +52,37 @@
   white-space: nowrap;
 }
 .medication-editor-dock .ui-button-text { flex: 0 1 96px; }
+.medication-reminder-mode {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.medication-reminder-mode-option {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-block-size: 76px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: start;
+}
+.medication-reminder-mode-option span {
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.35;
+}
+.medication-reminder-mode-option.is-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+@media (max-width: 520px) {
+  .medication-reminder-mode { grid-template-columns: 1fr; }
+  .medication-reminder-mode-option { min-block-size: 0; }
+}
 .medication-draft-card > .ui-accordion { margin-block-start: var(--space-2); }
 .medication-field .ui-picker { inline-size: 100%; }
 .meal-slot-head .ui-picker-trigger { min-block-size: 40px; }

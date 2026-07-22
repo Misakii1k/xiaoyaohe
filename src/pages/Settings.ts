@@ -1,7 +1,6 @@
 // Android 设置页：系统提醒、AI、局域网家庭同步、本地备份和应用信息。
 // 主要配置使用折叠面板，默认收起并在标题行显示当前状态。
 import { listLogs, listMeds, listRules } from '../db/local';
-import { listWorkEntries, listWorkProfiles, listWorkSettlements } from '../db/work';
 import { confirmDialog, el, renderPage, toast, icon, type IconName } from '../ui/components';
 import {
   backupProviders,
@@ -17,6 +16,9 @@ import {
   isNativeReminderPlatform,
   requestPermission,
   requestExactAlarmCapability,
+  getFullScreenAlarmCapability,
+  refreshFullScreenAlarmCapability,
+  requestFullScreenAlarmCapability,
   showNotification,
 } from '../features/notifier';
 import { runOnce as runReminderOnce } from '../features/reminderScheduler';
@@ -33,7 +35,7 @@ import {
   normalizeAndValidateBaseUrl,
   type LlmHealth,
 } from '../ai/llmConfig';
-import { getAsrConfig, setAsrConfig, resetAsrConfig } from '../ai/asr';
+import { getAsrHealth, getAsrProxyUrl, isNativeSpeechFallbackAvailable } from '../ai/asr';
 import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
 import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
@@ -49,13 +51,10 @@ export async function renderSettingsPage(
   root: HTMLElement,
   signal?: AbortSignal,
 ): Promise<void | (() => void)> {
-  const [meds, rules, logs, workProfiles, workEntries, workSettlements] = await Promise.all([
+  const [meds, rules, logs] = await Promise.all([
     listMeds(),
     listRules(),
     listLogs(),
-    listWorkProfiles(),
-    listWorkEntries(),
-    listWorkSettlements(),
   ]);
   if (signal?.aborted) return;
 
@@ -72,7 +71,6 @@ export async function renderSettingsPage(
     meds: meds.length,
     rules: rules.length,
     logs: logs.length,
-    work: workProfiles.length + workEntries.length + workSettlements.length,
   });
   content.append(backupCard.element);
 
@@ -80,7 +78,7 @@ export async function renderSettingsPage(
   about.append(el('h2', { text: '关于' }));
   about.append(el('div', {
     class: 'muted',
-    html: `日常工具箱 v${__APP_VERSION__}（本地优先版）。吃药提醒、药品管理和工时收入可离线使用；AI 与常见相互作用提示仅供参考，不替代医嘱。`,
+    html: `小药盒 v${__APP_VERSION__}（本地优先版）。吃药提醒、药品管理和库存记录可离线使用；AI 与常见相互作用提示仅供参考，不替代医嘱。`,
   }));
   content.append(about);
 
@@ -182,14 +180,14 @@ export async function importBackupFileForRoute(
 function renderBackupCard(
   root: HTMLElement,
   signal?: AbortSignal,
-  counts?: { meds: number; rules: number; logs: number; work: number },
+  counts?: { meds: number; rules: number; logs: number },
 ): SettingsRenderPart {
   const io = el('section', { class: 'settings-section settings-data-card' });
   io.append(el('h2', { text: '本地数据与备份' }));
   if (counts) {
     io.append(el('div', {
       class: 'muted',
-      html: `本机现有 ${counts.meds} 种药品、${counts.rules} 条提醒规则、${counts.logs} 条服药记录、${counts.work} 条工时数据。`,
+      html: `本机现有 ${counts.meds} 种药品、${counts.rules} 条提醒规则、${counts.logs} 条服药记录。`,
     }));
   }
   io.append(el('div', {
@@ -202,7 +200,7 @@ function renderBackupCard(
     if (signal?.aborted) return;
     const data = await buildBackup();
     if (signal?.aborted) return;
-    downloadJson(data, `medbox-backup-${new Date().toISOString().slice(0, 10)}.json`);
+    downloadJson(data, `xiaoyaohe-backup-${new Date().toISOString().slice(0, 10)}.json`);
   };
 
   const importBtn = el('button', { class: 'btn', html: '导入备份', style: 'margin-top:10px' } as any);
@@ -419,6 +417,29 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
         body.append(exactRow);
       }
     }
+    const fullScreen = getFullScreenAlarmCapability();
+    if (fullScreen !== 'granted') {
+      body.append(
+        el('div', { class: 'banner warn', style: 'margin-top:12px' } as any, [
+          el('span', {
+            html: fullScreen === 'denied'
+              ? '全屏提醒权限尚未开启；选择全屏模式的药物会自动降级为增强通知。'
+              : '当前系统不提供全屏提醒权限，相关提醒会使用增强通知。',
+          }),
+        ]),
+      );
+      if (fullScreen === 'denied') {
+        const fullScreenRow = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
+        const fullScreenButton = el('button', { class: 'btn tonal', html: '允许全屏提醒' });
+        fullScreenButton.onclick = async () => {
+          await requestFullScreenAlarmCapability();
+          toast('已打开系统设置，返回后会自动检查');
+        };
+        fullScreenRow.append(fullScreenButton);
+        body.append(fullScreenRow);
+      }
+    }
+    void refreshFullScreenAlarmCapability();
   }
 
   body.append(
@@ -587,52 +608,32 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     }
   };
 
-  // ====== 语音识别（选填）：说话录药 / 小助手说话 ======
-  const asrCfg = getAsrConfig();
-  body.append(el('div', { class: 'section-title', style: 'margin-top:16px', html: '语音识别（选填）' } as any));
+  // ====== 语音识别：密钥只在服务端，客户端只展示脱敏状态 ======
+  const asrHealth = getAsrHealth();
+  const asrEndpoint = getAsrProxyUrl();
+  body.append(el('div', { class: 'section-title', style: 'margin-top:16px', html: '语音识别' } as any));
   body.append(
     el('div', {
       class: 'muted',
-      html: '腾讯云「一句话识别」（≤60 秒）。小助手按住说话、说话录药都会用。填 AppId + SecretId + SecretKey；一句话识别按次计费，不是实时流式 5 小时套餐。',
+      text: '小助手按住说话和说话录药共用腾讯云一句话识别。密钥保存在服务端，本机不保存 SecretId、SecretKey 或音频日志。',
     })
   );
-
-  const asrAppIdIn = el('input', {
-    type: 'text',
-    inputmode: 'numeric',
-    value: asrCfg.appId,
-    placeholder: '腾讯云 APPID（纯数字）',
+  const asrStatus = el('div', {
+    class: `banner ${asrHealth.stage === 'success' || asrHealth.stage === 'ready' ? 'ok' : asrHealth.stage === 'error' ? 'warn' : 'info'}`,
     style: 'margin-top:10px',
-  } as any) as HTMLInputElement;
-  body.append(field('AppId', asrAppIdIn));
-
-  const asrIdIn = el('input', {
-    type: 'text',
-    value: asrCfg.secretId,
-    placeholder: '以 AKID 开头',
-  } as any) as HTMLInputElement;
-  body.append(field('SecretId', asrIdIn));
-
-  const asrKeyWrap = el('div', { style: 'position:relative' } as any);
-  const asrKeyIn = el('input', {
-    type: 'password',
-    value: asrCfg.secretKey,
-    placeholder: '创建密钥时记下的 SecretKey',
-    style: 'padding-right:64px',
-  } as any) as HTMLInputElement;
-  const asrToggleKey = el('button', {
-    class: 'key-toggle',
-    type: 'button',
-    html: '显示',
   } as any);
-  let asrKeyVisible = false;
-  asrToggleKey.onclick = () => {
-    asrKeyVisible = !asrKeyVisible;
-    asrKeyIn.type = asrKeyVisible ? 'text' : 'password';
-    asrToggleKey.textContent = asrKeyVisible ? '隐藏' : '显示';
-  };
-  asrKeyWrap.append(asrKeyIn, asrToggleKey);
-  body.append(field('SecretKey', asrKeyWrap));
+  const diagnostic = [
+    asrEndpoint
+      ? asrHealth.message
+      : isNativeSpeechFallbackAvailable()
+        ? '腾讯云代理尚未配置，当前使用设备语音识别备用通道'
+        : '生产语音代理尚未配置',
+    asrHealth.code ? `错误码 ${asrHealth.code}` : '',
+    asrHealth.requestId ? `RequestId ${asrHealth.requestId}` : '',
+    asrHealth.at ? new Date(asrHealth.at).toLocaleString() : '',
+  ].filter(Boolean).join(' · ');
+  asrStatus.append(el('span', { text: diagnostic }));
+  body.append(asrStatus);
 
   // ====== 操作行 ======
   const row = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
@@ -648,18 +649,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     }
     if (!apiKey) return toast('请填写 API 密钥');
     if (!model) return toast('请填写或选择模型');
-    const asrAppId = asrAppIdIn.value.trim();
-    const asrSecretId = asrIdIn.value.trim();
-    const asrSecretKey = asrKeyIn.value.trim();
-    const asrFilled = [asrAppId, asrSecretId, asrSecretKey].filter(Boolean).length;
-    if (asrFilled > 0 && asrFilled < 3) {
-      return toast('语音识别要 AppId、SecretId、SecretKey 三项都填，或都留空');
-    }
-    if (asrAppId && !/^\d+$/.test(asrAppId)) {
-      return toast('语音识别的 AppId 应该是纯数字');
-    }
     await setLlmConfig({ baseUrl, apiKey, model });
-    await setAsrConfig({ appId: asrAppId, secretId: asrSecretId, secretKey: asrSecretKey });
     toast('已保存 ✓');
     // 保存后顺手体检一次
     const h = await pingLlm({ baseUrl, apiKey, model });
@@ -697,7 +687,6 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     } as any);
     reset.onclick = async () => {
       await resetLlmConfig();
-      await resetAsrConfig();
       toast('已恢复默认');
       // 重建 body
       body.replaceChildren();
@@ -735,7 +724,7 @@ function renderAiConsentPanel(): HTMLElement {
       body.append(
         el('div', {
           class: 'muted',
-          text: '药盒、药单和用药信息会按“健康”类别授权；工资、班次和收入按“工时”类别单独授权。同一服务商同一类别只会首次询问。',
+          text: '药盒、药单和用药信息会按“健康”类别授权；小助手对话和联网搜索按“助手”类别授权。同一服务商同一类别只会首次询问。',
         }),
         renderAiConsentControls(() => setChip(panelElement, aiConsentChip())),
       );
@@ -765,9 +754,7 @@ function renderAiConsentControls(onChanged: () => void): HTMLElement {
         class: 'muted',
         text: record.category === 'health'
           ? '吃药相关（药盒、药单、用药信息）'
-          : record.category === 'work'
-            ? '上班相关（工资、班次和收入）'
-            : '小助手对话（可能带上吃药和上班记录）',
+          : '小助手对话与联网搜索',
       }));
       const revoke = el('button', { class: 'btn text small', type: 'button', text: '撤销' } as any);
       revoke.onclick = () => {

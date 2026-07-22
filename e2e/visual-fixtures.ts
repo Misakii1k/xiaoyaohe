@@ -107,54 +107,5 @@ export async function seedVisualFixtures(page: Page): Promise<void> {
     await transactionDone(medTransaction);
     medsDb.close();
 
-    const workDb = await open('medbox-work', 2, (database) => {
-      if (!database.objectStoreNames.contains('workEntries')) {
-        const entries = database.createObjectStore('workEntries', { keyPath: 'id' });
-        createIndex(entries, 'byStartAt', 'startAt');
-        createIndex(entries, 'byStatus', 'status');
-        createIndex(entries, 'byProjectName', 'projectName');
-        createIndex(entries, 'byProfileId', 'profileId');
-      }
-      if (!database.objectStoreNames.contains('workProfiles')) {
-        const profiles = database.createObjectStore('workProfiles', { keyPath: 'id' });
-        createIndex(profiles, 'byName', 'name');
-        createIndex(profiles, 'byPayMode', 'payMode');
-      }
-      if (!database.objectStoreNames.contains('workSettlements')) {
-        const settlements = database.createObjectStore('workSettlements', { keyPath: 'id' });
-        createIndex(settlements, 'byProfileId', 'profileId');
-        createIndex(settlements, 'byPeriodKey', 'periodKey');
-        createIndex(settlements, 'byStatus', 'status');
-      }
-    });
-    const workStores = ['workProfiles', 'workEntries', 'workSettlements'];
-    const workTransaction = workDb.transaction(workStores, 'readwrite');
-    for (const store of workStores) workTransaction.objectStore(store).clear();
-    const profile = {
-      id: 'visual-work-profile',
-      name: '视觉验收项目',
-      payMode: 'hourly',
-      baseAmount: 88,
-      settlementCycle: 'entry',
-      defaultBreakMinutes: 30,
-      updatedAt: now,
-    };
-    workTransaction.objectStore('workProfiles').put(profile);
-    workTransaction.objectStore('workEntries').put({
-      id: 'visual-work-entry',
-      profileId: profile.id,
-      projectName: profile.name,
-      taskName: '跨页面视觉验收与数据排版检查',
-      paySnapshot: { mode: 'hourly', amount: 88, profileName: profile.name },
-      startAt: now - 4 * 60 * 60 * 1000,
-      endAt: now - 60 * 60 * 1000,
-      breakMinutes: 30,
-      status: 'stopped',
-      settlementStatus: 'pending',
-      updatedAt: now,
-    });
-    await transactionDone(workTransaction);
-    workDb.close();
-
   });
 }

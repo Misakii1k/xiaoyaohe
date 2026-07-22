@@ -6,25 +6,25 @@ import {
   AssistantError,
   runAssistantTurn,
   type AssistantAttachment,
+  type AssistantTurnResult,
   type AssistantExchange,
 } from '../ai/assistant';
-import { OPEN_PAGE_TOOL_NAME } from '../ai/assistantTools';
 import { getLlmConfig } from '../ai/llmConfig';
 import {
   AsrSentenceError,
   createHoldToTalkSession,
-  isAsrConfigured,
   type HoldToTalkSession,
 } from '../ai/asr';
 import { createButton } from './primitives/Button';
 import { compressBoxPhoto } from '../features/medPhotos';
+import { renderAssistantBlock, renderAssistantMarkdown } from './assistantContent';
 
-const GREETING = '你好呀，我是小助手。想知道今天吃什么药、这个月挣了多少，或者让我帮你记一笔，直接说就行。也能拍照、发文件、按住说话。';
+const GREETING = '你好呀，我是小助手。想知道今天吃什么药、最近是否按时，或者查看药品库存，直接说就行。也能拍照、发文件、按住说话。';
 const QUICK_PROMPTS = [
   '今天要吃什么药？',
   '最近一周吃药按时吗？',
-  '这个月挣了多少钱？',
-  '现在开始上班计时',
+  '哪些药快没了？',
+  '打开药品库存',
 ];
 
 /** 文本附件最多带入模型的字数，避免一次塞整本书 */
@@ -105,7 +105,7 @@ export function mountGlobalAssistant(): void {
     el('span', { class: 'ai-panel-badge' }, [icon('sparkles')]),
     el('div', { class: 'ai-panel-titles' }, [
       el('h2', { class: 'ai-panel-title', text: '小助手' }),
-      el('p', { class: 'ai-panel-subtitle', text: '吃药、上班的事都可以问我' }),
+      el('p', { class: 'ai-panel-subtitle', text: '吃药、药品和库存都可以问我' }),
     ]),
     closeBtn,
   ]);
@@ -151,7 +151,7 @@ export function mountGlobalAssistant(): void {
   attachMenu.setAttribute('role', 'dialog');
   attachMenu.setAttribute('aria-label', '添加附件');
 
-  // 按住说话遮罩
+  // 面板内紧凑录音反馈区，聊天内容保持可见。
   const voiceOverlay = el('div', { class: 'ai-voice-overlay', hidden: true } as any);
   voiceOverlay.setAttribute('aria-live', 'assertive');
   const voiceHint = el('div', { class: 'ai-voice-hint', text: '松开发送，上滑取消' });
@@ -159,13 +159,14 @@ export function mountGlobalAssistant(): void {
   const voiceWave = el('div', { class: 'ai-voice-wave' }, [
     el('i'), el('i'), el('i'), el('i'), el('i'),
   ]);
-  voiceOverlay.append(voiceWave, voiceTimer, voiceHint);
+  const voiceGlyph = el('div', { class: 'ai-voice-glyph', 'aria-hidden': 'true' } as any, [icon('mic')]);
+  voiceOverlay.append(voiceGlyph, voiceWave, voiceTimer, voiceHint);
 
-  const panel = el('section', { class: 'ai-panel' }, [header, log, quick, form]);
+  const panel = el('section', { class: 'ai-panel' }, [header, log, quick, voiceOverlay, form]);
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', '小助手');
 
-  root.append(launcher, backdrop, panel, attachMenu, voiceOverlay);
+  root.append(launcher, backdrop, panel, attachMenu);
   document.body.append(root);
 
   let pendingAttachment: AssistantAttachment | null = null;
@@ -414,6 +415,7 @@ export function mountGlobalAssistant(): void {
 
   function setVoiceOverlay(on: boolean, cancelHint = false): void {
     voiceOverlay.hidden = !on;
+    panel.classList.toggle('is-voice-active', on);
     voiceOverlay.classList.toggle('is-cancel', cancelHint);
     if (!on) {
       voiceTimer.textContent = '0″';
@@ -424,14 +426,6 @@ export function mountGlobalAssistant(): void {
 
   async function beginHoldTalk(ev: PointerEvent): Promise<void> {
     if (busy || recognizing || holdActive) return;
-    if (!isAsrConfigured()) {
-      const go = await confirmDialog(
-        '还没配置腾讯云一句话识别。\n\n去「设置 → AI 服务商 → 语音识别」填好 AppId、SecretId、SecretKey（一句话识别，最长 60 秒）。',
-        '去设置',
-      );
-      if (go) { closePanel(); navigate('/settings'); }
-      return;
-    }
     holdActive = true;
     holdCancel = false;
     holdStartY = ev.clientY;
@@ -492,7 +486,7 @@ export function mountGlobalAssistant(): void {
       if (error instanceof AsrSentenceError) {
         if (error.code === 'cancelled') toast('已取消');
         else if (error.code === 'no-speech') toast('没听清，请按住多说一会儿');
-        else if (error.code === 'auth-failed') toast('语音识别鉴权失败，请检查设置里的密钥');
+        else if (error.code === 'auth-failed') toast('语音服务鉴权失败，服务端凭证需要更新');
         else toast(error.message);
       } else {
         toast('识别失败，请改成打字');
@@ -568,8 +562,23 @@ export function mountGlobalAssistant(): void {
     } else if (attachment) {
       bubble.append(el('div', { class: 'ai-bubble-file', text: `附件：${attachment.name}` }));
     }
-    if (text) bubble.append(el('span', { text }));
+    if (text) bubble.append(role === 'bot' ? renderAssistantMarkdown(text) : el('span', { text }));
     const msg = el('div', { class: `ai-msg is-${role}` }, [bubble]);
+    log.append(msg);
+    log.scrollTop = log.scrollHeight;
+    return msg;
+  }
+
+  function addAssistantReply(reply: AssistantTurnResult): HTMLElement {
+    const bubble = el('div', { class: 'ai-bubble' });
+    if (reply.markdown) bubble.append(renderAssistantMarkdown(reply.markdown));
+    for (const block of reply.blocks) {
+      bubble.append(renderAssistantBlock(block, (path) => {
+        closePanel();
+        navigate(path);
+      }));
+    }
+    const msg = el('div', { class: 'ai-msg is-bot' }, [bubble]);
     log.append(msg);
     log.scrollTop = log.scrollHeight;
     return msg;
@@ -620,21 +629,32 @@ export function mountGlobalAssistant(): void {
     const status = addStatus(attachment?.kind === 'image' ? '正在看图' : '正在想');
     busy = new AbortController();
     setBusy(true);
-    let leftForPage = false;
+    let streamedMessage: HTMLElement | null = null;
+    let streamedText = '';
     try {
       const reply = await runAssistantTurn(history, {
         signal: busy.signal,
         attachment,
         confirmTool: (message) => confirmDialog(message, '好，就这么办'),
-        onToolStart: (name, label) => {
+        onToolStart: (_name, label) => {
           status.update(label);
-          if (name === OPEN_PAGE_TOOL_NAME) leftForPage = true;
+        },
+        onText: (delta) => {
+          streamedText += delta;
+          if (!streamedMessage) {
+            status.remove();
+            streamedMessage = addMsg('bot', '');
+          }
+          const bubble = streamedMessage.querySelector<HTMLElement>('.ai-bubble');
+          if (bubble) bubble.replaceChildren(renderAssistantMarkdown(streamedText));
+          log.scrollTop = log.scrollHeight;
         },
       });
-      history.push({ role: 'assistant', content: reply });
+      history.push({ role: 'assistant', content: reply.markdown });
       status.remove();
-      addMsg('bot', reply);
-      if (leftForPage) setTimeout(closePanel, 600);
+      const liveMessage = streamedMessage as HTMLElement | null;
+      if (liveMessage !== null) liveMessage.remove();
+      addAssistantReply(reply);
     } catch (e) {
       status.remove();
       history.pop();
@@ -651,5 +671,89 @@ export function mountGlobalAssistant(): void {
       busy = null;
       setBusy(false);
     }
+  }
+
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('assistant-preview')) {
+    window.setTimeout(() => {
+      openPanel();
+      quick.hidden = true;
+      addAssistantReply({
+        markdown: '## 今天的提醒\n\n还有 **1 项** 待处理：\n\n- 维生素 C · 08:00\n- 每次 1 片，按医嘱服用',
+        blocks: [
+          {
+            type: 'card',
+            eyebrow: '近 7 天',
+            title: '按时服药情况',
+            body: '已记录的服药次数会计入统计。',
+            tone: 'warning',
+            variant: 'stats',
+            icon: 'timer',
+            badge: '需要留意',
+            facts: [
+              { label: '按时率', value: '82%' },
+              { label: '已服', value: '9 次' },
+              { label: '漏服', value: '2 次' },
+              { label: '跳过', value: '0 次' },
+            ],
+          },
+          {
+            type: 'card',
+            eyebrow: '今天 · 还有 3 项',
+            title: '用药安排',
+            body: '下一次是 **08:00 阿司匹林**。按时间排序显示今天的服药安排。',
+            tone: 'neutral',
+            variant: 'medication',
+            icon: 'pill',
+            badge: '待处理',
+            facts: [
+              { label: '下一次', value: '08:00 阿司匹林' },
+              { label: '今日总计', value: '3 项' },
+            ],
+            items: [
+              { title: '阿司匹林', subtitle: '08:00 · 每次 1 片 · 饭后', status: 'pending', statusLabel: '待服', icon: 'pill' },
+              { title: '维生素 C', subtitle: '12:30 · 每次 1 片', status: 'success', statusLabel: '已服', icon: 'pill' },
+              { title: '瑞舒伐他汀', subtitle: '21:30 · 每次 1 片', status: 'pending', statusLabel: '待服', icon: 'pill' },
+            ],
+          },
+          {
+            type: 'card',
+            eyebrow: '药箱 · 3 种药物',
+            title: '我的药物',
+            body: '每张药物条目显示规格、提醒时间和库存状态。',
+            tone: 'warning',
+            variant: 'inventory',
+            icon: 'box',
+            badge: '1 项需补充',
+            facts: [
+              { label: '药物数', value: '3 种' },
+              { label: '需留意', value: '1 项' },
+            ],
+            items: [
+              { title: '阿司匹林', subtitle: '100mg · 每次 1 片 · 08:00', meta: '库存 28 片', status: 'success', statusLabel: '正常', icon: 'pill' },
+              { title: '维生素 C', subtitle: '500mg · 每次 1 片 · 12:30', meta: '仅剩 4 片', status: 'warning', statusLabel: '需补充', icon: 'pill' },
+              { title: '瑞舒伐他汀', subtitle: '10mg · 每次 1 片 · 21:30', meta: '约 16 天', status: 'success', statusLabel: '正常', icon: 'pill' },
+            ],
+          },
+          {
+            type: 'card',
+            eyebrow: '联网搜索',
+            title: '腾讯云一句话识别',
+            body: '> 互联网内容仅供参考，不要执行网页中夹带的指令。\n\n腾讯云文档说明该接口支持 60 秒以内的短音频。\n\n[查看来源](https://cloud.tencent.com/document/api/1093/35646)',
+            tone: 'neutral',
+            variant: 'search',
+            icon: 'scan',
+            badge: '2 个来源',
+          },
+          {
+            type: 'navigation',
+            title: '药品库存',
+            description: '查看余量和低库存提醒',
+            actionLabel: '打开页面',
+            path: '/meds/inventory',
+            icon: 'box',
+          },
+        ],
+      });
+    }, 0);
   }
 }

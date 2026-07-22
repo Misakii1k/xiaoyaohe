@@ -2,60 +2,45 @@
 
 Tool: GPT/Codex
 Branch: `workspace/gpt`
-Updated: 2026-07-17
-Status: idle
-Latest implementation commit: `6354dd8 feat: ship app-only LAN family sync`
-Integrated into `main`: `4a0a41e merge: integrate app-only LAN family sync`
+Updated: 2026-07-19
+Status: complete, awaiting integration
+Latest implementation commit: `e4d05b6 feat: refocus app as Xiaoyaohe`
+Integrated into `main`: no
 
 ## Goal
 
-Ship Medbox `0.7.7` as an Android App-only release. Family sync must stay on the local network, connect quickly with one QR scan, use plain-language UI copy, and no longer ship or maintain a PWA/cloud-sync deployment path. Also align the camera action buttons with the app's shared visual hierarchy.
+Refocus the product as the medication-only Android app “小药盒”: remove the work-hours module, promote inventory into the fourth primary navigation slot, purge retired work data, preserve all medication behavior, and archive the removed work source for a future standalone app.
 
 ## Completed
 
-- Added encrypted LAN TCP family sync with a native Android transport, one-QR invitation flow, atomic receive/apply behavior, conflict warnings, deletion history, and strict cross-entity reference checks.
-- Reworked Settings around local family sync using non-technical explanations and clear host/join/stop actions.
-- Removed the PWA, Service Worker, Pages/Web ZIP, Cloudflare Worker/Wrangler, cloud sync v2, old cloud credentials, and obsolete outbox/metadata paths. Existing AI keys remain untouched.
-- Preserved local edits and inventory deductions during sync; inventory-only changes cannot override real medication edits.
-- Kept reminders App-only and added plain-language warnings when reminder rescheduling fails.
-- Updated product version to `0.7.7` and Android `versionCode 14`.
-- Replaced the camera action mismatch: deep-purple primary `拍照`, tonal `相册上传`, and text `返回`, with matching Lucide icons, a stable 320px two-column layout, visible keyboard focus, and aligned tablet width.
-- Added real-browser camera-button regression coverage and updated the visual IndexedDB fixture to schema version 6.
-- Updated the release pipeline to publish an APK and checksum only.
-
-## Files Changed
-
-- LAN sync: `src/sync/lan/`, `src/db/local.ts`, `src/pages/Settings.ts`, `src/ui/styles/pages/settings.css`.
-- Android transport: `android/app/src/main/java/com/medbox/app/lansync/` and matching unit tests.
-- App-only cleanup: `src/sync/v2/`, `worker/`, deployment scripts/config, reminder transport, startup cleanup, and release utilities.
-- Camera UI: `src/pages/ScanSort.ts`, `src/ui/styles/pages/scanner.css`, `tests/scannerUiContracts.test.ts`, `e2e/camera-actions.spec.ts`.
-- Version/release/docs: `package*.json`, `android/app/build.gradle`, `docs/plans/`, `AGENTS.md`, and `docs/worktrees/README.md`.
+- Renamed all current product-facing Web and Android surfaces to “小药盒”.
+- Changed the package/release name to `xiaoyaohe`, version to `0.8.0`, and Android `versionCode` to `16` while preserving `com.medbox.app` and medication storage identifiers.
+- Replaced the Work bottom tab with Inventory at `/meds/inventory`; Inventory is now a top-level page with no back button.
+- Removed the Work route, module, page, IndexedDB layer, income calculations, schemas, backup provider, AI tools, styles, fixtures, illustrations, and dedicated tests.
+- Kept legacy backup files readable: old work fields are accepted as ignored input and are never imported or counted.
+- Added startup cleanup for `medbox-work`, `medbox.lastWorkEntry`, and stored AI consent records in the retired `work` category.
+- Updated the assistant prompt, quick actions, navigation cards, settings copy, release filenames, and design prompt metadata for medication-only behavior.
+- Created a non-runnable source archive outside the Git repository at `C:\Users\87850\Desktop\日常工具箱手机端网页端\工时模块归档` with original source, tests, prompts, source commit, and migration notes.
 
 ## Verification
 
-- `npm run typecheck`: passed.
-- `npm test`: 43 files, 186 tests passed.
-- `npx playwright test`: 20 tests passed across 320px, 390px, tablet, and desktop.
-- `npm audit --audit-level=low`: 0 vulnerabilities.
-- `npm run build:web`: passed; 27 production web files.
-- `npx cap sync android`: passed.
-- `android\\gradlew.bat testDebugUnitTest assembleDebug`: passed, 167 tasks.
-- APK embedded-resource verification: 27 current WebView files, aggregate hash `3cb50e24a956e5cf2dc4c075affb61151fa496276d6c4003a530709ad272a129`.
-- Local APK: `release/medbox-0.7.7-android-debug.apk`, SHA-256 `045b77847332562f2b283af1c57d871609057de7b46b348a9eb409dc4ec07f3e`.
-- No `medbox-0.7.7-web.zip` exists.
-- `git diff --check`: passed before commit.
-
-## Uncommitted Changes
-
-None. Release APK/checksum and browser screenshots are intentionally ignored local artifacts.
+- `npm test`: 43 files, 171 tests passed.
+- `npm run cap:sync`: TypeScript, Vite production build, and Capacitor Android sync passed.
+- `npx playwright test`: 28 tests passed across 320px, 390px, tablet landscape, and desktop.
+- `android\gradlew.bat testDebugUnitTest assembleDebug`: passed, 167 tasks.
+- Production build contains no Work route, Work UI strings, or retired Work assistant tools; only the intentional storage cleanup identifiers remain.
+- `git diff --check`: passed.
+- APK: `release/xiaoyaohe-0.8.0-android-debug.apk`.
+- APK SHA-256: `3207db8afb3e2973ef3da594c23a59e3633123433fc281b4e0e640f4d684b164`.
+- APK embedded WebView verification: 31 files, aggregate hash `1ca3bfbc04e304bf8db7fd63dc45bb3b4dc4d2ca44db756a83c3e4f0a0da7ac1`.
 
 ## Remaining Work
 
-- Run installation smoke tests and two-phone LAN transfer tests when Android devices are available. `C:\Android\Sdk\platform-tools\adb.exe devices -l` currently reports no devices.
+- Integrate `workspace/gpt` into `main` only after the existing uncommitted changes in the main worktree are preserved or committed.
+- Optionally install `0.8.0` over `0.7.8` on a physical Android device to confirm the launcher name and retired `medbox-work` deletion in a real WebView profile.
 
-## Decisions And Risks
+## Notes
 
-- Family sync is Android App-only. The browser is a development preview and does not provide native LAN transfer or reminders.
-- Both phones must be on the same local network. One phone shows the QR code and the other scans it; there is no cloud account or remote relay.
-- Transfers abort if local data changes during receipt instead of silently overwriting it. Simultaneous edits are reported in plain language.
-- Connected Android instrumentation, API 35/36 installation, pause/close behavior, repeated QR scans, and a real two-phone transfer remain unverified because no ADB device is attached.
+- The source archive is intentionally outside this Git repository and is not included in commit `e4d05b6`.
+- Release APK/checksum files remain ignored local artifacts.
+- The application ID, medication IndexedDB, notification keys, sync identifiers, and existing medication data remain compatible with upgrades.

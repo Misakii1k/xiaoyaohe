@@ -29,6 +29,8 @@ import {
   type MealRelsBySlot,
   type MedicationInventory,
   type LocalDate,
+  type MedicationReminderMode,
+  MEDICATION_REMINDER_MODE_LABEL,
 } from '../db/schema';
 import { el, renderPage, toast, confirmDialog, icon } from '../ui/components';
 import { navigate } from '../router';
@@ -83,6 +85,7 @@ export async function renderMedEditPage(
     mealRels: [],
     mealRelsBySlot: {},
     daysOfWeek: [],
+    reminderMode: 'strong',
     identity: emptyIdentity(),
     updatedAt: 0,
     createdAt: Date.now(),
@@ -150,6 +153,36 @@ export async function renderMedEditPage(
   const slotChips = el('div', { class: 'chips' });
   const scheduleWrap = el('div', { class: 'meal-slot-list' });
   const dayChips = el('div', { class: 'chips' });
+  const reminderModeControl = el('div', {
+    class: 'medication-reminder-mode',
+    role: 'radiogroup',
+    'aria-label': '提醒方式',
+  } as any);
+  const reminderModeDescriptions: Record<MedicationReminderMode, string> = {
+    strong: '高优先级通知、铃声和振动',
+    'fullscreen-short': '全屏响铃 10 秒，然后保留通知',
+    'fullscreen-persistent': '持续提醒，操作或 60 秒后结束',
+  };
+  let selectedReminderMode: MedicationReminderMode = med.reminderMode;
+  for (const mode of Object.keys(MEDICATION_REMINDER_MODE_LABEL) as MedicationReminderMode[]) {
+    const option = el('button', {
+      class: 'medication-reminder-mode-option' + (mode === selectedReminderMode ? ' is-selected' : ''),
+      type: 'button',
+      role: 'radio',
+      'aria-checked': String(mode === selectedReminderMode),
+    } as any);
+    option.append(el('strong', { text: MEDICATION_REMINDER_MODE_LABEL[mode] }));
+    option.append(el('span', { text: reminderModeDescriptions[mode] }));
+    option.onclick = () => {
+      selectedReminderMode = mode;
+      for (const child of reminderModeControl.querySelectorAll<HTMLElement>('[role="radio"]')) {
+        const selected = child === option;
+        child.classList.toggle('is-selected', selected);
+        child.setAttribute('aria-checked', String(selected));
+      }
+    };
+    reminderModeControl.append(option);
+  }
 
   // 库存可用天数显示（随库存输入实时刷新）
   const daysLeftHint = el('div', { class: 'days-left-hint muted', html: '' });
@@ -243,6 +276,7 @@ export async function renderMedEditPage(
     dayChips.append(chip);
   }
   form.append(field('服药星期（不选 = 每天）', dayChips));
+  form.append(field('提醒方式', reminderModeControl));
 
   // 周期用药配置（吃 N 天停 M 天）
   const existingCycleRule = existingRules.find((r) => r.cycle);
@@ -352,6 +386,7 @@ export async function renderMedEditPage(
     med.mealRelsBySlot = buildMealRelsBySlot();
     med.mealRels = mealRelsFromBySlot(med.mealRelsBySlot);
     med.daysOfWeek = [...selectedDays].sort();
+    med.reminderMode = selectedReminderMode;
     med.inventory = readInventory();
     med.notes = notesInput.value.trim();
     applyExpiryDate();

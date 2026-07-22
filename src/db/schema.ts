@@ -139,6 +139,18 @@ export interface MedicationInventory {
   dailyConsumption?: number;
 }
 
+export type MedicationReminderMode = 'strong' | 'fullscreen-short' | 'fullscreen-persistent';
+
+export const MEDICATION_REMINDER_MODE_LABEL: Record<MedicationReminderMode, string> = {
+  strong: '增强通知',
+  'fullscreen-short': '短时全屏',
+  'fullscreen-persistent': '持续全屏',
+};
+
+export function normalizeMedicationReminderMode(value: unknown): MedicationReminderMode {
+  return value === 'fullscreen-short' || value === 'fullscreen-persistent' ? value : 'strong';
+}
+
 /** 药品 */
 export interface Medication {
   id: string;
@@ -163,6 +175,8 @@ export interface Medication {
   mealRelsBySlot: MealRelsBySlot;
   /** 服药星期 [0..6]（0=周日）；空数组 = 每天 */
   daysOfWeek: number[];
+  /** 同一种药的所有提醒时间共用一个提醒强度。 */
+  reminderMode: MedicationReminderMode;
   /** 剩余药量（第一版：按药品总库存） */
   inventory?: MedicationInventory;
   notes?: string;
@@ -303,81 +317,11 @@ export interface PushState {
   lastSentAt: number;
 }
 
-export type WorkPayMode = 'salary' | 'hourly' | 'daily';
-export type WorkSettlementStatus = 'pending' | 'settled';
-
-export interface WorkPaySnapshot {
-  mode: WorkPayMode;
-  amount: number;
-  profileName: string;
-}
-
-/** 工作/雇主档案（仅本地，不参与云同步） */
-export interface WorkProfile {
-  id: string;
-  name: string;
-  payMode: WorkPayMode;
-  baseAmount: number;
-  settlementCycle: 'month' | 'day' | 'entry';
-  expectedWorkDaysPerMonth?: number;
-  defaultStartTime?: string;
-  defaultEndTime?: string;
-  defaultBreakMinutes?: number;
-  note?: string;
-  /** 任务名称模板列表（最多 10 条），开始班次时供快速选择 */
-  taskTemplates?: string[];
-  updatedAt: number;
-  deleted?: boolean;
-}
-
-/** 个人班次记录（仅本地，不参与云同步） */
-export interface WorkEntry {
-  id: string;
-  /** 兼容旧字段；新版本优先使用 profileId + paySnapshot */
-  projectName: string;
-  taskName: string;
-  profileId?: string;
-  paySnapshot?: WorkPaySnapshot;
-  startAt: number;
-  endAt?: number;
-  breakMinutes: number;
-  note?: string;
-  /** 班次标签（加班/节假日/外勤/补班等） */
-  tags?: string[];
-  status: 'running' | 'stopped';
-  amountOverride?: number;
-  settlementStatus?: WorkSettlementStatus;
-  settledAt?: number;
-  updatedAt: number;
-  deleted?: boolean;
-}
-
-export interface WorkSettlement {
-  id: string;
-  profileId: string;
-  periodKey: string;
-  amount: number;
-  status: WorkSettlementStatus;
-  settledAt?: number;
-  updatedAt: number;
-  deleted?: boolean;
-}
-
-export interface WorkAiDraft {
-  kind: 'profile' | 'entry' | 'entries' | 'summary' | 'issues';
-  profile?: Partial<WorkProfile>;
-  entry?: Partial<WorkEntry>;
-  entries?: Partial<WorkEntry>[];
-  summary?: string;
-  warnings: string[];
-  confidence: number;
-}
-
 /**
  * 把旧字段 (mealRel 单值, with_meal slot) 升级到新字段 (mealRels[] 多选, 4 时段)。
  * 幂等：已经是新版结构的 Medication 不会被改坏。
  */
-export function inflateMed<T extends Partial<Medication> & { slots?: any; mealRel?: any; mealRels?: any; mealRelsBySlot?: any }>(m: T): T {
+export function inflateMed<T extends Partial<Medication> & { slots?: any; mealRel?: any; mealRels?: any; mealRelsBySlot?: any; reminderMode?: any }>(m: T): T {
   if (!Array.isArray(m.slots)) m.slots = [];
   // mealRels 字段补齐
   if (!Array.isArray(m.mealRels)) {
@@ -400,5 +344,6 @@ export function inflateMed<T extends Partial<Medication> & { slots?: any; mealRe
   m.mealRels = mealRelsFromBySlot(m.mealRelsBySlot as MealRelsBySlot) as any;
   if (!m.identity) m.identity = emptyIdentity() as any;
   if (!Array.isArray(m.daysOfWeek)) m.daysOfWeek = [] as any;
+  m.reminderMode = normalizeMedicationReminderMode(m.reminderMode) as any;
   return m;
 }

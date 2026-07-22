@@ -40,9 +40,19 @@ describe('0.7.0 UI architecture contracts', () => {
   it('declares the five fixed primary navigation destinations in one module', () => {
     expect(existsSync(join(root, 'src/app/navigation.ts'))).toBe(true);
     const navigation = source('src/app/navigation.ts');
-    for (const label of ['今日', '药品', '分药', '工时', '设置']) {
+    for (const label of ['今日', '药品', '分药', '库存', '设置']) {
       expect(navigation).toContain(label);
     }
+    expect(navigation).not.toContain("id: 'work'");
+    expect(navigation).toContain("id: 'inventory'");
+    expect(navigation).toContain("href: '/meds/inventory'");
+    expect(navigation).toContain("icon: 'box'");
+
+    const inventory = source('src/pages/MedInventory.ts');
+    expect(inventory).toContain("activeTab: 'inventory'");
+    expect(inventory).not.toContain("label: '返回药品'");
+    expect(existsSync(join(root, 'src/pages/WorkLog.ts'))).toBe(false);
+    expect(existsSync(join(root, 'src/db/work.ts'))).toBe(false);
   });
 
   it('uses a local Lucide registry rather than hand-drawn functional icon paths', () => {
@@ -55,12 +65,14 @@ describe('0.7.0 UI architecture contracts', () => {
   it('renders the initial route before asynchronous secure-storage initialization', () => {
     const main = source('src/main.ts');
     const routerStart = main.indexOf("startRouter(root, '/today');");
-    const retiredSyncCleanup = main.indexOf('void cleanupRetiredCloudSyncStorage()');
+    const retiredStorageCleanup = main.indexOf('void Promise.all([');
     const secretInitialization = main.indexOf('.then(() => initializeLlmSecretStore())');
 
     expect(routerStart).toBeGreaterThan(-1);
-    expect(retiredSyncCleanup).toBeGreaterThan(routerStart);
-    expect(secretInitialization).toBeGreaterThan(retiredSyncCleanup);
+    expect(retiredStorageCleanup).toBeGreaterThan(routerStart);
+    expect(secretInitialization).toBeGreaterThan(retiredStorageCleanup);
+    expect(main).toContain('cleanupRetiredCloudSyncStorage()');
+    expect(main).toContain('cleanupRetiredWorkStorage()');
     expect(main).not.toMatch(/await initializeLlmSecretStore\(\)/);
     expect(main).toContain('.catch(() => undefined)');
     expect(main).toContain('.then(() => silentHealthCheck())');

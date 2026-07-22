@@ -33,6 +33,7 @@ const positive = finite.positive();
 const clock = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const slot = z.enum(['morning', 'noon', 'evening', 'bedtime']);
 const mealRel = z.enum(['before', 'with', 'after']);
+const reminderMode = z.enum(['strong', 'fullscreen-short', 'fullscreen-persistent']);
 const localDate = z.string().refine(isLocalDate, 'Expected a real local calendar date (YYYY-MM-DD).');
 const timeLocal = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 const payloadHash = z.string().regex(PAYLOAD_HASH_PATTERN);
@@ -69,6 +70,7 @@ const medication = z.object({
   mealRels: z.array(mealRel).max(3),
   mealRelsBySlot,
   daysOfWeek: z.array(z.number().int().min(0).max(6)).max(7),
+  reminderMode: reminderMode.optional().default('strong'),
   notes: text.optional(),
   expiryLocalDate: localDate.optional(),
   identity,
@@ -324,6 +326,7 @@ export function selectLanMedicationPayload(raw: Medication): LanMedicationPayloa
     mealRels: [...new Set(value.mealRels)],
     mealRelsBySlot: cloneMealRelsBySlot(value.mealRelsBySlot),
     daysOfWeek: [...new Set(value.daysOfWeek)].sort((left, right) => left - right),
+    reminderMode: value.reminderMode,
     ...(value.notes !== undefined ? { notes: value.notes } : {}),
     ...(expiryLocalDate ? { expiryLocalDate } : {}),
     identity: {

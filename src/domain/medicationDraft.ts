@@ -69,6 +69,7 @@ export function createMedicationDraft(options: CreateMedicationDraftOptions = {}
       mealRels: medication.mealRels ? [...medication.mealRels] : [],
       mealRelsBySlot,
       daysOfWeek: medication.daysOfWeek ? [...medication.daysOfWeek] : [],
+      reminderMode: medication.reminderMode ?? 'strong',
       inventory: medication.inventory ? { ...medication.inventory } : undefined,
       notes: medication.notes,
       expiryLocalDate: medication.expiryLocalDate,

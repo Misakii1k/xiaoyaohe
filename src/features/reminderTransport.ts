@@ -6,6 +6,10 @@ import {
   type LocalNotificationsPlugin,
   type PendingLocalNotificationSchema,
 } from '@capacitor/local-notifications';
+import {
+  cancelNativeMedicationAlarm,
+  reconcileNativeMedicationAlarms,
+} from './nativeMedicationAlarm';
 
 const OWNER = 'medbox-medication-reminder-v1';
 const REGISTRY_KEY = 'medbox.reminder.notification-ids.v1';
@@ -18,6 +22,9 @@ const REGISTRY_KEY = 'medbox.reminder.notification-ids.v1';
 const MAX_NATIVE_REMINDERS = 120;
 const SCHEDULE_CHUNK = 20;
 const REGISTRY_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
+const ACTION_TYPE_ID = 'medication-reminder-actions-v1';
+const STRONG_CHANNEL_ID = 'medication_strong_v2';
+const ALARM_CHANNEL_ID = 'medication_alarm_v1';
 
 export type ExactAlarmCapability = 'granted' | 'denied' | 'prompt' | 'unavailable';
 export type ReminderPlatform = 'android' | 'web';
@@ -101,6 +108,7 @@ export class AndroidReminderTransport implements ReminderTransport {
   readonly platform = 'android' as const;
   private permission: NotificationPermission = 'default';
   private exactAlarm: ExactAlarmCapability = 'prompt';
+  private initialized = false;
 
   constructor(
     private readonly plugin: LocalNotificationsPlugin = LocalNotifications,
@@ -162,6 +170,7 @@ export class AndroidReminderTransport implements ReminderTransport {
 
   async show(notification: ReminderNotification): Promise<boolean> {
     if ((await this.refreshPermission()) !== 'granted') return false;
+    await this.ensureInitialized();
     const key = notification.key ?? 'dose';
     const id = notificationIdFor(notification.tag, key);
     try {
@@ -188,6 +197,7 @@ export class AndroidReminderTransport implements ReminderTransport {
         exactAlarm,
       };
     }
+    await this.ensureInitialized();
 
     const future = notifications
       .filter((notification) => Number.isFinite(notification.at) && notification.at > this.now())
@@ -214,6 +224,7 @@ export class AndroidReminderTransport implements ReminderTransport {
 
       // 清空后再挂；任一分片失败立刻停，绝不让异常冒泡
       const scheduled = await this.scheduleInChunksSafe([...desired.values()]);
+      await reconcileNativeMedicationAlarms(selected, notificationIdFor).catch(() => 0);
       this.replaceRegistryFromDesired(
         new Map([...desired.entries()].filter(([id]) => scheduled.ids.has(id))),
       );
@@ -258,6 +269,7 @@ export class AndroidReminderTransport implements ReminderTransport {
       const registry = this.readRegistry();
       delete registry[tag];
       this.writeRegistry(registry);
+      await cancelNativeMedicationAlarm(tag).catch(() => undefined);
     } catch {
       // Cancelling a stale notification must never block an intake action.
     }
@@ -352,6 +364,12 @@ private async scheduleInChunksSafe(
       body: notification.body,
       largeBody: notification.body,
       autoCancel: true,
+      actionTypeId: ACTION_TYPE_ID,
+      channelId:
+        notification.data?.reminderMode === 'fullscreen-short' ||
+        notification.data?.reminderMode === 'fullscreen-persistent'
+          ? ALARM_CHANNEL_ID
+          : STRONG_CHANNEL_ID,
       extra: { __medboxReminder: envelope },
       silent: notification.silent ?? false,
     };
@@ -373,6 +391,47 @@ private async scheduleInChunksSafe(
       };
     }
     return native;
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return;
+    try {
+      await Promise.all([
+        this.plugin.createChannel({
+        id: STRONG_CHANNEL_ID,
+        name: '用药增强提醒',
+        description: '高优先级用药通知、声音和振动',
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+        lights: true,
+        lightColor: '#17745B',
+      }),
+        this.plugin.createChannel({
+        id: ALARM_CHANNEL_ID,
+        name: '用药全屏提醒',
+        description: '需要立即处理的全屏用药提醒',
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+        lights: true,
+        lightColor: '#17745B',
+      }),
+        this.plugin.registerActionTypes({
+        types: [{
+          id: ACTION_TYPE_ID,
+          actions: [
+            { id: 'taken', title: '已服用', foreground: true },
+            { id: 'snooze', title: '10 分钟后提醒', foreground: true },
+            { id: 'skip', title: '跳过', foreground: true, destructive: true },
+          ],
+        }],
+        }),
+      ]);
+    } catch {
+      // Older or mocked plugin implementations can still use the default channel.
+    }
+    this.initialized = true;
   }
 
   private remember(tag: string, ids: readonly number[]): void {

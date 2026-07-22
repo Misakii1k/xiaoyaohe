@@ -3,7 +3,6 @@ import {
   Bell,
   BellRing,
   Box,
-  Briefcase,
   CalendarDays,
   Camera,
   Check,
@@ -59,7 +58,6 @@ export type AppIconName =
   | 'sparkles'
   | 'trash'
   | 'clock'
-  | 'briefcase'
   | 'timer'
   | 'sun'
   | 'sun-high'
@@ -99,7 +97,6 @@ export const iconRegistry: Readonly<Record<AppIconName, IconNode>> = {
   sparkles: Sparkles,
   trash: Trash2,
   clock: Clock,
-  briefcase: Briefcase,
   timer: Timer,
   sun: Sun,
   'sun-high': SunMedium,

@@ -75,6 +75,12 @@ export function buildMedicationReminderPlan({
           occurrenceId: occurrence.id,
           medId: med.id,
           reminderCount: count,
+          reminderMode: med.reminderMode,
+          medicationName: med.name,
+          medicationDose: revision.doseQuantity && revision.doseUnit
+            ? `${revision.doseQuantity}${revision.doseUnit}`
+            : med.amountPerDose || med.dosageText,
+          dueAt: occurrence.dueAt,
         },
       });
     }

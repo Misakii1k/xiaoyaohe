@@ -284,6 +284,8 @@ export function confirmDialog(message: string, okText = '确定', danger = false
       onClose: () => close(false, true),
       initialFocus: danger ? cancel : ok,
     });
+    overlay.classList.add('confirm-dialog-overlay');
+    overlay.addEventListener('contextmenu', (event) => event.preventDefault(), { capture: true });
   });
 }
 
@@ -424,7 +426,7 @@ export function renderPage(opts: {
 }): void {
   installRipple();
   opts.root.replaceChildren();
-  document.title = `${opts.title} · 日常工具箱`;
+  document.title = `${opts.title} · 小药盒`;
   const left = opts.topLeft;
 
   opts.content.setAttribute('role', 'main');

@@ -24,15 +24,15 @@ beforeEach(() => {
 });
 
 describe('AI provider consent persistence', () => {
-  it('prompts once per provider origin and data category, not per image kind', async () => {
+  it('prompts once per provider origin and supported data category', async () => {
     await requireAiConsent('medicine-photo', 'https://api.example.com/v1');
     await requireAiConsent('prescription', 'https://api.example.com/v1');
-    await requireAiConsent('work-data', 'https://api.example.com/v1');
+    await requireAiConsent('assistant-chat', 'https://api.example.com/v1');
 
     expect(consentDialog).toHaveBeenCalledTimes(2);
     expect(getAiConsentRecords()).toEqual(expect.arrayContaining([
       expect.objectContaining({ origin: 'https://api.example.com', category: 'health', version: 2 }),
-      expect.objectContaining({ origin: 'https://api.example.com', category: 'work', version: 2 }),
+      expect.objectContaining({ origin: 'https://api.example.com', category: 'assistant', version: 2 }),
     ]));
   });
 

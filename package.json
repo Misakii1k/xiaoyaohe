@@ -1,9 +1,9 @@
 {
-  "name": "medbox",
-  "version": "0.7.7",
+  "name": "xiaoyaohe",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
-  "description": "日常工具箱：吃药提醒 + 工时记录 Android App",
+  "description": "小药盒：吃药提醒、药品管理与库存记录 Android App",
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
@@ -15,16 +15,20 @@
     "preview": "vite preview --host",
     "cap:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
-    "android:debug": "npm run cap:sync && node scripts/android-debug.mjs"
+    "android:debug": "npm run cap:sync && node scripts/android-debug.mjs",
+    "server:asr": "node server/tencent-asr-proxy.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.0",
     "@capacitor/android": "^8.4.1",
     "@capacitor/core": "^8.4.1",
     "@capacitor/local-notifications": "^8.2.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "dompurify": "^3.4.12",
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.0",
     "lucide": "1.24.0",
+    "marked": "^18.0.6",
     "qrcode": "^1.5.4",
     "zod": "^4.4.3"
   },
