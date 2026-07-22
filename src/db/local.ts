@@ -613,6 +613,11 @@ export async function deletePhotosByMed(medId: string): Promise<void> {
   await tx.done;
 }
 
+/** 取全部药盒照片（局域网同步可选传输用） */
+export async function listAllPhotos(): Promise<PhotoBlob[]> {
+  return (await db()).getAll('photos');
+}
+
 /** 本地备份导入：按 id + updatedAt 合并，不清空现有数据，也不刷新 updatedAt。 */
 export async function importMedsAndRules(
   meds: Medication[],
