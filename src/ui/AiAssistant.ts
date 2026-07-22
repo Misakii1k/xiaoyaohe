@@ -156,14 +156,30 @@ export function mountGlobalAssistant(): void {
   voiceOverlay.setAttribute('aria-live', 'assertive');
   const voiceHint = el('div', { class: 'ai-voice-hint', text: '松开发送，上滑取消' });
   const voiceTimer = el('div', { class: 'ai-voice-timer', text: '0″' });
-  // 半圆式波形：中央话筒 + 两侧对称的弧形脉冲，按住说话时由内向外扩散。
-  const voiceArc = el('div', { class: 'ai-voice-arc', 'aria-hidden': 'true' } as any, [
-    el('span', { class: 'ai-voice-ring ai-voice-ring--3' }),
-    el('span', { class: 'ai-voice-ring ai-voice-ring--2' }),
-    el('span', { class: 'ai-voice-ring ai-voice-ring--1' }),
-    el('div', { class: 'ai-voice-glyph', 'aria-hidden': 'true' } as any, [icon('mic')]),
-  ]);
-  voiceOverlay.append(voiceArc, voiceTimer, voiceHint);
+  // 弧形进度环：中央话筒 + 外圈 SVG 圆环随录音时长 0→60s 填满。
+  const voiceRingSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  voiceRingSvg.setAttribute('class', 'ai-voice-progress');
+  voiceRingSvg.setAttribute('viewBox', '0 0 120 120');
+  voiceRingSvg.setAttribute('aria-hidden', 'true');
+  const ringTrack = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  ringTrack.setAttribute('class', 'ai-voice-progress-track');
+  ringTrack.setAttribute('cx', '60');
+  ringTrack.setAttribute('cy', '60');
+  ringTrack.setAttribute('r', '52');
+  ringTrack.setAttribute('fill', 'none');
+  const ringFill = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  ringFill.setAttribute('class', 'ai-voice-progress-fill');
+  ringFill.setAttribute('cx', '60');
+  ringFill.setAttribute('cy', '60');
+  ringFill.setAttribute('r', '52');
+  ringFill.setAttribute('fill', 'none');
+  ringFill.setAttribute('pathLength', '100');
+  ringFill.style.strokeDasharray = '100';
+  ringFill.style.strokeDashoffset = '100';
+  voiceRingSvg.append(ringTrack, ringFill);
+  const voiceGlyph = el('div', { class: 'ai-voice-glyph', 'aria-hidden': 'true' } as any, [icon('mic')]);
+  const voiceStage = el('div', { class: 'ai-voice-stage' }, [voiceRingSvg, voiceGlyph]);
+  voiceOverlay.append(voiceStage, voiceTimer, voiceHint);
 
   const panel = el('section', { class: 'ai-panel' }, [header, log, quick, voiceOverlay, form]);
   panel.setAttribute('role', 'dialog');
@@ -423,6 +439,7 @@ export function mountGlobalAssistant(): void {
     if (!on) {
       voiceTimer.textContent = '0″';
       voiceHint.textContent = '松开发送，上滑取消';
+      ringFill.style.strokeDashoffset = '100';
       micBtn.classList.remove('is-listening', 'is-cancel-zone');
     }
   }
@@ -439,6 +456,8 @@ export function mountGlobalAssistant(): void {
     holdSession = createHoldToTalkSession({
       onTick: (sec) => {
         voiceTimer.textContent = `${sec}″`;
+        const pct = Math.min(100, (sec / 60) * 100);
+        ringFill.style.strokeDashoffset = String(100 - pct);
         if (sec >= 55) voiceHint.textContent = '快到一分钟了，松手即可发送';
       },
     });

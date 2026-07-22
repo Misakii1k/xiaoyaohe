@@ -799,7 +799,7 @@
   box-shadow: var(--shadow-lg);
 }
 
-/* 面板内的按住说话反馈区：半圆式扩散波形 */
+/* 面板内的按住说话反馈区：弧形进度环 */
 .ai-voice-overlay {
   flex: 0 0 auto;
   display: flex;
@@ -807,10 +807,10 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-block-size: 168px;
-  padding: var(--space-4) var(--space-3);
+  min-block-size: 200px;
+  padding: var(--space-5) var(--space-3);
   border-block: 1px solid rgb(255 255 255 / 22%);
-  background: var(--color-primary);
+  background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-pressed) 100%);
   color: #fff;
   pointer-events: none;
 }
@@ -820,15 +820,43 @@
 .ai-panel.is-voice-active .ai-chat-log { min-block-size: 72px; }
 .ai-panel.is-voice-active .ai-quick { display: none; }
 
-.ai-voice-overlay.is-cancel { background: var(--color-danger, #ae2f37); }
+.ai-voice-overlay.is-cancel { background: linear-gradient(180deg, var(--color-danger, #ae2f37) 0%, #8e2630 100%); }
 
-/* 半圆式波形：中央话筒 + 三圈向外扩散的半圆环 */
-.ai-voice-arc {
+/* 中央话筒 + 外圈进度环 */
+.ai-voice-stage {
   position: relative;
   display: grid;
   place-items: center;
-  inline-size: 120px;
-  block-size: 120px;
+  inline-size: 132px;
+  block-size: 132px;
+}
+
+.ai-voice-progress {
+  position: absolute;
+  inset: 0;
+  inline-size: 132px;
+  block-size: 132px;
+  overflow: visible;
+  transform: rotate(-90deg); /* 进度从顶部 12 点钟开始顺时针 */
+}
+
+.ai-voice-progress-track {
+  stroke: rgb(255 255 255 / 22%);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.ai-voice-progress-fill {
+  stroke: #fff;
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.25s linear;
+  filter: drop-shadow(0 0 6px rgb(255 255 255 / 40%));
+}
+
+.ai-voice-overlay.is-cancel .ai-voice-progress-fill {
+  stroke: #ffd6d8;
+  filter: drop-shadow(0 0 6px rgb(255 180 184 / 60%));
 }
 
 .ai-voice-glyph {
@@ -836,43 +864,29 @@
   z-index: 1;
   display: grid;
   place-items: center;
-  inline-size: 56px;
-  block-size: 56px;
-  border: 1px solid rgb(255 255 255 / 42%);
+  inline-size: 60px;
+  block-size: 60px;
+  border: 1px solid rgb(255 255 255 / 45%);
   border-radius: 50%;
-  background: rgb(255 255 255 / 14%);
-  box-shadow: 0 4px 14px rgb(20 22 40 / 22%);
+  background: rgb(255 255 255 / 16%);
+  box-shadow: 0 6px 18px rgb(20 22 40 / 26%);
+  animation: ai-voice-glyph-pulse 1.6s ease-in-out infinite;
 }
 
 .ai-voice-glyph svg { inline-size: 28px; block-size: 28px; }
 
-.ai-voice-ring {
-  position: absolute;
-  inset: 50% 0 0 0;
-  block-size: 0;
-  inline-size: 0;
-  margin: auto;
-  border: 2px solid rgb(255 255 255 / 55%);
-  border-block-start: 0;
-  border-end-start-radius: 999px;
-  border-end-end-radius: 999px;
-  transform-origin: 50% 0;
-  opacity: 0;
-  pointer-events: none;
+.ai-voice-overlay.is-cancel .ai-voice-glyph {
+  background: rgb(255 255 255 / 22%);
+  border-color: rgb(255 180 184 / 60%);
+  animation: none;
 }
-
-.ai-voice-ring--1 { inline-size: 56px; block-size: 28px; animation: ai-voice-pulse 1.8s ease-out infinite; }
-.ai-voice-ring--2 { inline-size: 88px; block-size: 44px; animation: ai-voice-pulse 1.8s ease-out infinite 0.45s; }
-.ai-voice-ring--3 { inline-size: 120px; block-size: 60px; animation: ai-voice-pulse 1.8s ease-out infinite 0.9s; }
-
-.ai-voice-overlay.is-cancel .ai-voice-ring { border-color: rgb(255 180 184 / 70%); }
-.ai-voice-overlay.is-cancel .ai-voice-glyph { background: rgb(255 255 255 / 20%); border-color: rgb(255 180 184 / 60%); }
 
 .ai-voice-timer {
   min-inline-size: 42px;
   font-size: var(--fs-title2);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
 }
 
 .ai-voice-hint {
@@ -882,19 +896,20 @@
 }
 
 @media (max-width: 359px) {
-  .ai-voice-overlay { min-block-size: 150px; gap: var(--space-2); }
-  .ai-voice-arc { inline-size: 104px; block-size: 104px; }
-  .ai-voice-glyph { inline-size: 48px; block-size: 48px; }
+  .ai-voice-overlay { min-block-size: 180px; gap: var(--space-2); }
+  .ai-voice-stage { inline-size: 116px; block-size: 116px; }
+  .ai-voice-progress { inline-size: 116px; block-size: 116px; }
+  .ai-voice-glyph { inline-size: 52px; block-size: 52px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ai-voice-ring { animation: none; opacity: 0.45; }
+  .ai-voice-glyph { animation: none; }
+  .ai-voice-progress-fill { transition: none; }
 }
 
-@keyframes ai-voice-pulse {
-  0% { opacity: 0; transform: scale(0.55); }
-  35% { opacity: 0.85; }
-  100% { opacity: 0; transform: scale(1.15); }
+@keyframes ai-voice-glyph-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 6px 18px rgb(20 22 40 / 26%); }
+  50% { transform: scale(1.06); box-shadow: 0 8px 22px rgb(20 22 40 / 32%); }
 }
 
 .ai-input {
