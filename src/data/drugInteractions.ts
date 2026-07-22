@@ -88,3 +88,48 @@ export function checkInteractions(medNames: string[]): DrugInteraction[] {
   }
   return hits;
 }
+
+/**
+ * 已确认（"仍要记录"过）的相互作用去重键。
+ * 同一组组合确认一次后，今日页服药不再弹窗；只有出现新的组合才再提示。
+ */
+const ACK_KEY = 'medbox.interactions.acknowledged.v1';
+
+/** 一条相互作用的稳定去重键：药物名排序后拼接 + 严重等级。 */
+export function interactionKey(hit: DrugInteraction): string {
+  return [...hit.drugs].map((d) => d.toLowerCase()).sort().join('+') + '|' + hit.severity;
+}
+
+function readAcknowledged(): Set<string> {
+  try {
+    const raw = localStorage.getItem(ACK_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr.filter((k) => typeof k === 'string')) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function writeAcknowledged(set: Set<string>): void {
+  try {
+    localStorage.setItem(ACK_KEY, JSON.stringify([...set]));
+  } catch {
+    /* 存不了就算了，本次会话内去重仍有效 */
+  }
+}
+
+/** 过滤掉用户已确认过的相互作用，只保留"新"的。 */
+export function filterNewInteractions(hits: DrugInteraction[]): DrugInteraction[] {
+  if (hits.length === 0) return hits;
+  const acked = readAcknowledged();
+  return hits.filter((hit) => !acked.has(interactionKey(hit)));
+}
+
+/** 把这些相互作用标记为已确认，后续不再提示。 */
+export function acknowledgeInteractions(hits: DrugInteraction[]): void {
+  if (hits.length === 0) return;
+  const acked = readAcknowledged();
+  for (const hit of hits) acked.add(interactionKey(hit));
+  writeAcknowledged(acked);
+}

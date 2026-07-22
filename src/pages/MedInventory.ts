@@ -10,10 +10,11 @@ import {
 } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { navigate } from '../router';
-import { el, emptyState, icon, renderPage, toast } from '../ui/components';
+import { el, emptyState, icon, renderPage, toast, topbarPill } from '../ui/components';
 import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/BottomSheet';
 import { createButton } from '../ui/primitives/Button';
 import { createIconButton } from '../ui/primitives/IconButton';
+import { toLocalDate } from '../domain/medicationSchedule';
 
 type InventoryFilter = 'all' | 'low' | 'empty' | 'unset' | 'days_low';
 
@@ -41,10 +42,14 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
 
   const content = el('div', { class: 'page inventory-page' });
 
+  const shareBtn = topbarPill({ icon: 'share', label: '分享', onClick: () => openShareSheet(sorted, rulesByMedId) });
+  const topRight = el('div', { class: 'topbar-actions' });
+  topRight.append(shareBtn);
+
   if (meds.length === 0) {
     const add = createButton({ label: '去添加药品', icon: 'plus', onClick: () => navigate('/meds/new') });
     content.append(emptyState('box', '还没有药品', '先添加药品，再记录手头还剩多少。', add));
-    renderPage({ root, title: '库存', activeTab: 'inventory', content });
+    renderPage({ root, title: '库存', activeTab: 'inventory', topRight, content });
     return;
   }
 
@@ -155,7 +160,7 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
 
   searchInput.addEventListener('input', applyFilters);
   content.append(summary, searchBar, filterRow, list, noResults);
-  renderPage({ root, title: '库存', activeTab: 'inventory', content });
+  renderPage({ root, title: '库存', activeTab: 'inventory', topRight, content });
 }
 
 function groupRulesByMedId(rules: ReminderRule[]): Map<string, ReminderRule[]> {
@@ -346,4 +351,81 @@ function openInventoryActions(root: HTMLElement, med: Medication, signal?: Abort
 
 function formatQuantity(value: number): string {
   return Number.isInteger(value) ? String(value) : String(roundStock(value));
+}
+
+/** 把库存按"需购买 / 全部"两种范围整理成可分享的纯文本清单。 */
+function buildShareText(
+  scope: 'low' | 'all',
+  sorted: Medication[],
+  rulesByMedId: Map<string, ReminderRule[]>,
+): string {
+  const today = toLocalDate();
+  const title = scope === 'low' ? '【小药盒·需购买清单】' : '【小药盒·库存清单】';
+  const rows: string[] = [];
+  for (const med of sorted) {
+    const medRules = rulesByMedId.get(med.id) ?? [];
+    const status = classifyInventoryStatus(med, medRules);
+    if (scope === 'low' && status !== 'empty' && status !== 'low' && status !== 'days_low') continue;
+    if (med.inventory) {
+      const daysLeft = estimateDaysLeft(med, medRules);
+      if (med.inventory.remaining <= 0) {
+        rows.push(`- ${med.name}：已用完`);
+      } else {
+        const days = daysLeft != null ? `（约 ${daysLeft} 天）` : '';
+        rows.push(`- ${med.name}：剩余 ${formatQuantity(med.inventory.remaining)}${med.inventory.unit}${days}`);
+      }
+    } else {
+      rows.push(`- ${med.name}：未设置库存`);
+    }
+  }
+  if (rows.length === 0) {
+    return scope === 'low' ? `${title} ${today}\n\n目前没有需要补充的药品，库存都很充足。` : `${title} ${today}\n\n还没有记录库存的药品。`;
+  }
+  return `${title} ${today}\n\n${rows.join('\n')}`;
+}
+
+/** 调系统分享，不支持时复制到剪贴板兜底。用户取消分享静默处理。 */
+async function shareInventory(text: string): Promise<void> {
+  const nav = navigator as Navigator & { share?: (data: { title?: string; text: string }) => Promise<void> };
+  if (nav.share) {
+    try {
+      await nav.share({ title: '小药盒·库存清单', text });
+      return;
+    } catch {
+      // 用户取消或分享失败 → 走剪贴板兜底
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('清单已复制，可粘贴到微信发送');
+  } catch {
+    toast('分享不可用，请长按复制');
+  }
+}
+
+/** 分享前选范围：需购买清单 / 全部库存。 */
+function openShareSheet(sorted: Medication[], rulesByMedId: Map<string, ReminderRule[]>): void {
+  const title = el('h2', { class: 'inventory-sheet-title', text: '分享库存清单' });
+  const hint = el('p', { class: 'inventory-sheet-hint', text: '选要分享的范围，会调用系统分享（微信、短信等），不支持则复制到剪贴板。' });
+  const actions = el('div', { class: 'inventory-sheet-actions' });
+  let sheet: BottomSheetHandle | undefined;
+  actions.append(createButton({
+    label: '需购买清单',
+    icon: 'warn',
+    onClick: async () => {
+      sheet?.close();
+      await shareInventory(buildShareText('low', sorted, rulesByMedId));
+    },
+  }));
+  actions.append(createButton({
+    label: '全部库存',
+    variant: 'secondary',
+    icon: 'box',
+    onClick: async () => {
+      sheet?.close();
+      await shareInventory(buildShareText('all', sorted, rulesByMedId));
+    },
+  }));
+  actions.append(createButton({ label: '取消', variant: 'text', onClick: () => sheet?.close() }));
+  sheet = openBottomSheet({ label: '分享库存清单', content: [title, hint, actions] });
 }

@@ -211,6 +211,8 @@ export function mountGlobalAssistant(): void {
   let dragStartPos: LauncherPos = { right: 0, bottom: 0 };
 
   function minBottomClearance(): number {
+    // 宽屏下底栏是左侧侧栏（shell.css ≥768px），不占底部，纵向可一直低到 8px
+    if (window.matchMedia('(min-width: 768px)').matches) return DRAG_EDGE_MARGIN_PX;
     let clearance = DRAG_EDGE_MARGIN_PX;
     const blockers = document.querySelectorAll<HTMLElement>('.app-navigation, .action-dock');
     for (const blocker of blockers) {
@@ -232,6 +234,8 @@ export function mountGlobalAssistant(): void {
   }
 
   function snapToEdge(pos: LauncherPos): LauncherPos {
+    // 宽屏（平板/桌面）下不做水平吸附，保留用户拖到的位置，避免被甩到边缘
+    if (window.matchMedia('(min-width: 768px)').matches) return clampPos(pos);
     const maxRight = Math.max(DRAG_EDGE_MARGIN_PX, window.innerWidth - launcher.offsetWidth - DRAG_EDGE_MARGIN_PX);
     const currentLeft = window.innerWidth - pos.right - launcher.offsetWidth;
     return {

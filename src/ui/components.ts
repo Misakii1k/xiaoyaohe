@@ -81,6 +81,22 @@ export function topbar(title: string, right?: HTMLElement, left?: HTMLElement): 
   return bar;
 }
 
+/** 顶栏「图标 + 文字」胶囊按钮：比纯图标更易懂用途。多个并列时放进 `.topbar-actions` 容器。 */
+export function topbarPill(options: {
+  icon: IconName;
+  label: string;
+  variant?: 'primary';
+  onClick?: () => void;
+}): HTMLButtonElement {
+  const btn = el('button', {
+    class: `topbar-pill${options.variant === 'primary' ? ' topbar-pill-primary' : ''}`,
+    type: 'button',
+  });
+  btn.append(icon(options.icon), el('span', { text: options.label }));
+  if (options.onClick) btn.onclick = options.onClick;
+  return btn;
+}
+
 /** ---------- Snackbar ---------- */
 let toastTimer: number | undefined;
 let toastHideTimer: number | undefined;

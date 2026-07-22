@@ -44,7 +44,7 @@ import {
   getConfirmedDose,
 } from '../features/inventory';
 import { sendLowStockReminderIfDue } from '../features/inventoryReminder';
-import { checkInteractions, type DrugInteraction } from '../data/drugInteractions';
+import { checkInteractions, filterNewInteractions, acknowledgeInteractions, type DrugInteraction } from '../data/drugInteractions';
 import { createButton } from '../ui/primitives/Button';
 import { createStatusBadge } from '../ui/primitives/StatusBadge';
 
@@ -405,9 +405,12 @@ function renderSlotSection(
     takeBtn.onclick = () => void (async () => {
       if (takeableItems.length === 0) return;
       const hits = checkInteractions(takeableItems.map((item) => item.med.name));
-      if (hits.length > 0 && !(await confirmDialog(buildTodayInteractionWarning(hits), '仍要记录', true))) {
+      // 只对"新"的相互作用弹窗：已确认过的组合不再打扰，出现新组合才再提示
+      const fresh = filterNewInteractions(hits);
+      if (fresh.length > 0 && !(await confirmDialog(buildTodayInteractionWarning(fresh), '仍要记录', true))) {
         return;
       }
+      if (fresh.length > 0) acknowledgeInteractions(fresh);
       if (!preflightInventoryActions(takeableItems)) return;
       try {
         await applyActions(takeableItems, 'taken');
