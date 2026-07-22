@@ -85,7 +85,11 @@ function isStoredConsent(value: unknown): value is StoredAiConsent {
 
 function parseSecureOrigin(value: string): string {
   const url = new URL(value);
-  if (url.protocol !== 'https:') throw new Error('AI 授权只允许 HTTPS 服务商地址');
+  // 本地开发（Vite / 内网 IP）放行，避免 dev 下语音授权永远被 HTTPS 校验挡住；生产仍强制 HTTPS。
+  const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '0.0.0.0';
+  if (url.protocol !== 'https:' && !isLocalhost) {
+    throw new Error('AI 授权只允许 HTTPS 服务商地址');
+  }
   if (url.username || url.password) throw new Error('AI 地址不能包含账号密码');
   return url.origin;
 }

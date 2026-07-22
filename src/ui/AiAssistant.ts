@@ -156,11 +156,14 @@ export function mountGlobalAssistant(): void {
   voiceOverlay.setAttribute('aria-live', 'assertive');
   const voiceHint = el('div', { class: 'ai-voice-hint', text: '松开发送，上滑取消' });
   const voiceTimer = el('div', { class: 'ai-voice-timer', text: '0″' });
-  const voiceWave = el('div', { class: 'ai-voice-wave' }, [
-    el('i'), el('i'), el('i'), el('i'), el('i'),
+  // 半圆式波形：中央话筒 + 两侧对称的弧形脉冲，按住说话时由内向外扩散。
+  const voiceArc = el('div', { class: 'ai-voice-arc', 'aria-hidden': 'true' } as any, [
+    el('span', { class: 'ai-voice-ring ai-voice-ring--3' }),
+    el('span', { class: 'ai-voice-ring ai-voice-ring--2' }),
+    el('span', { class: 'ai-voice-ring ai-voice-ring--1' }),
+    el('div', { class: 'ai-voice-glyph', 'aria-hidden': 'true' } as any, [icon('mic')]),
   ]);
-  const voiceGlyph = el('div', { class: 'ai-voice-glyph', 'aria-hidden': 'true' } as any, [icon('mic')]);
-  voiceOverlay.append(voiceGlyph, voiceWave, voiceTimer, voiceHint);
+  voiceOverlay.append(voiceArc, voiceTimer, voiceHint);
 
   const panel = el('section', { class: 'ai-panel' }, [header, log, quick, voiceOverlay, form]);
   panel.setAttribute('role', 'dialog');

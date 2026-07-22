@@ -799,20 +799,16 @@
   box-shadow: var(--shadow-lg);
 }
 
-/* 面板内的按住说话反馈区 */
+/* 面板内的按住说话反馈区：半圆式扩散波形 */
 .ai-voice-overlay {
   flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: auto auto minmax(42px, auto);
-  grid-template-areas:
-    "glyph wave timer"
-    "hint hint hint";
-  place-content: center;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--space-2) var(--space-3);
-  justify-items: center;
-  min-block-size: 150px;
-  padding: var(--space-3);
+  justify-content: center;
+  gap: var(--space-2);
+  min-block-size: 168px;
+  padding: var(--space-4) var(--space-3);
   border-block: 1px solid rgb(255 255 255 / 22%);
   background: var(--color-primary);
   color: #fff;
@@ -826,21 +822,53 @@
 
 .ai-voice-overlay.is-cancel { background: var(--color-danger, #ae2f37); }
 
-.ai-voice-glyph {
-  grid-area: glyph;
+/* 半圆式波形：中央话筒 + 三圈向外扩散的半圆环 */
+.ai-voice-arc {
+  position: relative;
   display: grid;
   place-items: center;
-  inline-size: 48px;
-  block-size: 48px;
+  inline-size: 120px;
+  block-size: 120px;
+}
+
+.ai-voice-glyph {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  inline-size: 56px;
+  block-size: 56px;
   border: 1px solid rgb(255 255 255 / 42%);
   border-radius: 50%;
   background: rgb(255 255 255 / 14%);
+  box-shadow: 0 4px 14px rgb(20 22 40 / 22%);
 }
 
-.ai-voice-glyph svg { inline-size: 26px; block-size: 26px; }
+.ai-voice-glyph svg { inline-size: 28px; block-size: 28px; }
+
+.ai-voice-ring {
+  position: absolute;
+  inset: 50% 0 0 0;
+  block-size: 0;
+  inline-size: 0;
+  margin: auto;
+  border: 2px solid rgb(255 255 255 / 55%);
+  border-block-start: 0;
+  border-end-start-radius: 999px;
+  border-end-end-radius: 999px;
+  transform-origin: 50% 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ai-voice-ring--1 { inline-size: 56px; block-size: 28px; animation: ai-voice-pulse 1.8s ease-out infinite; }
+.ai-voice-ring--2 { inline-size: 88px; block-size: 44px; animation: ai-voice-pulse 1.8s ease-out infinite 0.45s; }
+.ai-voice-ring--3 { inline-size: 120px; block-size: 60px; animation: ai-voice-pulse 1.8s ease-out infinite 0.9s; }
+
+.ai-voice-overlay.is-cancel .ai-voice-ring { border-color: rgb(255 180 184 / 70%); }
+.ai-voice-overlay.is-cancel .ai-voice-glyph { background: rgb(255 255 255 / 20%); border-color: rgb(255 180 184 / 60%); }
 
 .ai-voice-timer {
-  grid-area: timer;
   min-inline-size: 42px;
   font-size: var(--fs-title2);
   font-weight: 800;
@@ -848,48 +876,25 @@
 }
 
 .ai-voice-hint {
-  grid-area: hint;
   font-size: var(--fs-subheadline);
   font-weight: 600;
   opacity: 0.95;
 }
 
-.ai-voice-wave {
-  grid-area: wave;
-  display: inline-flex;
-  gap: 5px;
-  align-items: end;
-  block-size: 36px;
-}
-
-.ai-voice-wave i {
-  display: block;
-  inline-size: 5px;
-  border-radius: var(--radius-full);
-  background: #fff;
-  animation: ai-voice-bar 0.9s ease-in-out infinite;
-}
-
-.ai-voice-wave i:nth-child(1) { block-size: 12px; animation-delay: 0s; }
-.ai-voice-wave i:nth-child(2) { block-size: 22px; animation-delay: 0.1s; }
-.ai-voice-wave i:nth-child(3) { block-size: 30px; animation-delay: 0.2s; }
-.ai-voice-wave i:nth-child(4) { block-size: 18px; animation-delay: 0.15s; }
-.ai-voice-wave i:nth-child(5) { block-size: 14px; animation-delay: 0.05s; }
-
-.ai-voice-overlay.is-cancel .ai-voice-wave i { background: #ffb4b8; }
-
 @media (max-width: 359px) {
-  .ai-voice-overlay { min-block-size: 140px; gap: var(--space-2); }
-  .ai-voice-glyph { inline-size: 42px; block-size: 42px; }
+  .ai-voice-overlay { min-block-size: 150px; gap: var(--space-2); }
+  .ai-voice-arc { inline-size: 104px; block-size: 104px; }
+  .ai-voice-glyph { inline-size: 48px; block-size: 48px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ai-voice-wave i { animation: none; }
+  .ai-voice-ring { animation: none; opacity: 0.45; }
 }
 
-@keyframes ai-voice-bar {
-  0%, 100% { transform: scaleY(0.55); opacity: 0.7; }
-  50% { transform: scaleY(1); opacity: 1; }
+@keyframes ai-voice-pulse {
+  0% { opacity: 0; transform: scale(0.55); }
+  35% { opacity: 0.85; }
+  100% { opacity: 0; transform: scale(1.15); }
 }
 
 .ai-input {
