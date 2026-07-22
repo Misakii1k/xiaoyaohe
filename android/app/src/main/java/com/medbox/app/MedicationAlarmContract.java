@@ -11,6 +11,9 @@ import android.graphics.Color;
 import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.provider.Settings;
 import androidx.core.app.NotificationCompat;
 import org.json.JSONArray;
@@ -212,6 +215,33 @@ final class MedicationAlarmContract {
             }
         }
         context.getSystemService(NotificationManager.class).notify(id, builder.build());
+        // 强提醒（非全屏）路径补一次显式振动：部分机型会抑制通道配置的振动，
+        // 这里像全屏 Activity 那样主动调 Vibrator，确保用户一定感受到。
+        if (!wantsFullScreen) {
+            vibrateStrong(context);
+        }
+    }
+
+    /** strong 模式触发时显式振动 ~1.5 秒后停，不依赖通道配置被 OS 尊重。 */
+    private static void vibrateStrong(Context context) {
+        try {
+            Vibrator vibrator;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                VibratorManager vm = (VibratorManager) context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
+                vibrator = vm == null ? null : vm.getDefaultVibrator();
+            } else {
+                vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+            }
+            if (vibrator == null || !vibrator.hasVibrator()) return;
+            long[] pattern = {0, 400, 200, 400};
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+            } else {
+                vibrator.vibrate(pattern, -1);
+            }
+        } catch (Throwable ignored) {
+            // 振动不可用时不影响通知本身
+        }
     }
 
     private static PendingIntent actionPending(Context context, JSONObject payload, String action, int requestCode) {

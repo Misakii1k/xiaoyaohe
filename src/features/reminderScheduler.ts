@@ -36,6 +36,7 @@ import {
   buildReminderBody,
   buildReminderTitle,
 } from './medicationReminderPlan';
+import { triggerReminderVibration } from './reminderVibration';
 
 const TICK_MS = 60_000;
 let timer: number | null = null;
@@ -181,13 +182,18 @@ async function runTick(): Promise<void> {
     else if (ps.count < policy.maxRepeats + 1 && minsSinceLast >= policy.repeatEveryMin) shouldSend = true;
     if (shouldSend) {
       const next = ps.count + 1;
+      const reminderMode = med.reminderMode;
       const sent = await showNotification(buildReminderTitle(med, next), {
         body: buildReminderBody(med, entry.revision, minsLate),
         tag: logId,
         key: next === 1 ? 'dose' : `repeat-${next}`,
-        data: { kind: 'reminder', logId, occurrenceId: logId, medId: med.id, reminderCount: next },
+        data: { kind: 'reminder', logId, occurrenceId: logId, medId: med.id, reminderCount: next, reminderMode },
       });
-      if (sent) await putPushState({ id: logId, count: next, lastSentAt: Date.now() });
+      if (sent) {
+        // 所有提醒模式都补一次 web 层振动；原生路径若已振动也会被覆盖，不影响效果
+        triggerReminderVibration(reminderMode);
+        await putPushState({ id: logId, count: next, lastSentAt: Date.now() });
+      }
     }
   }
 }
