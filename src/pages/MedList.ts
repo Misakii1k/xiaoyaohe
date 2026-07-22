@@ -92,8 +92,6 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
 
   const addBtn = topbarPill({ icon: 'plus', label: '添加药品', variant: 'primary', onClick: () => navigate('/meds/new') });
 
-  const inventoryBtn = topbarPill({ icon: 'box', label: '库存', onClick: () => navigate('/meds/inventory') });
-
   const batchBtn = topbarPill({ icon: 'list', label: '批量管理' });
   let cleanupPageInteractions: () => void = () => undefined;
   batchBtn.onclick = () => {
@@ -101,7 +99,7 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     void enterBatchMode(root, signal);
   };
   const topRight = el('div', { class: 'topbar-actions medication-list-actions' });
-  topRight.append(inventoryBtn, batchBtn, addBtn);
+  topRight.append(batchBtn, addBtn);
 
   const content = el('div', { class: 'page medication-list-page' });
 
