@@ -14,6 +14,14 @@ import {
   type LanSyncProgress,
   type LanSyncSessionResult,
 } from './session';
+import {
+  formatLanTime,
+  isLanAllowRemoteOverwrite,
+  policyLabel,
+  setLanAllowRemoteOverwrite,
+  type LanDeviceSummary,
+  type LanSyncPolicy,
+} from './policy';
 
 export interface LanSyncSettingsPart {
   element: HTMLElement;
@@ -54,7 +62,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   ]);
   const inventoryNote = el('p', {
     class: 'muted lan-sync-note',
-    text: '两台手机的库存数字各自保留，避免同时记录时算错。',
+    text: '连接后可对比两边数据更新时间并选择覆盖或合并。库存数字仍各自保留在本机，避免同时服药时算错。',
   });
   const nameInput = el('input', {
     type: 'text',
@@ -67,6 +75,25 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     el('label', { htmlFor: nameInput.id, text: '这台手机叫' } as any),
     nameInput,
   ]);
+
+  const allowOverwrite = el('input', {
+    type: 'checkbox',
+    id: `lan-sync-allow-overwrite-${panelSequence}`,
+  } as any) as HTMLInputElement;
+  allowOverwrite.checked = isLanAllowRemoteOverwrite();
+  allowOverwrite.onchange = () => setLanAllowRemoteOverwrite(allowOverwrite.checked);
+  const allowField = el('label', {
+    class: 'lan-sync-extras-item',
+    htmlFor: allowOverwrite.id,
+    style: 'display:flex;align-items:flex-start;gap:10px;margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:var(--color-surface-muted,#f2f1f5);',
+  } as any, [
+    allowOverwrite,
+    el('span', {
+      style: 'font-size:13px;line-height:1.45' as any,
+      text: '允许多设备整库覆盖：对方选择「用对方数据覆盖」时，本机数据会被替换（局域网内多台设备同步时需要打开）',
+    }),
+  ]);
+
   const status = el('div', {
     class: 'lan-sync-status',
     role: 'status',
@@ -93,7 +120,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   const showCode = actionButton('send', '显示连接码');
   const scanCode = actionButton('scan', '扫一扫连接', 'tonal');
   const actions = el('div', { class: 'btn-row lan-sync-actions' }, [showCode, scanCode]);
-  body.append(info, inventoryNote, nameField, extrasFieldset, actions, status);
+  body.append(info, inventoryNote, nameField, allowField, extrasFieldset, actions, status);
   if (!available) {
     showCode.disabled = true;
     scanCode.disabled = true;
@@ -163,6 +190,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
         deviceName,
         onProgress: (progress) => setProgress(status, progress),
         syncOptions,
+        choosePolicy: (input) => promptLanSyncPolicy(input),
       });
       if (disposed) {
         await session.close();
@@ -320,6 +348,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
           signal: controller.signal,
           deviceName: setLanSyncDeviceName(nameInput.value),
           syncOptions: getSyncOptions(),
+          allowRemoteOverwrite: allowOverwrite.checked,
           onProgress: (progress) => {
             scanStatus.className = 'banner info';
             scanStatus.textContent = progress.message;
@@ -425,4 +454,88 @@ function setResultChip(chip: HTMLElement, result: LanSyncSessionResult): void {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '资料没有传完，请重新同步。';
+}
+
+function deviceCard(title: string, summary: LanDeviceSummary, recommended: boolean): HTMLElement {
+  const card = el('div', {
+    style: `padding:12px 14px;border-radius:14px;border:1px solid ${recommended ? 'var(--color-primary)' : 'var(--color-border,#eeedf2)'};background:var(--color-surface,#fff);`,
+  } as any);
+  card.append(
+    el('div', {
+      style: 'display:flex;justify-content:space-between;gap:8px;align-items:center',
+    } as any, [
+      el('strong', { text: title }),
+      recommended
+        ? el('span', {
+          style: 'font-size:11px;font-weight:700;color:var(--color-primary)',
+          text: '推荐',
+        } as any)
+        : el('span', { text: '' }),
+    ]),
+    el('div', { class: 'muted', style: 'font-size:13px;margin-top:6px;line-height:1.45' } as any, [
+      el('div', { text: `设备：${summary.deviceName}` }),
+      el('div', { text: `本机数据更新：${formatLanTime(summary.dataUpdatedAt)}` }),
+      el('div', { text: `同步版本时钟：${summary.maxClock || '—'}` }),
+      el('div', { text: `药品 ${summary.medicationCount} · 含库存记录 ${summary.withInventoryCount}` }),
+      el('div', { text: `本机库存摘要：${summary.inventoryHint}` }),
+    ]),
+  );
+  return card;
+}
+
+function promptLanSyncPolicy(input: {
+  local: LanDeviceSummary;
+  remote: LanDeviceSummary;
+  recommended: LanSyncPolicy;
+}): Promise<LanSyncPolicy> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (policy: LanSyncPolicy) => {
+      if (settled) return;
+      settled = true;
+      sheet.close();
+      resolve(policy);
+    };
+    const title = el('h3', { class: 'lan-sync-sheet-title', text: '选择同步数据版本' });
+    const tip = el('p', {
+      class: 'muted',
+      style: 'font-size:13px;line-height:1.5;margin:0 0 12px',
+      text: '两边都是本地数据。请对照更新时间（尤其库存）选择要保留的版本；推荐项会高亮。',
+    } as any);
+    const recLocal = input.recommended === 'overwrite-local';
+    const recRemote = input.recommended === 'overwrite-remote';
+    const cards = el('div', { style: 'display:grid;gap:10px;margin-bottom:12px' } as any, [
+      deviceCard('本机', input.local, recLocal),
+      deviceCard('对方', input.remote, recRemote),
+    ]);
+    const recLabel = policyLabel(input.recommended);
+    const recBanner = el('div', {
+      class: 'banner info',
+      style: 'margin-bottom:12px',
+    } as any, [
+      el('span', { text: `推荐：${recLabel}` }),
+    ]);
+    const useLocal = actionButton('check', '使用本机覆盖', recLocal ? undefined : 'tonal');
+    const useRemote = actionButton('send', '使用对方覆盖', recRemote ? undefined : 'tonal');
+    const useMerge = actionButton('info', '智能合并', input.recommended === 'merge' ? undefined : 'tonal');
+    useLocal.onclick = () => finish('overwrite-local');
+    useRemote.onclick = () => finish('overwrite-remote');
+    useMerge.onclick = () => finish('merge');
+    const actions = el('div', { class: 'btn-row', style: 'flex-wrap:wrap;gap:8px' } as any, [
+      useLocal,
+      useRemote,
+      useMerge,
+    ]);
+    const sheet = openBottomSheet({
+      label: '选择同步方式',
+      content: [title, tip, cards, recBanner, actions],
+      initialFocus: recRemote ? useRemote : recLocal ? useLocal : useMerge,
+      onClose: () => {
+        if (!settled) {
+          settled = true;
+          resolve(input.recommended);
+        }
+      },
+    });
+  });
 }

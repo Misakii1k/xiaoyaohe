@@ -23,6 +23,7 @@ import {
   applyLanMergedSnapshot,
   createLanSnapshot,
   mergeLanSnapshots,
+  mergeLanSnapshotsWithPolicy,
   parseLanSyncSnapshot,
   type LanSyncApplyResult,
   type LanSyncMergeResult,
@@ -34,6 +35,14 @@ import {
   syncExtrasSchema,
   type LanSyncContentOptions,
 } from './extras';
+import {
+  buildLocalLanSummary,
+  isLanAllowRemoteOverwrite,
+  recommendLanPolicy,
+  summarizeLanSnapshot,
+  type LanDeviceSummary,
+  type LanSyncPolicy,
+} from './policy';
 
 const DEVICE_ID_KEY = 'medbox.lan-sync.device-id.v1';
 const DEVICE_NAME_KEY = 'medbox.lan-sync.device-name.v1';
@@ -68,6 +77,17 @@ export interface LanSyncSessionOptions {
   deviceName?: string;
   /** 可选同步内容（照片、API 配置） */
   syncOptions?: LanSyncContentOptions;
+  /**
+   * After both snapshots are known, choose merge vs whole-copy overwrite.
+   * Host resolves policy (may prompt UI). Joiner may refuse overwrite via allowOverwrite flag.
+   */
+  choosePolicy?: (input: {
+    local: LanDeviceSummary;
+    remote: LanDeviceSummary;
+    recommended: LanSyncPolicy;
+  }) => Promise<LanSyncPolicy>;
+  /** Joiner: allow peer to overwrite this device (default false unless settings switch). */
+  allowRemoteOverwrite?: boolean;
 }
 
 interface LanSyncDevice {
@@ -82,6 +102,7 @@ interface LanSyncSessionDependencies {
   applySnapshot: typeof applyLanMergedSnapshot;
   parseSnapshot: typeof parseLanSyncSnapshot;
   reschedule: typeof rescheduleMedicationReminders;
+  buildLocalSummary: typeof buildLocalLanSummary;
   now: () => number;
 }
 
@@ -96,6 +117,14 @@ const joinPayloadSchema = z.object({
   device: deviceSchema,
   snapshot: z.unknown(),
   extras: z.unknown().optional(),
+  allowOverwrite: z.boolean().optional().default(false),
+  summary: z.object({
+    dataUpdatedAt: z.number().int().nonnegative(),
+    inventoryHint: z.string().max(200),
+    medicationCount: z.number().int().nonnegative(),
+    withInventoryCount: z.number().int().nonnegative(),
+    maxClock: z.number().int().nonnegative(),
+  }).optional(),
 }).strict();
 
 const resultPayloadSchema = z.object({
@@ -106,6 +135,7 @@ const resultPayloadSchema = z.object({
   conflictCount: z.number().int().nonnegative(),
   inventoryConflicts: z.array(z.string().max(80)).max(1_000),
   extras: z.unknown().optional(),
+  policy: z.enum(['merge', 'overwrite-local', 'overwrite-remote']).optional(),
 }).strict();
 
 const ackPayloadSchema = z.object({
@@ -147,6 +177,7 @@ export async function startLanSyncHost(
       controller.signal,
       options.onProgress,
       options.syncOptions,
+      options.choosePolicy,
     ).finally(async () => {
       await dependencies.transport.close(connection.connectionId).catch(() => false);
       await inbox.dispose();
@@ -186,9 +217,11 @@ export async function joinLanSyncHost(
     options.onProgress?.({ stage: 'transferring', message: '正在传送' });
     const device = resolveDevice(options.deviceName);
     const snapshot = await dependencies.createSnapshot(device.id, invitation.sessionId);
+    const localSummary = await dependencies.buildLocalSummary(snapshot, device);
     const extras = options.syncOptions
       ? await collectSyncExtras(options.syncOptions)
       : undefined;
+    const allowOverwrite = options.allowRemoteOverwrite ?? isLanAllowRemoteOverwrite();
     await dependencies.transport.send({
       connectionId,
       data: await encryptLanSyncMessage(key, messageMetadata(invitation.sessionId, 'joiner', 1, 'join'), {
@@ -196,6 +229,14 @@ export async function joinLanSyncHost(
         version: 1,
         device,
         snapshot,
+        allowOverwrite,
+        summary: {
+          dataUpdatedAt: localSummary.dataUpdatedAt,
+          inventoryHint: localSummary.inventoryHint,
+          medicationCount: localSummary.medicationCount,
+          withInventoryCount: localSummary.withInventoryCount,
+          maxClock: localSummary.maxClock,
+        },
         ...(extras ? { extras } : {}),
       }),
     });
@@ -312,6 +353,7 @@ async function runHostSession(
   signal: AbortSignal,
   onProgress?: (progress: LanSyncProgress) => void,
   syncOptions?: LanSyncContentOptions,
+  choosePolicy?: LanSyncSessionOptions['choosePolicy'],
 ): Promise<LanSyncSessionResult> {
   const key = await deriveLanSyncSessionKey(invitation.secret, invitation.sessionId);
   let connected = false;
@@ -331,7 +373,44 @@ async function runHostSession(
     ));
     const remoteSnapshot = dependencies.parseSnapshot(joinPayload.snapshot);
     const localSnapshot = await dependencies.createSnapshot(device.id, invitation.sessionId);
-    const merged = await dependencies.mergeSnapshots(localSnapshot, remoteSnapshot);
+    const localSummary = await dependencies.buildLocalSummary(localSnapshot, device);
+    const remoteSummary = joinPayload.summary
+      ? {
+          deviceId: joinPayload.device.id,
+          deviceName: joinPayload.device.name,
+          entryCount: remoteSnapshot.entries.length,
+          medicationCount: joinPayload.summary.medicationCount,
+          withInventoryCount: joinPayload.summary.withInventoryCount,
+          maxClock: joinPayload.summary.maxClock,
+          dataUpdatedAt: joinPayload.summary.dataUpdatedAt,
+          inventoryHint: joinPayload.summary.inventoryHint,
+        }
+      : summarizeLanSnapshot(
+        remoteSnapshot,
+        joinPayload.device,
+        0,
+        '对方未提供库存摘要',
+      );
+    const recommended = recommendLanPolicy(localSummary, remoteSummary);
+    let policy: LanSyncPolicy = recommended;
+    if (choosePolicy) {
+      onProgress?.({ stage: 'transferring', message: '请选择同步方式' });
+      policy = await choosePolicy({ local: localSummary, remote: remoteSummary, recommended });
+    }
+    if (
+      (policy === 'overwrite-remote' || policy === 'overwrite-local')
+      && !joinPayload.allowOverwrite
+      && policy === 'overwrite-local'
+    ) {
+      // Host overwriting joiner requires joiner allowOverwrite.
+      // overwrite-local means host's data wins for both devices → needs joiner consent.
+      throw new Error('对方未开启「允许被覆盖」。请对方在家庭同步中打开该开关后重试，或选择智能合并。');
+    }
+    if (policy === 'overwrite-local' && !joinPayload.allowOverwrite) {
+      throw new Error('对方未开启「允许被覆盖」。请对方打开该开关，或改用智能合并。');
+    }
+    // overwrite-remote: host takes remote data — host always consents by choosing it.
+    const merged = await mergeLanSnapshotsWithPolicy(localSnapshot, remoteSnapshot, policy);
     if (!merged.snapshot) {
       await sendSessionError(
         dependencies.transport,
@@ -364,6 +443,7 @@ async function runHostSession(
         snapshot: merged.snapshot,
         conflictCount: merged.conflicts.length,
         inventoryConflicts: merged.inventoryConflicts,
+        policy,
         ...(hostExtras ? { extras: hostExtras } : {}),
       }),
     });
@@ -417,6 +497,7 @@ function buildDependencies(overrides: Partial<LanSyncSessionDependencies>): LanS
     applySnapshot: overrides.applySnapshot ?? applyLanMergedSnapshot,
     parseSnapshot: overrides.parseSnapshot ?? parseLanSyncSnapshot,
     reschedule: overrides.reschedule ?? rescheduleMedicationReminders,
+    buildLocalSummary: overrides.buildLocalSummary ?? buildLocalLanSummary,
     now: overrides.now ?? Date.now,
   };
 }

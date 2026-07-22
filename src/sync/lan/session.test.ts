@@ -16,6 +16,18 @@ import {
   type LanSyncMergeResult,
   type LanSyncSnapshot,
 } from './store';
+import type { LanDeviceSummary } from './policy';
+
+const stubSummary = (deviceName: string): LanDeviceSummary => ({
+  deviceId: 'device:stub',
+  deviceName,
+  entryCount: 0,
+  medicationCount: 0,
+  withInventoryCount: 0,
+  maxClock: 0,
+  dataUpdatedAt: 0,
+  inventoryHint: '未填写库存',
+});
 
 describe('LAN sync session orchestration', () => {
   it('completes one-scan host/join exchange and applies the same merged snapshot on both phones', async () => {
@@ -37,6 +49,7 @@ describe('LAN sync session orchestration', () => {
       },
       parseSnapshot: parseLanSyncSnapshot,
       reschedule: hostReschedule,
+      buildLocalSummary: async (_snapshot, device) => stubSummary(device.name),
     });
     const joined = joinLanSyncHost(hosted.invitation.uri, { deviceName: '爸爸的手机' }, {
       transport: joinTransport,
@@ -48,6 +61,7 @@ describe('LAN sync session orchestration', () => {
       },
       parseSnapshot: parseLanSyncSnapshot,
       reschedule: joinReschedule,
+      buildLocalSummary: async (_snapshot, device) => stubSummary(device.name),
     });
 
     const [hostResult, joinResult] = await Promise.all([hosted.completion, joined]);
@@ -75,6 +89,7 @@ describe('LAN sync session orchestration', () => {
       applySnapshot: async () => applyResult(),
       parseSnapshot: parseLanSyncSnapshot,
       reschedule: async () => undefined,
+      buildLocalSummary: async (_snapshot, device) => stubSummary(device.name),
     });
     queueMicrotask(() => controller.abort());
 
