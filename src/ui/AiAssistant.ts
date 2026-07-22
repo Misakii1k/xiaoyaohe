@@ -646,7 +646,10 @@ export function mountGlobalAssistant(): void {
             streamedMessage = addMsg('bot', '');
           }
           const bubble = streamedMessage.querySelector<HTMLElement>('.ai-bubble');
-          if (bubble) bubble.replaceChildren(renderAssistantMarkdown(streamedText));
+          if (bubble) {
+            bubble.replaceChildren(renderAssistantMarkdown(streamedText));
+            bubble.append(el('span', { class: 'ai-caret', 'aria-hidden': 'true' } as any));
+          }
           log.scrollTop = log.scrollHeight;
         },
       });
@@ -678,7 +681,41 @@ export function mountGlobalAssistant(): void {
       openPanel();
       quick.hidden = true;
       addAssistantReply({
-        markdown: '## 今天的提醒\n\n还有 **1 项** 待处理：\n\n- 维生素 C · 08:00\n- 每次 1 片，按医嘱服用',
+        markdown: [
+          '## 今天的提醒',
+          '',
+          '还有 **1 项** 待处理，下面是今天的用药概览。',
+          '',
+          '> 记得饭后服药，不要空腹吃阿司匹林。',
+          '',
+          '### 今日安排',
+          '',
+          '- **08:00** 阿司匹林 · 每次 1 片',
+          '- **12:30** 维生素 C · 每次 1 片',
+          '- **21:30** 瑞舒伐他汀 · 每次 1 片',
+          '',
+          '### 服药对照',
+          '',
+          '| 药品 | 时间 | 剂量 | 状态 |',
+          '| --- | --- | --- | --- |',
+          '| 阿司匹林 | 08:00 | 1 片 | 待服 |',
+          '| 维生素 C | 12:30 | 1 片 | 已服 |',
+          '| 瑞舒伐他汀 | 21:30 | 1 片 | 待服 |',
+          '',
+          '### 本周清单',
+          '',
+          '- [x] 周一 08:00 阿司匹林',
+          '- [x] 周二 08:00 阿司匹林',
+          '- [ ] 今天 08:00 阿司匹林',
+          '',
+          '---',
+          '',
+          '需要调整时间可以告诉我，比如：',
+          '',
+          '```bash',
+          '把阿司匹林改到 08:30',
+          '```',
+        ].join('\n'),
         blocks: [
           {
             type: 'card',

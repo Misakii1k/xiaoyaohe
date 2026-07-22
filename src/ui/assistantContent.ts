@@ -1,9 +1,62 @@
 import DOMPurify from 'dompurify';
-import { marked } from 'marked';
+import { marked, type RendererObject, type Tokens } from 'marked';
 import type { AssistantCardBlock, AssistantCardVariant, AssistantContentBlock } from '../ai/assistant';
 import { el, icon, type IconName } from './components';
+import { highlightCode } from './assistantHighlight';
 
 marked.setOptions({ gfm: true, breaks: true });
+
+const aiRenderer: RendererObject = {
+  heading({ tokens, depth }: Tokens.Heading): string {
+    const inner = this.parser.parseInline(tokens);
+    return `<h${depth} class="ai-md-h ai-md-h${depth}">${inner}</h${depth}>\n`;
+  },
+  paragraph({ tokens }: Tokens.Paragraph): string {
+    return `<p class="ai-md-p">${this.parser.parseInline(tokens)}</p>\n`;
+  },
+  code({ text, lang, escaped }: Tokens.Code): string {
+    const label = (lang ?? '').trim().toLowerCase();
+    const body = escaped ? text : highlightCode(text, lang);
+    const head = label ? `<div class="ai-code-head"><span class="ai-code-lang">${label}</span></div>` : '';
+    return `<pre class="ai-code">${head}<code>${body}</code></pre>\n`;
+  },
+  codespan({ text }: Tokens.Codespan): string {
+    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<code class="ai-md-code">${escaped}</code>`;
+  },
+  blockquote({ tokens }: Tokens.Blockquote): string {
+    return `<blockquote class="ai-quote">${this.parser.parse(tokens)}</blockquote>\n`;
+  },
+  table(token: Tokens.Table): string {
+    let header = '';
+    for (const cell of token.header) header += this.tablecell({ ...cell, header: true });
+    let body = '';
+    for (const row of token.rows) {
+      let cells = '';
+      for (const cell of row) cells += this.tablecell(cell);
+      body += this.tablerow({ text: cells });
+    }
+    if (body) body = `<tbody>${body}</tbody>`;
+    return `<table class="ai-table">\n<thead>\n${header}</thead>\n${body}</table>\n`;
+  },
+  listitem(item: Tokens.ListItem): string {
+    if (item.task) {
+      const cls = item.checked ? 'ai-task is-checked' : 'ai-task';
+      const glyph = item.checked ? '✓' : '';
+      const body = this.parser.parseInline(item.tokens);
+      return `<li class="ai-md-taskitem"><span class="${cls}" aria-hidden="true">${glyph}</span><span class="ai-task-text">${body}</span></li>\n`;
+    }
+    return `<li>${this.parser.parse(item.tokens)}</li>\n`;
+  },
+  checkbox(): string {
+    return '';
+  },
+  hr(): string {
+    return `<hr class="ai-md-hr" />\n`;
+  },
+};
+
+marked.use({ renderer: aiRenderer });
 
 function isAllowedHref(raw: string): boolean {
   const href = raw.trim();
