@@ -177,8 +177,14 @@ export function mountGlobalAssistant(): void {
   ringFill.style.strokeDasharray = '100';
   ringFill.style.strokeDashoffset = '100';
   voiceRingSvg.append(ringTrack, ringFill);
+  // 涟漪：话筒周围向外扩散的同心圆水波，录音时循环播放。
+  const voiceRipples = el('div', { class: 'ai-voice-ripples', 'aria-hidden': 'true' } as any, [
+    el('span', { class: 'ai-voice-ripple ai-voice-ripple--1' }),
+    el('span', { class: 'ai-voice-ripple ai-voice-ripple--2' }),
+    el('span', { class: 'ai-voice-ripple ai-voice-ripple--3' }),
+  ]);
   const voiceGlyph = el('div', { class: 'ai-voice-glyph', 'aria-hidden': 'true' } as any, [icon('mic')]);
-  const voiceStage = el('div', { class: 'ai-voice-stage' }, [voiceRingSvg, voiceGlyph]);
+  const voiceStage = el('div', { class: 'ai-voice-stage' }, [voiceRipples, voiceRingSvg, voiceGlyph]);
   voiceOverlay.append(voiceStage, voiceTimer, voiceHint);
 
   const panel = el('section', { class: 'ai-panel' }, [header, log, quick, voiceOverlay, form]);
