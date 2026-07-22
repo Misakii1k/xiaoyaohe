@@ -52,12 +52,12 @@ describe('release version validation', () => {
 
     expect(
       validateReleaseVersions({
-        packageVersion: '0.7.7',
-        lockVersion: '0.7.7',
-        androidVersionName: '0.7.7',
-        androidVersionCode: 14,
+        packageVersion: '0.8.0',
+        lockVersion: '0.8.0',
+        androidVersionName: '0.8.0',
+        androidVersionCode: 16,
       }),
-    ).toEqual({ version: '0.7.7', versionCode: 14 });
+    ).toEqual({ version: '0.8.0', versionCode: 16 });
   });
 
   it('rejects stale Android and lockfile versions', () => {
@@ -163,23 +163,23 @@ describe('ZIP and APK asset verification', () => {
         { name: 'assets/public/cordova.js', data: Buffer.alloc(0) },
       ]),
     );
-    const obsoleteWebArchive = join(root, 'release', 'medbox-0.7.7-web.zip');
+    const obsoleteWebArchive = join(root, 'release', 'xiaoyaohe-0.8.0-web.zip');
     mkdirSync(join(root, 'release'), { recursive: true });
     writeFileSync(obsoleteWebArchive, 'stale web product');
 
     const result = publishReleaseArtifacts({
       root,
-      releaseConfig: { name: 'medbox', version: '0.7.7', versionCode: 14 },
+      releaseConfig: { name: 'xiaoyaohe', version: '0.8.0', versionCode: 16 },
       variant: 'debug',
       apkFile: apk,
     });
 
     expect(result).not.toHaveProperty('webArchive');
-    expect(basename(result.androidArtifact)).toBe('medbox-0.7.7-android-debug.apk');
+    expect(basename(result.androidArtifact)).toBe('xiaoyaohe-0.8.0-android-debug.apk');
     expect(existsSync(obsoleteWebArchive)).toBe(false);
     const manifest = readFileSync(result.checksumFile, 'utf8');
     expect(manifest).toBe(
-      `${sha256(readFileSync(result.androidArtifact))}  medbox-0.7.7-android-debug.apk\n`,
+      `${sha256(readFileSync(result.androidArtifact))}  xiaoyaohe-0.8.0-android-debug.apk\n`,
     );
   });
 });
@@ -244,13 +244,19 @@ describe('Android-only distribution contract', () => {
     const vite = readFileSync(join(root, 'vite.config.ts'), 'utf8');
     const tsconfig = readFileSync(join(root, 'tsconfig.json'), 'utf8');
     const main = readFileSync(join(root, 'src', 'main.ts'), 'utf8');
+    const capacitor = readFileSync(join(root, 'capacitor.config.ts'), 'utf8');
+    const androidStrings = readFileSync(join(root, 'android', 'app', 'src', 'main', 'res', 'values', 'strings.xml'), 'utf8');
 
     expect(packageJson).toMatchObject({
-      version: '0.7.7',
+      name: 'xiaoyaohe',
+      version: '0.8.0',
       description: expect.stringContaining('Android App'),
       dependencies: { qrcode: expect.any(String) },
       devDependencies: { '@types/qrcode': expect.any(String) },
     });
+    expect(capacitor).toContain("appId: 'com.medbox.app'");
+    expect(capacitor).toContain("appName: '小药盒'");
+    expect(androidStrings).toContain('<string name="app_name">小药盒</string>');
     expect(packageJson.scripts.package).toBeUndefined();
     expect(packageJson.scripts['deploy:pages']).toBeUndefined();
     expect(packageJson.scripts['typecheck:worker']).toBeUndefined();

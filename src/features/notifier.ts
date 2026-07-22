@@ -4,6 +4,11 @@ import {
   type ReminderAction,
   type ScheduledReminderNotification,
 } from './reminderTransport';
+import {
+  checkFullScreenAlarmCapability,
+  openFullScreenAlarmSettings,
+  type FullScreenAlarmCapability,
+} from './nativeMedicationAlarm';
 
 export const REMINDER_CAPABILITY_CHANGE_EVENT = 'medbox:reminder-capability-change';
 
@@ -18,6 +23,7 @@ export interface NotifyOpts {
 }
 
 let actionCleanup: (() => void) | undefined;
+let fullScreenAlarm: FullScreenAlarmCapability = 'unavailable';
 
 export function notificationsSupported(): boolean {
   return getReminderTransport().isSupported();
@@ -55,6 +61,21 @@ export async function requestExactAlarmCapability(): Promise<ExactAlarmCapabilit
   return capability;
 }
 
+export function getFullScreenAlarmCapability(): FullScreenAlarmCapability {
+  return fullScreenAlarm;
+}
+
+export async function refreshFullScreenAlarmCapability(): Promise<FullScreenAlarmCapability> {
+  fullScreenAlarm = await checkFullScreenAlarmCapability().catch(() => 'unavailable');
+  dispatchCapabilityChange();
+  return fullScreenAlarm;
+}
+
+export async function requestFullScreenAlarmCapability(): Promise<FullScreenAlarmCapability> {
+  await openFullScreenAlarmSettings();
+  return refreshFullScreenAlarmCapability();
+}
+
 export async function initializeNotifier(
   onAction?: (action: ReminderAction) => void,
 ): Promise<void> {
@@ -62,6 +83,7 @@ export async function initializeNotifier(
   await Promise.all([
     transport.refreshPermission(),
     transport.checkExactAlarmCapability(),
+    refreshFullScreenAlarmCapability(),
   ]);
   if (onAction && !actionCleanup) {
     actionCleanup = await transport.addActionListener(onAction);

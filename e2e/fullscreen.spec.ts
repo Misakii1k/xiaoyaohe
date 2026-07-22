@@ -4,10 +4,9 @@ import { seedVisualFixtures } from './visual-fixtures';
 const primaryRoutes = [
   { path: '/#/today', heading: '今天', name: 'today' },
   { path: '/#/meds', heading: '药品', name: 'medications' },
-  { path: '/#/meds/inventory', heading: '药库存', name: 'inventory' },
+  { path: '/#/meds/inventory', heading: '库存', name: 'inventory' },
   { path: '/#/meds/new', heading: '新增药品', name: 'medication-batch' },
   { path: '/#/scan', heading: '分药', name: 'scanner' },
-  { path: '/#/work', heading: '工时收入', name: 'work' },
   { path: '/#/settings', heading: '设置', name: 'settings' },
 ] as const;
 
@@ -51,5 +50,11 @@ test.describe('fullscreen visual matrix', () => {
     await expect(page.getByRole('heading', { level: 1, name: '药品' })).toBeVisible();
     await page.locator('a[href="#/today"]').click();
     await expect(page.getByRole('heading', { level: 1, name: '今天' })).toBeFocused();
+  });
+
+  test('redirects the removed work route to today', async ({ page }) => {
+    await page.goto('/#/work');
+    await expect(page.getByRole('heading', { level: 1, name: '今天' })).toBeVisible();
+    await expect(page).toHaveURL(/#\/today$/);
   });
 });

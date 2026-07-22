@@ -511,6 +511,7 @@ function medication(id: string, name: string, updatedAt: number): Medication {
     mealRels: [],
     mealRelsBySlot: {},
     daysOfWeek: [],
+    reminderMode: 'strong',
     identity: emptyIdentity(),
     updatedAt,
     createdAt: 1,

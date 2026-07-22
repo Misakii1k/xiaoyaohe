@@ -39,17 +39,12 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
   const photoUrls = await getMedPhotoUrls(meds.map((med) => med.id));
   if (signal?.aborted) return;
 
-  const back = createIconButton({
-    icon: 'arrow-left',
-    label: '返回药品',
-    onClick: () => navigate('/meds'),
-  });
   const content = el('div', { class: 'page inventory-page' });
 
   if (meds.length === 0) {
     const add = createButton({ label: '去添加药品', icon: 'plus', onClick: () => navigate('/meds/new') });
     content.append(emptyState('box', '还没有药品', '先添加药品，再记录手头还剩多少。', add));
-    renderPage({ root, title: '药库存', activeTab: 'meds', topLeft: back, content });
+    renderPage({ root, title: '库存', activeTab: 'inventory', content });
     return;
   }
 
@@ -160,7 +155,7 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
 
   searchInput.addEventListener('input', applyFilters);
   content.append(summary, searchBar, filterRow, list, noResults);
-  renderPage({ root, title: '药库存', activeTab: 'meds', topLeft: back, content });
+  renderPage({ root, title: '库存', activeTab: 'inventory', content });
 }
 
 function groupRulesByMedId(rules: ReminderRule[]): Map<string, ReminderRule[]> {

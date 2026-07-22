@@ -291,7 +291,7 @@ function displayDate(value: string, placeholder?: string): string {
 function openDateSheet(current: string, onConfirm: (value: string) => void): void {
   let { year, month, day } = current ? parseDate(current) : parseDate('');
   const now = new Date();
-  // 药品有效期常往后好几年；工时补录偶尔也要回溯。当前值的年份始终出现在列表里。
+  // 药品有效期常往后好几年，历史用药记录也可能需要回溯。当前值的年份始终出现在列表里。
   const yearStart = Math.min(now.getFullYear() - 5, year - 2);
   const yearEnd = Math.max(now.getFullYear() + 12, year + 2);
   const years = Array.from({ length: yearEnd - yearStart + 1 }, (_, i) => yearStart + i);

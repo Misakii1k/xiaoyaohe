@@ -6,7 +6,7 @@ import { createButton } from './primitives/Button';
 import { parseMedicationSpeech, IdentifyError } from '../ai/identify';
 import { openMedOnboardWizard } from './MedOnboardWizard';
 import { setPendingMedicationBatch } from '../ai/pendingMedicationBatch';
-import { createTencentAsrRecognizer, isAsrConfigured, type SpeechRecognitionLike } from '../ai/asr';
+import { createProxyAsrRecognizer, isAsrConfigured, type SpeechRecognitionLike } from '../ai/asr';
 
 const EXAMPLE_TEXT = '比如说：「阿司匹林每天早饭后吃一片，二甲双胍早晚各一片，睡前还有一粒钙片。」';
 const MIC_IDLE_LABEL = '点一下，开始说';
@@ -20,7 +20,7 @@ registerRouteTransitionCleanup(() => {
 
 function createRecognizer(): SpeechRecognitionLike | null {
   // 设置里配好腾讯云就优先用它——WebSocket 直连，不挑浏览器
-  if (isAsrConfigured()) return createTencentAsrRecognizer();
+  if (isAsrConfigured()) return createProxyAsrRecognizer();
   const Ctor = (window as unknown as {
     SpeechRecognition?: new () => SpeechRecognitionLike;
     webkitSpeechRecognition?: new () => SpeechRecognitionLike;

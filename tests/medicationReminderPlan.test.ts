@@ -13,6 +13,7 @@ function medication(overrides: Partial<Medication> = {}): Medication {
     mealRels: [],
     mealRelsBySlot: {},
     daysOfWeek: [],
+    reminderMode: 'strong',
     identity: emptyIdentity(),
     updatedAt: 1,
     ...overrides,
@@ -59,6 +60,7 @@ describe('native medication reminder plan', () => {
     expect(plan[0].data).toMatchObject({
       occurrenceId: 'occurrence:rule-1:2026-07-13',
       medId: 'med-1',
+      reminderMode: 'strong',
     });
   });
 
@@ -119,5 +121,22 @@ describe('native medication reminder plan', () => {
       'occurrence:rule-1:2026-07-13',
     ]);
     expect(plan.every(({ data }) => data?.kind === 'reminder')).toBe(true);
+  });
+
+  it('passes the per-medication full-screen mode to the native transport', () => {
+    const med = medication({ reminderMode: 'fullscreen-persistent' });
+    const reminderRule = rule({ escalate: { ...defaultEscalate(), maxRepeats: 0 } });
+    const revision = createScheduleRevision(med, reminderRule, {
+      effectiveDate: '2026-07-13',
+      createdAt: 100,
+    });
+    const plan = buildMedicationReminderPlan({
+      meds: [med], rules: [reminderRule], revisions: [revision], logs: [], now, horizonDays: 1,
+    });
+    expect(plan[0].data).toMatchObject({
+      reminderMode: 'fullscreen-persistent',
+      medicationName: '测试药',
+      dueAt: expect.any(Number),
+    });
   });
 });

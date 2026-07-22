@@ -14,6 +14,7 @@ const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const timeLocal = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 const slot = z.enum(['morning', 'noon', 'evening', 'bedtime']);
 const mealRel = z.enum(['before', 'with', 'after']);
+const reminderMode = z.enum(['strong', 'fullscreen-short', 'fullscreen-persistent']);
 const stringList = z.array(shortText).max(1_000);
 
 const identitySchema = z.object({
@@ -52,6 +53,7 @@ const medicationSchema = z.object({
   mealRels: z.array(mealRel).max(3),
   mealRelsBySlot: z.partialRecord(slot, z.array(mealRel).max(3)),
   daysOfWeek: z.array(z.number().int().min(0).max(6)).max(7),
+  reminderMode: reminderMode.optional().default('strong'),
   inventory: inventorySchema.optional(),
   notes: shortText.optional(),
   expiryDate: nonNegativeNumber.optional(),
@@ -119,58 +121,6 @@ const scheduleRevisionSchema = z.object({
   reviewFlags: z.array(z.enum(['cycle-start-missing', 'dose-unstructured'])).max(2),
 }).passthrough();
 
-const paySnapshotSchema = z.object({
-  mode: z.enum(['salary', 'hourly', 'daily']),
-  amount: nonNegativeNumber,
-  profileName: shortText,
-}).passthrough();
-
-const workProfileSchema = z.object({
-  id,
-  name: shortText,
-  payMode: z.enum(['salary', 'hourly', 'daily']),
-  baseAmount: nonNegativeNumber,
-  settlementCycle: z.enum(['month', 'day', 'entry']),
-  expectedWorkDaysPerMonth: finiteNumber.positive().optional(),
-  defaultStartTime: timeLocal.optional(),
-  defaultEndTime: timeLocal.optional(),
-  defaultBreakMinutes: nonNegativeNumber.optional(),
-  note: shortText.optional(),
-  taskTemplates: z.array(shortText).max(10).optional(),
-  updatedAt: nonNegativeNumber,
-  deleted: z.boolean().optional(),
-}).passthrough();
-
-const workEntrySchema = z.object({
-  id,
-  projectName: shortText,
-  taskName: shortText,
-  profileId: id.optional(),
-  paySnapshot: paySnapshotSchema.optional(),
-  startAt: nonNegativeNumber,
-  endAt: nonNegativeNumber.optional(),
-  breakMinutes: nonNegativeNumber,
-  note: shortText.optional(),
-  tags: z.array(shortText).max(100).optional(),
-  status: z.enum(['running', 'stopped']),
-  amountOverride: nonNegativeNumber.optional(),
-  settlementStatus: z.enum(['pending', 'settled']).optional(),
-  settledAt: nonNegativeNumber.optional(),
-  updatedAt: nonNegativeNumber,
-  deleted: z.boolean().optional(),
-}).passthrough();
-
-const workSettlementSchema = z.object({
-  id,
-  profileId: id,
-  periodKey: shortText.min(1),
-  amount: nonNegativeNumber,
-  status: z.enum(['pending', 'settled']),
-  settledAt: nonNegativeNumber.optional(),
-  updatedAt: nonNegativeNumber,
-  deleted: z.boolean().optional(),
-}).passthrough();
-
 const backupSchema = z.object({
   app: z.literal('medbox').optional(),
   version: z.number().int().positive().optional(),
@@ -183,9 +133,6 @@ const backupSchema = z.object({
   rules: z.array(reminderRuleSchema).max(MAX_ARRAY_ITEMS).optional(),
   logs: z.array(intakeLogSchema).max(MAX_ARRAY_ITEMS).optional(),
   scheduleRevisions: z.array(scheduleRevisionSchema).max(MAX_ARRAY_ITEMS).optional(),
-  workProfiles: z.array(workProfileSchema).max(MAX_ARRAY_ITEMS).optional(),
-  workEntries: z.array(workEntrySchema).max(MAX_ARRAY_ITEMS).optional(),
-  workSettlements: z.array(workSettlementSchema).max(MAX_ARRAY_ITEMS).optional(),
 }).passthrough();
 
 export function assertBackupFileSize(file: File): void {
