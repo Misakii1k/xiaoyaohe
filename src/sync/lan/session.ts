@@ -43,6 +43,10 @@ import {
   type LanDeviceSummary,
   type LanSyncPolicy,
 } from './policy';
+import {
+  getOrCreateLocalAutoIdentity,
+  rememberPeer,
+} from './knownPeers';
 
 const DEVICE_ID_KEY = 'medbox.lan-sync.device-id.v1';
 const DEVICE_NAME_KEY = 'medbox.lan-sync.device-name.v1';
@@ -88,6 +92,14 @@ export interface LanSyncSessionOptions {
   }) => Promise<LanSyncPolicy>;
   /** Joiner: allow peer to overwrite this device (default false unless settings switch). */
   allowRemoteOverwrite?: boolean;
+  /** Host: bind a fixed port (auto-sync). Omit for ephemeral QR port. */
+  port?: number;
+  /** Host: reuse long-lived secret/sessionId for auto-sync host identity. */
+  invitationOverride?: {
+    sessionId: string;
+    secret: Uint8Array;
+    lifetimeMs?: number;
+  };
 }
 
 interface LanSyncDevice {
@@ -111,6 +123,14 @@ const deviceSchema = z.object({
   name: z.string().trim().min(1).max(80),
 }).strict();
 
+/** 双方交换的自动同步身份（对方以后 join 本机用）。 */
+const autoIdentitySchema = z.object({
+  host: z.string().min(7).max(45),
+  port: z.number().int().min(1024).max(65_535),
+  sessionId: z.string().regex(/^[A-Za-z0-9_-]{22}$/),
+  secretB64: z.string().min(22).max(64),
+}).strict();
+
 const joinPayloadSchema = z.object({
   kind: z.literal('medbox.lan.join'),
   version: z.literal(1),
@@ -125,6 +145,7 @@ const joinPayloadSchema = z.object({
     withInventoryCount: z.number().int().nonnegative(),
     maxClock: z.number().int().nonnegative(),
   }).optional(),
+  autoIdentity: autoIdentitySchema.optional(),
 }).strict();
 
 const resultPayloadSchema = z.object({
@@ -136,6 +157,7 @@ const resultPayloadSchema = z.object({
   inventoryConflicts: z.array(z.string().max(80)).max(1_000),
   extras: z.unknown().optional(),
   policy: z.enum(['merge', 'overwrite-local', 'overwrite-remote']).optional(),
+  autoIdentity: autoIdentitySchema.optional(),
 }).strict();
 
 const ackPayloadSchema = z.object({
@@ -159,9 +181,22 @@ export async function startLanSyncHost(
   await inbox.start();
   let connectionId = '';
   try {
-    const connection = await dependencies.transport.startHost();
+    const connection = await dependencies.transport.startHost(
+      options.port != null ? { port: options.port } : undefined,
+    );
     connectionId = connection.connectionId;
-    const invitation = createLanSyncInvitation(connection.host, connection.port, dependencies.now());
+    const invitation = createLanSyncInvitation(
+      connection.host,
+      connection.port,
+      dependencies.now(),
+      options.invitationOverride
+        ? {
+            sessionId: options.invitationOverride.sessionId,
+            secret: options.invitationOverride.secret,
+            lifetimeMs: options.invitationOverride.lifetimeMs,
+          }
+        : undefined,
+    );
     const controller = linkedAbortController(options.signal);
     const close = async (): Promise<void> => {
       controller.abort();
@@ -222,6 +257,16 @@ export async function joinLanSyncHost(
       ? await collectSyncExtras(options.syncOptions)
       : undefined;
     const allowOverwrite = options.allowRemoteOverwrite ?? isLanAllowRemoteOverwrite();
+    // joiner 公告本机 IP（不是 invitation.host，那是对方地址）
+    let localHost: string | null = null;
+    try {
+      localHost = dependencies.transport.getLocalAddress
+        ? await dependencies.transport.getLocalAddress()
+        : null;
+    } catch {
+      localHost = null;
+    }
+    const localAuto = localHost ? buildAutoIdentityPayload(localHost) : null;
     await dependencies.transport.send({
       connectionId,
       data: await encryptLanSyncMessage(key, messageMetadata(invitation.sessionId, 'joiner', 1, 'join'), {
@@ -238,6 +283,7 @@ export async function joinLanSyncHost(
           maxClock: localSummary.maxClock,
         },
         ...(extras ? { extras } : {}),
+        ...(localAuto ? { autoIdentity: localAuto } : {}),
       }),
     });
 
@@ -288,6 +334,10 @@ export async function joinLanSyncHost(
       dependencies.now(),
     );
     rememberLastResult(result);
+    // 记住主机的自动同步身份，供之后 30 分钟轮询 join
+    if (resultPayload.autoIdentity) {
+      rememberPeerFromAutoIdentity(resultPayload.device, resultPayload.autoIdentity, dependencies.now());
+    }
     options.onProgress?.({ stage: 'complete', message: '已同步' });
     return result;
   } catch (error) {
@@ -434,6 +484,12 @@ async function runHostSession(
     const hostExtras = syncOptions
       ? await collectSyncExtras(syncOptions)
       : undefined;
+    // 主机把自己的自动同步身份发给 joiner（host IP 就是 invitation.host）
+    const hostAuto = buildAutoIdentityPayload(invitation.host);
+    // 同时记住 joiner 发来的自动同步身份
+    if (joinPayload.autoIdentity) {
+      rememberPeerFromAutoIdentity(joinPayload.device, joinPayload.autoIdentity, dependencies.now());
+    }
     await dependencies.transport.send({
       connectionId,
       data: await encryptLanSyncMessage(key, messageMetadata(invitation.sessionId, 'host', 1, 'result'), {
@@ -445,6 +501,7 @@ async function runHostSession(
         inventoryConflicts: merged.inventoryConflicts,
         policy,
         ...(hostExtras ? { extras: hostExtras } : {}),
+        ...(hostAuto ? { autoIdentity: hostAuto } : {}),
       }),
     });
     const acknowledgement = await inbox.waitForFrame(connectionId, signal, FRAME_TIMEOUT_MS);
@@ -557,6 +614,42 @@ function rememberLastResult(result: LanSyncSessionResult): void {
   } catch {
     /* Last-sync display is optional. */
   }
+}
+
+/** 本机当前 Wi‑Fi IPv4（来自 invitation host）+ localAutoIdentity → 发给对端。 */
+function buildAutoIdentityPayload(host: string): {
+  host: string;
+  port: number;
+  sessionId: string;
+  secretB64: string;
+} | null {
+  try {
+    const identity = getOrCreateLocalAutoIdentity();
+    return {
+      host,
+      port: identity.port,
+      sessionId: identity.sessionId,
+      secretB64: identity.secretB64,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function rememberPeerFromAutoIdentity(
+  device: { id: string; name: string },
+  auto: { host: string; port: number; sessionId: string; secretB64: string },
+  now: number,
+): void {
+  rememberPeer({
+    deviceId: device.id,
+    deviceName: device.name,
+    host: auto.host,
+    port: auto.port,
+    pairingSessionId: auto.sessionId,
+    pairingSecretB64: auto.secretB64,
+    lastSeenAt: now,
+  });
 }
 
 function messageMetadata(

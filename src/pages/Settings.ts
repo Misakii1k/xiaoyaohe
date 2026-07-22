@@ -44,6 +44,7 @@ import { getAsrHealth, getAsrProxyUrl, isNativeSpeechFallbackAvailable } from '.
 import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
 import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
+import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations, openAppSettings } from '../features/keepAlive';
 
 const settingsPageCleanupByRoot = new WeakMap<HTMLElement, () => void>();
 
@@ -66,6 +67,7 @@ export async function renderSettingsPage(
   const content = el('div', { class: 'page page-light settings-page' });
 
   content.append(renderReminderPanel());
+  content.append(renderKeepAlivePanel());
   const llmPanel = renderLlmPanel();
   content.append(llmPanel.element);
   content.append(renderAiConsentPanel());
@@ -515,6 +517,50 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
         '· 回到应用时会自动检查遗漏的任务并重建闹钟。',
     } as any)
   );
+}
+
+/** ---------------- 后台运行/保活面板：申请电池优化白名单 ---------------- */
+function renderKeepAlivePanel(): HTMLElement {
+  const p = panel({
+    title: '后台运行',
+    iconName: 'shield',
+    chip: { text: '检查中', tone: 'muted' },
+    renderBody: (body) => {
+      void refreshKeepAlive(body, p);
+    },
+  });
+  return p;
+}
+
+async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement): Promise<void> {
+  body.replaceChildren();
+  const ignoring = await isIgnoringBatteryOptimizations();
+  setChip(panelEl, ignoring
+    ? { text: '已允许', tone: 'ok' }
+    : { text: '需授权', tone: 'warn' });
+  if (ignoring) {
+    body.append(el('div', { class: 'muted', style: 'font-size:13px;line-height:1.55', html: '已在电池优化白名单中，应用可在后台持续运行提醒与同步。' } as any));
+    const row = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
+    const openBtn = el('button', { class: 'btn tonal', html: '打开应用设置' });
+    openBtn.onclick = () => void openAppSettings();
+    row.append(openBtn);
+    body.append(row);
+    return;
+  }
+  body.append(el('div', { class: 'banner warn' } as any, [
+    el('span', { html: '允许小药盒在后台运行，提醒和自动同步才不会被系统关闭。点下方按钮，在弹窗里选「允许」。' }),
+  ]));
+  const row = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
+  const allowBtn = el('button', { class: 'btn', html: '允许后台运行' });
+  allowBtn.onclick = async () => {
+    const ok = await requestIgnoreBatteryOptimizations();
+    toast(ok ? '已加入电池优化白名单' : '未加入，可稍后再试');
+    void refreshKeepAlive(body, panelEl);
+  };
+  const openBtn = el('button', { class: 'btn tonal', html: '打开应用设置' });
+  openBtn.onclick = () => void openAppSettings();
+  row.append(allowBtn, openBtn);
+  body.append(row);
 }
 
 /** ---------------- AI 大模型面板（支持模型自动检测 + 状态） ---------------- */

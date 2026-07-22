@@ -22,6 +22,14 @@ import {
   type LanDeviceSummary,
   type LanSyncPolicy,
 } from './policy';
+import {
+  forgetPeer,
+  listKnownPeers,
+} from './knownPeers';
+import {
+  isAutoSyncEnabled,
+  setAutoSyncEnabled,
+} from './autoSync';
 
 export interface LanSyncSettingsPart {
   element: HTMLElement;
@@ -94,6 +102,59 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     }),
   ]);
 
+  const autoSyncToggle = el('input', {
+    type: 'checkbox',
+    id: `lan-sync-auto-${panelSequence}`,
+  } as any) as HTMLInputElement;
+  autoSyncToggle.checked = isAutoSyncEnabled();
+  autoSyncToggle.onchange = () => {
+    setAutoSyncEnabled(autoSyncToggle.checked);
+    toast(autoSyncToggle.checked
+      ? '已开启：每 30 分钟自动同步（双方都需开启，且先手动配对一次）'
+      : '已关闭自动同步');
+    renderPeersList();
+  };
+  const autoSyncField = el('label', {
+    class: 'lan-sync-extras-item',
+    htmlFor: autoSyncToggle.id,
+    style: 'display:flex;align-items:flex-start;gap:10px;margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:var(--color-surface-muted,#f2f1f5);',
+  } as any, [
+    autoSyncToggle,
+    el('span', {
+      style: 'font-size:13px;line-height:1.45' as any,
+      text: '每 30 分钟自动同步：在同一 Wi‑Fi 下后台轮询已配对设备。需先扫码配对一次；两台都开启效果更好。依赖「设置 → 后台运行」。',
+    }),
+  ]);
+
+  const peersBox = el('div', { class: 'lan-sync-peers', style: 'margin:8px 0 4px' } as any);
+  const renderPeersList = (): void => {
+    peersBox.replaceChildren();
+    const peers = listKnownPeers();
+    peersBox.append(el('div', {
+      class: 'muted',
+      style: 'font-size:12px;margin-bottom:6px' as any,
+      text: peers.length ? `已配对 ${peers.length} 台设备` : '还没有配对设备，请先用连接码/扫一扫同步一次',
+    }));
+    for (const peer of peers) {
+      const row = el('div', {
+        style: 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-block-start:1px solid var(--color-border)' as any,
+      });
+      row.append(el('div', {
+        style: 'min-inline-size:0;font-size:13px;line-height:1.4' as any,
+        html: `<strong>${escapeHtml(peer.deviceName)}</strong><br><span class="muted">${escapeHtml(peer.host)}:${peer.port}</span>`,
+      }));
+      const forget = el('button', { class: 'btn text', type: 'button', text: '忘记' });
+      forget.onclick = () => {
+        forgetPeer(peer.deviceId);
+        toast(`已忘记「${peer.deviceName}」`);
+        renderPeersList();
+      };
+      row.append(forget);
+      peersBox.append(row);
+    }
+  };
+  renderPeersList();
+
   const status = el('div', {
     class: 'lan-sync-status',
     role: 'status',
@@ -120,7 +181,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   const showCode = actionButton('send', '显示连接码');
   const scanCode = actionButton('scan', '扫一扫连接', 'tonal');
   const actions = el('div', { class: 'btn-row lan-sync-actions' }, [showCode, scanCode]);
-  body.append(info, inventoryNote, nameField, allowField, extrasFieldset, actions, status);
+  body.append(info, inventoryNote, nameField, allowField, autoSyncField, peersBox, extrasFieldset, actions, status);
   if (!available) {
     showCode.disabled = true;
     scanCode.disabled = true;
@@ -454,6 +515,15 @@ function setResultChip(chip: HTMLElement, result: LanSyncSessionResult): void {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '资料没有传完，请重新同步。';
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function deviceCard(title: string, summary: LanDeviceSummary, recommended: boolean): HTMLElement {

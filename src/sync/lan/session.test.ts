@@ -152,9 +152,9 @@ class MemoryTransport implements LanSyncTransport {
     private readonly role: 'host' | 'joiner',
   ) {}
 
-  async startHost(): Promise<LanSyncConnection> {
+  async startHost(options?: { port?: number }): Promise<LanSyncConnection> {
     this.hub.host = this;
-    return { connectionId: 'host-connection', host: '192.168.1.7', port: 51_000 };
+    return { connectionId: 'host-connection', host: '192.168.1.7', port: options?.port ?? 51_000 };
   }
 
   async connect(options: { host: string; port: number }): Promise<LanSyncConnection> {
