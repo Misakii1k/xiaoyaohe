@@ -1,5 +1,5 @@
 import { listMeds, listRules, putMed } from '../db/local';
-import type { Medication, ReminderRule } from '../db/schema';
+import type { Medication, MedicationInventory, ReminderRule } from '../db/schema';
 import {
   classifyInventoryStatus,
   estimateDaysLeft,
@@ -15,6 +15,9 @@ import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/Bottom
 import { createButton } from '../ui/primitives/Button';
 import { createIconButton } from '../ui/primitives/IconButton';
 import { toLocalDate } from '../domain/medicationSchedule';
+import { identifyInventoryByBlob, IdentifyError, parseInventorySpeech, type InventorySpeechItem } from '../ai/identify';
+import { setPendingInventoryPrefill } from '../ai/pendingPrefill';
+import { createProxyAsrRecognizer, isAsrConfigured, type SpeechRecognitionLike } from '../ai/asr';
 
 type InventoryFilter = 'all' | 'low' | 'empty' | 'unset' | 'days_low';
 
@@ -43,8 +46,9 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
   const content = el('div', { class: 'page inventory-page' });
 
   const shareBtn = topbarPill({ icon: 'share', label: '分享', onClick: () => openShareSheet(sorted, rulesByMedId) });
+  const smartBtn = topbarPill({ icon: 'sparkles', label: '智能录入', variant: 'primary', onClick: () => openInventorySmartSheet(root, sorted, rulesByMedId, signal) });
   const topRight = el('div', { class: 'topbar-actions' });
-  topRight.append(shareBtn);
+  topRight.append(smartBtn, shareBtn);
 
   if (meds.length === 0) {
     const add = createButton({ label: '去添加药品', icon: 'plus', onClick: () => navigate('/meds/new') });
@@ -428,4 +432,271 @@ function openShareSheet(sorted: Medication[], rulesByMedId: Map<string, Reminder
   }));
   actions.append(createButton({ label: '取消', variant: 'text', onClick: () => sheet?.close() }));
   sheet = openBottomSheet({ label: '分享库存清单', content: [title, hint, actions] });
+}
+
+/** 智能录入：拍照/相册图片识别库存，或按住说话口述库存。识别后匹配已有药品→更新；未登记→提示去添加。 */
+function openInventorySmartSheet(
+  root: HTMLElement,
+  sorted: Medication[],
+  rulesByMedId: Map<string, ReminderRule[]>,
+  signal?: AbortSignal,
+): void {
+  const title = el('h2', { class: 'inventory-sheet-title', text: '智能录入库存' });
+  const hint = el('p', {
+    class: 'inventory-sheet-hint',
+    text: '拍药盒/票据让 AI 数药量，或按住说一句话描述还剩多少。识别完会先让你核对再保存。',
+  });
+  const actions = el('div', { class: 'inventory-sheet-actions' });
+
+  const cameraInput = el('input', { type: 'file', accept: 'image/*', hidden: true } as any) as HTMLInputElement;
+  cameraInput.setAttribute('capture', 'environment');
+  const albumInput = el('input', { type: 'file', accept: 'image/*', hidden: true } as any) as HTMLInputElement;
+
+  let sheet: BottomSheetHandle | undefined = openBottomSheet({ label: '智能录入库存', content: [title, hint, actions, cameraInput, albumInput] });
+
+  const close = () => { sheet?.close(); sheet = undefined; };
+
+  actions.append(createButton({
+    label: '拍药盒/票据',
+    icon: 'camera',
+    onClick: () => { cameraInput.value = ''; cameraInput.click(); },
+  }));
+  actions.append(createButton({
+    label: '从相册选图',
+    variant: 'secondary',
+    icon: 'image',
+    onClick: () => { albumInput.value = ''; albumInput.click(); },
+  }));
+
+  const recognizer = createInventoryRecognizer();
+  if (recognizer) {
+    actions.append(createButton({
+      label: '按住说话',
+      variant: 'secondary',
+      icon: 'mic',
+      onClick: () => startVoiceInventory(recognizer, root, sorted, rulesByMedId, signal, close),
+    }));
+  } else {
+    actions.append(el('p', {
+      class: 'inventory-sheet-hint',
+      text: '这个浏览器不支持语音输入，可用拍照或相册。',
+    } as any));
+  }
+  actions.append(createButton({ label: '取消', variant: 'text', onClick: close }));
+
+  const onImage = (file: File | undefined) => {
+    if (!file) return;
+    close();
+    void runImageInventory(root, file, sorted, rulesByMedId, signal);
+  };
+  cameraInput.onchange = () => onImage(cameraInput.files?.[0]);
+  albumInput.onchange = () => onImage(albumInput.files?.[0]);
+}
+
+function createInventoryRecognizer(): SpeechRecognitionLike | null {
+  if (isAsrConfigured()) return createProxyAsrRecognizer();
+  const Ctor = (window as unknown as {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  });
+  const Recognition = Ctor.SpeechRecognition ?? Ctor.webkitSpeechRecognition;
+  if (!Recognition) return null;
+  try {
+    const r = new Recognition();
+    r.lang = 'zh-CN';
+    r.continuous = false;
+    r.interimResults = false;
+    return r;
+  } catch {
+    return null;
+  }
+}
+
+async function runImageInventory(
+  root: HTMLElement,
+  file: File,
+  sorted: Medication[],
+  rulesByMedId: Map<string, ReminderRule[]>,
+  signal?: AbortSignal,
+): Promise<void> {
+  let busy: BottomSheetHandle | undefined;
+  try {
+    const status = el('p', { class: 'inventory-sheet-hint', text: '正在数药量…' });
+    busy = openBottomSheet({ label: '识别库存中', content: [status] });
+    const r = await identifyInventoryByBlob(file);
+    if (signal?.aborted) return;
+    busy.close();
+    busy = undefined;
+    applyInventoryMatch(root, { name: r.name, inventory: r.inventory, confidence: r.confidence }, sorted, rulesByMedId, signal);
+  } catch (error) {
+    busy?.close();
+    if (error instanceof IdentifyError) toast(error.message);
+    else toast('没认出药量，换个角度或更清楚的图试试');
+  }
+}
+
+function startVoiceInventory(
+  recognizer: SpeechRecognitionLike,
+  root: HTMLElement,
+  sorted: Medication[],
+  rulesByMedId: Map<string, ReminderRule[]>,
+  signal: AbortSignal | undefined,
+  closeParent: () => void,
+): void {
+  closeParent();
+  const overlay = el('div', { class: 'med-wizard-overlay' });
+  overlay.setAttribute('role', 'presentation');
+  const sheet = el('section', { class: 'med-wizard voice-entry' });
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-modal', 'true');
+  sheet.setAttribute('aria-label', '说一说库存');
+  sheet.tabIndex = -1;
+  const hint = el('p', { class: 'med-wizard-sub', text: '说一说手头还剩多少药，说完点整理。例如：阿司匹林还剩5片，二甲双胍刚买了一盒20片。' });
+  const input = el('textarea', { class: 'voice-entry-text', placeholder: '点话筒说话，或直接打字…' }) as HTMLTextAreaElement;
+  const interim = el('div', { class: 'voice-entry-interim' });
+  interim.setAttribute('aria-live', 'polite');
+  const errorBox = el('div', { class: 'voice-entry-error' });
+  const micBtn = createButton({ label: '开始说', variant: 'secondary', icon: 'mic' });
+  const submitBtn = createButton({ label: '整理成库存', icon: 'sparkles' });
+  const quitBtn = createButton({ label: '取消', variant: 'text' });
+  const actions = el('div', { class: 'med-wizard-actions' });
+  actions.append(micBtn, submitBtn, quitBtn);
+  sheet.append(hint, input, interim, errorBox, actions);
+  overlay.append(sheet);
+  document.body.append(overlay);
+  sheet.focus();
+
+  let listening = false;
+  const toggle = () => {
+    if (listening) { recognizer.stop(); listening = false; micBtn.querySelector('span')!.textContent = '开始说'; }
+    else { try { recognizer.start(); listening = true; micBtn.querySelector('span')!.textContent = '正在听…'; } catch { /* ignore */ } }
+  };
+  micBtn.onclick = toggle;
+  recognizer.onresult = (event) => {
+    let finalText = '';
+    for (const result of Array.from(event.results)) {
+      if (result.isFinal) finalText += String(result[0]?.transcript ?? '');
+    }
+    if (finalText) input.value = (input.value + ' ' + finalText).trim();
+    interim.textContent = '';
+  };
+  recognizer.onerror = () => { listening = false; micBtn.querySelector('span')!.textContent = '开始说'; };
+  recognizer.onend = () => { listening = false; micBtn.querySelector('span')!.textContent = '开始说'; };
+
+  const dispose = () => { overlay.remove(); };
+  quitBtn.onclick = dispose;
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') dispose(); };
+  overlay.addEventListener('keydown', onKey);
+
+  submitBtn.onclick = async () => {
+    const text = input.value.trim();
+    if (!text) { errorBox.textContent = '先说一说或打几个字'; return; }
+    errorBox.textContent = '';
+    try { recognizer.abort?.(); } catch { /* ignore */ }
+    const busy = openBottomSheet({ label: '解析库存中', content: [el('p', { class: 'inventory-sheet-hint', text: '正在整理…' })] });
+    try {
+      const result = await parseInventorySpeech(text);
+      if (signal?.aborted) return;
+      busy.close();
+      dispose();
+      for (const item of result.items) applyInventoryMatch(root, item, sorted, rulesByMedId, signal);
+      if (result.items.length === 0) toast('没听出来有哪些药，补充点信息再试');
+    } catch (error) {
+      busy.close();
+      if (error instanceof IdentifyError) errorBox.textContent = error.message;
+      else errorBox.textContent = '没整理出来，换个说法再试';
+    }
+  };
+}
+
+/** 识别结果匹配已有药品→弹确认更新库存；未登记→提示跳添加药品页预填。 */
+function applyInventoryMatch(
+  root: HTMLElement,
+  item: InventorySpeechItem,
+  sorted: Medication[],
+  _rulesByMedId: Map<string, ReminderRule[]>,
+  signal?: AbortSignal,
+): void {
+  const name = item.name.trim();
+  const med = matchMedByName(name, sorted);
+  if (med) {
+    confirmUpdateInventory(root, med, item, signal);
+  } else {
+    promptAddNewMed(item);
+  }
+}
+
+function matchMedByName(name: string, meds: Medication[]): Medication | undefined {
+  const kw = name.trim().toLowerCase();
+  if (!kw) return undefined;
+  return meds.find((m) => m.name.toLowerCase() === kw)
+    ?? meds.find((m) => m.name.toLowerCase().includes(kw) || kw.includes(m.name.toLowerCase()));
+}
+
+function confirmUpdateInventory(
+  root: HTMLElement,
+  med: Medication,
+  item: InventorySpeechItem,
+  signal?: AbortSignal,
+): void {
+  const inv = mergeInventory(med.inventory, item.inventory);
+  const title = el('h2', { class: 'inventory-sheet-title', text: med.name || '未命名药品' });
+  const hint = el('p', {
+    class: 'inventory-sheet-hint',
+    text: `识别到「${item.name || med.name}」剩余 ${formatQuantity(inv.remaining)}${inv.unit}，是否更新库存？`,
+  });
+  const actions = el('div', { class: 'inventory-sheet-actions' });
+  let sheet: BottomSheetHandle | undefined = openBottomSheet({ label: '更新库存', content: [title, hint, actions] });
+  actions.append(createButton({
+    label: '更新库存',
+    icon: 'check',
+    onClick: async () => {
+      sheet?.close();
+      sheet = undefined;
+      try {
+        med.inventory = inv;
+        await putMed(med);
+        if (signal?.aborted) return;
+        toast(`已更新「${med.name}」剩余 ${formatQuantity(inv.remaining)}${inv.unit}`);
+        await renderMedInventoryPage(root, signal);
+      } catch {
+        toast('库存保存失败，请稍后重试');
+      }
+    },
+  }));
+  actions.append(createButton({ label: '取消', variant: 'text', onClick: () => { sheet?.close(); sheet = undefined; } }));
+}
+
+function promptAddNewMed(item: InventorySpeechItem): void {
+  const title = el('h2', { class: 'inventory-sheet-title', text: '没找到这个药' });
+  const hint = el('p', {
+    class: 'inventory-sheet-hint',
+    text: `没找到叫「${item.name}」的药。要不要去添加？会帮你带上识别到的库存。`,
+  });
+  const actions = el('div', { class: 'inventory-sheet-actions' });
+  let sheet: BottomSheetHandle | undefined = openBottomSheet({ label: '添加新药', content: [title, hint, actions] });
+  actions.append(createButton({
+    label: '去添加',
+    icon: 'plus',
+    onClick: () => {
+      sheet?.close();
+      sheet = undefined;
+      setPendingInventoryPrefill({ name: item.name, inventory: item.inventory });
+      navigate('/meds/new');
+    },
+  }));
+  actions.append(createButton({ label: '取消', variant: 'text', onClick: () => { sheet?.close(); sheet = undefined; } }));
+}
+
+/** 保留原库存的 lastReminderAt/dailyConsumption，识别结果覆盖其余字段。 */
+function mergeInventory(current: MedicationInventory | undefined, identified: MedicationInventory): MedicationInventory {
+  return {
+    remaining: identified.remaining > 0 ? identified.remaining : current?.remaining ?? identified.remaining,
+    unit: identified.unit || current?.unit || '片',
+    packageQuantity: identified.packageQuantity ?? current?.packageQuantity,
+    lowThreshold: identified.lowThreshold ?? current?.lowThreshold,
+    sourceNote: identified.sourceNote ?? current?.sourceNote,
+    lastReminderAt: current?.lastReminderAt,
+    dailyConsumption: current?.dailyConsumption,
+  };
 }
