@@ -16,6 +16,7 @@ interface NativeAlarmPlugin {
   openFullScreenSettings(): Promise<void>;
   getPendingActions(): Promise<{ actions: NativeMedicationAlarmAction[] }>;
   snooze(options: { tag: string; data: Record<string, unknown>; minutes: number }): Promise<void>;
+  fireNow(options: { mode?: string; title?: string; body?: string }): Promise<void>;
 }
 
 interface NativeAlarmNotification {
@@ -25,7 +26,7 @@ interface NativeAlarmNotification {
   body: string;
   tag: string;
   key: string;
-  mode: 'fullscreen-short' | 'fullscreen-persistent';
+  mode: 'strong' | 'fullscreen-short' | 'fullscreen-persistent';
   data: Record<string, unknown>;
 }
 
@@ -41,8 +42,12 @@ export async function reconcileNativeMedicationAlarms(
 ): Promise<number> {
   if (!nativeMedicationAlarmAvailable()) return 0;
   const native = notifications.flatMap((notification): NativeAlarmNotification[] => {
-    const mode = notification.data?.reminderMode;
-    if (mode !== 'fullscreen-short' && mode !== 'fullscreen-persistent') return [];
+    // Android 用药提醒统一走原生 AlarmManager + 通知通道，避免与 LocalNotifications 双轨漏响。
+    const rawMode = notification.data?.reminderMode;
+    const mode =
+      rawMode === 'fullscreen-short' || rawMode === 'fullscreen-persistent' || rawMode === 'strong'
+        ? rawMode
+        : 'strong';
     const key = notification.key ?? 'dose';
     return [{
       id: notificationIdFor(notification.tag, key),
@@ -82,4 +87,18 @@ export async function takePendingMedicationAlarmActions(): Promise<NativeMedicat
 export async function snoozeNativeMedicationAlarm(action: NativeMedicationAlarmAction): Promise<void> {
   if (!nativeMedicationAlarmAvailable()) return;
   await plugin.snooze({ tag: action.tag, data: action.data, minutes: 10 });
+}
+
+/** Immediate strong / full-screen alarm for settings self-test. */
+export async function fireNativeMedicationAlarmNow(
+  mode: 'strong' | 'fullscreen-short' | 'fullscreen-persistent' = 'fullscreen-short',
+): Promise<void> {
+  if (!nativeMedicationAlarmAvailable()) return;
+  await plugin.fireNow({
+    mode,
+    title: mode === 'strong' ? '测试增强通知' : '测试全屏提醒',
+    body: mode === 'strong'
+      ? '高优先级通知 + 铃声振动（锁屏可见）'
+      : '应点亮屏幕并显示全屏服药页',
+  });
 }

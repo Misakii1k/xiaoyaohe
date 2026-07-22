@@ -203,11 +203,16 @@ export class AndroidReminderTransport implements ReminderTransport {
       .filter((notification) => Number.isFinite(notification.at) && notification.at > this.now())
       .sort((left, right) => left.at - right.at || left.tag.localeCompare(right.tag));
     const selected = future.slice(0, MAX_NATIVE_REMINDERS);
+    // Android 原生 MedicationAlarm 负责全部用药提醒；LocalNotifications 仅作清理/兜底，
+    // 避免与全屏闹钟双轨并发导致重复或漏响。
+    const useNativeAlarms = Capacitor.getPlatform() === 'android' && Capacitor.isNativePlatform();
     const desired = new Map<number, LocalNotificationSchema>();
-    for (const notification of selected) {
-      const key = notification.key ?? 'dose';
-      const id = notificationIdFor(notification.tag, key);
-      desired.set(id, this.toNativeNotification(notification, id, notification.at));
+    if (!useNativeAlarms) {
+      for (const notification of selected) {
+        const key = notification.key ?? 'dose';
+        const id = notificationIdFor(notification.tag, key);
+        desired.set(id, this.toNativeNotification(notification, id, notification.at));
+      }
     }
 
     // 策略：永远「先清空再重建」。增量 diff 在闹钟已顶满时，
@@ -224,17 +229,42 @@ export class AndroidReminderTransport implements ReminderTransport {
 
       // 清空后再挂；任一分片失败立刻停，绝不让异常冒泡
       const scheduled = await this.scheduleInChunksSafe([...desired.values()]);
-      await reconcileNativeMedicationAlarms(selected, notificationIdFor).catch(() => 0);
-      this.replaceRegistryFromDesired(
-        new Map([...desired.entries()].filter(([id]) => scheduled.ids.has(id))),
+      const nativeScheduled = await reconcileNativeMedicationAlarms(selected, notificationIdFor).catch(
+        () => 0,
       );
+      if (useNativeAlarms) {
+        const next: ReminderRegistry = {};
+        const now = this.now();
+        for (const notification of selected) {
+          const key = notification.key ?? 'dose';
+          const id = notificationIdFor(notification.tag, key);
+          const entry = next[notification.tag] ?? { ids: [], updatedAt: now };
+          entry.ids = [...new Set([...entry.ids, id])];
+          entry.updatedAt = now;
+          next[notification.tag] = entry;
+        }
+        this.writeRegistry(next);
+      } else {
+        this.replaceRegistryFromDesired(
+          new Map([...desired.entries()].filter(([id]) => scheduled.ids.has(id))),
+        );
+      }
       this.purgeRegistry();
 
+      const scheduledCount = useNativeAlarms ? nativeScheduled : scheduled.ids.size;
       return {
-        status: scheduled.failed === 0 ? 'ok' : scheduled.ids.size > 0 ? 'ok' : 'failed',
-        scheduled: scheduled.ids.size,
+        status: useNativeAlarms
+          ? nativeScheduled > 0 || selected.length === 0
+            ? 'ok'
+            : 'failed'
+          : scheduled.failed === 0
+            ? 'ok'
+            : scheduled.ids.size > 0
+              ? 'ok'
+              : 'failed',
+        scheduled: scheduledCount,
         cancelled,
-        truncated: Math.max(0, future.length - selected.length) + scheduled.skipped,
+        truncated: Math.max(0, future.length - selected.length) + (useNativeAlarms ? 0 : scheduled.skipped),
         exactAlarm,
       };
     } catch {

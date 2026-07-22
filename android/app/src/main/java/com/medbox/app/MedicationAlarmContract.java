@@ -102,6 +102,39 @@ final class MedicationAlarmContract {
         prefs.edit().remove(IDS).apply();
     }
 
+    /** Re-register future alarms after reboot / package replace (AlarmManager is wiped). */
+    static int restoreScheduled(Context context) {
+        SharedPreferences prefs = prefs(context);
+        Set<String> ids = new HashSet<>(prefs.getStringSet(IDS, new HashSet<>()));
+        int restored = 0;
+        long now = System.currentTimeMillis();
+        for (String raw : ids) {
+            String saved = prefs.getString("payload_" + raw, null);
+            if (saved == null) {
+                cancelId(context, raw);
+                continue;
+            }
+            try {
+                JSONObject payload = new JSONObject(saved);
+                long at = payload.optLong("at", 0L);
+                if (at <= now) {
+                    // Past due: fire once, then drop the stale alarm id so reboot loops don't re-spam.
+                    showNotification(context, payload);
+                    cancelId(context, raw);
+                    Set<String> remaining = new HashSet<>(prefs.getStringSet(IDS, new HashSet<>()));
+                    remaining.remove(raw);
+                    prefs.edit().putStringSet(IDS, remaining).apply();
+                    continue;
+                }
+                schedule(context, payload);
+                restored += 1;
+            } catch (JSONException ignored) {
+                cancelId(context, raw);
+            }
+        }
+        return restored;
+    }
+
     static void cancelTag(Context context, String tag) {
         SharedPreferences prefs = prefs(context);
         Set<String> ids = new HashSet<>(prefs.getStringSet(IDS, new HashSet<>()));
@@ -136,14 +169,21 @@ final class MedicationAlarmContract {
     static void showNotification(Context context, JSONObject payload) throws JSONException {
         ensureChannels(context);
         int id = payload.getInt("id");
-        boolean fullScreen = !"strong".equals(payload.optString("mode")) && canUseFullScreen(context);
+        String mode = payload.optString("mode", "strong");
+        boolean wantsFullScreen = !"strong".equals(mode);
+        boolean fullScreen = wantsFullScreen && canUseFullScreen(context);
         Intent open = new Intent(context, MedicationAlarmActivity.class)
             .putExtra(EXTRA_PAYLOAD, payload.toString())
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            .addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            );
         PendingIntent openPending = PendingIntent.getActivity(
             context, id, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
-        String channel = "strong".equals(payload.optString("mode")) ? CHANNEL_STRONG : CHANNEL_ALARM;
+        // 增强通知也走高优先级 + 锁屏公开；全屏模式额外挂 fullScreenIntent。
+        String channel = wantsFullScreen ? CHANNEL_ALARM : CHANNEL_STRONG;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_stat_medbox)
             .setColor(Color.rgb(23, 116, 91))
@@ -154,12 +194,23 @@ final class MedicationAlarmContract {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(openPending)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setOnlyAlertOnce(false)
             .setAutoCancel(false)
-            .setOngoing("fullscreen-persistent".equals(payload.optString("mode")))
+            .setOngoing("fullscreen-persistent".equals(mode))
             .addAction(0, "已服用", actionPending(context, payload, ACTION_TAKEN, id + 11))
             .addAction(0, "10 分钟后提醒", actionPending(context, payload, ACTION_SNOOZE, id + 12))
             .addAction(0, "跳过", actionPending(context, payload, ACTION_SKIP, id + 13));
-        if (fullScreen) builder.setFullScreenIntent(openPending, true);
+        if (fullScreen) {
+            builder.setFullScreenIntent(openPending, true);
+        } else if (wantsFullScreen) {
+            // 无全屏权限时仍尽量弹出 Activity（部分机型允许从高优先级通知唤起）。
+            try {
+                context.startActivity(open);
+            } catch (Throwable ignored) {
+                // Fall back to heads-up notification only.
+            }
+        }
         context.getSystemService(NotificationManager.class).notify(id, builder.build());
     }
 

@@ -21,6 +21,7 @@ import {
   requestFullScreenAlarmCapability,
   showNotification,
 } from '../features/notifier';
+import { fireNativeMedicationAlarmNow, nativeMedicationAlarmAvailable } from '../features/nativeMedicationAlarm';
 import { runOnce as runReminderOnce } from '../features/reminderScheduler';
 import {
   getLlmConfig,
@@ -386,6 +387,27 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       toast('已扫描一次到点任务');
     };
     row.append(testBtn, tickBtn);
+    if (isNativeReminderPlatform() && nativeMedicationAlarmAvailable()) {
+      const strongTest = el('button', { class: 'btn tonal', html: '测试锁屏强提醒' });
+      strongTest.onclick = async () => {
+        try {
+          await fireNativeMedicationAlarmNow('strong');
+          toast('已触发增强通知（请看通知栏/锁屏）');
+        } catch {
+          toast('触发失败');
+        }
+      };
+      const fullTest = el('button', { class: 'btn', html: '测试全屏提醒' });
+      fullTest.onclick = async () => {
+        try {
+          await fireNativeMedicationAlarmNow('fullscreen-short');
+          toast('已触发全屏提醒');
+        } catch {
+          toast('触发失败，请先允许全屏权限');
+        }
+      };
+      row.append(strongTest, fullTest);
+    }
   }
   body.append(row);
 
@@ -447,9 +469,11 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       class: 'muted',
       style: 'margin-top:12px;font-size:13px;line-height:1.55',
       html:
-        '提醒说明：\n· 请允许通知和精确闹钟。\n' +
-        '· 如果系统限制应用在后台运行，提醒可能稍有延迟。\n' +
-        '· 回到应用时会自动检查遗漏的任务。',
+        '提醒说明：\n· 请允许通知、精确闹钟，以及（Android 14+）全屏提醒权限。\n' +
+        '· 药品编辑页可选择「增强通知 / 短时全屏 / 持续全屏」。\n' +
+        '· 全屏模式会在锁屏时点亮屏幕并弹出服药页；无权限时自动降级为增强通知。\n' +
+        '· 若系统限制后台运行，请在电池优化里允许本应用。\n' +
+        '· 回到应用时会自动检查遗漏的任务并重建闹钟。',
     } as any)
   );
 }
