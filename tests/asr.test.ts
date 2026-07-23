@@ -137,4 +137,29 @@ describe('App-embedded Tencent ASR', () => {
       stage: 'error', code: 'AuthFailure.SecretIdNotFound', requestId: 'req-auth-1',
     });
   });
+
+  it('persists web credentials across simulated page reload', async () => {
+    // 首次保存
+    await setAsrConfig({ secretId: 'AKID-web', secretKey: 'sk-web-secret' });
+    expect(localStorage.getItem('medbox_web_secret::ai-asr-secret-id')).toBe('AKID-web');
+    expect(localStorage.getItem('medbox_web_secret::ai-asr-secret-key')).toBe('sk-web-secret');
+    // 模拟页面刷新：模块重置 + 清空 secureStorage（native 路径不命中，验证 web 路径）
+    vi.resetModules();
+    vi.doMock('@aparajita/capacitor-secure-storage', () => ({
+      SecureStorage: {
+        setKeyPrefix: () => Promise.resolve(),
+        setDefaultKeychainAccess: () => Promise.resolve(),
+        get: (key: string) => (globalThis as Record<string, MemorySecureStorage>).secureStorage.get(key),
+        set: (key: string, value: string) => (globalThis as Record<string, MemorySecureStorage>).secureStorage.set(key, value),
+        remove: (key: string) => (globalThis as Record<string, MemorySecureStorage>).secureStorage.remove(key),
+      },
+      KeychainAccess: { whenUnlockedThisDeviceOnly: 'unlocked' },
+    }));
+    // Node 测试环境下 Capacitor.isNativePlatform() 默认为 false，触发 web 兜底分支
+    await import('../src/ai/secretStore').then((mod) => mod.initializeSecretStore());
+    const cfg = await import('../src/ai/asrConfig').then((mod) => mod.getAsrConfig());
+    expect(cfg.secretId).toBe('AKID-web');
+    expect(cfg.secretKey).toBe('sk-web-secret');
+    expect(await import('../src/ai/asrConfig').then((mod) => mod.isAsrCredentialsConfigured())).toBe(true);
+  });
 });

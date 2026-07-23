@@ -206,12 +206,15 @@ final class MedicationAlarmContract {
             .addAction(0, "跳过", actionPending(context, payload, ACTION_SKIP, id + 13));
         if (fullScreen) {
             builder.setFullScreenIntent(openPending, true);
-        } else if (wantsFullScreen) {
-            // 无全屏权限时仍尽量弹出 Activity（部分机型允许从高优先级通知唤起）。
+        }
+        if (wantsFullScreen) {
+            // Android 对 setFullScreenIntent 的系统行为是：只在锁屏 / 灭屏时拉起 Activity；
+            // 亮屏解锁时会被降级为顶部 heads-up 通知。这里在 wantsFullScreen 时直接
+            // startActivity，绕过系统降级；setFullScreenIntent 保留作后台 / 受限场景兜底。
             try {
                 context.startActivity(open);
             } catch (Throwable ignored) {
-                // Fall back to heads-up notification only.
+                // 已被前台 Activity 占满或受 DND / 电池优化限制时退化为顶部通知。
             }
         }
         context.getSystemService(NotificationManager.class).notify(id, builder.build());

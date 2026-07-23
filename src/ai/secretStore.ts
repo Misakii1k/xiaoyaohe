@@ -25,6 +25,19 @@ export async function initializeSecretStore(): Promise<void> {
   } catch {
     /* localStorage may be unavailable in private browsing or native startup */
   }
+  // Web 预览兜底：Capacitor SecureStorage 不可用时，把密钥落到 localStorage
+  // （仅在用户本地浏览器，刷新后保留）。生产 Capacitor Android 仍走 SecureStorage。
+  const webKeys: readonly string[] = !isNativeSecretStore()
+    ? Array.from(new Set<string>([...KNOWN_KEYS]))
+    : [];
+  for (const key of webKeys) {
+    try {
+      const value = localStorage.getItem(webSecretKey(key));
+      if (value) sessionSecrets.set(key, value);
+    } catch {
+      /* ignore */
+    }
+  }
   if (!isNativeSecretStore()) return;
   try {
     await SecureStorage.setKeyPrefix('medbox_');
@@ -46,12 +59,28 @@ export function getSessionSecret(key: string = SECRET_KEY): string {
 export async function setSessionSecret(secret: string, key: string = SECRET_KEY): Promise<void> {
   const trimmed = secret.trim();
   sessionSecrets.set(key, trimmed);
-  if (!isNativeSecretStore()) return;
+  if (!isNativeSecretStore()) {
+    // Web 预览：写到 localStorage 以便刷新后仍能读到。
+    try {
+      if (trimmed) localStorage.setItem(webSecretKey(key), trimmed);
+      else localStorage.removeItem(webSecretKey(key));
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  // 原生路径：清掉任何 web localStorage 残留（迁移兼容），再写到 SecureStorage。
+  try { localStorage.removeItem(webSecretKey(key)); } catch { /* ignore */ }
   await SecureStorage.set(key, trimmed, false, false, KeychainAccess.whenUnlockedThisDeviceOnly);
 }
 
 export async function clearSessionSecret(key: string = SECRET_KEY): Promise<void> {
   sessionSecrets.set(key, '');
+  try { localStorage.removeItem(webSecretKey(key)); } catch { /* ignore */ }
   if (!isNativeSecretStore()) return;
   await SecureStorage.remove(key).catch(() => false);
+}
+
+function webSecretKey(key: string): string {
+  return `medbox_web_secret::${key}`;
 }

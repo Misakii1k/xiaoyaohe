@@ -72,6 +72,7 @@ export async function renderSettingsPage(
   const llmPanel = renderLlmPanel();
   content.append(llmPanel.element);
   content.append(renderAiConsentPanel());
+  content.append(renderAsrPanel());
   const lanSyncPanel = renderLanSyncSettingsPanel(signal);
   content.append(lanSyncPanel.element);
 
@@ -718,91 +719,6 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     }
   };
 
-  // ====== 语音识别：App 内嵌腾讯云直连，密钥本机安全存储 ======
-  const asrCfg = getAsrConfig();
-  const asrHealth = getAsrHealth();
-  body.append(el('div', { class: 'section-title', style: 'margin-top:16px', html: '语音识别（腾讯云）' } as any));
-  body.append(
-    el('div', {
-      class: 'muted',
-      text: '小助手按住说话、说话录药、库存智能录入共用腾讯云一句话识别。密钥保存在本机（Android 安全存储），App 直连腾讯云，任意设备装好填密钥即可用，无需再跑代理。',
-    })
-  );
-  const asrIdIn = el('input', {
-    type: 'text',
-    autocomplete: 'off',
-    spellcheck: 'false',
-    placeholder: asrCfg.secretId ? `已保存 · ${maskSecret(asrCfg.secretId)}` : '腾讯云 SecretId',
-    value: '',
-  } as any) as HTMLInputElement;
-  const asrKeyIn = el('input', {
-    type: 'password',
-    autocomplete: 'off',
-    placeholder: asrCfg.secretKey ? `已保存 · ${maskSecret(asrCfg.secretKey)}` : '腾讯云 SecretKey',
-    value: '',
-  } as any) as HTMLInputElement;
-  const asrRegionIn = el('input', {
-    type: 'text',
-    autocomplete: 'off',
-    value: asrCfg.region || 'ap-guangzhou',
-    placeholder: '地域，默认 ap-guangzhou',
-  } as any) as HTMLInputElement;
-  body.append(field('SecretId', asrIdIn));
-  body.append(field('SecretKey', asrKeyIn));
-  body.append(field('地域 Region', asrRegionIn));
-  const asrStatus = el('div', {
-    class: `banner ${asrHealth.stage === 'success' || asrHealth.stage === 'ready' ? 'ok' : asrHealth.stage === 'error' ? 'warn' : 'info'}`,
-    style: 'margin-top:10px',
-  } as any);
-  const refreshAsrStatus = (): void => {
-    const h = getAsrHealth();
-    asrStatus.className = `banner ${h.stage === 'success' || h.stage === 'ready' ? 'ok' : h.stage === 'error' ? 'warn' : 'info'}`;
-    const diagnostic = [
-      isAsrCredentialsConfigured()
-        ? h.message || '腾讯云语音识别已配置'
-        : isNativeSpeechFallbackAvailable()
-          ? '未填密钥，将使用设备系统语音识别'
-          : '请填写 SecretId 和 SecretKey',
-      h.code ? `错误码 ${h.code}` : '',
-      h.requestId ? `RequestId ${h.requestId}` : '',
-      h.at ? new Date(h.at).toLocaleString() : '',
-    ].filter(Boolean).join(' · ');
-    asrStatus.replaceChildren(el('span', { text: diagnostic }));
-  };
-  refreshAsrStatus();
-  body.append(asrStatus);
-  const asrRow = el('div', { class: 'btn-row', style: 'margin-top:8px' } as any);
-  const asrSave = el('button', { class: 'btn tonal', type: 'button', html: '保存语音密钥' });
-  asrSave.onclick = async () => {
-    const nextId = asrIdIn.value.trim() || asrCfg.secretId;
-    const nextKey = asrKeyIn.value.trim() || asrCfg.secretKey;
-    if (!nextId || !nextKey) return toast('请填写 SecretId 和 SecretKey');
-    await setAsrConfig({
-      secretId: nextId,
-      secretKey: nextKey,
-      region: asrRegionIn.value.trim() || 'ap-guangzhou',
-    });
-    asrIdIn.value = '';
-    asrKeyIn.value = '';
-    asrIdIn.placeholder = `已保存 · ${maskSecret(nextId)}`;
-    asrKeyIn.placeholder = `已保存 · ${maskSecret(nextKey)}`;
-    refreshAsrStatus();
-    toast('语音密钥已保存 ✓');
-  };
-  const asrClear = el('button', { class: 'btn text', type: 'button', html: '清除语音密钥' });
-  asrClear.onclick = async () => {
-    if (!(await confirmDialog('清除本机腾讯云语音密钥？', '清除'))) return;
-    await clearAsrConfig();
-    asrIdIn.value = '';
-    asrKeyIn.value = '';
-    asrIdIn.placeholder = '腾讯云 SecretId';
-    asrKeyIn.placeholder = '腾讯云 SecretKey';
-    refreshAsrStatus();
-    toast('已清除语音密钥');
-  };
-  asrRow.append(asrSave, asrClear);
-  body.append(asrRow);
-
   // ====== 操作行 ======
   const row = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
   const save = el('button', { class: 'btn', html: '保存' });
@@ -818,19 +734,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     if (!apiKey) return toast('请填写 API 密钥');
     if (!model) return toast('请填写或选择模型');
     await setLlmConfig({ baseUrl, apiKey, model });
-    // 若用户本页也填了语音密钥，一并保存
-    const nextId = asrIdIn.value.trim() || getAsrConfig().secretId;
-    const nextKey = asrKeyIn.value.trim() || getAsrConfig().secretKey;
-    if (nextId && nextKey) {
-      await setAsrConfig({
-        secretId: nextId,
-        secretKey: nextKey,
-        region: asrRegionIn.value.trim() || 'ap-guangzhou',
-      });
-      asrIdIn.value = '';
-      asrKeyIn.value = '';
-      refreshAsrStatus();
-    }
+    // 语音识别密钥在独立 panel「语音识别（腾讯云）」里设置。
     toast('已保存 ✓');
     // 保存后顺手体检一次
     const h = await pingLlm({ baseUrl, apiKey, model });
@@ -1037,4 +941,155 @@ function maskSecret(secret: string): string {
   const trimmed = secret.trim();
   if (trimmed.length <= 8) return '*'.repeat(trimmed.length);
   return `${trimmed.slice(0, 3)}${'*'.repeat(Math.min(8, trimmed.length - 7))}${trimmed.slice(-4)}`;
+}
+
+/** ---------------- 语音识别（腾讯云）独立面板 ---------------- */
+function renderAsrPanel(): HTMLElement {
+  const asrCfg = getAsrConfig();
+  const asrHealth = getAsrHealth();
+  const initialChip: PanelChip = isAsrCredentialsConfigured()
+    ? { text: '已配置', tone: 'ok' }
+    : isNativeSpeechFallbackAvailable()
+      ? { text: '未填密钥', tone: 'warn' }
+      : { text: '未配置', tone: 'warn' };
+
+  const body = el('div', {});
+  body.append(
+    el('div', {
+      class: 'muted',
+      style: 'margin-bottom:10px' as any,
+      text: '小助手按住说话、说话录药、库存智能录入共用腾讯云一句话识别。密钥只保存在这台手机（Web 预览 = localStorage；Android App = 安全存储），App 直连腾讯云，任意设备装好填密钥即可用，无需再跑代理。',
+    })
+  );
+
+  const initialId = asrCfg.secretId;
+  const initialKey = asrCfg.secretKey;
+  const initialRegion = asrCfg.region || 'ap-guangzhou';
+
+  const idIn = el('input', {
+    type: 'text',
+    autocomplete: 'off',
+    spellcheck: 'false',
+    value: initialId ? maskSecret(initialId) : '',
+    placeholder: 'AKIDxxxxxxxxxxxxxxxx',
+  } as any) as HTMLInputElement;
+  idIn.readOnly = Boolean(initialId); // 有保存就展示 mask，避免误改
+
+  const keyIn = el('input', {
+    type: 'password',
+    autocomplete: 'off',
+    value: initialKey ? maskSecret(initialKey) : '',
+    placeholder: 'sk-xxxxxxxxxxxxxxxx',
+  } as any) as HTMLInputElement;
+  keyIn.readOnly = Boolean(initialKey);
+
+  const regionIn = el('input', {
+    type: 'text',
+    autocomplete: 'off',
+    value: initialRegion,
+    placeholder: 'ap-guangzhou',
+  } as any) as HTMLInputElement;
+
+  body.append(field('SecretId', idIn));
+  body.append(field('SecretKey', keyIn));
+  body.append(field('地域 Region', regionIn));
+
+  const status = el('div', {
+    class: `banner ${asrHealth.stage === 'success' || asrHealth.stage === 'ready' ? 'ok' : asrHealth.stage === 'error' ? 'warn' : 'info'}`,
+    style: 'margin-top:10px',
+  } as any);
+  const renderStatus = (): void => {
+    const h = getAsrHealth();
+    status.className = `banner ${h.stage === 'success' || h.stage === 'ready' ? 'ok' : h.stage === 'error' ? 'warn' : 'info'}`;
+    const diagnostic = [
+      isAsrCredentialsConfigured()
+        ? h.message || '腾讯云语音识别已配置'
+        : isNativeSpeechFallbackAvailable()
+          ? '未填密钥，将使用设备系统语音识别'
+          : '请填写 SecretId 和 SecretKey',
+      h.code ? `错误码 ${h.code}` : '',
+      h.requestId ? `RequestId ${h.requestId}` : '',
+      h.at ? new Date(h.at).toLocaleString() : '',
+    ].filter(Boolean).join(' · ');
+    status.replaceChildren(el('span', { text: diagnostic }));
+  };
+  renderStatus();
+  body.append(status);
+
+  const row = el('div', { class: 'btn-row', style: 'margin-top:10px' } as any);
+
+  // 已保存时：「修改」解锁两个输入框并切换为保存
+  const editBtn = el('button', { class: 'btn tonal', type: 'button', html: '修改密钥' } as any);
+  const saveBtn = el('button', { class: 'btn', type: 'button', html: '保存' } as any);
+  const clearBtn = el('button', { class: 'btn text', type: 'button', html: '清除' } as any);
+
+  const enterEditMode = (): void => {
+    idIn.readOnly = false;
+    keyIn.readOnly = false;
+    idIn.value = '';
+    keyIn.value = '';
+    idIn.type = 'text';
+    keyIn.type = 'text';
+    idIn.focus();
+  };
+
+  editBtn.onclick = enterEditMode;
+  saveBtn.onclick = async () => {
+    const nextId = idIn.value.trim() || (idIn.readOnly ? initialId : '');
+    const nextKey = keyIn.value.trim() || (keyIn.readOnly ? initialKey : '');
+    if (!nextId || !nextKey) return toast('请填写 SecretId 和 SecretKey');
+    await setAsrConfig({
+      secretId: nextId,
+      secretKey: nextKey,
+      region: regionIn.value.trim() || 'ap-guangzhou',
+    });
+    // 保存后回到 mask 显示，避免误读
+    idIn.value = maskSecret(nextId);
+    keyIn.value = maskSecret(nextKey);
+    idIn.readOnly = true;
+    keyIn.readOnly = true;
+    keyIn.type = 'password';
+    renderStatus();
+    setChip(panelEl, isAsrCredentialsConfigured() ? { text: '已配置', tone: 'ok' } : initialChip);
+    toast('语音密钥已保存到本机 ✓');
+  };
+  clearBtn.onclick = async () => {
+    if (!(await confirmDialog('清除本机腾讯云语音密钥？', '清除'))) return;
+    await clearAsrConfig();
+    idIn.value = '';
+    keyIn.value = '';
+    idIn.readOnly = false;
+    keyIn.readOnly = false;
+    keyIn.type = 'password';
+    regionIn.value = 'ap-guangzhou';
+    renderStatus();
+    setChip(panelEl, { text: '未配置', tone: 'warn' });
+    toast('已清除语音密钥');
+  };
+
+  if (isAsrCredentialsConfigured()) {
+    row.append(editBtn, clearBtn);
+  } else {
+    row.append(saveBtn);
+    row.append(clearBtn);
+    if (!isAsrCredentialsConfigured()) {
+      // 首次配置：聚焦第一个空输入框
+      window.setTimeout(() => {
+        if (!idIn.value) idIn.focus();
+      }, 0);
+    }
+  }
+  body.append(row);
+
+  let panelEl: HTMLElement = document.createElement('div'); // 由 panel() 赋值，saveBtn 闭包依赖
+  panelEl = panel({
+    title: '语音识别（腾讯云）',
+    iconName: 'mic',
+    defaultOpen: true,
+    chip: initialChip,
+    renderBody: (b) => {
+      b.append(...Array.from(body.children));
+    },
+  });
+  return panelEl;
 }
