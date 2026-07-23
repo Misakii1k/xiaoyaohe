@@ -734,7 +734,6 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     if (!apiKey) return toast('请填写 API 密钥');
     if (!model) return toast('请填写或选择模型');
     await setLlmConfig({ baseUrl, apiKey, model });
-    // 语音识别密钥在独立 panel「语音识别（腾讯云）」里设置。
     toast('已保存 ✓');
     // 保存后顺手体检一次
     const h = await pingLlm({ baseUrl, apiKey, model });
@@ -1038,11 +1037,15 @@ function renderAsrPanel(): HTMLElement {
     const nextId = idIn.value.trim() || (idIn.readOnly ? initialId : '');
     const nextKey = keyIn.value.trim() || (keyIn.readOnly ? initialKey : '');
     if (!nextId || !nextKey) return toast('请填写 SecretId 和 SecretKey');
-    await setAsrConfig({
-      secretId: nextId,
-      secretKey: nextKey,
-      region: regionIn.value.trim() || 'ap-guangzhou',
-    });
+    try {
+      await setAsrConfig({
+        secretId: nextId,
+        secretKey: nextKey,
+        region: regionIn.value.trim() || 'ap-guangzhou',
+      });
+    } catch {
+      return toast('密钥保存失败，请重试');
+    }
     // 保存后回到 mask 显示，避免误读
     idIn.value = maskSecret(nextId);
     keyIn.value = maskSecret(nextKey);
