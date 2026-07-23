@@ -2,13 +2,13 @@
 
 Tool: Claude
 Branch: `workspace/claude`（本次工作直接提交在 `main`，沿用近几轮 UI/功能提交的既有做法；`workspace/claude` 尚未追平 main）
-Updated: 2026-07-22
+Updated: 2026-07-23
 Status: idle
 Latest commit: `0fc310e feat: embed Tencent Cloud ASR directly in the app`
 
 ## Goal
 
-把腾讯云一句话识别内嵌到 App（Web Crypto TC3 签名直连），任意设备装好后填好密钥即可用，移除对独立 Node 代理的硬依赖。已提交、测试通过、typecheck 干净；当前无活跃编码任务。
+版本号升至 `0.8.1` (`versionCode 17`)：本轮已交付腾讯云 ASR 内嵌 + 之前累积的小助手自由拖动 / 库存分享 / 智能录入 / 提醒振动 / 保活 / LAN 自动同步。已提交；APK 已重新打并放桌面。当前无活跃编码任务。
 
 ## What Landed on `main` (2026-07-22 晚)
 
