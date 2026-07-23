@@ -44,7 +44,7 @@ import {
   getConfirmedDose,
 } from '../features/inventory';
 import { sendLowStockReminderIfDue } from '../features/inventoryReminder';
-import { checkInteractions, type DrugInteraction } from '../data/drugInteractions';
+import { checkInteractions, filterNewInteractions, acknowledgeInteractions, type DrugInteraction } from '../data/drugInteractions';
 import { createButton } from '../ui/primitives/Button';
 import { createStatusBadge } from '../ui/primitives/StatusBadge';
 
@@ -242,24 +242,36 @@ function renderWeekAdherenceCard(
   chart.setAttribute('role', 'list');
   chart.setAttribute('aria-label', '近 7 天每日按时服药比例');
   for (const item of bars) {
-    const column = el('div', { class: 'adherence-col' });
-    const barWrap = el('div', { class: 'adherence-bar-wrap' });
-    const bar = el('div', {
-      class: 'adherence-bar' + (item.due === 0 ? ' empty' : item.rate >= 0.8 ? ' ok' : ' warn'),
+    const isToday = item.date === today;
+    const isEmpty = item.due === 0;
+    const tone = isEmpty ? 'empty' : item.rate >= 0.8 ? 'ok' : item.rate > 0 ? 'warn' : 'miss';
+    const fillPct = isEmpty ? 0 : Math.max(item.rate > 0 ? 14 : 8, Math.round(item.rate * 100));
+
+    const column = el('div', {
+      class: 'adherence-col' + (isToday ? ' is-today' : '') + (isEmpty ? ' is-empty' : ''),
     });
-    bar.style.height = `${item.due === 0 ? 8 : Math.max(12, Math.round(item.rate * 100))}%`;
-    barWrap.append(bar);
+    const barWrap = el('div', { class: 'adherence-bar-wrap' });
+    const track = el('div', { class: 'adherence-track' });
+    const bar = el('div', { class: `adherence-bar ${tone}` });
+    bar.style.setProperty('--adherence-fill', `${fillPct}%`);
+    track.append(bar);
+    barWrap.append(track);
+
     const [, month, day] = item.date.split('-');
-    const label = el('div', { class: 'adherence-label', html: `${Number(month)}/${Number(day)}` });
-    const pct = el('div', { class: 'adherence-pct muted' });
-    pct.textContent = item.due === 0 ? '—' : `${Math.round(item.rate * 100)}%`;
-    column.title = item.due === 0
+    const label = el('div', {
+      class: 'adherence-label' + (isToday ? ' is-today' : ''),
+      text: `${Number(month)}/${Number(day)}`,
+    });
+    const pct = el('div', { class: 'adherence-pct' + (isEmpty ? ' is-empty' : '') });
+    pct.textContent = isEmpty ? '休' : `${Math.round(item.rate * 100)}%`;
+
+    column.title = isEmpty
       ? '没有已到期安排'
       : `已服 ${item.taken}，跳过 ${item.skipped}，漏服 ${item.missed}`;
     column.setAttribute('role', 'listitem');
     column.setAttribute(
       'aria-label',
-      item.due === 0
+      isEmpty
         ? `${Number(month)}月${Number(day)}日，没有已到期安排`
         : `${Number(month)}月${Number(day)}日，按时服药 ${Math.round(item.rate * 100)}%，已服 ${item.taken}，跳过 ${item.skipped}，漏服 ${item.missed}`,
     );
@@ -393,9 +405,12 @@ function renderSlotSection(
     takeBtn.onclick = () => void (async () => {
       if (takeableItems.length === 0) return;
       const hits = checkInteractions(takeableItems.map((item) => item.med.name));
-      if (hits.length > 0 && !(await confirmDialog(buildTodayInteractionWarning(hits), '仍要记录', true))) {
+      // 只对"新"的相互作用弹窗：已确认过的组合不再打扰，出现新组合才再提示
+      const fresh = filterNewInteractions(hits);
+      if (fresh.length > 0 && !(await confirmDialog(buildTodayInteractionWarning(fresh), '仍要记录', true))) {
         return;
       }
+      if (fresh.length > 0) acknowledgeInteractions(fresh);
       if (!preflightInventoryActions(takeableItems)) return;
       try {
         await applyActions(takeableItems, 'taken');

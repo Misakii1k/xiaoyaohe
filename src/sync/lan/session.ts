@@ -23,6 +23,7 @@ import {
   applyLanMergedSnapshot,
   createLanSnapshot,
   mergeLanSnapshots,
+  mergeLanSnapshotsWithPolicy,
   parseLanSyncSnapshot,
   type LanSyncApplyResult,
   type LanSyncMergeResult,
@@ -34,6 +35,18 @@ import {
   syncExtrasSchema,
   type LanSyncContentOptions,
 } from './extras';
+import {
+  buildLocalLanSummary,
+  isLanAllowRemoteOverwrite,
+  recommendLanPolicy,
+  summarizeLanSnapshot,
+  type LanDeviceSummary,
+  type LanSyncPolicy,
+} from './policy';
+import {
+  getOrCreateLocalAutoIdentity,
+  rememberPeer,
+} from './knownPeers';
 
 const DEVICE_ID_KEY = 'medbox.lan-sync.device-id.v1';
 const DEVICE_NAME_KEY = 'medbox.lan-sync.device-name.v1';
@@ -68,6 +81,25 @@ export interface LanSyncSessionOptions {
   deviceName?: string;
   /** 可选同步内容（照片、API 配置） */
   syncOptions?: LanSyncContentOptions;
+  /**
+   * After both snapshots are known, choose merge vs whole-copy overwrite.
+   * Host resolves policy (may prompt UI). Joiner may refuse overwrite via allowOverwrite flag.
+   */
+  choosePolicy?: (input: {
+    local: LanDeviceSummary;
+    remote: LanDeviceSummary;
+    recommended: LanSyncPolicy;
+  }) => Promise<LanSyncPolicy>;
+  /** Joiner: allow peer to overwrite this device (default false unless settings switch). */
+  allowRemoteOverwrite?: boolean;
+  /** Host: bind a fixed port (auto-sync). Omit for ephemeral QR port. */
+  port?: number;
+  /** Host: reuse long-lived secret/sessionId for auto-sync host identity. */
+  invitationOverride?: {
+    sessionId: string;
+    secret: Uint8Array;
+    lifetimeMs?: number;
+  };
 }
 
 interface LanSyncDevice {
@@ -82,6 +114,7 @@ interface LanSyncSessionDependencies {
   applySnapshot: typeof applyLanMergedSnapshot;
   parseSnapshot: typeof parseLanSyncSnapshot;
   reschedule: typeof rescheduleMedicationReminders;
+  buildLocalSummary: typeof buildLocalLanSummary;
   now: () => number;
 }
 
@@ -90,12 +123,29 @@ const deviceSchema = z.object({
   name: z.string().trim().min(1).max(80),
 }).strict();
 
+/** 双方交换的自动同步身份（对方以后 join 本机用）。 */
+const autoIdentitySchema = z.object({
+  host: z.string().min(7).max(45),
+  port: z.number().int().min(1024).max(65_535),
+  sessionId: z.string().regex(/^[A-Za-z0-9_-]{22}$/),
+  secretB64: z.string().min(22).max(64),
+}).strict();
+
 const joinPayloadSchema = z.object({
   kind: z.literal('medbox.lan.join'),
   version: z.literal(1),
   device: deviceSchema,
   snapshot: z.unknown(),
   extras: z.unknown().optional(),
+  allowOverwrite: z.boolean().optional().default(false),
+  summary: z.object({
+    dataUpdatedAt: z.number().int().nonnegative(),
+    inventoryHint: z.string().max(200),
+    medicationCount: z.number().int().nonnegative(),
+    withInventoryCount: z.number().int().nonnegative(),
+    maxClock: z.number().int().nonnegative(),
+  }).optional(),
+  autoIdentity: autoIdentitySchema.optional(),
 }).strict();
 
 const resultPayloadSchema = z.object({
@@ -106,6 +156,8 @@ const resultPayloadSchema = z.object({
   conflictCount: z.number().int().nonnegative(),
   inventoryConflicts: z.array(z.string().max(80)).max(1_000),
   extras: z.unknown().optional(),
+  policy: z.enum(['merge', 'overwrite-local', 'overwrite-remote']).optional(),
+  autoIdentity: autoIdentitySchema.optional(),
 }).strict();
 
 const ackPayloadSchema = z.object({
@@ -129,9 +181,22 @@ export async function startLanSyncHost(
   await inbox.start();
   let connectionId = '';
   try {
-    const connection = await dependencies.transport.startHost();
+    const connection = await dependencies.transport.startHost(
+      options.port != null ? { port: options.port } : undefined,
+    );
     connectionId = connection.connectionId;
-    const invitation = createLanSyncInvitation(connection.host, connection.port, dependencies.now());
+    const invitation = createLanSyncInvitation(
+      connection.host,
+      connection.port,
+      dependencies.now(),
+      options.invitationOverride
+        ? {
+            sessionId: options.invitationOverride.sessionId,
+            secret: options.invitationOverride.secret,
+            lifetimeMs: options.invitationOverride.lifetimeMs,
+          }
+        : undefined,
+    );
     const controller = linkedAbortController(options.signal);
     const close = async (): Promise<void> => {
       controller.abort();
@@ -147,6 +212,7 @@ export async function startLanSyncHost(
       controller.signal,
       options.onProgress,
       options.syncOptions,
+      options.choosePolicy,
     ).finally(async () => {
       await dependencies.transport.close(connection.connectionId).catch(() => false);
       await inbox.dispose();
@@ -186,9 +252,21 @@ export async function joinLanSyncHost(
     options.onProgress?.({ stage: 'transferring', message: '正在传送' });
     const device = resolveDevice(options.deviceName);
     const snapshot = await dependencies.createSnapshot(device.id, invitation.sessionId);
+    const localSummary = await dependencies.buildLocalSummary(snapshot, device);
     const extras = options.syncOptions
       ? await collectSyncExtras(options.syncOptions)
       : undefined;
+    const allowOverwrite = options.allowRemoteOverwrite ?? isLanAllowRemoteOverwrite();
+    // joiner 公告本机 IP（不是 invitation.host，那是对方地址）
+    let localHost: string | null = null;
+    try {
+      localHost = dependencies.transport.getLocalAddress
+        ? await dependencies.transport.getLocalAddress()
+        : null;
+    } catch {
+      localHost = null;
+    }
+    const localAuto = localHost ? buildAutoIdentityPayload(localHost) : null;
     await dependencies.transport.send({
       connectionId,
       data: await encryptLanSyncMessage(key, messageMetadata(invitation.sessionId, 'joiner', 1, 'join'), {
@@ -196,7 +274,16 @@ export async function joinLanSyncHost(
         version: 1,
         device,
         snapshot,
+        allowOverwrite,
+        summary: {
+          dataUpdatedAt: localSummary.dataUpdatedAt,
+          inventoryHint: localSummary.inventoryHint,
+          medicationCount: localSummary.medicationCount,
+          withInventoryCount: localSummary.withInventoryCount,
+          maxClock: localSummary.maxClock,
+        },
         ...(extras ? { extras } : {}),
+        ...(localAuto ? { autoIdentity: localAuto } : {}),
       }),
     });
 
@@ -247,6 +334,10 @@ export async function joinLanSyncHost(
       dependencies.now(),
     );
     rememberLastResult(result);
+    // 记住主机的自动同步身份，供之后 30 分钟轮询 join
+    if (resultPayload.autoIdentity) {
+      rememberPeerFromAutoIdentity(resultPayload.device, resultPayload.autoIdentity, dependencies.now());
+    }
     options.onProgress?.({ stage: 'complete', message: '已同步' });
     return result;
   } catch (error) {
@@ -312,6 +403,7 @@ async function runHostSession(
   signal: AbortSignal,
   onProgress?: (progress: LanSyncProgress) => void,
   syncOptions?: LanSyncContentOptions,
+  choosePolicy?: LanSyncSessionOptions['choosePolicy'],
 ): Promise<LanSyncSessionResult> {
   const key = await deriveLanSyncSessionKey(invitation.secret, invitation.sessionId);
   let connected = false;
@@ -331,7 +423,44 @@ async function runHostSession(
     ));
     const remoteSnapshot = dependencies.parseSnapshot(joinPayload.snapshot);
     const localSnapshot = await dependencies.createSnapshot(device.id, invitation.sessionId);
-    const merged = await dependencies.mergeSnapshots(localSnapshot, remoteSnapshot);
+    const localSummary = await dependencies.buildLocalSummary(localSnapshot, device);
+    const remoteSummary = joinPayload.summary
+      ? {
+          deviceId: joinPayload.device.id,
+          deviceName: joinPayload.device.name,
+          entryCount: remoteSnapshot.entries.length,
+          medicationCount: joinPayload.summary.medicationCount,
+          withInventoryCount: joinPayload.summary.withInventoryCount,
+          maxClock: joinPayload.summary.maxClock,
+          dataUpdatedAt: joinPayload.summary.dataUpdatedAt,
+          inventoryHint: joinPayload.summary.inventoryHint,
+        }
+      : summarizeLanSnapshot(
+        remoteSnapshot,
+        joinPayload.device,
+        0,
+        '对方未提供库存摘要',
+      );
+    const recommended = recommendLanPolicy(localSummary, remoteSummary);
+    let policy: LanSyncPolicy = recommended;
+    if (choosePolicy) {
+      onProgress?.({ stage: 'transferring', message: '请选择同步方式' });
+      policy = await choosePolicy({ local: localSummary, remote: remoteSummary, recommended });
+    }
+    if (
+      (policy === 'overwrite-remote' || policy === 'overwrite-local')
+      && !joinPayload.allowOverwrite
+      && policy === 'overwrite-local'
+    ) {
+      // Host overwriting joiner requires joiner allowOverwrite.
+      // overwrite-local means host's data wins for both devices → needs joiner consent.
+      throw new Error('对方未开启「允许被覆盖」。请对方在家庭同步中打开该开关后重试，或选择智能合并。');
+    }
+    if (policy === 'overwrite-local' && !joinPayload.allowOverwrite) {
+      throw new Error('对方未开启「允许被覆盖」。请对方打开该开关，或改用智能合并。');
+    }
+    // overwrite-remote: host takes remote data — host always consents by choosing it.
+    const merged = await mergeLanSnapshotsWithPolicy(localSnapshot, remoteSnapshot, policy);
     if (!merged.snapshot) {
       await sendSessionError(
         dependencies.transport,
@@ -355,6 +484,12 @@ async function runHostSession(
     const hostExtras = syncOptions
       ? await collectSyncExtras(syncOptions)
       : undefined;
+    // 主机把自己的自动同步身份发给 joiner（host IP 就是 invitation.host）
+    const hostAuto = buildAutoIdentityPayload(invitation.host);
+    // 同时记住 joiner 发来的自动同步身份
+    if (joinPayload.autoIdentity) {
+      rememberPeerFromAutoIdentity(joinPayload.device, joinPayload.autoIdentity, dependencies.now());
+    }
     await dependencies.transport.send({
       connectionId,
       data: await encryptLanSyncMessage(key, messageMetadata(invitation.sessionId, 'host', 1, 'result'), {
@@ -364,7 +499,9 @@ async function runHostSession(
         snapshot: merged.snapshot,
         conflictCount: merged.conflicts.length,
         inventoryConflicts: merged.inventoryConflicts,
+        policy,
         ...(hostExtras ? { extras: hostExtras } : {}),
+        ...(hostAuto ? { autoIdentity: hostAuto } : {}),
       }),
     });
     const acknowledgement = await inbox.waitForFrame(connectionId, signal, FRAME_TIMEOUT_MS);
@@ -417,6 +554,7 @@ function buildDependencies(overrides: Partial<LanSyncSessionDependencies>): LanS
     applySnapshot: overrides.applySnapshot ?? applyLanMergedSnapshot,
     parseSnapshot: overrides.parseSnapshot ?? parseLanSyncSnapshot,
     reschedule: overrides.reschedule ?? rescheduleMedicationReminders,
+    buildLocalSummary: overrides.buildLocalSummary ?? buildLocalLanSummary,
     now: overrides.now ?? Date.now,
   };
 }
@@ -476,6 +614,42 @@ function rememberLastResult(result: LanSyncSessionResult): void {
   } catch {
     /* Last-sync display is optional. */
   }
+}
+
+/** 本机当前 Wi‑Fi IPv4（来自 invitation host）+ localAutoIdentity → 发给对端。 */
+function buildAutoIdentityPayload(host: string): {
+  host: string;
+  port: number;
+  sessionId: string;
+  secretB64: string;
+} | null {
+  try {
+    const identity = getOrCreateLocalAutoIdentity();
+    return {
+      host,
+      port: identity.port,
+      sessionId: identity.sessionId,
+      secretB64: identity.secretB64,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function rememberPeerFromAutoIdentity(
+  device: { id: string; name: string },
+  auto: { host: string; port: number; sessionId: string; secretB64: string },
+  now: number,
+): void {
+  rememberPeer({
+    deviceId: device.id,
+    deviceName: device.name,
+    host: auto.host,
+    port: auto.port,
+    pairingSessionId: auto.sessionId,
+    pairingSecretB64: auto.secretB64,
+    lastSeenAt: now,
+  });
 }
 
 function messageMetadata(

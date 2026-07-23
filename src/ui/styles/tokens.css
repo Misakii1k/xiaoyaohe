@@ -24,6 +24,25 @@
   --color-accent-coral: #e0696b;
   --color-accent-mint: #4fbdc3;
 
+  /* 助手 Markdown 渲染面：代码块 / inline code / 表格 / 引用 */
+  --color-code-bg: #2a2c36;
+  --color-code-fg: #e8e8ef;
+  --color-code-border: #3a3d4a;
+  --color-code-lang: #6b7088;
+  --color-inline-code-bg: #efeef6;
+  --color-inline-code-fg: #3f4470;
+  --color-table-header-bg: #f4f3f9;
+  --color-table-border: #e6e5ee;
+  --color-table-row-alt: #fafafe;
+  --color-quote-bg: #f6f5fb;
+  --color-quote-bar: #838ae0;
+  /* 代码语法高亮 token 色（落在 --color-code-bg 深色面上，高对比） */
+  --tok-keyword: #c6a4ff;
+  --tok-string: #9be59b;
+  --tok-comment: #6b7088;
+  --tok-number: #f0b27a;
+  --tok-punct: #9aa0b5;
+
   /* 彩色浅底圆形图标（图 4 分类行样式） */
   --tint-purple-bg: #ecedfb;
   --tint-purple-fg: #666dd2;
@@ -39,6 +58,7 @@
   --tint-gray-fg: #3f4470;
 
   --font-sans: 'MiSans', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SF Mono', 'SFMono-Regular', 'Menlo', 'Consolas', 'Source Code Pro', ui-monospace, monospace;
   --fs-caption: 14px;
   --fs-footnote: 14px;
   --fs-subheadline: 14px;

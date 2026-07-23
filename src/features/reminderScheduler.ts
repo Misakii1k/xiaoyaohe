@@ -28,10 +28,15 @@ import {
   showNotification,
 } from './notifier';
 import {
+  NOTIFICATION_PREF_CHANGE_EVENT,
+  isAppNotificationsEnabled,
+} from './notificationPreference';
+import {
   buildMedicationReminderPlan,
   buildReminderBody,
   buildReminderTitle,
 } from './medicationReminderPlan';
+import { triggerReminderVibration } from './reminderVibration';
 
 const TICK_MS = 60_000;
 let timer: number | null = null;
@@ -42,6 +47,7 @@ const onVisibilityChange = (): void => {
 const onOnline = (): void => void tick();
 const onNavigation = (): void => void tick();
 const onCapabilityChange = (): void => void tick();
+const onNotificationPrefChange = (): void => void tick();
 
 export function startReminderScheduler(): void {
   if (timer != null) return;
@@ -60,6 +66,7 @@ export function startReminderScheduler(): void {
   window.addEventListener('online', onOnline);
   window.addEventListener('hashchange', onNavigation);
   window.addEventListener(REMINDER_CAPABILITY_CHANGE_EVENT, onCapabilityChange);
+  window.addEventListener(NOTIFICATION_PREF_CHANGE_EVENT, onNotificationPrefChange);
 }
 
 export function stopReminderScheduler(): void {
@@ -71,6 +78,7 @@ export function stopReminderScheduler(): void {
   window.removeEventListener('online', onOnline);
   window.removeEventListener('hashchange', onNavigation);
   window.removeEventListener(REMINDER_CAPABILITY_CHANGE_EVENT, onCapabilityChange);
+  window.removeEventListener(NOTIFICATION_PREF_CHANGE_EVENT, onNotificationPrefChange);
 }
 
 /**
@@ -101,6 +109,10 @@ export async function rescheduleMedicationReminders() {
   if (!isNativeReminderPlatform()) return undefined;
   await refreshPermission();
   if (getPermission() !== 'granted') return undefined;
+  if (!isAppNotificationsEnabled()) {
+    // Clear OS schedules when the in-app switch is off.
+    return reconcileScheduledNotifications([]);
+  }
   const [meds, rules, revisions, logs] = await Promise.all([
     listMeds(),
     listRules(),
@@ -121,6 +133,12 @@ async function tick(): Promise<void> {
 
 async function runTick(): Promise<void> {
   if (getPermission() !== 'granted') return;
+  if (!isAppNotificationsEnabled()) {
+    if (isNativeReminderPlatform()) {
+      await reconcileScheduledNotifications([]);
+    }
+    return;
+  }
   const native = isNativeReminderPlatform();
   const [meds, rules, revisions, logs] = await Promise.all([
     listMeds(),
@@ -164,13 +182,18 @@ async function runTick(): Promise<void> {
     else if (ps.count < policy.maxRepeats + 1 && minsSinceLast >= policy.repeatEveryMin) shouldSend = true;
     if (shouldSend) {
       const next = ps.count + 1;
+      const reminderMode = med.reminderMode;
       const sent = await showNotification(buildReminderTitle(med, next), {
         body: buildReminderBody(med, entry.revision, minsLate),
         tag: logId,
         key: next === 1 ? 'dose' : `repeat-${next}`,
-        data: { kind: 'reminder', logId, occurrenceId: logId, medId: med.id, reminderCount: next },
+        data: { kind: 'reminder', logId, occurrenceId: logId, medId: med.id, reminderCount: next, reminderMode },
       });
-      if (sent) await putPushState({ id: logId, count: next, lastSentAt: Date.now() });
+      if (sent) {
+        // 所有提醒模式都补一次 web 层振动；原生路径若已振动也会被覆盖，不影响效果
+        triggerReminderVibration(reminderMode);
+        await putPushState({ id: logId, count: next, lastSentAt: Date.now() });
+      }
     }
   }
 }

@@ -21,7 +21,12 @@ import {
   requestFullScreenAlarmCapability,
   showNotification,
 } from '../features/notifier';
-import { runOnce as runReminderOnce } from '../features/reminderScheduler';
+import { fireNativeMedicationAlarmNow, nativeMedicationAlarmAvailable } from '../features/nativeMedicationAlarm';
+import {
+  isAppNotificationsEnabled,
+  setAppNotificationsEnabled,
+} from '../features/notificationPreference';
+import { runOnce as runReminderOnce, rescheduleMedicationReminders } from '../features/reminderScheduler';
 import {
   getLlmConfig,
   setLlmConfig,
@@ -35,10 +40,12 @@ import {
   normalizeAndValidateBaseUrl,
   type LlmHealth,
 } from '../ai/llmConfig';
-import { getAsrHealth, getAsrProxyUrl, isNativeSpeechFallbackAvailable } from '../ai/asr';
+import { getAsrHealth, isNativeSpeechFallbackAvailable } from '../ai/asr';
+import { clearAsrConfig, getAsrConfig, isAsrCredentialsConfigured, setAsrConfig } from '../ai/asrConfig';
 import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
 import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
+import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations, openAppSettings } from '../features/keepAlive';
 
 const settingsPageCleanupByRoot = new WeakMap<HTMLElement, () => void>();
 
@@ -61,6 +68,7 @@ export async function renderSettingsPage(
   const content = el('div', { class: 'page page-light settings-page' });
 
   content.append(renderReminderPanel());
+  content.append(renderKeepAlivePanel());
   const llmPanel = renderLlmPanel();
   content.append(llmPanel.element);
   content.append(renderAiConsentPanel());
@@ -309,31 +317,24 @@ function setChip(panelEl: HTMLElement, chip: PanelChip): void {
 }
 
 /** ---------------- 通知面板 ---------------- */
+function reminderPanelChip(): PanelChip {
+  if (!notificationsSupported()) return { text: '不支持', tone: 'warn' };
+  if (!isAppNotificationsEnabled()) return { text: '已暂停', tone: 'muted' };
+  const perm = getPermission();
+  if (perm === 'granted') return { text: '已开启', tone: 'ok' };
+  if (perm === 'denied') return { text: '被拒绝', tone: 'warn' };
+  return { text: '未开启', tone: 'muted' };
+}
+
 function renderReminderPanel(): HTMLElement {
-  const perm = notificationsSupported() ? getPermission() : 'denied';
-  const chip: PanelChip = !notificationsSupported()
-    ? { text: '不支持', tone: 'warn' }
-    : perm === 'granted'
-      ? { text: '已开启', tone: 'ok' }
-      : perm === 'denied'
-        ? { text: '被拒绝', tone: 'warn' }
-        : { text: '未开启', tone: 'muted' };
   const p = panel({
     title: '系统通知',
     iconName: 'bell-ring',
-    chip,
+    chip: reminderPanelChip(),
     renderBody: (body) => buildReminderBody(body, () => {
       body.replaceChildren();
       buildReminderBody(body, () => {});
-      const perm2 = notificationsSupported() ? getPermission() : 'denied';
-      const c: PanelChip = !notificationsSupported()
-        ? { text: '不支持', tone: 'warn' }
-        : perm2 === 'granted'
-          ? { text: '已开启', tone: 'ok' }
-          : perm2 === 'denied'
-            ? { text: '被拒绝', tone: 'warn' }
-            : { text: '未开启', tone: 'muted' };
-      setChip(p, c);
+      setChip(p, reminderPanelChip());
     }),
   });
   return p;
@@ -345,6 +346,48 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       el('div', { class: 'banner warn' } as any, [
         el('span', { html: '当前手机无法使用系统通知。请更新应用，并在系统设置中允许通知。' }),
       ])
+    );
+    return;
+  }
+
+  const appEnabled = isAppNotificationsEnabled();
+  const toggleRow = el('label', {
+    class: 'settings-toggle-row',
+    style: 'display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:12px 14px;border-radius:14px;background:var(--color-surface-muted,#f2f1f5);',
+  } as any);
+  const toggleCopy = el('div', { style: 'min-width:0' } as any);
+  toggleCopy.append(
+    el('div', { style: 'font-weight:700;color:var(--color-text)', text: '应用内用药提醒' } as any),
+    el('div', {
+      class: 'muted',
+      style: 'font-size:13px;line-height:1.45;margin-top:2px',
+      text: appEnabled ? '开启后按计划发送系统通知与全屏提醒' : '已暂停：不再调度和弹出用药提醒',
+    } as any),
+  );
+  const toggle = el('input', {
+    type: 'checkbox',
+    role: 'switch',
+    'aria-label': '应用内用药提醒',
+  } as any) as HTMLInputElement;
+  toggle.checked = appEnabled;
+  toggle.onchange = async () => {
+    setAppNotificationsEnabled(toggle.checked);
+    try {
+      await rescheduleMedicationReminders();
+    } catch {
+      /* reschedule best-effort */
+    }
+    toast(toggle.checked ? '已开启应用内提醒' : '已暂停应用内提醒');
+    rerender();
+  };
+  toggleRow.append(toggleCopy, toggle);
+  body.append(toggleRow);
+
+  if (!appEnabled) {
+    body.append(
+      el('div', { class: 'banner info' } as any, [
+        el('span', { html: '应用内提醒已关闭。系统通知权限可保留，但不会再发送用药提醒。' }),
+      ]),
     );
     return;
   }
@@ -386,6 +429,27 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       toast('已扫描一次到点任务');
     };
     row.append(testBtn, tickBtn);
+    if (isNativeReminderPlatform() && nativeMedicationAlarmAvailable()) {
+      const strongTest = el('button', { class: 'btn tonal', html: '测试锁屏强提醒' });
+      strongTest.onclick = async () => {
+        try {
+          await fireNativeMedicationAlarmNow('strong');
+          toast('已触发增强通知（请看通知栏/锁屏）');
+        } catch {
+          toast('触发失败');
+        }
+      };
+      const fullTest = el('button', { class: 'btn', html: '测试全屏提醒' });
+      fullTest.onclick = async () => {
+        try {
+          await fireNativeMedicationAlarmNow('fullscreen-short');
+          toast('已触发全屏提醒');
+        } catch {
+          toast('触发失败，请先允许全屏权限');
+        }
+      };
+      row.append(strongTest, fullTest);
+    }
   }
   body.append(row);
 
@@ -447,11 +511,57 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       class: 'muted',
       style: 'margin-top:12px;font-size:13px;line-height:1.55',
       html:
-        '提醒说明：\n· 请允许通知和精确闹钟。\n' +
-        '· 如果系统限制应用在后台运行，提醒可能稍有延迟。\n' +
-        '· 回到应用时会自动检查遗漏的任务。',
+        '提醒说明：\n· 请允许通知、精确闹钟，以及（Android 14+）全屏提醒权限。\n' +
+        '· 药品编辑页可选择「增强通知 / 短时全屏 / 持续全屏」。\n' +
+        '· 全屏模式会在锁屏时点亮屏幕并弹出服药页；无权限时自动降级为增强通知。\n' +
+        '· 若系统限制后台运行，请在电池优化里允许本应用。\n' +
+        '· 回到应用时会自动检查遗漏的任务并重建闹钟。',
     } as any)
   );
+}
+
+/** ---------------- 后台运行/保活面板：申请电池优化白名单 ---------------- */
+function renderKeepAlivePanel(): HTMLElement {
+  const p = panel({
+    title: '后台运行',
+    iconName: 'shield',
+    chip: { text: '检查中', tone: 'muted' },
+    renderBody: (body) => {
+      void refreshKeepAlive(body, p);
+    },
+  });
+  return p;
+}
+
+async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement): Promise<void> {
+  body.replaceChildren();
+  const ignoring = await isIgnoringBatteryOptimizations();
+  setChip(panelEl, ignoring
+    ? { text: '已允许', tone: 'ok' }
+    : { text: '需授权', tone: 'warn' });
+  if (ignoring) {
+    body.append(el('div', { class: 'muted', style: 'font-size:13px;line-height:1.55', html: '已在电池优化白名单中，应用可在后台持续运行提醒与同步。' } as any));
+    const row = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
+    const openBtn = el('button', { class: 'btn tonal', html: '打开应用设置' });
+    openBtn.onclick = () => void openAppSettings();
+    row.append(openBtn);
+    body.append(row);
+    return;
+  }
+  body.append(el('div', { class: 'banner warn' } as any, [
+    el('span', { html: '允许小药盒在后台运行，提醒和自动同步才不会被系统关闭。点下方按钮，在弹窗里选「允许」。' }),
+  ]));
+  const row = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
+  const allowBtn = el('button', { class: 'btn', html: '允许后台运行' });
+  allowBtn.onclick = async () => {
+    const ok = await requestIgnoreBatteryOptimizations();
+    toast(ok ? '已加入电池优化白名单' : '未加入，可稍后再试');
+    void refreshKeepAlive(body, panelEl);
+  };
+  const openBtn = el('button', { class: 'btn tonal', html: '打开应用设置' });
+  openBtn.onclick = () => void openAppSettings();
+  row.append(allowBtn, openBtn);
+  body.append(row);
 }
 
 /** ---------------- AI 大模型面板（支持模型自动检测 + 状态） ---------------- */
@@ -608,32 +718,90 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     }
   };
 
-  // ====== 语音识别：密钥只在服务端，客户端只展示脱敏状态 ======
+  // ====== 语音识别：App 内嵌腾讯云直连，密钥本机安全存储 ======
+  const asrCfg = getAsrConfig();
   const asrHealth = getAsrHealth();
-  const asrEndpoint = getAsrProxyUrl();
-  body.append(el('div', { class: 'section-title', style: 'margin-top:16px', html: '语音识别' } as any));
+  body.append(el('div', { class: 'section-title', style: 'margin-top:16px', html: '语音识别（腾讯云）' } as any));
   body.append(
     el('div', {
       class: 'muted',
-      text: '小助手按住说话和说话录药共用腾讯云一句话识别。密钥保存在服务端，本机不保存 SecretId、SecretKey 或音频日志。',
+      text: '小助手按住说话、说话录药、库存智能录入共用腾讯云一句话识别。密钥保存在本机（Android 安全存储），App 直连腾讯云，任意设备装好填密钥即可用，无需再跑代理。',
     })
   );
+  const asrIdIn = el('input', {
+    type: 'text',
+    autocomplete: 'off',
+    spellcheck: 'false',
+    placeholder: asrCfg.secretId ? `已保存 · ${maskSecret(asrCfg.secretId)}` : '腾讯云 SecretId',
+    value: '',
+  } as any) as HTMLInputElement;
+  const asrKeyIn = el('input', {
+    type: 'password',
+    autocomplete: 'off',
+    placeholder: asrCfg.secretKey ? `已保存 · ${maskSecret(asrCfg.secretKey)}` : '腾讯云 SecretKey',
+    value: '',
+  } as any) as HTMLInputElement;
+  const asrRegionIn = el('input', {
+    type: 'text',
+    autocomplete: 'off',
+    value: asrCfg.region || 'ap-guangzhou',
+    placeholder: '地域，默认 ap-guangzhou',
+  } as any) as HTMLInputElement;
+  body.append(field('SecretId', asrIdIn));
+  body.append(field('SecretKey', asrKeyIn));
+  body.append(field('地域 Region', asrRegionIn));
   const asrStatus = el('div', {
     class: `banner ${asrHealth.stage === 'success' || asrHealth.stage === 'ready' ? 'ok' : asrHealth.stage === 'error' ? 'warn' : 'info'}`,
     style: 'margin-top:10px',
   } as any);
-  const diagnostic = [
-    asrEndpoint
-      ? asrHealth.message
-      : isNativeSpeechFallbackAvailable()
-        ? '腾讯云代理尚未配置，当前使用设备语音识别备用通道'
-        : '生产语音代理尚未配置',
-    asrHealth.code ? `错误码 ${asrHealth.code}` : '',
-    asrHealth.requestId ? `RequestId ${asrHealth.requestId}` : '',
-    asrHealth.at ? new Date(asrHealth.at).toLocaleString() : '',
-  ].filter(Boolean).join(' · ');
-  asrStatus.append(el('span', { text: diagnostic }));
+  const refreshAsrStatus = (): void => {
+    const h = getAsrHealth();
+    asrStatus.className = `banner ${h.stage === 'success' || h.stage === 'ready' ? 'ok' : h.stage === 'error' ? 'warn' : 'info'}`;
+    const diagnostic = [
+      isAsrCredentialsConfigured()
+        ? h.message || '腾讯云语音识别已配置'
+        : isNativeSpeechFallbackAvailable()
+          ? '未填密钥，将使用设备系统语音识别'
+          : '请填写 SecretId 和 SecretKey',
+      h.code ? `错误码 ${h.code}` : '',
+      h.requestId ? `RequestId ${h.requestId}` : '',
+      h.at ? new Date(h.at).toLocaleString() : '',
+    ].filter(Boolean).join(' · ');
+    asrStatus.replaceChildren(el('span', { text: diagnostic }));
+  };
+  refreshAsrStatus();
   body.append(asrStatus);
+  const asrRow = el('div', { class: 'btn-row', style: 'margin-top:8px' } as any);
+  const asrSave = el('button', { class: 'btn tonal', type: 'button', html: '保存语音密钥' });
+  asrSave.onclick = async () => {
+    const nextId = asrIdIn.value.trim() || asrCfg.secretId;
+    const nextKey = asrKeyIn.value.trim() || asrCfg.secretKey;
+    if (!nextId || !nextKey) return toast('请填写 SecretId 和 SecretKey');
+    await setAsrConfig({
+      secretId: nextId,
+      secretKey: nextKey,
+      region: asrRegionIn.value.trim() || 'ap-guangzhou',
+    });
+    asrIdIn.value = '';
+    asrKeyIn.value = '';
+    asrIdIn.placeholder = `已保存 · ${maskSecret(nextId)}`;
+    asrKeyIn.placeholder = `已保存 · ${maskSecret(nextKey)}`;
+    refreshAsrStatus();
+    toast('语音密钥已保存 ✓');
+  };
+  const asrClear = el('button', { class: 'btn text', type: 'button', html: '清除语音密钥' });
+  asrClear.onclick = async () => {
+    if (!(await confirmDialog('清除本机腾讯云语音密钥？', '清除'))) return;
+    await clearAsrConfig();
+    asrIdIn.value = '';
+    asrKeyIn.value = '';
+    asrIdIn.placeholder = '腾讯云 SecretId';
+    asrKeyIn.placeholder = '腾讯云 SecretKey';
+    refreshAsrStatus();
+    toast('已清除语音密钥');
+  };
+  asrRow.append(asrSave, asrClear);
+  body.append(asrRow);
 
   // ====== 操作行 ======
   const row = el('div', { class: 'btn-row', style: 'margin-top:12px' } as any);
@@ -650,6 +818,19 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     if (!apiKey) return toast('请填写 API 密钥');
     if (!model) return toast('请填写或选择模型');
     await setLlmConfig({ baseUrl, apiKey, model });
+    // 若用户本页也填了语音密钥，一并保存
+    const nextId = asrIdIn.value.trim() || getAsrConfig().secretId;
+    const nextKey = asrKeyIn.value.trim() || getAsrConfig().secretKey;
+    if (nextId && nextKey) {
+      await setAsrConfig({
+        secretId: nextId,
+        secretKey: nextKey,
+        region: asrRegionIn.value.trim() || 'ap-guangzhou',
+      });
+      asrIdIn.value = '';
+      asrKeyIn.value = '';
+      refreshAsrStatus();
+    }
     toast('已保存 ✓');
     // 保存后顺手体检一次
     const h = await pingLlm({ baseUrl, apiKey, model });
@@ -849,4 +1030,11 @@ function field(label: string, input: HTMLElement): HTMLElement {
   f.append(labelEl);
   f.append(input);
   return f;
+}
+
+/** 把已保存的密钥在 UI 上脱敏显示：保留前 3 + 后 4，中间用 * 遮。 */
+function maskSecret(secret: string): string {
+  const trimmed = secret.trim();
+  if (trimmed.length <= 8) return '*'.repeat(trimmed.length);
+  return `${trimmed.slice(0, 3)}${'*'.repeat(Math.min(8, trimmed.length - 7))}${trimmed.slice(-4)}`;
 }

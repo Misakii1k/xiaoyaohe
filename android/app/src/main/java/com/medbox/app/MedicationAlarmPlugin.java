@@ -70,6 +70,34 @@ public final class MedicationAlarmPlugin extends Plugin {
         call.resolve();
     }
 
+    /** Fire a test strong/full-screen alarm immediately (settings page). */
+    @PluginMethod
+    public void fireNow(PluginCall call) {
+        String mode = call.getString("mode", "fullscreen-short");
+        String title = call.getString("title", "测试用药提醒");
+        String body = call.getString("body", "这是一条全屏/锁屏测试提醒");
+        try {
+            JSONObject payload = new JSONObject();
+            int id = Math.abs(("medbox-test-" + mode).hashCode()) | 1;
+            payload.put("id", id);
+            payload.put("at", System.currentTimeMillis());
+            payload.put("title", title);
+            payload.put("body", body);
+            payload.put("tag", "medbox-test");
+            payload.put("key", "test");
+            payload.put("mode", mode);
+            JSONObject data = new JSONObject();
+            data.put("reminderMode", mode);
+            data.put("medicationName", "测试药");
+            data.put("medicationDose", "1 片");
+            payload.put("data", data);
+            MedicationAlarmContract.showNotification(getContext(), payload);
+            call.resolve();
+        } catch (JSONException error) {
+            call.reject("Unable to fire test alarm", "INVALID_PAYLOAD");
+        }
+    }
+
     @PluginMethod
     public void getPendingActions(PluginCall call) {
         JSObject result = new JSObject();

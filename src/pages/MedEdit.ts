@@ -42,7 +42,7 @@ import {
 } from '../ai/identify';
 import { parsePrescription, ParsePrescriptionError, type PrescriptionDraft } from '../ai/parsePrescription';
 import { aHash } from '../features/phash';
-import { takePendingPrefill } from '../ai/pendingPrefill';
+import { takePendingPrefill, takePendingInventoryPrefill } from '../ai/pendingPrefill';
 import { normalizeGtin, type ProductKey } from '../features/gs1';
 import { estimateDailyConsumption, estimateDaysLeft, suggestStructuredDose } from '../features/inventory';
 import { parseExplicitDose } from '../domain/medicationDraft';
@@ -104,6 +104,12 @@ export async function renderMedEditPage(
       applyIdentifyResult(med, pf.result);
       if (pf.aHash && !med.identity.photoHashes.includes(pf.aHash)) med.identity.photoHashes.push(pf.aHash);
       pendingPhoto = pf.photoBlob;
+    }
+    // 库存页"智能录入"识别到未登记药品时预填药名 + 库存草稿
+    const inv = takePendingInventoryPrefill();
+    if (inv) {
+      if (!med.name) med.name = inv.name;
+      if (inv.inventory.remaining > 0 || inv.inventory.unit) med.inventory = { ...inv.inventory };
     }
     const codeRaw = sessionStorage.getItem('medbox.prefill.code');
     if (codeRaw) {

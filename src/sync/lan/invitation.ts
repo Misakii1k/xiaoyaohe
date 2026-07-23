@@ -25,13 +25,14 @@ export function createLanSyncInvitation(
   host: string,
   port: number,
   now = Date.now(),
+  overrides?: { sessionId?: string; secret?: Uint8Array; lifetimeMs?: number },
 ): CreatedLanSyncInvitation {
   return encodeLanSyncInvitation({
     host,
     port,
-    sessionId: createLanSyncSessionId(),
-    expiresAt: now + LAN_SYNC_INVITATION_LIFETIME_MS,
-    secret: randomLanSyncBytes(LAN_SYNC_SECRET_BYTES),
+    sessionId: overrides?.sessionId ?? createLanSyncSessionId(),
+    expiresAt: now + (overrides?.lifetimeMs ?? LAN_SYNC_INVITATION_LIFETIME_MS),
+    secret: overrides?.secret ?? randomLanSyncBytes(LAN_SYNC_SECRET_BYTES),
   }, now);
 }
 

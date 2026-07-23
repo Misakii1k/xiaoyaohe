@@ -1,5 +1,6 @@
 import { createHmac, createHash } from 'node:crypto';
 import { createServer } from 'node:http';
+import { pathToFileURL } from 'node:url';
 
 const HOST = 'asr.tencentcloudapi.com';
 const ACTION = 'SentenceRecognition';
@@ -186,7 +187,7 @@ function send(response, status, data) {
   response.end(JSON.stringify(data ?? {}));
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replaceAll('\\', '/')}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const port = Number(process.env.PORT ?? 8787);
   createServer(createTencentAsrProxy()).listen(port, '127.0.0.1', () => {
     console.error(`Tencent ASR proxy listening on http://127.0.0.1:${port}`);

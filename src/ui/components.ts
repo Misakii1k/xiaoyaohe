@@ -81,6 +81,22 @@ export function topbar(title: string, right?: HTMLElement, left?: HTMLElement): 
   return bar;
 }
 
+/** 顶栏「图标 + 文字」胶囊按钮：比纯图标更易懂用途。多个并列时放进 `.topbar-actions` 容器。 */
+export function topbarPill(options: {
+  icon: IconName;
+  label: string;
+  variant?: 'primary';
+  onClick?: () => void;
+}): HTMLButtonElement {
+  const btn = el('button', {
+    class: `topbar-pill${options.variant === 'primary' ? ' topbar-pill-primary' : ''}`,
+    type: 'button',
+  });
+  btn.append(icon(options.icon), el('span', { text: options.label }));
+  if (options.onClick) btn.onclick = options.onClick;
+  return btn;
+}
+
 /** ---------- Snackbar ---------- */
 let toastTimer: number | undefined;
 let toastHideTimer: number | undefined;
@@ -326,37 +342,66 @@ export function emptyState(
   return wrap;
 }
 
-/** ---------- 进度环 ---------- */
+/** ---------- 进度环（大百分比仪表盘） ---------- */
 export function progressRing(value: number, total: number): HTMLElement {
-  const wrap = el('div', { class: 'progress-ring' });
+  const safeTotal = Math.max(0, total);
+  const safeValue = Math.max(0, Math.min(value, safeTotal || value));
+  const ratio = safeTotal > 0 ? Math.min(1, safeValue / safeTotal) : 0;
+  const percent = Math.round(ratio * 100);
+  const wrap = el('div', {
+    class:
+      'progress-ring'
+      + (safeTotal === 0 ? ' is-empty' : ratio >= 1 ? ' is-done' : ratio > 0 ? ' is-active' : ' is-pending'),
+  });
   wrap.setAttribute('role', 'progressbar');
   wrap.setAttribute('aria-valuemin', '0');
-  wrap.setAttribute('aria-valuemax', String(Math.max(0, total)));
-  wrap.setAttribute('aria-valuenow', String(Math.max(0, value)));
-  wrap.setAttribute('aria-label', `已完成 ${value} 项，共 ${total} 项`);
+  wrap.setAttribute('aria-valuemax', String(safeTotal));
+  wrap.setAttribute('aria-valuenow', String(safeValue));
+  wrap.setAttribute('aria-label', `已完成 ${safeValue} 项，共 ${safeTotal} 项`);
+  wrap.style.setProperty('--ring-progress', String(ratio));
+
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('viewBox', '0 0 80 80');
-  const bg = document.createElementNS(ns, 'circle');
-  bg.setAttribute('class', 'ring-bg');
-  bg.setAttribute('cx', '40');
-  bg.setAttribute('cy', '40');
-  bg.setAttribute('r', '32');
-  svg.append(bg);
-  const r = 32;
-  const c = 2 * Math.PI * r;
-  const ratio = total > 0 ? Math.min(1, value / total) : 0;
+  svg.setAttribute('viewBox', '0 0 100 100');
+
+  const track = document.createElementNS(ns, 'circle');
+  track.setAttribute('class', 'ring-bg');
+  track.setAttribute('cx', '50');
+  track.setAttribute('cy', '50');
+  track.setAttribute('r', '40');
+  track.setAttribute('pathLength', '100');
+  svg.append(track);
+
   const fg = document.createElementNS(ns, 'circle');
   fg.setAttribute('class', 'ring-fg');
-  fg.setAttribute('cx', '40');
-  fg.setAttribute('cy', '40');
-  fg.setAttribute('r', String(r));
-  fg.setAttribute('stroke-dasharray', String(c));
-  fg.setAttribute('stroke-dashoffset', String(c * (1 - ratio)));
+  fg.setAttribute('cx', '50');
+  fg.setAttribute('cy', '50');
+  fg.setAttribute('r', '40');
+  fg.setAttribute('pathLength', '100');
+  // pathLength=100 → dasharray "progress 100"; CSS rotate(-90deg) starts at 12 o'clock.
+  fg.setAttribute('stroke-dasharray', `${percent} 100`);
+  fg.setAttribute('stroke-dashoffset', '0');
   svg.append(fg);
-  wrap.append(svg);
-  wrap.append(el('div', { class: 'ring-label', html: `${value}/${total}` }));
+
+  const label = el('div', { class: 'ring-label' });
+  label.setAttribute('aria-hidden', 'true');
+  if (safeTotal === 0) {
+    label.append(
+      el('span', { class: 'ring-value', text: '—' }),
+      el('span', { class: 'ring-caption', text: '无安排' }),
+    );
+  } else {
+    label.append(
+      el('span', { class: 'ring-value', text: `${percent}%` }),
+      el('span', {
+        class: 'ring-caption',
+        text: ratio >= 1 ? '已完成' : `已服 ${safeValue}/${safeTotal}`,
+      }),
+    );
+  }
+
+  wrap.append(svg, label);
   return wrap;
 }
 

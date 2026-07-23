@@ -51,6 +51,19 @@ public final class LanSyncPlugin extends Plugin {
         }
     }
 
+    /** 返回当前本机可用于局域网同步的私有 IPv4，供自动同步身份公告。 */
+    @PluginMethod
+    public void getLocalAddress(PluginCall call) {
+        try {
+            Inet4Address address = LocalIpv4Address.select();
+            JSObject result = new JSObject();
+            result.put("host", address.getHostAddress());
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("No local Wi-Fi address is available", "NO_LAN_ADDRESS");
+        }
+    }
+
     @PluginMethod
     public void connect(PluginCall call) {
         String host = call.getString("host");
@@ -126,8 +139,9 @@ public final class LanSyncPlugin extends Plugin {
 
     @Override
     protected void handleOnPause() {
+        // 保活场景下切后台不主动断开会话：前台服务会让 WebView 与自动同步 host 监听继续存活。
+        // 真正退出/销毁时仍由 handleOnDestroy 清理。
         super.handleOnPause();
-        terminateCurrentSession("closed", "APP_PAUSED");
     }
 
     @Override
@@ -143,8 +157,13 @@ public final class LanSyncPlugin extends Plugin {
         try {
             Inet4Address address = LocalIpv4Address.select();
             listener = new ServerSocket();
-            listener.setReuseAddress(false);
-            listener.bind(new InetSocketAddress(address, 0), 1);
+            // 自动同步可指定固定端口；手动二维码路径仍用 0 由系统分配临时端口。
+            Integer preferredPort = call.getInt("port");
+            int bindPort = preferredPort != null && preferredPort >= 1024 && preferredPort <= 65_535
+                ? preferredPort
+                : 0;
+            listener.setReuseAddress(bindPort != 0);
+            listener.bind(new InetSocketAddress(address, bindPort), 1);
             listener.setSoTimeout(ACCEPT_TIMEOUT_MS);
             session.setEndpoint(address.getHostAddress(), listener.getLocalPort());
             if (!session.attachServer(listener)) {

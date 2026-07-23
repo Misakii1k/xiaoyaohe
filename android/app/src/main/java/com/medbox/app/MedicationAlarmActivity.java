@@ -29,18 +29,27 @@ public final class MedicationAlarmActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setShowWhenLocked(true);
-        setTurnScreenOn(true);
+        // 锁屏全屏：点亮屏幕 + 显示在锁屏之上（兼容旧 API）
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        }
         getWindow().addFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
-            WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
         );
         try {
             payload = MedicationAlarmContract.payloadFrom(getIntent());
             setContentView(buildContent());
             startAlert();
             long timeout = "fullscreen-persistent".equals(payload.optString("mode")) ? 60_000L : 10_000L;
-            handler.postDelayed(this::finish, timeout);
+            // 增强通知打开的页面不自动关闭（用户可能还在看）
+            if (!"strong".equals(payload.optString("mode", "strong"))) {
+                handler.postDelayed(this::finish, timeout);
+            }
         } catch (JSONException error) {
             finish();
         }

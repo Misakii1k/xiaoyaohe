@@ -249,7 +249,7 @@ describe('Android-only distribution contract', () => {
 
     expect(packageJson).toMatchObject({
       name: 'xiaoyaohe',
-      version: '0.8.0',
+      version: '0.8.1',
       description: expect.stringContaining('Android App'),
       dependencies: { qrcode: expect.any(String) },
       devDependencies: { '@types/qrcode': expect.any(String) },
@@ -280,6 +280,7 @@ describe('Android-only distribution contract', () => {
     expect(tsconfig).not.toContain('vite-plugin-pwa/client');
     expect(main).not.toContain('virtual:pwa-register');
     expect(main).not.toContain('registerSW');
-    expect(main).not.toContain('startAutoSync');
+    // LAN 家庭同步的 startAutoSync 属于本机能力，允许挂在 main 启动路径上
+    expect(main).toContain('startAutoSync');
   });
 });
