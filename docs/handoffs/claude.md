@@ -4,13 +4,24 @@ Tool: Claude
 Branch: `workspace/claude`（本次工作直接提交在 `main`，沿用近几轮 UI/功能提交的既有做法；`workspace/claude` 尚未追平 main）
 Updated: 2026-07-22
 Status: idle
-Latest commit: `1ba6eb8 feat: keep-alive foreground service and half-hourly LAN auto-sync`
+Latest commit: `0fc310e feat: embed Tencent Cloud ASR directly in the app`
 
 ## Goal
 
-本轮完成平板使用相关能力 + 提醒振动 + APP 保活 + 局域网半小时自动同步。均已提交；保活/自动同步需装 release APK 在真机验证。目前无活跃编码任务。
+把腾讯云一句话识别内嵌到 App（Web Crypto TC3 签名直连），任意设备装好后填好密钥即可用，移除对独立 Node 代理的硬依赖。已提交、测试通过、typecheck 干净；当前无活跃编码任务。
 
 ## What Landed on `main` (2026-07-22 晚)
+
+10. `0fc310e feat: embed Tencent Cloud ASR directly in the app`
+    - `src/ai/tencentAsr.ts`（新）：TC3-HMAC-SHA256 签名 + fetch 直连 `https://asr.tencentcloudapi.com/`（`SentenceRecognition`，16k_zh，60 秒内 WAV）。
+    - `src/ai/asrConfig.ts`（新）：`getAsrConfig` / `setAsrConfig` / `isAsrCredentialsConfigured` / `clearAsrConfig`；SecretId + SecretKey 走 SecureStorage，region 走 localStorage。
+    - `src/ai/asr.ts`：`recognizeSentenceWav` 优先本机密钥直连；缺密钥时抛 `unconfigured` 引导去设置；`getAsrHealth` 状态文案改为「腾讯云语音识别已配置（App 内嵌直连）」。`getAsrProxyUrl` 退回为仅 dev 用（`VITE_ASR_PROXY_URL`）。
+    - `src/ai/secretStore.ts`：新增 `ASR_SECRET_ID_KEY` / `ASR_SECRET_KEY_KEY`。
+    - `src/pages/Settings.ts`：语音识别面板三个输入（SecretId/SecretKey/Region）+ 保存/清除按钮 + `maskSecret` 脱敏显示（保留前 3 + 后 4，中间 * 遮）。
+    - `tests/asr.test.ts`：覆盖 ready/idle 切换、`recognizeSentenceWav` 直连 fetch 签名前缀 `TC3-HMAC-SHA256 Credential=AKID-.../`、SecretIdNotFound 错误映射、缺密钥引导。
+    - `npm test`：46 文件 / 203 通过；typecheck 干净。
+
+## Earlier Work (2026-07-22 晚)
 
 6. `8d53710 feat: free-place launcher + inventory share + dedup interaction prompt`
    - 平板/桌面 ≥768px：小助手悬浮钮不吸附边缘，`minBottomClearance` 降到 8px。
