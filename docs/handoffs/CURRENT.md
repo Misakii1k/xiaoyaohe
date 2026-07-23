@@ -3,14 +3,14 @@
 Updated: 2026-07-23
 Integration branch: `main`
 Product version: `0.8.1`
-Latest integration commit: `9245ab0 docs: update Claude handoff for embedded Tencent ASR`
+Latest integration commit: `de389bf Merge branch 'workspace/trae-qoder'`
 
 ## Baseline
 
 - App-only LAN implementation: `6354dd8`.
 - GPT/Codex handoff: `6276d81`.
 - TypeScript passes.
-- Vitest: 46 files, 203 tests pass.
+- Vitest: 46 files, 204 tests pass.
 - Android debug unit tests and APK assembly pass.
 - Dependency audit reports 0 vulnerabilities.
 
@@ -26,6 +26,8 @@ Latest integration commit: `9245ab0 docs: update Claude handoff for embedded Ten
 - In-app medication reminder master toggle, vibrate on all reminder modes (web + native strong).
 - Tablet/assistant free placement, inventory share to family/clipboard, inventory quick capture (photo/voice).
 - Android foreground service keep-alive (battery whitelist prompt), 30-minute LAN auto-sync with long-lived pairing identity.
+- Full-screen alarm now launches over an awake, unlocked screen: notify-first (Android 14+ fullScreenIntent BAL window) + AlarmRingService foreground-service fallback + setAlarmClock when exact-alarm permission is unavailable.
+- Standalone Tencent ASR settings panel (masked secrets, edit-to-unlock, clear confirmation), Web-preview secret persistence via localStorage, error toast when key save fails.
 
 ## Release
 
