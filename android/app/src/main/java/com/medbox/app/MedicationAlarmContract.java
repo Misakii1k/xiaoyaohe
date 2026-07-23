@@ -86,7 +86,16 @@ final class MedicationAlarmContract {
         );
         AlarmManager manager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !manager.canScheduleExactAlarms()) {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending);
+            // 无精确闹钟权限时的兜底：setAlarmClock 不需要该权限且始终精确，
+            // 触发时系统还会授予短暂的后台 Activity 启动窗口（全屏提醒依赖它），
+            // 比 setAndAllowWhileIdle（不精确 + 无启动窗口）可靠得多。
+            Intent clockOpen = new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            PendingIntent clockPending = PendingIntent.getActivity(
+                context, id + 0x10000, clockOpen,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+            manager.setAlarmClock(new AlarmManager.AlarmClockInfo(at, clockPending), pending);
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending);
         } else {
@@ -206,15 +215,21 @@ final class MedicationAlarmContract {
             .addAction(0, "跳过", actionPending(context, payload, ACTION_SKIP, id + 13));
         if (fullScreen) {
             builder.setFullScreenIntent(openPending, true);
-        } else if (wantsFullScreen) {
-            // 无全屏权限时仍尽量弹出 Activity（部分机型允许从高优先级通知唤起）。
+        }
+        // ── 时序关键：必须先发通知再拉 Activity ──
+        // Android 对 setFullScreenIntent 的系统行为是只在锁屏/灭屏时拉起 Activity，
+        // 亮屏解锁时降级为顶部 heads-up。而 Android 14+ 在带 fullScreenIntent 的
+        // 通知发出后会授予短暂的「后台 Activity 启动」窗口——所以先 notify，再借
+        // 这个窗口主动 startActivity，亮屏解锁时也能拉起全屏页面。
+        context.getSystemService(NotificationManager.class).notify(id, builder.build());
+        if (wantsFullScreen) {
             try {
                 context.startActivity(open);
-            } catch (Throwable ignored) {
-                // Fall back to heads-up notification only.
+            } catch (Throwable directFailed) {
+                // 直接启动被拦截（BAL 限制 / OEM 定制）：前台服务兜底再拉一次。
+                AlarmRingService.launch(context, payload.toString());
             }
         }
-        context.getSystemService(NotificationManager.class).notify(id, builder.build());
         // 强提醒（非全屏）路径补一次显式振动：部分机型会抑制通道配置的振动，
         // 这里像全屏 Activity 那样主动调 Vibrator，确保用户一定感受到。
         if (!wantsFullScreen) {

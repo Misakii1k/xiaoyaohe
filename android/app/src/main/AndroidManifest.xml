@@ -76,6 +76,11 @@
             android:name=".KeepAliveService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <!-- 全屏提醒兜底：直接拉起被拦截时经前台服务启动全屏页面 -->
+        <service
+            android:name=".AlarmRingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
     <!-- Permissions -->
