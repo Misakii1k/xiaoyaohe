@@ -777,11 +777,15 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     const nextId = asrIdIn.value.trim() || asrCfg.secretId;
     const nextKey = asrKeyIn.value.trim() || asrCfg.secretKey;
     if (!nextId || !nextKey) return toast('请填写 SecretId 和 SecretKey');
-    await setAsrConfig({
-      secretId: nextId,
-      secretKey: nextKey,
-      region: asrRegionIn.value.trim() || 'ap-guangzhou',
-    });
+    try {
+      await setAsrConfig({
+        secretId: nextId,
+        secretKey: nextKey,
+        region: asrRegionIn.value.trim() || 'ap-guangzhou',
+      });
+    } catch {
+      return toast('密钥保存失败，请重试');
+    }
     asrIdIn.value = '';
     asrKeyIn.value = '';
     asrIdIn.placeholder = `已保存 · ${maskSecret(nextId)}`;
@@ -822,14 +826,18 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     const nextId = asrIdIn.value.trim() || getAsrConfig().secretId;
     const nextKey = asrKeyIn.value.trim() || getAsrConfig().secretKey;
     if (nextId && nextKey) {
-      await setAsrConfig({
-        secretId: nextId,
-        secretKey: nextKey,
-        region: asrRegionIn.value.trim() || 'ap-guangzhou',
-      });
-      asrIdIn.value = '';
-      asrKeyIn.value = '';
-      refreshAsrStatus();
+      try {
+        await setAsrConfig({
+          secretId: nextId,
+          secretKey: nextKey,
+          region: asrRegionIn.value.trim() || 'ap-guangzhou',
+        });
+        asrIdIn.value = '';
+        asrKeyIn.value = '';
+        refreshAsrStatus();
+      } catch {
+        toast('语音密钥保存失败，请重试');
+      }
     }
     toast('已保存 ✓');
     // 保存后顺手体检一次
