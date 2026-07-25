@@ -156,11 +156,36 @@ export function mountGlobalAssistant(): void {
   voiceOverlay.setAttribute('aria-live', 'assertive');
   const voiceHint = el('div', { class: 'ai-voice-hint', text: '松开发送，上滑取消' });
   const voiceTimer = el('div', { class: 'ai-voice-timer', text: '0″' });
-  const voiceWave = el('div', { class: 'ai-voice-wave' }, [
-    el('i'), el('i'), el('i'), el('i'), el('i'),
+  // 弧形进度环：中央话筒 + 外圈 SVG 圆环随录音时长 0→60s 填满。
+  const voiceRingSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  voiceRingSvg.setAttribute('class', 'ai-voice-progress');
+  voiceRingSvg.setAttribute('viewBox', '0 0 120 120');
+  voiceRingSvg.setAttribute('aria-hidden', 'true');
+  const ringTrack = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  ringTrack.setAttribute('class', 'ai-voice-progress-track');
+  ringTrack.setAttribute('cx', '60');
+  ringTrack.setAttribute('cy', '60');
+  ringTrack.setAttribute('r', '52');
+  ringTrack.setAttribute('fill', 'none');
+  const ringFill = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  ringFill.setAttribute('class', 'ai-voice-progress-fill');
+  ringFill.setAttribute('cx', '60');
+  ringFill.setAttribute('cy', '60');
+  ringFill.setAttribute('r', '52');
+  ringFill.setAttribute('fill', 'none');
+  ringFill.setAttribute('pathLength', '100');
+  ringFill.style.strokeDasharray = '100';
+  ringFill.style.strokeDashoffset = '100';
+  voiceRingSvg.append(ringTrack, ringFill);
+  // 涟漪：话筒周围向外扩散的同心圆水波，录音时循环播放。
+  const voiceRipples = el('div', { class: 'ai-voice-ripples', 'aria-hidden': 'true' } as any, [
+    el('span', { class: 'ai-voice-ripple ai-voice-ripple--1' }),
+    el('span', { class: 'ai-voice-ripple ai-voice-ripple--2' }),
+    el('span', { class: 'ai-voice-ripple ai-voice-ripple--3' }),
   ]);
   const voiceGlyph = el('div', { class: 'ai-voice-glyph', 'aria-hidden': 'true' } as any, [icon('mic')]);
-  voiceOverlay.append(voiceGlyph, voiceWave, voiceTimer, voiceHint);
+  const voiceStage = el('div', { class: 'ai-voice-stage' }, [voiceRipples, voiceRingSvg, voiceGlyph]);
+  voiceOverlay.append(voiceStage, voiceTimer, voiceHint);
 
   const panel = el('section', { class: 'ai-panel' }, [header, log, quick, voiceOverlay, form]);
   panel.setAttribute('role', 'dialog');
@@ -186,6 +211,8 @@ export function mountGlobalAssistant(): void {
   let dragStartPos: LauncherPos = { right: 0, bottom: 0 };
 
   function minBottomClearance(): number {
+    // 宽屏下底栏是左侧侧栏（shell.css ≥768px），不占底部，纵向可一直低到 8px
+    if (window.matchMedia('(min-width: 768px)').matches) return DRAG_EDGE_MARGIN_PX;
     let clearance = DRAG_EDGE_MARGIN_PX;
     const blockers = document.querySelectorAll<HTMLElement>('.app-navigation, .action-dock');
     for (const blocker of blockers) {
@@ -207,6 +234,8 @@ export function mountGlobalAssistant(): void {
   }
 
   function snapToEdge(pos: LauncherPos): LauncherPos {
+    // 宽屏（平板/桌面）下不做水平吸附，保留用户拖到的位置，避免被甩到边缘
+    if (window.matchMedia('(min-width: 768px)').matches) return clampPos(pos);
     const maxRight = Math.max(DRAG_EDGE_MARGIN_PX, window.innerWidth - launcher.offsetWidth - DRAG_EDGE_MARGIN_PX);
     const currentLeft = window.innerWidth - pos.right - launcher.offsetWidth;
     return {
@@ -420,6 +449,7 @@ export function mountGlobalAssistant(): void {
     if (!on) {
       voiceTimer.textContent = '0″';
       voiceHint.textContent = '松开发送，上滑取消';
+      ringFill.style.strokeDashoffset = '100';
       micBtn.classList.remove('is-listening', 'is-cancel-zone');
     }
   }
@@ -436,6 +466,8 @@ export function mountGlobalAssistant(): void {
     holdSession = createHoldToTalkSession({
       onTick: (sec) => {
         voiceTimer.textContent = `${sec}″`;
+        const pct = Math.min(100, (sec / 60) * 100);
+        ringFill.style.strokeDashoffset = String(100 - pct);
         if (sec >= 55) voiceHint.textContent = '快到一分钟了，松手即可发送';
       },
     });
@@ -570,15 +602,20 @@ export function mountGlobalAssistant(): void {
   }
 
   function addAssistantReply(reply: AssistantTurnResult): HTMLElement {
-    const bubble = el('div', { class: 'ai-bubble' });
-    if (reply.markdown) bubble.append(renderAssistantMarkdown(reply.markdown));
-    for (const block of reply.blocks) {
-      bubble.append(renderAssistantBlock(block, (path) => {
-        closePanel();
-        navigate(path);
-      }));
+    const msg = el('div', { class: 'ai-msg is-bot' });
+    if (reply.markdown) {
+      msg.append(el('div', { class: 'ai-bubble' }, [renderAssistantMarkdown(reply.markdown)]));
     }
-    const msg = el('div', { class: 'ai-msg is-bot' }, [bubble]);
+    if (reply.blocks.length) {
+      const cards = el('div', { class: 'ai-cards' });
+      for (const block of reply.blocks) {
+        cards.append(renderAssistantBlock(block, (path) => {
+          closePanel();
+          navigate(path);
+        }));
+      }
+      msg.append(cards);
+    }
     log.append(msg);
     log.scrollTop = log.scrollHeight;
     return msg;
@@ -646,7 +683,10 @@ export function mountGlobalAssistant(): void {
             streamedMessage = addMsg('bot', '');
           }
           const bubble = streamedMessage.querySelector<HTMLElement>('.ai-bubble');
-          if (bubble) bubble.replaceChildren(renderAssistantMarkdown(streamedText));
+          if (bubble) {
+            bubble.replaceChildren(renderAssistantMarkdown(streamedText));
+            bubble.append(el('span', { class: 'ai-caret', 'aria-hidden': 'true' } as any));
+          }
           log.scrollTop = log.scrollHeight;
         },
       });
@@ -678,7 +718,41 @@ export function mountGlobalAssistant(): void {
       openPanel();
       quick.hidden = true;
       addAssistantReply({
-        markdown: '## 今天的提醒\n\n还有 **1 项** 待处理：\n\n- 维生素 C · 08:00\n- 每次 1 片，按医嘱服用',
+        markdown: [
+          '## 今天的提醒',
+          '',
+          '还有 **1 项** 待处理，下面是今天的用药概览。',
+          '',
+          '> 记得饭后服药，不要空腹吃阿司匹林。',
+          '',
+          '### 今日安排',
+          '',
+          '- **08:00** 阿司匹林 · 每次 1 片',
+          '- **12:30** 维生素 C · 每次 1 片',
+          '- **21:30** 瑞舒伐他汀 · 每次 1 片',
+          '',
+          '### 服药对照',
+          '',
+          '| 药品 | 时间 | 剂量 | 状态 |',
+          '| --- | --- | --- | --- |',
+          '| 阿司匹林 | 08:00 | 1 片 | 待服 |',
+          '| 维生素 C | 12:30 | 1 片 | 已服 |',
+          '| 瑞舒伐他汀 | 21:30 | 1 片 | 待服 |',
+          '',
+          '### 本周清单',
+          '',
+          '- [x] 周一 08:00 阿司匹林',
+          '- [x] 周二 08:00 阿司匹林',
+          '- [ ] 今天 08:00 阿司匹林',
+          '',
+          '---',
+          '',
+          '需要调整时间可以告诉我，比如：',
+          '',
+          '```bash',
+          '把阿司匹林改到 08:30',
+          '```',
+        ].join('\n'),
         blocks: [
           {
             type: 'card',

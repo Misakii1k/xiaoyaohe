@@ -26,10 +26,11 @@ export interface LanSyncFrameEvent {
 }
 
 interface LanSyncPlugin {
-  startHost(): Promise<LanSyncConnection>;
+  startHost(options?: { port?: number }): Promise<LanSyncConnection>;
   connect(options: { host: string; port: number }): Promise<LanSyncConnection>;
   send(options: { connectionId: string; data: string }): Promise<{ bytes: number }>;
   close(options: { connectionId: string }): Promise<{ closed: boolean }>;
+  getLocalAddress(): Promise<{ host: string }>;
   addListener(
     eventName: 'lanSyncState',
     listener: (event: LanSyncStateEvent) => void,
@@ -41,10 +42,11 @@ interface LanSyncPlugin {
 }
 
 export interface LanSyncTransport {
-  startHost(): Promise<LanSyncConnection>;
+  startHost(options?: { port?: number }): Promise<LanSyncConnection>;
   connect(options: { host: string; port: number }): Promise<LanSyncConnection>;
   send(options: { connectionId: string; data: string }): Promise<{ bytes: number }>;
   close(connectionId: string): Promise<boolean>;
+  getLocalAddress?(): Promise<string | null>;
   onState(listener: (event: LanSyncStateEvent) => void): Promise<() => Promise<void>>;
   onFrame(listener: (event: LanSyncFrameEvent) => void): Promise<() => Promise<void>>;
 }
@@ -52,9 +54,9 @@ export interface LanSyncTransport {
 const plugin = registerPlugin<LanSyncPlugin>('LanSync');
 
 export class NativeLanSyncTransport implements LanSyncTransport {
-  async startHost(): Promise<LanSyncConnection> {
+  async startHost(options?: { port?: number }): Promise<LanSyncConnection> {
     assertLanSyncAvailable();
-    return plugin.startHost();
+    return options?.port != null ? plugin.startHost({ port: options.port }) : plugin.startHost();
   }
 
   async connect(options: { host: string; port: number }): Promise<LanSyncConnection> {
@@ -70,6 +72,16 @@ export class NativeLanSyncTransport implements LanSyncTransport {
   async close(connectionId: string): Promise<boolean> {
     if (!isLanSyncAvailable()) return false;
     return (await plugin.close({ connectionId })).closed;
+  }
+
+  async getLocalAddress(): Promise<string | null> {
+    if (!isLanSyncAvailable()) return null;
+    try {
+      const result = await plugin.getLocalAddress();
+      return result.host || null;
+    } catch {
+      return null;
+    }
   }
 
   async onState(listener: (event: LanSyncStateEvent) => void): Promise<() => Promise<void>> {

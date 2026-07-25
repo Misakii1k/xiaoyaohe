@@ -182,6 +182,74 @@ export async function parseMedicationSpeech(
   return normalizePrescriptionSheet(parsed);
 }
 
+// 口述库存：把"阿司匹林还剩5片，二甲双胍刚买了一盒20片"整理成药名 + 库存字段
+const INVENTORY_SPEECH_PROMPT =
+  '你是药品库存录入助手。用户会口述（或打字）手头药品的剩余情况，语句可能口语化、有停顿词。' +
+  '把其中每种药整理成数组 items，仅输出严格 JSON，不要 markdown、不要解释。' +
+  '只提取药名、剩余数量、单位、一盒/一瓶有多少、剩多少时提醒买药；没说到的字段留空或 0，不要编造。' +
+  '口语对应关系："片/粒/袋/粒/mL"等是单位；"还剩5片"=remaining 5、unit 片；"一盒20片"=packageQuantity 20；' +
+  '"剩3天的量"=remaining 按天推算或留 0 并在 sourceNote 注明；"快没了/该买了"=lowThreshold 给一个保守值。' +
+  'JSON 形如：{"items":[{"name":"药名","inventory":{"remaining":0,"unit":"片","packageQuantity":0,"lowThreshold":0,"sourceNote":"从口述推断的依据"},"confidence":0-1}],"confidence":0-1}。';
+
+export interface InventorySpeechResult {
+  items: InventorySpeechItem[];
+  confidence: number;
+}
+
+export interface InventorySpeechItem {
+  name: string;
+  inventory: MedicationInventory;
+  confidence: number;
+}
+
+/** 把口述/手打的库存描述解析成多条库存草稿；复用 identifyInventory 的归一化。 */
+export async function parseInventorySpeech(
+  text: string,
+  options: IdentifyRequestOptions = {},
+): Promise<InventorySpeechResult> {
+  throwIfAborted(options.signal);
+  const session = options.session ?? await createIdentifySession('inventory', 'prescription');
+  const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + session.apiKey,
+    },
+    body: JSON.stringify({
+      model: session.model,
+      messages: [
+        { role: 'system', content: INVENTORY_SPEECH_PROMPT },
+        { role: 'user', content: `请整理这段库存描述：${text}` },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+    }),
+  }, options.signal);
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
+    const msg = typeof data.error === 'string'
+      ? data.error
+      : data.error?.message || `AI 服务出错（${resp.status}）`;
+    throw new IdentifyError(msg);
+  }
+  const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+  const raw = payload.choices?.[0]?.message?.content ?? '';
+  const parsed = tryParseJson(raw);
+  if (!parsed) throw new IdentifyError('AI 返回无法解析');
+  const items = normalizeInventorySpeech(parsed);
+  return { items, confidence: conf(parsed.confidence) };
+}
+
+function normalizeInventorySpeech(raw: Record<string, unknown>): InventorySpeechItem[] {
+  const list = Array.isArray(raw.items) ? raw.items : [];
+  return list.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const obj = entry as Record<string, unknown>;
+    const inv = normalizeInventory(obj);
+    return [{ name: str(obj.name), inventory: inv.inventory, confidence: conf(obj.confidence) }];
+  });
+}
+
 async function requestIdentify<T>(blob: Blob, mode: IdentifyMode, hint?: string, options: IdentifyRequestOptions = {}): Promise<T> {
   throwIfAborted(options.signal);
   // 压到 1280 长边，质量 0.8，尽量小但保留药盒细节

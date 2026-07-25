@@ -13,6 +13,7 @@ import {
 import { migrateOversizedMedPhotos } from './features/medPhotos';
 import { cleanupRetiredCloudSyncStorage } from './sync/retiredCloudStorage';
 import { cleanupRetiredWorkStorage } from './sync/retiredWorkStorage';
+import { startAutoSync } from './sync/lan/autoSync';
 
 // Register notification click routing before the router starts. The target is
 // retained so the Today page can focus the exact occurrence when it supports it.
@@ -43,6 +44,13 @@ try {
   startReminderScheduler();
 } catch {
   /* 提醒调度失败不挡首屏 */
+}
+
+// 家庭同步：若用户开了「每 30 分钟自动同步」，启动轮询 + 常驻 host（依赖保活）
+try {
+  startAutoSync();
+} catch {
+  /* 自动同步启动失败不挡首屏 */
 }
 
 const root = document.getElementById('app');

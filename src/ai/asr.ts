@@ -1,9 +1,12 @@
 import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
 import { requireAiConsent } from './consent';
+import { getAsrConfig, isAsrCredentialsConfigured } from './asrConfig';
+import { recognizeWithTencentCloud, TencentAsrError } from './tencentAsr';
 
 const HEALTH_KEY = 'medbox.asrHealth.v1';
 const MAX_SENTENCE_SECONDS = 60;
 const MAX_AUDIO_BYTES = 3 * 1024 * 1024;
+const TENCENT_ASR_ORIGIN = 'https://asr.tencentcloudapi.com';
 
 interface NativeSpeechPlugin {
   start(options: { language: string }): Promise<{ text?: string; cancelled?: boolean }>;
@@ -68,14 +71,17 @@ export class AsrSentenceError extends Error {
   }
 }
 
+/**
+ * 可选的开发期代理地址（Vite 转发到 server/tencent-asr-proxy.mjs）。
+ * App 正式路径不再依赖代理：只要本机填了腾讯云密钥就直连。
+ */
 export function getAsrProxyUrl(): string {
-  const configured = (import.meta.env.VITE_ASR_PROXY_URL ?? '').trim();
-  if (configured) return configured;
-  return Capacitor.isNativePlatform() ? '' : '/api/speech/tencent';
+  return (import.meta.env.VITE_ASR_PROXY_URL ?? '').trim();
 }
 
+/** 是否可用腾讯云识别：本机密钥 或 开发代理。 */
 export function isAsrConfigured(): boolean {
-  return getAsrProxyUrl().length > 0;
+  return isAsrCredentialsConfigured() || getAsrProxyUrl().length > 0;
 }
 
 export function getAsrHealth(): AsrHealth {
@@ -85,9 +91,17 @@ export function getAsrHealth(): AsrHealth {
       return parsed as AsrHealth;
     }
   } catch { /* ignore invalid diagnostics */ }
+  if (isAsrCredentialsConfigured()) {
+    return { stage: 'ready', message: '腾讯云语音识别已配置（App 内嵌直连）', at: 0 };
+  }
+  if (getAsrProxyUrl()) {
+    return { stage: 'ready', message: '开发语音代理已配置', at: 0 };
+  }
   return {
-    stage: isAsrConfigured() ? 'ready' : 'idle',
-    message: isAsrConfigured() ? '语音代理已配置' : '生产语音代理尚未配置',
+    stage: 'idle',
+    message: isNativeSpeechFallbackAvailable()
+      ? '未配置腾讯云密钥，将使用设备语音识别'
+      : '请在设置中填写腾讯云 SecretId / SecretKey',
     at: 0,
   };
 }
@@ -159,10 +173,60 @@ export async function recognizeSentenceWav(
   wav: ArrayBuffer,
   options: { signal?: AbortSignal } = {},
 ): Promise<string> {
-  const endpoint = getAsrProxyUrl();
-  if (!endpoint) throw new AsrSentenceError('语音服务尚未部署，请稍后再试', 'unconfigured');
   if (wav.byteLength > MAX_AUDIO_BYTES) {
     throw new AsrSentenceError('录音太长了，请控制在一分钟内', 'too-long');
+  }
+
+  // 优先：本机腾讯云密钥直连（任意设备、App/Web 均可）
+  if (isAsrCredentialsConfigured()) {
+    await requireAiConsent('voice-medication', TENCENT_ASR_ORIGIN);
+    if (options.signal?.aborted) throw new AsrSentenceError('已取消', 'cancelled');
+    setAsrHealth({ stage: 'uploading', message: '正在发送语音到腾讯云', at: Date.now() });
+    try {
+      const result = await recognizeWithTencentCloud(wav, getAsrConfig(), options);
+      if (options.signal?.aborted) throw new AsrSentenceError('已取消', 'cancelled');
+      const text = result.text.trim();
+      if (!text) throw new AsrSentenceError('没听清，请再说一次', 'no-speech');
+      setAsrHealth({
+        stage: 'success',
+        message: '语音识别正常',
+        requestId: result.requestId,
+        at: Date.now(),
+      });
+      return text;
+    } catch (error) {
+      if (error instanceof AsrSentenceError) throw error;
+      if (error instanceof TencentAsrError) {
+        const kind = /AuthFailure|Signature|SecretIdNotFound|UNCONFIGURED/i.test(error.code)
+          ? 'auth-failed'
+          : /Limit|Quota|RequestLimit/i.test(error.code)
+            ? 'quota'
+            : 'service-unavailable';
+        setAsrHealth({
+          stage: 'error',
+          message: error.message,
+          code: error.code,
+          requestId: error.requestId,
+          at: Date.now(),
+        });
+        throw new AsrSentenceError(error.message, kind);
+      }
+      if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+        throw new AsrSentenceError('已取消', 'cancelled');
+      }
+      const message = error instanceof Error ? error.message : '语音服务连接失败';
+      setAsrHealth({ stage: 'error', message, code: 'NETWORK', at: Date.now() });
+      throw new AsrSentenceError(message, 'network');
+    }
+  }
+
+  // 开发兜底：走 Vite 代理（需 npm run server:asr）
+  const endpoint = getAsrProxyUrl();
+  if (!endpoint) {
+    throw new AsrSentenceError(
+      '请先在「设置 → AI 服务商 → 语音识别」填写腾讯云 SecretId 和 SecretKey',
+      'unconfigured',
+    );
   }
   const consentUrl = new URL(endpoint, globalThis.location?.origin ?? 'https://localhost').origin;
   await requireAiConsent('voice-medication', consentUrl);
@@ -194,7 +258,7 @@ export async function recognizeSentenceWav(
           ? 'service-unavailable'
           : 'network';
     const message = kind === 'auth-failed'
-      ? '语音服务鉴权失败，服务端凭证需要更新'
+      ? '语音服务鉴权失败，请检查腾讯云密钥'
       : kind === 'quota'
         ? '语音服务额度已用完，请稍后再试'
         : body.message || '语音服务暂时不可用';

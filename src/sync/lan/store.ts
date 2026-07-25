@@ -167,6 +167,15 @@ export async function mergeLanSnapshots(
   localValue: LanSyncSnapshot,
   remoteValue: LanSyncSnapshot,
 ): Promise<LanSyncMergeResult> {
+  return mergeLanSnapshotsWithPolicy(localValue, remoteValue, 'merge');
+}
+
+/** Prefer one whole snapshot or LWW-merge. Overwrite modes still verify session ids/hashes. */
+export async function mergeLanSnapshotsWithPolicy(
+  localValue: LanSyncSnapshot,
+  remoteValue: LanSyncSnapshot,
+  policy: 'merge' | 'overwrite-local' | 'overwrite-remote' = 'merge',
+): Promise<LanSyncMergeResult> {
   const local = parseLanSyncSnapshot(localValue);
   const remote = parseLanSyncSnapshot(remoteValue);
   if (local.sessionId !== remote.sessionId) {
@@ -176,6 +185,41 @@ export async function mergeLanSnapshots(
     verifyLanSyncSnapshotHashes(local),
     verifyLanSyncSnapshotHashes(remote),
   ]);
+
+  if (policy === 'overwrite-local') {
+    return {
+      snapshot: parseLanSyncSnapshot({
+        schemaVersion: local.schemaVersion,
+        sessionId: local.sessionId,
+        entries: local.entries,
+      }),
+      conflicts: [],
+      inventoryConflicts: [],
+      stats: {
+        total: local.entries.length,
+        selectedLocal: local.entries.length,
+        selectedRemote: 0,
+        tombstones: local.entries.filter((entry) => entry.tombstone).length,
+      },
+    };
+  }
+  if (policy === 'overwrite-remote') {
+    return {
+      snapshot: parseLanSyncSnapshot({
+        schemaVersion: remote.schemaVersion,
+        sessionId: remote.sessionId,
+        entries: remote.entries,
+      }),
+      conflicts: [],
+      inventoryConflicts: [],
+      stats: {
+        total: remote.entries.length,
+        selectedLocal: 0,
+        selectedRemote: remote.entries.length,
+        tombstones: remote.entries.filter((entry) => entry.tombstone).length,
+      },
+    };
+  }
 
   const localByKey = new Map(local.entries.map((entry) => [entryKey(entry), entry]));
   const remoteByKey = new Map(remote.entries.map((entry) => [entryKey(entry), entry]));
@@ -684,6 +728,7 @@ async function applyMedication(
       ...payload.identity,
       photoHashes: [...(current?.identity?.photoHashes ?? [])],
     },
+    // Inventory remains device-local (not part of LAN medication payload).
     ...(current?.inventory ? { inventory: structuredClone(current.inventory) } : {}),
     updatedAt: appliedAt,
   };

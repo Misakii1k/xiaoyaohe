@@ -17,6 +17,14 @@ export default defineConfig({
   server: {
     host: true, // 允许局域网内手机访问（npm run dev 后用手机打开电脑 IP）
     port: 5173,
+    proxy: {
+      // 把腾讯云一句话识别代理（server/tencent-asr-proxy.mjs，默认 8787）挂到 dev 站点下，
+      // 浏览器用相对路径 /api/speech/tencent 即可，无需 VITE_ASR_PROXY_URL。
+      '/api': {
+        target: process.env.ASR_PROXY_TARGET ?? 'http://127.0.0.1:8787',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     target: 'es2022',

@@ -22,6 +22,7 @@ import {
   RotateCcw,
   ScanLine,
   SendHorizontal,
+  Share2,
   ShieldCheck,
   SquarePen,
   Settings,
@@ -74,6 +75,7 @@ export type AppIconName =
   | 'shield'
   | 'chevron-right'
   | 'send'
+  | 'share'
   | 'close';
 
 export const iconRegistry: Readonly<Record<AppIconName, IconNode>> = {
@@ -112,5 +114,6 @@ export const iconRegistry: Readonly<Record<AppIconName, IconNode>> = {
   shield: ShieldCheck,
   'chevron-right': ChevronRight,
   send: SendHorizontal,
+  share: Share2,
   close: X,
 };

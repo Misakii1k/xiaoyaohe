@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/ui/components', () => ({ confirmDialog: vi.fn(async () => true) }));
 
@@ -7,11 +7,16 @@ import {
   arrayBufferToBase64,
   downsampleToPcm16k,
   getAsrHealth,
-  getAsrProxyUrl,
   isAsrConfigured,
   pcm16ToWav,
   recognizeSentenceWav,
 } from '../src/ai/asr';
+import {
+  clearAsrConfig,
+  isAsrCredentialsConfigured,
+  setAsrConfig,
+} from '../src/ai/asrConfig';
+import { initializeSecretStore } from '../src/ai/secretStore';
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -20,9 +25,41 @@ class MemoryStorage {
   removeItem(key: string): void { this.values.delete(key); }
 }
 
-beforeEach(() => {
+class MemorySecureStorage {
+  private values = new Map<string, string>();
+  async get(key: string): Promise<string | null> { return this.values.get(key) ?? null; }
+  async set(key: string, value: string): Promise<void> { this.values.set(key, value); }
+  async remove(key: string): Promise<void> { this.values.delete(key); }
+}
+
+const originalImport = (key: string, value: unknown): void => {
+  (globalThis as Record<string, unknown>)[key] = value;
+};
+
+beforeEach(async () => {
   vi.stubGlobal('localStorage', new MemoryStorage());
-  vi.restoreAllMocks();
+  vi.stubGlobal('secureStorage', new MemorySecureStorage());
+  // 接管 @aparajita/capacitor-secure-storage：测试环境用 MemorySecureStorage 模拟
+  vi.doMock('@aparajita/capacitor-secure-storage', () => ({
+    SecureStorage: {
+      setKeyPrefix: () => Promise.resolve(),
+      setDefaultKeychainAccess: () => Promise.resolve(),
+      get: (key: string) => (globalThis as Record<string, MemorySecureStorage>).secureStorage.get(key),
+      set: (key: string, value: string) => (globalThis as Record<string, MemorySecureStorage>).secureStorage.set(key, value),
+      remove: (key: string) => (globalThis as Record<string, MemorySecureStorage>).secureStorage.remove(key),
+    },
+    KeychainAccess: { whenUnlockedThisDeviceOnly: 'unlocked' },
+  }));
+  vi.resetModules();
+  await import('../src/ai/secretStore').then((mod) => mod.initializeSecretStore());
+  await clearAsrConfig();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.doUnmock('@aparajita/capacitor-secure-storage');
+  vi.resetModules();
+  originalImport('mocked', undefined);
 });
 
 describe('ASR audio helpers', () => {
@@ -51,38 +88,78 @@ describe('ASR audio helpers', () => {
   });
 });
 
-describe('ASR speech proxy', () => {
-  it('uses the same-origin endpoint in web builds without client credentials', () => {
-    expect(getAsrProxyUrl()).toBe('/api/speech/tencent');
+describe('App-embedded Tencent ASR', () => {
+  it('reports ready when credentials are saved and idle otherwise', async () => {
+    expect(isAsrConfigured()).toBe(false);
+    expect(isAsrCredentialsConfigured()).toBe(false);
+    expect(getAsrHealth()).toMatchObject({ stage: 'idle' });
+    await setAsrConfig({ secretId: 'AKIDxxxxxx', secretKey: 'sk-xxxxxxxx' });
     expect(isAsrConfigured()).toBe(true);
-    expect(getAsrHealth()).toMatchObject({ stage: 'ready' });
-    expect(localStorage.getItem('medbox.asrConfig.v1')).toBeNull();
+    expect(isAsrCredentialsConfigured()).toBe(true);
+    expect(getAsrHealth()).toMatchObject({ stage: 'ready', message: expect.stringContaining('腾讯云') });
   });
 
-  it('returns text and stores only sanitized diagnostics', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      text: '阿司匹林每天一片',
-      requestId: 'req-safe-1',
-    }), { status: 200, headers: { 'content-type': 'application/json' } })));
-    await expect(recognizeSentenceWav(pcm16ToWav(new Int16Array(2000)))).resolves
-      .toBe('阿司匹林每天一片');
+  it('prompts to configure when no credentials are saved', async () => {
+    const error = await recognizeSentenceWav(pcm16ToWav(new Int16Array(2000))).catch((value) => value);
+    expect(error).toBeInstanceOf(AsrSentenceError);
+    expect(error).toMatchObject({ code: 'unconfigured' });
+  });
+
+  it('signs the Tencent request directly when credentials are saved', async () => {
+    await setAsrConfig({ secretId: 'AKID-test-1234', secretKey: 'sk-test-secret' });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      Response: { Result: '阿司匹林每天一片', RequestId: 'req-direct-1' },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const text = await recognizeSentenceWav(pcm16ToWav(new Int16Array(2000)));
+    expect(text).toBe('阿司匹林每天一片');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe('https://asr.tencentcloudapi.com/');
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers.Authorization).toMatch(/^TC3-HMAC-SHA256 Credential=AKID-test-1234\//);
+    expect(headers['X-TC-Action']).toBe('SentenceRecognition');
+    expect(headers['X-TC-Version']).toBe('2019-06-14');
     expect(getAsrHealth()).toMatchObject({
-      stage: 'success', requestId: 'req-safe-1', message: '语音识别正常',
+      stage: 'success', requestId: 'req-direct-1', message: '语音识别正常',
     });
-    expect(localStorage.getItem('medbox.asrHealth.v1')).not.toContain('audioBase64');
   });
 
   it('maps Tencent SecretIdNotFound to a service-side auth error', async () => {
+    await setAsrConfig({ secretId: 'AKID-bad', secretKey: 'sk-bad' });
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      code: 'AuthFailure.SecretIdNotFound',
-      message: 'internal detail',
-      requestId: 'req-auth-1',
-    }), { status: 502, headers: { 'content-type': 'application/json' } })));
+      Response: { Error: { Code: 'AuthFailure.SecretIdNotFound', Message: 'detail' }, RequestId: 'req-auth-1' },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })));
     const error = await recognizeSentenceWav(pcm16ToWav(new Int16Array(2000))).catch((value) => value);
     expect(error).toBeInstanceOf(AsrSentenceError);
-    expect(error).toMatchObject({ code: 'auth-failed', message: '语音服务鉴权失败，服务端凭证需要更新' });
+    expect(error).toMatchObject({ code: 'auth-failed' });
     expect(getAsrHealth()).toMatchObject({
       stage: 'error', code: 'AuthFailure.SecretIdNotFound', requestId: 'req-auth-1',
     });
+  });
+
+  it('persists web credentials across simulated page reload', async () => {
+    // 首次保存
+    await setAsrConfig({ secretId: 'AKID-web', secretKey: 'sk-web-secret' });
+    expect(localStorage.getItem('medbox_web_secret::ai-asr-secret-id')).toBe('AKID-web');
+    expect(localStorage.getItem('medbox_web_secret::ai-asr-secret-key')).toBe('sk-web-secret');
+    // 模拟页面刷新：模块重置 + 清空 secureStorage（native 路径不命中，验证 web 路径）
+    vi.resetModules();
+    vi.doMock('@aparajita/capacitor-secure-storage', () => ({
+      SecureStorage: {
+        setKeyPrefix: () => Promise.resolve(),
+        setDefaultKeychainAccess: () => Promise.resolve(),
+        get: (key: string) => (globalThis as Record<string, MemorySecureStorage>).secureStorage.get(key),
+        set: (key: string, value: string) => (globalThis as Record<string, MemorySecureStorage>).secureStorage.set(key, value),
+        remove: (key: string) => (globalThis as Record<string, MemorySecureStorage>).secureStorage.remove(key),
+      },
+      KeychainAccess: { whenUnlockedThisDeviceOnly: 'unlocked' },
+    }));
+    // Node 测试环境下 Capacitor.isNativePlatform() 默认为 false，触发 web 兜底分支
+    await import('../src/ai/secretStore').then((mod) => mod.initializeSecretStore());
+    const cfg = await import('../src/ai/asrConfig').then((mod) => mod.getAsrConfig());
+    expect(cfg.secretId).toBe('AKID-web');
+    expect(cfg.secretKey).toBe('sk-web-secret');
+    expect(await import('../src/ai/asrConfig').then((mod) => mod.isAsrCredentialsConfigured())).toBe(true);
   });
 });

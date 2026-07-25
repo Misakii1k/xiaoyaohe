@@ -28,6 +28,7 @@ import {
   openDialog,
   closeDialog,
   SLOT_ICON,
+  topbarPill,
 } from '../ui/components';
 import { navigate } from '../router';
 import { estimateDaysLeft } from '../features/inventory';
@@ -64,22 +65,6 @@ const SLOT_FILTER_ORDER: SlotFilter[] = ['all', 'morning', 'noon', 'evening', 'b
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const NEAR_EXPIRY_DAYS = 30;
 
-/** 顶栏「图标 + 文字」胶囊按钮：比纯图标更容易看懂用途 */
-function topbarPill(options: {
-  icon: Parameters<typeof icon>[0];
-  label: string;
-  variant?: 'primary';
-  onClick?: () => void;
-}): HTMLButtonElement {
-  const btn = el('button', {
-    class: `topbar-pill${options.variant === 'primary' ? ' topbar-pill-primary' : ''}`,
-    type: 'button',
-  });
-  btn.append(icon(options.icon), el('span', { text: options.label }));
-  if (options.onClick) btn.onclick = options.onClick;
-  return btn;
-}
-
 export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
   const [meds, rules, revisions] = await Promise.all([
     listMeds(),
@@ -92,8 +77,6 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
 
   const addBtn = topbarPill({ icon: 'plus', label: '添加药品', variant: 'primary', onClick: () => navigate('/meds/new') });
 
-  const inventoryBtn = topbarPill({ icon: 'box', label: '库存', onClick: () => navigate('/meds/inventory') });
-
   const batchBtn = topbarPill({ icon: 'list', label: '批量管理' });
   let cleanupPageInteractions: () => void = () => undefined;
   batchBtn.onclick = () => {
@@ -101,7 +84,7 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     void enterBatchMode(root, signal);
   };
   const topRight = el('div', { class: 'topbar-actions medication-list-actions' });
-  topRight.append(inventoryBtn, batchBtn, addBtn);
+  topRight.append(batchBtn, addBtn);
 
   const content = el('div', { class: 'page medication-list-page' });
 

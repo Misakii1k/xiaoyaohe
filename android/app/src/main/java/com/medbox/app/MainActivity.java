@@ -1,5 +1,7 @@
 package com.medbox.app;
 
+import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -12,6 +14,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LanSyncPlugin.class);
         registerPlugin(MedicationAlarmPlugin.class);
         registerPlugin(NativeSpeechPlugin.class);
+        registerPlugin(PowerSettingsPlugin.class);
         super.onCreate(savedInstanceState);
         // 降低 WebView 缓存与媒体解码压力，缓解大图列表页闪退
         try {
@@ -27,6 +30,21 @@ public class MainActivity extends BridgeActivity {
             settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         } catch (Throwable ignored) {
             /* 原生桥未就绪时不要崩 */
+        }
+        startKeepAlive();
+    }
+
+    /** 启动常驻前台服务保活 WebView 与 JS 定时器（提醒 tick、局域网自动同步）。 */
+    private void startKeepAlive() {
+        try {
+            Intent service = new Intent(this, KeepAliveService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(service);
+            } else {
+                startService(service);
+            }
+        } catch (Throwable ignored) {
+            /* 部分机型受限启动失败不影响主流程 */
         }
     }
 }

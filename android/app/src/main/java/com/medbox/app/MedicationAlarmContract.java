@@ -11,6 +11,9 @@ import android.graphics.Color;
 import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.provider.Settings;
 import androidx.core.app.NotificationCompat;
 import org.json.JSONArray;
@@ -83,7 +86,16 @@ final class MedicationAlarmContract {
         );
         AlarmManager manager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !manager.canScheduleExactAlarms()) {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending);
+            // 无精确闹钟权限时的兜底：setAlarmClock 不需要该权限且始终精确，
+            // 触发时系统还会授予短暂的后台 Activity 启动窗口（全屏提醒依赖它），
+            // 比 setAndAllowWhileIdle（不精确 + 无启动窗口）可靠得多。
+            Intent clockOpen = new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            PendingIntent clockPending = PendingIntent.getActivity(
+                context, id + 0x10000, clockOpen,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+            manager.setAlarmClock(new AlarmManager.AlarmClockInfo(at, clockPending), pending);
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending);
         } else {
@@ -100,6 +112,39 @@ final class MedicationAlarmContract {
         Set<String> ids = new HashSet<>(prefs.getStringSet(IDS, new HashSet<>()));
         for (String raw : ids) cancelId(context, raw);
         prefs.edit().remove(IDS).apply();
+    }
+
+    /** Re-register future alarms after reboot / package replace (AlarmManager is wiped). */
+    static int restoreScheduled(Context context) {
+        SharedPreferences prefs = prefs(context);
+        Set<String> ids = new HashSet<>(prefs.getStringSet(IDS, new HashSet<>()));
+        int restored = 0;
+        long now = System.currentTimeMillis();
+        for (String raw : ids) {
+            String saved = prefs.getString("payload_" + raw, null);
+            if (saved == null) {
+                cancelId(context, raw);
+                continue;
+            }
+            try {
+                JSONObject payload = new JSONObject(saved);
+                long at = payload.optLong("at", 0L);
+                if (at <= now) {
+                    // Past due: fire once, then drop the stale alarm id so reboot loops don't re-spam.
+                    showNotification(context, payload);
+                    cancelId(context, raw);
+                    Set<String> remaining = new HashSet<>(prefs.getStringSet(IDS, new HashSet<>()));
+                    remaining.remove(raw);
+                    prefs.edit().putStringSet(IDS, remaining).apply();
+                    continue;
+                }
+                schedule(context, payload);
+                restored += 1;
+            } catch (JSONException ignored) {
+                cancelId(context, raw);
+            }
+        }
+        return restored;
     }
 
     static void cancelTag(Context context, String tag) {
@@ -136,14 +181,21 @@ final class MedicationAlarmContract {
     static void showNotification(Context context, JSONObject payload) throws JSONException {
         ensureChannels(context);
         int id = payload.getInt("id");
-        boolean fullScreen = !"strong".equals(payload.optString("mode")) && canUseFullScreen(context);
+        String mode = payload.optString("mode", "strong");
+        boolean wantsFullScreen = !"strong".equals(mode);
+        boolean fullScreen = wantsFullScreen && canUseFullScreen(context);
         Intent open = new Intent(context, MedicationAlarmActivity.class)
             .putExtra(EXTRA_PAYLOAD, payload.toString())
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            .addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            );
         PendingIntent openPending = PendingIntent.getActivity(
             context, id, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
-        String channel = "strong".equals(payload.optString("mode")) ? CHANNEL_STRONG : CHANNEL_ALARM;
+        // 增强通知也走高优先级 + 锁屏公开；全屏模式额外挂 fullScreenIntent。
+        String channel = wantsFullScreen ? CHANNEL_ALARM : CHANNEL_STRONG;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_stat_medbox)
             .setColor(Color.rgb(23, 116, 91))
@@ -154,13 +206,57 @@ final class MedicationAlarmContract {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(openPending)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setOnlyAlertOnce(false)
             .setAutoCancel(false)
-            .setOngoing("fullscreen-persistent".equals(payload.optString("mode")))
+            .setOngoing("fullscreen-persistent".equals(mode))
             .addAction(0, "已服用", actionPending(context, payload, ACTION_TAKEN, id + 11))
             .addAction(0, "10 分钟后提醒", actionPending(context, payload, ACTION_SNOOZE, id + 12))
             .addAction(0, "跳过", actionPending(context, payload, ACTION_SKIP, id + 13));
-        if (fullScreen) builder.setFullScreenIntent(openPending, true);
+        if (fullScreen) {
+            builder.setFullScreenIntent(openPending, true);
+        }
+        // ── 时序关键：必须先发通知再拉 Activity ──
+        // Android 对 setFullScreenIntent 的系统行为是只在锁屏/灭屏时拉起 Activity，
+        // 亮屏解锁时降级为顶部 heads-up。而 Android 14+ 在带 fullScreenIntent 的
+        // 通知发出后会授予短暂的「后台 Activity 启动」窗口——所以先 notify，再借
+        // 这个窗口主动 startActivity，亮屏解锁时也能拉起全屏页面。
         context.getSystemService(NotificationManager.class).notify(id, builder.build());
+        if (wantsFullScreen) {
+            try {
+                context.startActivity(open);
+            } catch (Throwable directFailed) {
+                // 直接启动被拦截（BAL 限制 / OEM 定制）：前台服务兜底再拉一次。
+                AlarmRingService.launch(context, payload.toString());
+            }
+        }
+        // 强提醒（非全屏）路径补一次显式振动：部分机型会抑制通道配置的振动，
+        // 这里像全屏 Activity 那样主动调 Vibrator，确保用户一定感受到。
+        if (!wantsFullScreen) {
+            vibrateStrong(context);
+        }
+    }
+
+    /** strong 模式触发时显式振动 ~1.5 秒后停，不依赖通道配置被 OS 尊重。 */
+    private static void vibrateStrong(Context context) {
+        try {
+            Vibrator vibrator;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                VibratorManager vm = (VibratorManager) context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
+                vibrator = vm == null ? null : vm.getDefaultVibrator();
+            } else {
+                vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+            }
+            if (vibrator == null || !vibrator.hasVibrator()) return;
+            long[] pattern = {0, 400, 200, 400};
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+            } else {
+                vibrator.vibrate(pattern, -1);
+            }
+        } catch (Throwable ignored) {
+            // 振动不可用时不影响通知本身
+        }
     }
 
     private static PendingIntent actionPending(Context context, JSONObject payload, String action, int requestCode) {
