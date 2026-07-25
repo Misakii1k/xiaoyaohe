@@ -35,6 +35,10 @@ import chevronRightSvg from '@tabler/icons/icons/outline/chevron-right.svg?raw';
 import sendSvg from '@tabler/icons/icons/outline/send.svg?raw';
 import shareSvg from '@tabler/icons/icons/outline/share.svg?raw';
 import closeSvg from '@tabler/icons/icons/outline/x.svg?raw';
+import plugSvg from '@tabler/icons/icons/outline/plug-connected.svg?raw';
+import robotSvg from '@tabler/icons/icons/outline/robot.svg?raw';
+import lockSvg from '@tabler/icons/icons/outline/lock.svg?raw';
+import devicesSvg from '@tabler/icons/icons/outline/devices.svg?raw';
 
 export type AppIconName =
   | 'pill'
@@ -52,6 +56,7 @@ export type AppIconName =
   | 'bell-ring'
   | 'cloud'
   | 'cloud-check'
+  | 'copy'
   | 'box'
   | 'sparkles'
   | 'trash'
@@ -66,10 +71,13 @@ export type AppIconName =
   | 'scan'
   | 'pillbox'
   | 'mic'
-  | 'copy'
   | 'image'
   | 'retry'
   | 'shield'
+  | 'plug'
+  | 'robot'
+  | 'lock'
+  | 'devices'
   | 'chevron-right'
   | 'send'
   | 'share'
@@ -109,6 +117,10 @@ export const iconRegistry: Readonly<Record<AppIconName, string>> = {
   image: imageSvg,
   retry: retrySvg,
   shield: shieldSvg,
+  plug: plugSvg,
+  robot: robotSvg,
+  lock: lockSvg,
+  devices: devicesSvg,
   'chevron-right': chevronRightSvg,
   send: sendSvg,
   share: shareSvg,

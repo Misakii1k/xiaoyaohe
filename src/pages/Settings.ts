@@ -522,7 +522,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
 function renderKeepAlivePanel(): HTMLElement {
   const p = panel({
     title: '后台运行',
-    iconName: 'shield',
+    iconName: 'plug',
     chip: { text: '检查中', tone: 'muted' },
     renderBody: (body) => {
       // 延迟到 panel() 返回后再执行，避免在 p 赋值前引用 p（TDZ）
@@ -569,7 +569,7 @@ function renderLlmPanel(): SettingsRenderPart {
   const chip = healthToChip(initialHealth);
   const p = panel({
     title: 'AI 服务商',
-    iconName: 'sparkles',
+    iconName: 'robot',
     chip,
     renderBody: (body) => buildLlmBody(body, (h) => setChip(p, healthToChip(h))),
   });
@@ -798,7 +798,7 @@ function renderAiConsentPanel(): HTMLElement {
   let panelElement!: HTMLElement;
   panelElement = panel({
     title: 'AI 外发授权',
-    iconName: 'shield',
+    iconName: 'lock',
     chip: aiConsentChip(),
     renderBody: (body) => {
       body.append(

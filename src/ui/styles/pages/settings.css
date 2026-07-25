@@ -40,24 +40,24 @@
 .settings-page .panel-head:active { background: var(--color-surface-muted); }
 .settings-page .panel-lead { gap: var(--space-3); }
 
-/* 分类行图标：统一主色浅紫圆底，和全局风格保持一致 */
+/* 分类行图标：与底部 Tab 导航同样样式，无背景、灰色线条 */
 .settings-page .panel-icon {
   display: grid;
   place-items: center;
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: 26px;
+  block-size: 26px;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-full);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
+  border-radius: 0;
+  background: transparent;
+  color: #a9abb6;
+  box-shadow: none;
 }
 
-/* 旧版 svg 撑满 36px 圆导致图标过大过挤；按共享 tint-icon 比例收小加粗 */
 .settings-page .panel-icon svg {
-  inline-size: 19px;
-  block-size: 19px;
-  stroke-width: 2.2;
+  inline-size: 24px;
+  block-size: 24px;
+  stroke-width: 1.9;
 }
 
 .settings-page .panel-title { font-size: var(--fs-body); font-weight: 700; }

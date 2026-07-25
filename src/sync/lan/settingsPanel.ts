@@ -51,7 +51,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   } as any) as HTMLButtonElement;
   const lead = el('span', { class: 'panel-lead' });
   const panelIcon = el('span', { class: 'panel-icon', 'aria-hidden': 'true' } as any);
-  panelIcon.append(icon('send'));
+  panelIcon.append(icon('devices'));
   lead.append(panelIcon, el('span', { class: 'panel-title', text: '家庭同步' }));
   const trailing = el('span', { class: 'panel-right' });
   const chip = el('span', {
