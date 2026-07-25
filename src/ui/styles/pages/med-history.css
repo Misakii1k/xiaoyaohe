@@ -377,6 +377,94 @@
   object-fit: cover;
 }
 
+/* ---------- P2: 操作 sheet ---------- */
+.history-action-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  max-inline-size: 420px;
+  margin-inline: auto;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.history-action-sheet-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-block-end: var(--space-3);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.history-action-sheet-med {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.history-action-sheet-sub {
+  font-size: var(--fs-sm);
+}
+
+.history-action-sheet-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.history-action-sheet-option {
+  min-block-size: 48px;
+  inline-size: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-md);
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.history-action-sheet-option.tone-primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.history-action-sheet-option.tone-primary:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.history-action-sheet-option.tone-secondary {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+.history-action-sheet-option.tone-danger {
+  background: color-mix(in srgb, var(--tone-danger-fg) 12%, transparent);
+  color: var(--tone-danger-fg);
+}
+
+.history-action-sheet-option.is-disabled,
+.history-action-sheet-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.history-action-sheet-cancel {
+  min-block-size: 44px;
+  inline-size: 100%;
+  color: var(--color-text);
+}
+
+.history-action-sheet-overlay {
+  align-items: center;
+}
+
+[data-theme='dark'] .history-action-sheet {
+  background: var(--color-surface);
+}
+
 .history-medication-thumb.is-placeholder svg {
   inline-size: 20px;
   block-size: 20px;
