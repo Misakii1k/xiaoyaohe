@@ -10,7 +10,10 @@ import {
   type Medication,
   type MedicationOccurrence,
   type MedicationScheduleRevision,
+  SLOTS,
+  SLOT_LABEL,
   type Slot,
+  formatMealRels,
 } from '../db/schema';
 import {
   addLocalDays,
@@ -18,10 +21,22 @@ import {
   findLogForOccurrence,
   generateOccurrences,
   localDayBounds,
+  localDateDayOfWeek,
   toLocalDate,
   type AdherenceSummary,
 } from '../domain/medicationSchedule';
-import { el, icon, renderPage } from '../ui/components';
+import {
+  banner,
+  el,
+  icon,
+  progressRing,
+  renderPage,
+  skeletonCard,
+  slotTag,
+} from '../ui/components';
+import { createStatusBadge } from '../ui/primitives/StatusBadge';
+import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
+import { getMedPhotoUrls } from '../features/medPhotos';
 import { navigate } from '../router';
 
 /** 时间区间预设 */
@@ -230,40 +245,374 @@ export async function loadHistoryData(
   return { medById, revisions, logs, occurrences, dayGroups };
 }
 
-export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
-  // P0 阶段：先验证路由 + 数据加载能跑通；UI 在 P1 阶段补齐
-  const today = toLocalDate();
-  let data: HistoryData | null = null;
-  let loadError: string | null = null;
-  try {
-    data = await loadHistoryData(DEFAULT_HISTORY_STATE, today);
-  } catch (error) {
-    loadError = error instanceof Error ? error.message : String(error);
-  }
-  if (signal?.aborted) return;
+// ---- P1 UI 渲染 ----
 
+const WEEKDAY_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const FILTER_DEBOUNCE_MS = 200;
+
+/** "X 月 X 日 周X" */
+function formatDayTitle(date: LocalDate): string {
+  const [, month, day] = date.split('-');
+  const dow = WEEKDAY_CN[localDateDayOfWeek(date)];
+  return `${Number(month)} 月 ${Number(day)} 日 ${dow}`;
+}
+
+/** occurrence.localDate 距 today 是否仍在 90 天编辑窗口内 */
+function isWithinEditWindow(localDate: LocalDate, today: LocalDate): boolean {
+  return calendarDaysBetween(localDate, today) < HISTORY_EDIT_WINDOW_DAYS;
+}
+
+/** 区间 chip 组（7 天 / 30 天 / 90 天 / 自定义） */
+function renderRangeChips(state: HistoryState, onChange: (next: HistoryState) => void): HTMLElement {
+  const wrap = el('div', { class: 'history-range-bar' });
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', '时间区间');
+  const options: Array<{ value: RangePreset; label: string }> = [
+    { value: '7d', label: '7 天' },
+    { value: '30d', label: '30 天' },
+    { value: '90d', label: '90 天' },
+    { value: 'custom', label: '自定义' },
+  ];
+  const control = createSegmentedControl('时间区间', options, state.rangePreset, (value) => {
+    onChange({ ...state, rangePreset: value });
+  });
+  wrap.append(control);
+  return wrap;
+}
+
+/** 自定义区间两个 date input；仅在 rangePreset='custom' 时显示 */
+function renderCustomRangeInputs(
+  state: HistoryState,
+  today: LocalDate,
+  onChange: (next: HistoryState) => void,
+): HTMLElement {
+  const wrap = el('div', { class: 'history-custom-range' });
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', '自定义时间区间');
+  const minDate = addLocalDays(today, -(HISTORY_EDIT_WINDOW_DAYS - 1));
+  const startDate = state.customStart ?? addLocalDays(today, -29);
+  const endDate = state.customEnd ?? today;
+
+  const startInput = el('input', {
+    type: 'date',
+    class: 'history-date-input',
+    'aria-label': '开始日期',
+  } as any) as HTMLInputElement;
+  startInput.value = startDate;
+  startInput.min = minDate;
+  startInput.max = endDate;
+
+  const endInput = el('input', {
+    type: 'date',
+    class: 'history-date-input',
+    'aria-label': '结束日期',
+  } as any) as HTMLInputElement;
+  endInput.value = endDate;
+  endInput.min = startDate;
+  endInput.max = today;
+
+  let debounce: number | undefined;
+  const fire = (next: HistoryState) => {
+    window.clearTimeout(debounce);
+    debounce = window.setTimeout(() => onChange(next), FILTER_DEBOUNCE_MS);
+  };
+
+  startInput.addEventListener('change', () => {
+    const v = startInput.value;
+    if (!v) return;
+    endInput.min = v;
+    fire({ ...state, customStart: v as LocalDate, customEnd: endInput.value as LocalDate });
+  });
+  endInput.addEventListener('change', () => {
+    const v = endInput.value;
+    if (!v) return;
+    startInput.max = v;
+    fire({ ...state, customStart: startInput.value as LocalDate, customEnd: v as LocalDate });
+  });
+
+  wrap.append(
+    startInput,
+    el('span', { class: 'history-custom-range-sep', text: '至', 'aria-hidden': 'true' } as any),
+    endInput,
+  );
+  return wrap;
+}
+
+/** 区间汇总卡片：进度环 + 4 个 metric + 连续服药天数徽章 */
+function renderSummaryCard(
+  data: HistoryData,
+  streak: number,
+  now: number,
+): HTMLElement {
+  const card = el('section', { class: 'history-summary card' });
+  card.setAttribute('aria-label', '区间汇总');
+  const summary = summarizeHistory(data.occurrences, data.logs, now);
+
+  if (summary.due === 0) {
+    card.append(el('div', { class: 'history-summary-empty muted', text: '区间内没有已到期的服药安排' }));
+    return card;
+  }
+
+  const left = el('div', { class: 'history-summary-progress' });
+  const adherencePct = Math.round(summary.adherenceRate * 100);
+  const ring = progressRing(summary.taken, summary.due);
+  ring.querySelector('.ring-value')?.replaceWith(
+    el('span', { class: 'ring-value', text: `${adherencePct}%` }),
+  );
+  ring.querySelector('.ring-caption')?.replaceWith(
+    el('span', { class: 'ring-caption', text: '按时服药' }),
+  );
+  left.append(ring);
+  left.append(el('div', { class: 'history-summary-caption', text: `按时服药 ${adherencePct}%` }));
+
+  const right = el('div', { class: 'history-summary-stats' });
+  right.setAttribute('role', 'list');
+  const handledPct = Math.round(summary.handledRate * 100);
+  right.append(summaryMetric('已服', `${summary.taken}/${summary.due}`, 'success'));
+  right.append(summaryMetric('跳过', String(summary.skipped), summary.skipped > 0 ? 'warning' : 'muted'));
+  right.append(summaryMetric('漏服', String(summary.missed), summary.missed > 0 ? 'danger' : 'muted'));
+  right.append(summaryMetric('已处理', `${handledPct}%`, 'info'));
+
+  card.append(left, right);
+
+  if (streak > 0) {
+    const badgeWrap = el('div', { class: 'history-summary-streak' });
+    badgeWrap.append(createStatusBadge(`连续服药 ${streak} 天`, 'success'));
+    card.append(badgeWrap);
+  }
+  return card;
+}
+
+function summaryMetric(
+  label: string,
+  value: string,
+  tone: 'success' | 'warning' | 'danger' | 'info' | 'muted',
+): HTMLElement {
+  const metric = el('div', { class: 'history-summary-stat', role: 'listitem' } as any);
+  metric.append(el('span', { class: 'history-summary-stat-label', text: label }));
+  const valueNode = el('strong', { class: 'history-summary-stat-value', text: value });
+  valueNode.append(createStatusBadge('', tone));
+  valueNode.lastElementChild?.setAttribute('aria-hidden', 'true');
+  metric.append(valueNode);
+  return metric;
+}
+
+/** 筛选条：药品 / 时段 / 状态 三个 select，带 200ms 防抖 */
+function renderFilterBar(
+  meds: readonly Medication[],
+  state: HistoryState,
+  onChange: (next: HistoryState) => void,
+): HTMLElement {
+  const wrap = el('div', { class: 'history-filter-bar' });
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', '筛选条件');
+  let debounce: number | undefined;
+  const fire = (next: HistoryState) => {
+    window.clearTimeout(debounce);
+    debounce = window.setTimeout(() => onChange(next), FILTER_DEBOUNCE_MS);
+  };
+
+  // 药品下拉
+  const medSelect = el('select', {
+    class: 'history-filter-select',
+    'aria-label': '按药品筛选',
+  } as any) as HTMLSelectElement;
+  medSelect.append(el('option', { value: 'all', text: '全部药品' } as any) as HTMLOptionElement);
+  for (const med of meds) {
+    medSelect.append(el('option', { value: med.id, text: med.name } as any) as HTMLOptionElement);
+  }
+  medSelect.value = state.filterMed;
+  medSelect.addEventListener('change', () => {
+    fire({ ...state, filterMed: medSelect.value });
+  });
+
+  // 时段下拉
+  const slotSelect = el('select', {
+    class: 'history-filter-select',
+    'aria-label': '按时段筛选',
+  } as any) as HTMLSelectElement;
+  slotSelect.append(el('option', { value: 'all', text: '全部时段' } as any) as HTMLOptionElement);
+  for (const slot of SLOTS) {
+    slotSelect.append(el('option', { value: slot, text: SLOT_LABEL[slot] } as any) as HTMLOptionElement);
+  }
+  slotSelect.value = state.filterSlot;
+  slotSelect.addEventListener('change', () => {
+    fire({ ...state, filterSlot: slotSelect.value as 'all' | Slot });
+  });
+
+  // 状态下拉
+  const statusSelect = el('select', {
+    class: 'history-filter-select',
+    'aria-label': '按状态筛选',
+  } as any) as HTMLSelectElement;
+  const statusOptions: Array<{ value: 'all' | 'taken' | 'skipped' | 'missed'; label: string }> = [
+    { value: 'all', label: '全部状态' },
+    { value: 'taken', label: '已服' },
+    { value: 'skipped', label: '已跳过' },
+    { value: 'missed', label: '漏服' },
+  ];
+  for (const opt of statusOptions) {
+    statusSelect.append(el('option', { value: opt.value, text: opt.label } as any) as HTMLOptionElement);
+  }
+  statusSelect.value = state.filterStatus;
+  statusSelect.addEventListener('change', () => {
+    fire({ ...state, filterStatus: statusSelect.value as 'all' | 'taken' | 'skipped' | 'missed' });
+  });
+
+  wrap.append(medSelect, slotSelect, statusSelect);
+  return wrap;
+}
+
+/** 在 dayGroups 上应用筛选条件；过滤后空日卡片被剔除 */
+function applyFilters(
+  dayGroups: readonly HistoryDayGroup[],
+  state: HistoryState,
+): HistoryDayGroup[] {
+  const result: HistoryDayGroup[] = [];
+  for (const group of dayGroups) {
+    const items = group.items.filter((item) => {
+      if (state.filterMed !== 'all' && item.med.id !== state.filterMed) return false;
+      if (state.filterSlot !== 'all' && item.occurrence.slot !== state.filterSlot) return false;
+      if (state.filterStatus !== 'all' && item.status !== state.filterStatus) return false;
+      return true;
+    });
+    if (items.length > 0) result.push({ date: group.date, items });
+  }
+  return result;
+}
+
+/** 日卡片：日期标题 + 当日小环 + 按 slot 分组的明细行 */
+function renderDayCard(
+  group: HistoryDayGroup,
+  today: LocalDate,
+  now: number,
+  photoUrls: ReadonlyMap<string, string>,
+): HTMLElement {
+  const card = el('section', { class: 'history-day-card' });
+  const isToday = group.date === today;
+  if (isToday) card.classList.add('is-today');
+
+  const head = el('div', { class: 'history-day-head' });
+  head.append(el('h2', { class: 'history-day-title', text: formatDayTitle(group.date) }));
+  const dueItems = group.items.filter((item) => item.occurrence.dueAt <= now);
+  const takenItems = dueItems.filter((item) => item.status === 'taken');
+  const dayRing = progressRing(takenItems.length, dueItems.length);
+  dayRing.classList.add('history-day-ring');
+  head.append(dayRing);
+  card.append(head);
+
+  // 按 slot 分组
+  const bySlot = new Map<Slot, HistoryDayItem[]>();
+  for (const item of group.items) {
+    const list = bySlot.get(item.occurrence.slot) ?? [];
+    list.push(item);
+    bySlot.set(item.occurrence.slot, list);
+  }
+  for (const slot of SLOTS) {
+    const items = bySlot.get(slot);
+    if (!items || items.length === 0) continue;
+    const slotGroup = el('div', { class: 'history-slot-group' });
+    slotGroup.append(slotTag(slot));
+    const list = el('div', { class: 'history-medication-list' });
+    for (const item of items) {
+      list.append(renderDayItem(item, today, photoUrls));
+    }
+    slotGroup.append(list);
+    card.append(slotGroup);
+  }
+  return card;
+}
+
+/** 单条明细行：缩略图 / 药名 / 时间·用量·餐前·餐中·餐后 / 状态徽章 */
+function renderDayItem(
+  item: HistoryDayItem,
+  today: LocalDate,
+  photoUrls: ReadonlyMap<string, string>,
+): HTMLElement {
+  const { occurrence, med, status, log } = item;
+  const readonly = !isWithinEditWindow(occurrence.localDate, today);
+  const line = el('article', {
+    class: `history-medication-row history-medication-${status}${readonly ? ' is-readonly' : ''}${status === 'missed' ? ' is-missed' : ''}`,
+  });
+  line.dataset.occurrenceId = occurrence.id;
+  if (readonly) {
+    line.title = '超过 90 天的记录不可编辑';
+    line.setAttribute('aria-disabled', 'true');
+  } else {
+    line.setAttribute('tabindex', '0');
+    line.setAttribute('role', 'button');
+    line.setAttribute(
+      'aria-label',
+      `${formatDayTitle(occurrence.localDate)} ${SLOT_LABEL[occurrence.slot]} ${occurrence.timeLocal} ${med.name} ${statusLabel(status)}`,
+    );
+  }
+
+  // 缩略图（认盒不认字；没照片时用淡紫药丸占位）
+  const photoUrl = photoUrls.get(med.id);
+  const thumb = el('span', {
+    class: 'history-medication-thumb' + (photoUrl ? '' : ' is-placeholder'),
+    'aria-hidden': 'true',
+  } as any);
+  if (photoUrl) {
+    const img = el('img', { alt: '', loading: 'lazy', decoding: 'async' } as any) as HTMLImageElement;
+    img.src = photoUrl;
+    thumb.append(img);
+  } else {
+    thumb.append(icon('pill'));
+  }
+  line.append(thumb);
+
+  const copy = el('div', { class: 'history-medication-copy' });
+  copy.append(el('div', { class: 'history-medication-name', text: med.name }));
+  const structuredDose = occurrence.doseQuantity && occurrence.doseUnit
+    ? `${occurrence.doseQuantity}${occurrence.doseUnit}`
+    : med.amountPerDose;
+  const details = [
+    occurrence.timeLocal,
+    structuredDose,
+    formatMealRels([...occurrence.mealRels]),
+  ].filter(Boolean).join(' · ');
+  if (details) copy.append(el('div', { class: 'history-medication-meta', text: details }));
+  line.append(copy);
+
+  const statusWrap = el('div', { class: 'history-medication-status' });
+  statusWrap.append(createStatusBadge(statusLabel(status), statusTone(status)));
+  if (log?.ackAt) {
+    const ackTime = new Date(log.ackAt);
+    const hh = String(ackTime.getHours()).padStart(2, '0');
+    const mm = String(ackTime.getMinutes()).padStart(2, '0');
+    statusWrap.append(el('span', { class: 'history-medication-ack muted', text: `${hh}:${mm}` }));
+  }
+  line.append(statusWrap);
+  return line;
+}
+
+function statusLabel(status: HistoryItemStatus): string {
+  switch (status) {
+    case 'taken': return '已服';
+    case 'skipped': return '已跳过';
+    case 'missed': return '漏服';
+    case 'pending': return '待服';
+  }
+}
+
+function statusTone(status: HistoryItemStatus): 'success' | 'warning' | 'danger' | 'info' {
+  switch (status) {
+    case 'taken': return 'success';
+    case 'skipped': return 'warning';
+    case 'missed': return 'danger';
+    case 'pending': return 'info';
+  }
+}
+
+export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
+  const today = toLocalDate();
+  const now = Date.now();
+  let state: HistoryState = { ...DEFAULT_HISTORY_STATE };
+
+  // 闭包内重渲染：保留滚动位置（DOM 替换会自然丢失，但 content 容器位置不变时浏览器会保持视口）
   const content = el('div', { class: 'page history-page' });
   content.setAttribute('aria-label', '服药历史');
-  if (loadError) {
-    content.append(el('div', { class: 'card', text: `加载失败：${loadError}` }));
-  } else if (data) {
-    const summary = summarizeHistory(data.occurrences, data.logs);
-    content.append(
-      el('div', {
-        class: 'card history-placeholder',
-        text:
-          `服药历史（P0 骨架）\n` +
-          `区间：${DEFAULT_HISTORY_STATE.rangePreset}\n` +
-          `药品：${data.medById.size} 种\n` +
-          `occurrences：${data.occurrences.length} 条\n` +
-          `logs：${data.logs.length} 条\n` +
-          `日卡片：${data.dayGroups.length} 天\n` +
-          `按时服药：${summary.taken}/${summary.due}，跳过 ${summary.skipped}，漏服 ${summary.missed}`,
-      }),
-    );
-  } else {
-    content.append(el('div', { class: 'card', text: '加载中…' }));
-  }
 
   const back = el('button', {
     class: 'icon-btn',
@@ -273,6 +622,7 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
   back.append(icon('arrow-left'));
   back.onclick = () => navigate('/today');
 
+  // 先渲染外壳，再异步填充内容
   renderPage({
     root,
     title: '服药历史',
@@ -280,6 +630,103 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
     topLeft: back,
     content,
   });
+
+  if (signal?.aborted) return;
+
+  // 区间 chip 始终显示；其下方根据 state.rangePreset 决定是否显示自定义日期
+  const rangeBar = renderRangeChips(state, (next) => { state = next; void rerender(); });
+  content.append(rangeBar);
+
+  const customWrap = el('div', { class: 'history-custom-wrap' });
+  content.append(customWrap);
+
+  const filterHost = el('div', { class: 'history-filter-host' });
+  content.append(filterHost);
+
+  const listHost = el('div', { class: 'history-list-host' });
+  content.append(listHost);
+
+  // 判断是否需要骨架（90 天或自定义跨度 > 30 天）
+  function needsSkeleton(s: HistoryState): boolean {
+    if (s.rangePreset === '90d') return true;
+    if (s.rangePreset === 'custom' && s.customStart && s.customEnd) {
+      return calendarDaysBetween(s.customStart, s.customEnd) > 30;
+    }
+    return false;
+  }
+
+  async function rerender(): Promise<void> {
+    if (signal?.aborted) return;
+
+    // 更新区间 chip 选中态
+    rangeBar.querySelectorAll('button').forEach((btn) => {
+      const label = btn.textContent ?? '';
+      const preset = label === '7 天' ? '7d'
+        : label === '30 天' ? '30d'
+        : label === '90 天' ? '90d'
+        : 'custom';
+      btn.classList.toggle('is-selected', preset === state.rangePreset);
+      btn.setAttribute('aria-pressed', String(preset === state.rangePreset));
+    });
+
+    // 自定义区间输入
+    customWrap.replaceChildren();
+    if (state.rangePreset === 'custom') {
+      customWrap.append(renderCustomRangeInputs(state, today, (next) => { state = next; void rerender(); }));
+    }
+
+    // 骨架占位
+    filterHost.replaceChildren();
+    listHost.replaceChildren();
+    if (needsSkeleton(state)) {
+      for (let i = 0; i < 5; i += 1) listHost.append(skeletonCard());
+    } else {
+      listHost.append(el('div', { class: 'card history-loading', text: '加载中…' }));
+    }
+
+    // 加载数据
+    let data: HistoryData;
+    try {
+      data = await loadHistoryData(state, today, now);
+    } catch (error) {
+      if (signal?.aborted) return;
+      listHost.replaceChildren();
+      listHost.append(banner('warn', error instanceof Error ? error.message : String(error)));
+      return;
+    }
+    if (signal?.aborted) return;
+
+    // 筛选条（需要 meds 列表）
+    filterHost.replaceChildren();
+    const medList = Array.from(data.medById.values()).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
+    filterHost.append(renderFilterBar(medList, state, (next) => { state = next; void rerender(); }));
+
+    // 汇总卡片（基于全量 occurrences，不受筛选影响）
+    listHost.replaceChildren();
+    const streak = computeStreak(data.dayGroups, today, now);
+    listHost.append(renderSummaryCard(data, streak, now));
+
+    // 应用筛选后的日卡片列表
+    const filtered = applyFilters(data.dayGroups, state);
+    if (filtered.length === 0) {
+      listHost.append(banner('info', '该区间内没有符合条件的记录'));
+      return;
+    }
+
+    // 预加载药盒缩略图（按筛选用到的 medId）
+    const medIds = new Set<string>();
+    for (const group of filtered) {
+      for (const item of group.items) medIds.add(item.med.id);
+    }
+    const photoUrls = await getMedPhotoUrls([...medIds]);
+    if (signal?.aborted) return;
+
+    for (const group of filtered) {
+      listHost.append(renderDayCard(group, today, now, photoUrls));
+    }
+  }
+
+  await rerender();
 }
 
 // ---- 内部小工具 ----

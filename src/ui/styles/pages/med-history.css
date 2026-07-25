@@ -1,15 +1,443 @@
-/* 服药历史页面样式（P0 占位；P1/P2/P3 阶段补齐）
+/* 服药历史页面样式（P1）
    复用 today.css 的 adherence 图样式 token 与 --tone-*-fg/bg、--fs-*、--space-* token。 */
 
 .history-page {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  padding-block-end: var(--space-7);
 }
 
-/* P0 占位卡片：仅用于验证路由 + 数据加载连通 */
-.history-placeholder {
-  white-space: pre-line;
+/* ---------- 区间切换 chip ---------- */
+.history-range-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.history-custom-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.history-custom-range {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.history-date-input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.history-custom-range-sep {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
   font-size: var(--fs-body);
-  line-height: 1.6;
+}
+
+/* ---------- 区间汇总卡片 ---------- */
+.history-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--color-primary) 10%, transparent) 0%, transparent 52%),
+    var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.history-summary-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: var(--space-4);
+}
+
+.history-summary-progress {
+  display: grid;
+  place-items: center;
+  gap: var(--space-2);
+}
+
+.history-summary-progress .progress-ring {
+  position: relative;
+  inline-size: 96px;
+  block-size: 96px;
+  flex: 0 0 96px;
+}
+
+.history-summary-progress .progress-ring svg {
+  inline-size: 100%;
+  block-size: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.history-summary-progress .ring-bg {
+  fill: none;
+  stroke: color-mix(in srgb, var(--color-primary) 12%, #e8e8f0);
+  stroke-width: 10.5;
+  stroke-linecap: round;
+}
+
+.history-summary-progress .ring-fg {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 10.5;
+  stroke-linecap: round;
+  transition: stroke-dasharray 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.history-summary-progress .progress-ring.is-done .ring-fg {
+  stroke: var(--color-success);
+}
+
+.history-summary-progress .progress-ring.is-empty .ring-fg {
+  stroke: transparent;
+}
+
+.history-summary-progress .progress-ring.is-empty .ring-bg {
+  stroke: color-mix(in srgb, var(--color-text-muted) 18%, #ececf2);
+}
+
+.history-summary-progress .ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+  text-align: center;
+  line-height: 1.05;
+}
+
+.history-summary-progress .ring-value {
+  color: var(--color-ink-purple);
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.6px;
+}
+
+.history-summary-progress .progress-ring.is-done .ring-value {
+  color: var(--color-success);
+}
+
+.history-summary-progress .ring-caption {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.history-summary-caption {
+  text-align: center;
+  color: var(--color-text);
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+}
+
+.history-summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: flex-end;
+}
+
+.history-summary-stat {
+  display: grid;
+  gap: 1px;
+  min-inline-size: 48px;
+}
+
+.history-summary-stat-label {
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+}
+
+.history-summary-stat-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-text);
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-summary-stat-value .status-badge {
+  inline-size: 5px;
+  min-block-size: 5px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.history-summary-streak {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--color-border);
+}
+
+/* ---------- 筛选条 ---------- */
+.history-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.history-filter-select {
+  min-inline-size: 0;
+}
+
+/* ---------- 日卡片列表 ---------- */
+.history-list-host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.history-loading {
+  text-align: center;
+  color: var(--color-text-muted);
+  padding: var(--space-4);
+}
+
+.history-day-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 96px;
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.history-day-card.is-today {
+  border: 2px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+.history-day-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block-end: var(--space-2);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.history-day-title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  font-size: var(--fs-title3);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.history-day-ring {
+  flex: 0 0 auto;
+  inline-size: 40px;
+  block-size: 40px;
+}
+
+.history-day-ring svg {
+  inline-size: 100%;
+  block-size: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.history-day-ring .ring-bg {
+  fill: none;
+  stroke: color-mix(in srgb, var(--color-primary) 12%, #e8e8f0);
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+.history-day-ring .ring-fg {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+.history-day-ring.is-done .ring-fg {
+  stroke: var(--color-success);
+}
+
+.history-day-ring.is-empty .ring-fg {
+  stroke: transparent;
+}
+
+.history-day-ring .ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.history-day-ring .ring-value {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.history-day-ring.is-empty .ring-value {
+  color: var(--color-text-muted);
+}
+
+.history-day-ring .ring-caption {
+  display: none;
+}
+
+/* ---------- 时段分组 ---------- */
+.history-slot-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-block-start: var(--space-3);
+}
+
+.history-slot-group .slot-tag {
+  align-self: flex-start;
+}
+
+/* ---------- 明细行 ---------- */
+.history-medication-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-medication-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+  padding: var(--space-3) 0;
+  border-block-end: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.history-medication-row:last-child {
+  border-block-end: 0;
+}
+
+.history-medication-row:hover:not(.is-readonly) {
+  background: var(--color-surface-muted);
+}
+
+.history-medication-row:active:not(.is-readonly) {
+  transform: scale(0.99);
+}
+
+.history-medication-row.is-readonly {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.history-medication-row.is-missed {
+  background: color-mix(in srgb, var(--tone-danger-bg) 50%, transparent);
+  border-radius: var(--radius-sm);
+  padding-inline: var(--space-2);
+}
+
+.history-medication-row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.history-medication-thumb {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.history-medication-thumb img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.history-medication-thumb.is-placeholder svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.history-medication-copy {
+  min-inline-size: 0;
+}
+
+.history-medication-name {
+  color: var(--color-text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.history-medication-meta {
+  margin-block-start: 2px;
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.history-medication-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.history-medication-ack {
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 暗色模式微调 ---------- */
+[data-theme='dark'] .history-summary {
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--color-primary) 14%, transparent) 0%, transparent 52%),
+    var(--color-surface);
+}
+
+[data-theme='dark'] .history-day-ring .ring-bg,
+[data-theme='dark'] .history-summary-progress .ring-bg {
+  stroke: color-mix(in srgb, var(--color-text-muted) 22%, #2a2a36);
+}
+
+[data-theme='dark'] .history-medication-row.is-missed {
+  background: color-mix(in srgb, var(--tone-danger-bg) 35%, transparent);
+}
+
+/* ---------- 减少动效 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .history-medication-row {
+    transition: none;
+  }
+  .history-summary-progress .ring-fg {
+    transition: none;
+  }
 }
