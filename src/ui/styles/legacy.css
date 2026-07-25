@@ -1077,12 +1077,29 @@ textarea {
 /* ============ Empty ============ */
 .empty {
   text-align: center;
-  padding: 56px 24px 32px;
+  padding: var(--space-7) var(--space-5) var(--space-5);
   color: var(--label-secondary);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-3);
+}
+
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-2);
+  inline-size: 100%;
+  max-inline-size: 360px;
+}
+
+.empty-actions > .ui-button,
+.empty-actions > .btn {
+  flex: 1 1 140px;
+  max-inline-size: 240px;
+  min-block-size: var(--tap);
 }
 .empty .ic-circle {
   width: 84px;

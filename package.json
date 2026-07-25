@@ -24,10 +24,10 @@
     "@capacitor/core": "^8.4.1",
     "@capacitor/local-notifications": "^8.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@tabler/icons": "^3.45.0",
     "dompurify": "^3.4.12",
     "html5-qrcode": "^2.3.8",
     "idb": "^8.0.0",
-    "lucide": "1.24.0",
     "marked": "^18.0.6",
     "qrcode": "^1.5.4",
     "zod": "^4.4.3"

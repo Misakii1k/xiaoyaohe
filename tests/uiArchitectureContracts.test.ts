@@ -55,10 +55,11 @@ describe('0.7.0 UI architecture contracts', () => {
     expect(existsSync(join(root, 'src/db/work.ts'))).toBe(false);
   });
 
-  it('uses a local Lucide registry rather than hand-drawn functional icon paths', () => {
+  it('uses a centralized icon registry rather than hand-drawn functional icon paths', () => {
     expect(existsSync(join(root, 'src/ui/icons/iconRegistry.ts'))).toBe(true);
     const registry = source('src/ui/icons/iconRegistry.ts');
-    expect(registry).toMatch(/from ['"]lucide['"]/);
+    // 图标以 SVG 字符串形式集中注册，避免在组件里内联手写 path
+    expect(registry).toMatch(/\.svg\?raw['"]/);
     expect(source('src/ui/components.ts')).toContain("from './icons/Icon'");
   });
 

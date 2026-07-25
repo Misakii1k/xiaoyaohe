@@ -110,6 +110,32 @@
 
 .settings-page .banner { box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 
+/* 折叠面板内表单项的间距 token 化，避免硬编码 inline style */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+}
+.settings-toggle-copy { min-inline-size: 0; }
+.settings-toggle-title { color: var(--color-text); font-weight: 700; }
+.settings-toggle-desc {
+  margin-block-start: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  line-height: 1.45;
+}
+.settings-hint {
+  margin-block-start: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  line-height: 1.55;
+}
+
 .lan-sync-note { margin: var(--space-3) 0; }
 
 .lan-sync-actions {
