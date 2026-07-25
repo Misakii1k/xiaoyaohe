@@ -1029,6 +1029,7 @@ function renderAsrPanel(): HTMLElement {
     keyIn.value = '';
     idIn.type = 'text';
     keyIn.type = 'text';
+    editBtn.replaceWith(saveBtn);
     idIn.focus();
   };
 
@@ -1052,6 +1053,7 @@ function renderAsrPanel(): HTMLElement {
     idIn.readOnly = true;
     keyIn.readOnly = true;
     keyIn.type = 'password';
+    if (saveBtn.parentNode) saveBtn.replaceWith(editBtn);
     renderStatus();
     setChip(panelEl, isAsrCredentialsConfigured() ? { text: '已配置', tone: 'ok' } : initialChip);
     toast('语音密钥已保存到本机 ✓');
@@ -1065,6 +1067,7 @@ function renderAsrPanel(): HTMLElement {
     keyIn.readOnly = false;
     keyIn.type = 'password';
     regionIn.value = 'ap-guangzhou';
+    if (editBtn.parentNode) editBtn.replaceWith(saveBtn);
     renderStatus();
     setChip(panelEl, { text: '未配置', tone: 'warn' });
     toast('已清除语音密钥');
