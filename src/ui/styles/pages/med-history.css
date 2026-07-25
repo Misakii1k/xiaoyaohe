@@ -1,0 +1,15 @@
+/* 服药历史页面样式（P0 占位；P1/P2/P3 阶段补齐）
+   复用 today.css 的 adherence 图样式 token 与 --tone-*-fg/bg、--fs-*、--space-* token。 */
+
+.history-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* P0 占位卡片：仅用于验证路由 + 数据加载连通 */
+.history-placeholder {
+  white-space: pre-line;
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}

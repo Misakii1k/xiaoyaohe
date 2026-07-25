@@ -111,6 +111,12 @@ export const tools: ToolDefinition[] = [
             page.renderTodayPage(root, context.signal)),
       },
       {
+        path: '/history',
+        handler: (_p, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/MedHistory'), (page) =>
+            page.renderMedHistoryPage(root, context.signal)),
+      },
+      {
         path: '/meds',
         handler: (_p, root, context) =>
           runLazyRoute(context.signal, () => import('../pages/MedList'), (page) =>
