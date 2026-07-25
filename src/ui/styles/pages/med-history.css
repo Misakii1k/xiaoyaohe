@@ -6,6 +6,8 @@
   flex-direction: column;
   gap: var(--space-3);
   padding-block-end: var(--space-7);
+  /* P3 Task 11.3：长列表滚动时不连带 body 滚动，避免历史页内下拉触发系统刷新 */
+  overscroll-behavior: contain;
 }
 
 /* ---------- 区间切换 chip ---------- */
