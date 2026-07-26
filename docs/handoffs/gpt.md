@@ -3,7 +3,7 @@
 Tool: GPT/Codex
 Branch: `workspace/gpt`
 Updated: 2026-07-26
-Status: complete, awaiting integration and physical-device smoke test
+Status: integrated into `main` and released as 0.9.0; awaiting physical-device smoke test
 Latest implementation commit: `af795c3 feat(history): polish UI for full-screen devices`
 
 ## Goal
@@ -47,13 +47,12 @@ Polish the new medication-history experience so the information hierarchy remain
 
 ## Remaining Work
 
-- Resolve the existing local/remote `main` divergence before integrating `workspace/gpt`.
-- Merge the tested GPT branch into `main`, then sync `main` back into the long-lived tool branches.
 - Run a physical Android smoke test on a cutout/gesture-navigation device, especially landscape rotation and the bottom action sheet.
-- Build a new APK after integration; the existing desktop 0.8.2 APK predates medication history.
+- Validate a full two-phone LAN sync cycle when devices are available.
 
 ## Notes
 
-- No version bump or APK was produced because this is a scoped UI polish change pending integration and device verification.
-- Fresh `npm ci` currently reports 6 dependency advisories (2 moderate, 3 high, 1 critical); they were not changed during this UI-only task.
+- Integrated into `main` and released as `0.9.0` (`versionCode 19`).
+- Desktop APK: `小药盒-v0.9.0-release.apk`; SHA-256 `17550fec9c18e68400bdd65ae19503d8f01b1e90327ae979b7fe3284f08c3706`.
+- Compatible dependency updates removed all high/critical advisories; 2 moderate advisories remain in a Node-only MCP server adapter that is absent from the Android bundle.
 - The pre-existing deleted design/release files are intentionally excluded from the implementation commit and restored as working-tree changes after handoff.

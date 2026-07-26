@@ -1,18 +1,19 @@
 # Current Integration State
 
-Updated: 2026-07-25
+Updated: 2026-07-26
 Integration branch: `main`
-Product version: `0.8.2`
-Latest integration commit: `0224291 chore: bump version to 0.8.2`
+Product version: `0.9.0`
+Latest integration commit: `4338f79 chore: release version 0.9.0`
 
 ## Baseline
 
 - App-only LAN implementation: `6354dd8`.
 - GPT/Codex handoff: `6276d81`.
 - TypeScript passes.
-- Vitest: 46 files, 204 tests pass.
-- Android debug unit tests and APK assembly pass.
-- Dependency audit reports 0 vulnerabilities.
+- Vitest: 47 files, 247 tests pass.
+- Playwright: 28 tests pass across 320px, 390px, tablet landscape, and desktop.
+- Android release unit tests and signed release APK assembly pass.
+- Dependency audit: 0 high/critical; 2 moderate advisories remain in the MCP SDK Node static-server adapter, which is not present in the Android production bundle.
 
 ## Implemented Product Areas
 
@@ -29,19 +30,29 @@ Latest integration commit: `0224291 chore: bump version to 0.8.2`
 - Full-screen alarm now launches over an awake, unlocked screen: notify-first (Android 14+ fullScreenIntent BAL window) + AlarmRingService foreground-service fallback + setAlarmClock when exact-alarm permission is unavailable.
 - Standalone Tencent ASR settings panel (masked secrets, edit-to-unlock, clear confirmation), Web-preview secret persistence via localStorage, error toast when key save fails.
 - ASR settings panel edit/save button swap logic corrected (edit→save on edit, save→edit on save/clear).
+- Medication history with 7/30/90-day and custom ranges, adherence summary, filters, daily records, and 90-day correction actions.
+- Full-screen history UI with narrow-phone layouts, cutout/gesture-safe spacing, bottom thumb-zone actions, and a two-column short-landscape layout.
 
 ## Release
 
-- Version: `0.8.2` (`versionCode 18`).
-- APK embedded-resource verification: 31 current WebView files.
-- Expected local artifact: `小药盒-v0.8.2-release.apk` on desktop.
-- SHA-256: see desktop artifact checksum after build.
+- Version: `0.9.0` (`versionCode 19`).
+- APK embedded-resource verification: 32 current WebView files; aggregate `8ba8a7627dcaa87f56b6f0b60ed39db1985fc1731ef0630aa814ac82b5500480`.
+- Desktop artifact: `小药盒-v0.9.0-release.apk`.
+- SHA-256: `17550fec9c18e68400bdd65ae19503d8f01b1e90327ae979b7fe3284f08c3706`.
+- APK signature: verified with APK Signature Scheme v2, one signer.
 - Tencent Cloud ASR embedded directly in the app (no separate proxy server required).
 
 ## External Follow-Ups
 
 - Run connected Android instrumentation and installation smoke tests when an ADB device is available.
 - Validate a full transfer between two physical phones on the same local network, including pause/close behavior and repeated QR scans.
+- Install `0.9.0` on a physical cutout/gesture-navigation phone and smoke-test history rotation plus the bottom action sheet.
+
+## Medication History Integration And Release 2026-07-26
+
+- Reconciled remote `main` backup cleanup and merged tested `workspace/gpt` history/UI work into `main`.
+- Released `0.9.0` / Android `versionCode 19` with the signed APK and checksum copied to the desktop.
+- Connected Android instrumentation was not run because `adb devices` reported no attached device; all non-device release gates passed.
 
 ## Branch Consolidation 2026-07-25
 
