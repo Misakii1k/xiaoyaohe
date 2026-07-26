@@ -51,8 +51,16 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
   topRight.append(smartBtn, shareBtn);
 
   if (meds.length === 0) {
-    const add = createButton({ label: '去添加药品', icon: 'plus', onClick: () => navigate('/meds/new') });
-    content.append(emptyState('box', '还没有药品', '先添加药品，再记录手头还剩多少。', add));
+    const addBtn = createButton({ label: '去添加药品', icon: 'plus', onClick: () => navigate('/meds/new') });
+    const scanBtn = createButton({ label: '扫码添加', icon: 'scan', variant: 'secondary', onClick: () => navigate('/scan') });
+    content.append(
+      emptyState(
+        'box',
+        '还没有药品',
+        '先添加药品，再记录手头还剩多少。',
+        [addBtn, scanBtn],
+      ),
+    );
     renderPage({ root, title: '库存', activeTab: 'inventory', topRight, content });
     return;
   }

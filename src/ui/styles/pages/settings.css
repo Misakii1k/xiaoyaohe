@@ -40,24 +40,24 @@
 .settings-page .panel-head:active { background: var(--color-surface-muted); }
 .settings-page .panel-lead { gap: var(--space-3); }
 
-/* 分类行图标：统一主色浅紫圆底，和全局风格保持一致 */
+/* 分类行图标：与底部 Tab 导航同样样式，无背景、灰色线条 */
 .settings-page .panel-icon {
   display: grid;
   place-items: center;
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: 26px;
+  block-size: 26px;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-full);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
+  border-radius: 0;
+  background: transparent;
+  color: #a9abb6;
+  box-shadow: none;
 }
 
-/* 旧版 svg 撑满 36px 圆导致图标过大过挤；按共享 tint-icon 比例收小加粗 */
 .settings-page .panel-icon svg {
-  inline-size: 19px;
-  block-size: 19px;
-  stroke-width: 2.2;
+  inline-size: 24px;
+  block-size: 24px;
+  stroke-width: 1.9;
 }
 
 .settings-page .panel-title { font-size: var(--fs-body); font-weight: 700; }
@@ -109,6 +109,32 @@
 .ai-consent-row .btn { flex: 0 0 auto; }
 
 .settings-page .banner { box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* 折叠面板内表单项的间距 token 化，避免硬编码 inline style */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+}
+.settings-toggle-copy { min-inline-size: 0; }
+.settings-toggle-title { color: var(--color-text); font-weight: 700; }
+.settings-toggle-desc {
+  margin-block-start: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  line-height: 1.45;
+}
+.settings-hint {
+  margin-block-start: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  line-height: 1.55;
+}
 
 .lan-sync-note { margin: var(--space-3) 0; }
 

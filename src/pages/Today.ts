@@ -244,8 +244,10 @@ function renderWeekAdherenceCard(
   for (const item of bars) {
     const isToday = item.date === today;
     const isEmpty = item.due === 0;
-    const tone = isEmpty ? 'empty' : item.rate >= 0.8 ? 'ok' : item.rate > 0 ? 'warn' : 'miss';
-    const fillPct = isEmpty ? 0 : Math.max(item.rate > 0 ? 14 : 8, Math.round(item.rate * 100));
+    // 二元着色：100% 完成用品牌渐变；只要有漏服/跳过即标记为未完成
+    const isComplete = !isEmpty && item.rate === 1;
+    const tone = isEmpty ? 'empty' : isComplete ? 'complete' : 'miss';
+    const fillPct = isEmpty ? 0 : Math.max(isComplete ? 100 : 14, Math.round(item.rate * 100));
 
     const column = el('div', {
       class: 'adherence-col' + (isToday ? ' is-today' : '') + (isEmpty ? ' is-empty' : ''),

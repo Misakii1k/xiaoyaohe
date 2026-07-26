@@ -65,6 +65,16 @@ const SLOT_FILTER_ORDER: SlotFilter[] = ['all', 'morning', 'noon', 'evening', 'b
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const NEAR_EXPIRY_DAYS = 30;
 
+/** 药品过多时按主时段分组；取 SLOTS 顺序里第一个命中的时段 */
+function getPrimarySlot(m: Medication): Slot | 'none' {
+  for (const s of SLOTS) {
+    if (m.slots.includes(s)) return s;
+  }
+  return 'none';
+}
+
+const GROUP_SLOT_ORDER: Array<Slot | 'none'> = [...SLOTS, 'none'];
+
 export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
   const [meds, rules, revisions] = await Promise.all([
     listMeds(),
@@ -89,9 +99,15 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
   const content = el('div', { class: 'page medication-list-page' });
 
   if (meds.length === 0) {
-    const cta = createButton({ label: '添加第一种药', icon: 'plus', onClick: () => navigate('/meds/new') });
+    const addBtn = createButton({ label: '手动添加', icon: 'plus', onClick: () => navigate('/meds/new') });
+    const scanBtn = createButton({ label: '扫码添加', icon: 'scan', variant: 'secondary', onClick: () => navigate('/scan') });
     content.append(
-      emptyState('pill', '还没有药品', '添加你长期服用的药物，按时段分类、扫码识别都从这里开始。', cta)
+      emptyState(
+        'pill',
+        '还没有药品',
+        '添加你长期服用的药物，按时段分类、扫码识别都从这里开始。',
+        [addBtn, scanBtn],
+      ),
     );
     renderPage({ root, title: '药品', activeTab: 'meds', topRight, content });
     return;
@@ -190,8 +206,26 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     filterRow.append(chip);
   }
 
-  const grid = el('div', { class: 'medication-list', role: 'list' } as any);
+  const useGroups = meds.length > 8;
+  const grid = el('div', { class: 'medication-list' + (useGroups ? ' is-grouped' : ''), role: 'list' } as any);
   const cardByMedId = new Map<string, HTMLElement>();
+  const groupSections = new Map<Slot | 'none', HTMLElement>();
+  const groupCountBadges = new Map<Slot | 'none', HTMLElement>();
+
+  if (useGroups) {
+    for (const slot of GROUP_SLOT_ORDER) {
+      const section = el('section', { class: 'medication-list-group', role: 'list' } as any);
+      const header = el('div', { class: 'medication-list-group-header' });
+      header.append(el('h3', { text: slot === 'none' ? '未分时段' : SLOT_LABEL[slot] }));
+      const countBadge = el('span', { class: 'medication-list-group-count' });
+      header.append(countBadge);
+      section.append(header);
+      grid.append(section);
+      groupSections.set(slot, section);
+      groupCountBadges.set(slot, countBadge);
+    }
+  }
+
   for (const m of sorted) {
     const card = renderMedCard(
       m,
@@ -203,12 +237,16 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
       photoUrls.get(m.id),
     );
     cardByMedId.set(m.id, card);
-    grid.append(card);
+    if (useGroups) {
+      groupSections.get(getPrimarySlot(m))?.append(card);
+    } else {
+      grid.append(card);
+    }
   }
 
   content.append(searchBar, filterRow, grid);
 
-  // 搜索 + 时段筛选叠加过滤
+  // 搜索 + 时段筛选叠加过滤；分组模式下同步更新组标题计数
   let searchTimer: number | undefined;
   const applyFilter = () => {
     const keyword = searchInput.value.trim().toLowerCase();
@@ -221,6 +259,16 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
         (m.dosageText || '').toLowerCase().includes(keyword);
       const matchSlot = currentFilter === 'all' || m.slots.includes(currentFilter);
       card.style.display = matchKeyword && matchSlot ? '' : 'none';
+    }
+    if (useGroups) {
+      for (const [slot, section] of groupSections) {
+        const visible = [...section.querySelectorAll<HTMLElement>('.medication-list-row')].filter(
+          (c) => c.style.display !== 'none',
+        );
+        section.hidden = visible.length === 0;
+        groupCountBadges.get(slot)?.setAttribute('data-count', String(visible.length));
+        groupCountBadges.get(slot)?.setAttribute('aria-label', `${visible.length} 种药品`);
+      }
     }
   };
   const onSearchInput = () => {

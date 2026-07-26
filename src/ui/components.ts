@@ -330,7 +330,7 @@ export function emptyState(
   iconName: IconName,
   title: string,
   sub?: string,
-  cta?: HTMLElement
+  cta?: HTMLElement | HTMLElement[]
 ): HTMLElement {
   const wrap = el('div', { class: 'empty' });
   const circle = el('div', { class: 'ic-circle' });
@@ -338,7 +338,12 @@ export function emptyState(
   wrap.append(circle);
   wrap.append(el('div', { class: 'title', html: title }));
   if (sub) wrap.append(el('div', { class: 'sub', html: sub }));
-  if (cta) wrap.append(cta);
+  if (cta) {
+    const actions = Array.isArray(cta)
+      ? el('div', { class: 'empty-actions' }, cta)
+      : cta;
+    wrap.append(actions);
+  }
   return wrap;
 }
 
