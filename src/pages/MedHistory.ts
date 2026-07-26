@@ -440,6 +440,13 @@ function renderSummaryCard(
   card.setAttribute('aria-label', '区间汇总');
   const summary = summarizeHistory(data.occurrences, data.logs, now);
 
+  const heading = el('div', { class: 'history-summary-heading' });
+  heading.append(
+    el('span', { class: 'history-summary-eyebrow', text: '周期概览' }),
+    el('span', { class: 'history-summary-note', text: '数据按计划服药时间统计' }),
+  );
+  card.append(heading);
+
   if (summary.due === 0) {
     card.append(el('div', { class: 'history-summary-empty muted', text: '区间内没有已到期的服药安排' }));
     return card;
@@ -455,7 +462,7 @@ function renderSummaryCard(
     el('span', { class: 'ring-caption', text: '按时服药' }),
   );
   left.append(ring);
-  left.append(el('div', { class: 'history-summary-caption', text: `按时服药 ${adherencePct}%` }));
+  left.append(el('div', { class: 'history-summary-caption', text: '按时完成率' }));
 
   const right = el('div', { class: 'history-summary-stats' });
   right.setAttribute('role', 'list');
@@ -551,7 +558,20 @@ function renderFilterBar(
     fire({ ...state, filterStatus: statusSelect.value as 'all' | 'taken' | 'skipped' | 'missed' });
   });
 
-  wrap.append(medSelect, slotSelect, statusSelect);
+  const filterField = (label: string, select: HTMLSelectElement, extraClass = ''): HTMLElement => {
+    const field = el('label', { class: `history-filter-field${extraClass ? ` ${extraClass}` : ''}` });
+    field.append(
+      el('span', { class: 'history-filter-label', text: label }),
+      select,
+    );
+    return field;
+  };
+
+  wrap.append(
+    filterField('药品', medSelect, 'is-medication'),
+    filterField('时段', slotSelect),
+    filterField('状态', statusSelect),
+  );
   return wrap;
 }
 
@@ -662,7 +682,15 @@ function renderDayCard(
   if (isToday) card.classList.add('is-today');
 
   const head = el('div', { class: 'history-day-head' });
-  head.append(el('h2', { class: 'history-day-title', text: formatDayTitle(group.date) }));
+  const titleWrap = el('div', { class: 'history-day-title-wrap' });
+  const titleLine = el('div', { class: 'history-day-title-line' });
+  titleLine.append(el('h2', { class: 'history-day-title', text: formatDayTitle(group.date) }));
+  if (isToday) titleLine.append(el('span', { class: 'history-today-label', text: '今天' }));
+  titleWrap.append(
+    titleLine,
+    el('span', { class: 'history-day-count', text: `${group.items.length} 次服药安排` }),
+  );
+  head.append(titleWrap);
   const dueItems = group.items.filter((item) => item.occurrence.dueAt <= now);
   const takenItems = dueItems.filter((item) => item.status === 'taken');
   const dayRing = progressRing(takenItems.length, dueItems.length);
@@ -813,13 +841,12 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
 
   // 区间 chip 始终显示；其下方根据 state.rangePreset 决定是否显示自定义日期
   const rangeBar = renderRangeChips(state, (next) => { state = next; void rerender(); });
-  content.append(rangeBar);
-
   const customWrap = el('div', { class: 'history-custom-wrap' });
-  content.append(customWrap);
-
   const filterHost = el('div', { class: 'history-filter-host' });
-  content.append(filterHost);
+
+  const controls = el('section', { class: 'history-control-deck', 'aria-label': '历史记录控制' } as any);
+  controls.append(rangeBar, customWrap, filterHost);
+  content.append(controls);
 
   const listHost = el('div', { class: 'history-list-host' });
   content.append(listHost);
