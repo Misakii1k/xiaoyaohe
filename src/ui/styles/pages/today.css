@@ -312,6 +312,28 @@
   line-height: 1.45;
 }
 
+/* P3 Task 10.1：进入完整历史的入口链接 */
+.today-adherence-link {
+  display: inline-flex;
+  align-items: center;
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--color-primary);
+  text-decoration: none;
+  border-radius: var(--radius-md);
+  transition: background 120ms ease;
+}
+.today-adherence-link:hover,
+.today-adherence-link:focus-visible {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+.today-adherence-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 @media (min-width: 768px) {
   .today-page { max-inline-size: 920px; margin-inline: auto; }
   .today-schedule { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }

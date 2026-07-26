@@ -47,6 +47,7 @@ import { sendLowStockReminderIfDue } from '../features/inventoryReminder';
 import { checkInteractions, filterNewInteractions, acknowledgeInteractions, type DrugInteraction } from '../data/drugInteractions';
 import { createButton } from '../ui/primitives/Button';
 import { createStatusBadge } from '../ui/primitives/StatusBadge';
+import { navigate } from '../router';
 
 const EARLY_TAKE_WINDOW_MS = 20 * 60 * 1000;
 
@@ -174,7 +175,15 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
 
   content.append(renderWeekAdherenceCard(weekOccurrences, weekLogs, today, Date.now()));
   if (!signal?.aborted) {
-    renderPage({ root, title: '今天', activeTab: 'today', content });
+    // topRight：进入服药历史页（P3 Task 10.2）
+    const historyBtn = el('button', {
+      class: 'icon-btn',
+      type: 'button',
+      'aria-label': '查看服药历史',
+    } as any);
+    historyBtn.append(icon('clock'));
+    historyBtn.onclick = () => navigate('/history');
+    renderPage({ root, title: '今天', activeTab: 'today', content, topRight: historyBtn });
     focusNotificationTarget(root, signal);
   }
 }
@@ -294,6 +303,18 @@ function renderWeekAdherenceCard(
           : `按时服药 ${adherence}%（已服 ${overall.taken}/${overall.due}） · 已处理 ${handled}% · 跳过 ${overall.skipped} · 漏服 ${overall.missed}`,
     }),
   );
+  // P3 Task 10.1：底部"查看完整历史"链接，进入 /history 路由
+  const historyLink = el('a', {
+    class: 'today-adherence-link',
+    href: '#/history',
+    text: '查看完整历史 →',
+    'aria-label': '查看完整服药历史',
+  } as any) as HTMLAnchorElement;
+  historyLink.addEventListener('click', (event: MouseEvent) => {
+    event.preventDefault();
+    navigate('/history');
+  });
+  card.append(historyLink);
   return card;
 }
 

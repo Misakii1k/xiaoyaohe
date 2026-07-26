@@ -4,6 +4,7 @@
 @import './styles/shell.css';
 @import './styles/primitives.css';
 @import './styles/pages/today.css';
+@import './styles/pages/med-history.css';
 @import './styles/pages/medications.css';
 @import './styles/pages/inventory.css';
 @import './styles/pages/medication-editor.css';
