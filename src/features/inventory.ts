@@ -52,6 +52,8 @@ export interface InventoryChangeResult {
   low: boolean;
   insufficient?: boolean;
   reviewRequired?: boolean;
+  partial?: boolean;
+  deductedQuantity?: number;
   message?: string;
 }
 
@@ -92,7 +94,11 @@ function normalizeDoseUnit(unit: string): string {
   return normalized;
 }
 
-export function deductInventory(med: Medication, confirmedDose = getConfirmedDose(med)): InventoryChangeResult {
+export function deductInventory(
+  med: Medication,
+  confirmedDose = getConfirmedDose(med),
+  options: { allowPartial?: boolean } = {},
+): InventoryChangeResult {
   if (!med.inventory) return { changed: false, low: false };
   if (!confirmedDose) {
     return { changed: false, low: false, reviewRequired: true, message: `${med.name} 的每次用量需要确认` };
@@ -107,6 +113,18 @@ export function deductInventory(med: Medication, confirmedDose = getConfirmedDos
     };
   }
   if (med.inventory.remaining < confirmedDose.quantity) {
+    if (options.allowPartial) {
+      const actualDeduct = med.inventory.remaining;
+      med.inventory.remaining = 0;
+      if (!med.inventory.unit) med.inventory.unit = confirmedDose.unit;
+      return {
+        changed: actualDeduct > 0,
+        low: true,
+        partial: true,
+        deductedQuantity: actualDeduct,
+        message: `${med.name} 库存不足，已扣至 0（原剩 ${actualDeduct}${med.inventory.unit || confirmedDose.unit}）`,
+      };
+    }
     return {
       changed: false,
       low: true,
@@ -125,7 +143,7 @@ export function deductInventory(med: Medication, confirmedDose = getConfirmedDos
       ? `${med.name} 已无库存`
       : `${med.name} 仅剩 ${next}${med.inventory.unit || confirmedDose.unit}`
     : undefined;
-  return { changed: true, low, message };
+  return { changed: true, low, deductedQuantity: confirmedDose.quantity, message };
 }
 
 export function restoreInventory(med: Medication, quantity: number): boolean {

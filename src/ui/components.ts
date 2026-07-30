@@ -305,6 +305,38 @@ export function confirmDialog(message: string, okText = '确定', danger = false
   });
 }
 
+/** 单按钮信息弹窗，仅用于告知，不询问。点击按钮 / ESC / 遮罩关闭即 resolve。 */
+export function infoDialog(message: string, okText = '知道了'): Promise<void> {
+  const titleId = `dialog-title-${++dialogSeq}`;
+  const ok = el('button', { class: 'btn', html: okText });
+  const title = el('div', { class: 'big', html: message, id: titleId, style: 'margin-bottom:24px' } as any);
+  title.style.whiteSpace = 'pre-line';
+  const actions = el(
+    'div',
+    { style: 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap' } as any,
+    [ok],
+  );
+  const box = el('div', { class: 'card' }, [title, actions]);
+  let overlay: HTMLElement | null = null;
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const close = (dismissedByDialog = false) => {
+      if (settled) return;
+      settled = true;
+      if (overlay && !dismissedByDialog) closeDialog(overlay);
+      resolve();
+    };
+    ok.onclick = () => close();
+    overlay = openDialog(box, {
+      labelId: titleId,
+      onClose: () => close(true),
+      initialFocus: ok,
+    });
+    overlay.classList.add('confirm-dialog-overlay');
+    overlay.addEventListener('contextmenu', (event) => event.preventDefault(), { capture: true });
+  });
+}
+
 /** ---------- slot 标签（M3 assist chip 色版） ---------- */
 export function slotTag(slot: Slot): HTMLElement {
   return el('span', { class: `slot-tag slot-${slot}`, html: SLOT_LABEL[slot] });

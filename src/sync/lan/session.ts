@@ -30,6 +30,11 @@ import {
   type LanSyncSnapshot,
 } from './store';
 import {
+  LOCAL_APP_VERSION,
+  LOCAL_APP_VERSION_CODE,
+  recordPeerVersion,
+} from './apkTransport';
+import {
   applySyncExtras,
   collectSyncExtras,
   syncExtrasSchema,
@@ -146,6 +151,10 @@ const joinPayloadSchema = z.object({
     maxClock: z.number().int().nonnegative(),
   }).optional(),
   autoIdentity: autoIdentitySchema.optional(),
+  /** 加入端运行的应用版本（如 "0.9.1"），用于主机端 APK 更新发现。 */
+  appVersion: z.string().max(40).optional(),
+  /** 加入端 Android versionCode，用于版本比较。 */
+  versionCode: z.number().int().nonnegative().optional(),
 }).strict();
 
 const resultPayloadSchema = z.object({
@@ -158,6 +167,10 @@ const resultPayloadSchema = z.object({
   extras: z.unknown().optional(),
   policy: z.enum(['merge', 'overwrite-local', 'overwrite-remote']).optional(),
   autoIdentity: autoIdentitySchema.optional(),
+  /** 主机端运行的应用版本（如 "0.9.1"），用于加入端 APK 更新发现。 */
+  appVersion: z.string().max(40).optional(),
+  /** 主机端 Android versionCode，用于版本比较。 */
+  versionCode: z.number().int().nonnegative().optional(),
 }).strict();
 
 const ackPayloadSchema = z.object({
@@ -284,6 +297,9 @@ export async function joinLanSyncHost(
         },
         ...(extras ? { extras } : {}),
         ...(localAuto ? { autoIdentity: localAuto } : {}),
+        // 把本机应用版本公告给主机端，便于主机端发现可用更新。
+        ...(LOCAL_APP_VERSION ? { appVersion: LOCAL_APP_VERSION } : {}),
+        ...(LOCAL_APP_VERSION_CODE ? { versionCode: LOCAL_APP_VERSION_CODE } : {}),
       }),
     });
 
@@ -338,6 +354,8 @@ export async function joinLanSyncHost(
     if (resultPayload.autoIdentity) {
       rememberPeerFromAutoIdentity(resultPayload.device, resultPayload.autoIdentity, dependencies.now());
     }
+    // 主机端公告的应用版本更高时，记录可用更新（供 autoSync/UI 订阅）
+    recordPeerVersion(invitation.host, resultPayload);
     options.onProgress?.({ stage: 'complete', message: '已同步' });
     return result;
   } catch (error) {
@@ -441,6 +459,9 @@ async function runHostSession(
         0,
         '对方未提供库存摘要',
       );
+    // 加入端公告的应用版本更高时，记录可用更新。主机端用 invitation.host 暂作 fallback。
+    // 一般主机端不需要主动升级，所以这里只是兜底记录，主机端的版本判断通常不重要。
+    recordPeerVersion(invitation.host, joinPayload);
     const recommended = recommendLanPolicy(localSummary, remoteSummary);
     let policy: LanSyncPolicy = recommended;
     if (choosePolicy) {
@@ -502,6 +523,9 @@ async function runHostSession(
         policy,
         ...(hostExtras ? { extras: hostExtras } : {}),
         ...(hostAuto ? { autoIdentity: hostAuto } : {}),
+        // 把本机应用版本公告给加入端，便于加入端发现可用更新。
+        ...(LOCAL_APP_VERSION ? { appVersion: LOCAL_APP_VERSION } : {}),
+        ...(LOCAL_APP_VERSION_CODE ? { versionCode: LOCAL_APP_VERSION_CODE } : {}),
       }),
     });
     const acknowledgement = await inbox.waitForFrame(connectionId, signal, FRAME_TIMEOUT_MS);

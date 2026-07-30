@@ -3,14 +3,12 @@ import {
   getMed,
   putMed,
   softDeleteMed,
-  listMeds,
   listRulesByMed,
   putRule,
   deleteRule,
 } from '../db/local';
 import { getLatestMedPhotoBlob, getMedPhotoUrl, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
 import { uid } from '../db/local';
-import { checkInteractions, type DrugInteraction } from '../data/drugInteractions';
 import {
   SLOTS,
   SLOT_LABEL,
@@ -418,20 +416,6 @@ export async function renderMedEditPage(
       toast('请选择本周期首个服药日');
       cycleStartInput.focus();
       return;
-    }
-    try {
-      const others = (await listMeds()).filter((m) => m.id !== med.id);
-      if (!isActive()) return;
-      const allNames = Array.from(new Set([name, ...others.map((m) => m.name)]));
-      const hits = checkInteractions(allNames);
-      if (hits.length > 0) {
-        const msg = buildInteractionWarning(hits);
-        if (!(await confirmDialog(msg, '仍要保存', true)) || !isActive()) {
-          return;
-        }
-      }
-    } catch {
-      // 相互作用检查失败不阻塞保存
     }
 
     saveBtn.setAttribute('disabled', 'true');
@@ -1173,24 +1157,6 @@ function readNumber(value: string): number | undefined {
 function readPositiveNumber(value: string): number | undefined {
   const valueAsNumber = readNumber(value);
   return valueAsNumber != null && valueAsNumber > 0 ? valueAsNumber : undefined;
-}
-
-/** 严重等级中文 + 描述，用于相互作用警告文案 */
-function severityCn(s: DrugInteraction['severity']): string {
-  return s === 'severe' ? '严重' : s === 'moderate' ? '中等' : '轻微';
-}
-
-/** 构造纯文本确认文案；本地规则库仅覆盖内置的常见组合。 */
-function buildInteractionWarning(hits: DrugInteraction[]): string {
-  const lines = hits.map(
-    (h) =>
-      `【${severityCn(h.severity)}】${h.drugs.join(' + ')}：${h.description}`,
-  );
-  return (
-    `常见相互作用提示命中 ${hits.length} 条（仅覆盖应用内置的有限规则，不替代医生或药师判断）：\n\n` +
-    lines.join('\n\n') +
-    '\n\n仍要保存吗？'
-  );
 }
 
 function setButtonBusy(btn: HTMLButtonElement, text: string): void {

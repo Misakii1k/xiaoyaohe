@@ -4,6 +4,7 @@ import {
   listLogsByRange,
   listScheduleRevisions,
   setOccurrenceAction,
+  isOccurrencePreDeducted,
   MedicationIntakeError,
   type IntakeAction,
 } from '../db/local';
@@ -35,7 +36,7 @@ import {
   progressRing,
   slotTag,
   banner,
-  confirmDialog,
+  infoDialog,
 } from '../ui/components';
 import { closeNotificationsByTag } from '../features/notifier';
 import { getMedPhotoUrls } from '../features/medPhotos';
@@ -44,7 +45,6 @@ import {
   getConfirmedDose,
 } from '../features/inventory';
 import { sendLowStockReminderIfDue } from '../features/inventoryReminder';
-import { checkInteractions, filterNewInteractions, acknowledgeInteractions, type DrugInteraction } from '../data/drugInteractions';
 import { createButton } from '../ui/primitives/Button';
 import { createStatusBadge } from '../ui/primitives/StatusBadge';
 import { navigate } from '../router';
@@ -363,6 +363,7 @@ function renderSlotSection(
   for (const item of group.items) {
     const status = item.log?.status === 'taken' || item.log?.status === 'skipped' ? item.log.status : 'pending';
     const expired = isMedicationExpiredOn(item.med, today);
+    const preDeducted = !!item.occurrence && isOccurrencePreDeducted(item.med, item.occurrence);
     const line = el('article', {
       class: `today-medication-row today-medication-${status}${expired ? ' is-expired' : ''}${item.isRest ? ' is-rest-day' : ''}`,
     });
@@ -395,8 +396,9 @@ function renderSlotSection(
     if (item.isRest) statusWrap.append(createStatusBadge('停药期', 'muted'));
     else if (status === 'taken') statusWrap.append(createStatusBadge('已服', 'success'));
     else if (status === 'skipped') statusWrap.append(createStatusBadge('已跳过', 'warning'));
+    if (preDeducted) statusWrap.append(createStatusBadge('已分药', 'info'));
     if (expired) statusWrap.append(createStatusBadge('已过期', 'danger'));
-    if (!item.isRest && item.med.inventory && !getConfirmedDose(item.med)) {
+    if (!item.isRest && item.med.inventory && !(item.occurrence?.doseQuantity && item.occurrence.doseUnit)) {
       statusWrap.append(createStatusBadge('剂量待复核', 'warning'));
     }
     if (statusWrap.childElementCount > 0) line.append(statusWrap);
@@ -427,14 +429,11 @@ function renderSlotSection(
     takeBtn.classList.add('today-slot-take');
     takeBtn.onclick = () => void (async () => {
       if (takeableItems.length === 0) return;
-      const hits = checkInteractions(takeableItems.map((item) => item.med.name));
-      // 只对"新"的相互作用弹窗：已确认过的组合不再打扰，出现新组合才再提示
-      const fresh = filterNewInteractions(hits);
-      if (fresh.length > 0 && !(await confirmDialog(buildTodayInteractionWarning(fresh), '仍要记录', true))) {
-        return;
-      }
-      if (fresh.length > 0) acknowledgeInteractions(fresh);
       if (!preflightInventoryActions(takeableItems)) return;
+      const insufficient = collectInsufficientMeds(takeableItems);
+      if (insufficient.length > 0) {
+        await infoDialog(buildInsufficientWarning(insufficient));
+      }
       try {
         await applyActions(takeableItems, 'taken');
         toast(`${takeableItems.length} 项服药已记录`);
@@ -462,41 +461,77 @@ function renderSlotSection(
   return card;
 }
 
-function buildTodayInteractionWarning(hits: DrugInteraction[]): string {
-  const severity = (value: DrugInteraction['severity']): string =>
-    value === 'severe' ? '严重' : value === 'moderate' ? '中等' : '轻微';
-  return `常见相互作用提示（仅覆盖应用内置的有限规则，不替代医生或药师判断）：\n\n${hits
-    .map(
-      (hit) =>
-        `注意：${hit.drugs.join(' 与 ')} 存在相互作用（${severity(hit.severity)}）：${hit.description}`,
-    )
-    .join('\n\n')}\n\n仍要记录为已服用吗？`;
-}
-
 function preflightInventoryActions(items: readonly TodayItem[]): boolean {
-  const countByMed = new Map<string, number>();
-  for (const item of items) countByMed.set(item.med.id, (countByMed.get(item.med.id) ?? 0) + 1);
-
+  const requiredByMed = new Map<string, { med: Medication; quantity: number; unit: string }>();
   for (const item of items) {
-    if (!item.med.inventory) continue;
-    const dose = getConfirmedDose(item.med);
-    // Intake remains recordable for old free-text doses, but no inventory delta
-    // is created until the user edits the medication into a structured dose.
+    if (!item.occurrence || !item.med.inventory || isOccurrencePreDeducted(item.med, item.occurrence)) continue;
+    const dose = item.occurrence.doseQuantity && item.occurrence.doseUnit
+      ? { quantity: item.occurrence.doseQuantity, unit: item.occurrence.doseUnit }
+      : getConfirmedDose(item.med);
+    // 旧自由文本剂量仍允许打卡，但不会产生库存变化。
     if (!dose) continue;
     const inventoryUnit = item.med.inventory.unit?.trim();
     if (inventoryUnit && !areDoseUnitsCompatible(inventoryUnit, dose.unit)) {
       toast(`${item.med.name} 每次用量的单位和剩余药量的单位对不上，这次先不帮你扣药量`);
       return false;
     }
-    const required = dose.quantity * (countByMed.get(item.med.id) ?? 1);
-    if (item.med.inventory.remaining < required) {
-      toast(
-        `${item.med.name} 不够吃了：这次要 ${required}${dose.unit}，只剩 ${item.med.inventory.remaining}${item.med.inventory.unit || dose.unit}，记得补药`,
-      );
+    const current = requiredByMed.get(item.med.id);
+    if (current && !areDoseUnitsCompatible(current.unit, dose.unit)) {
+      toast(`${item.med.name} 今天的计划剂量单位不一致，请先到药品编辑页复核`);
       return false;
     }
+    requiredByMed.set(item.med.id, {
+      med: item.med,
+      quantity: (current?.quantity ?? 0) + dose.quantity,
+      unit: current?.unit ?? dose.unit,
+    });
   }
+  // 库存数量不足不再阻塞，由 collectInsufficientMeds 收集后弹窗告知。
   return true;
+}
+
+interface InsufficientMedInfo {
+  med: Medication;
+  needed: number;
+  remaining: number;
+  unit: string;
+}
+
+function collectInsufficientMeds(items: readonly TodayItem[]): InsufficientMedInfo[] {
+  const requiredByMed = new Map<string, { med: Medication; quantity: number; unit: string }>();
+  for (const item of items) {
+    if (!item.occurrence || !item.med.inventory || isOccurrencePreDeducted(item.med, item.occurrence)) continue;
+    const dose = item.occurrence.doseQuantity && item.occurrence.doseUnit
+      ? { quantity: item.occurrence.doseQuantity, unit: item.occurrence.doseUnit }
+      : getConfirmedDose(item.med);
+    if (!dose) continue;
+    const inventoryUnit = item.med.inventory.unit?.trim();
+    if (inventoryUnit && !areDoseUnitsCompatible(inventoryUnit, dose.unit)) continue;
+    const current = requiredByMed.get(item.med.id);
+    if (current && !areDoseUnitsCompatible(current.unit, dose.unit)) continue;
+    requiredByMed.set(item.med.id, {
+      med: item.med,
+      quantity: (current?.quantity ?? 0) + dose.quantity,
+      unit: current?.unit ?? dose.unit,
+    });
+  }
+  const result: InsufficientMedInfo[] = [];
+  for (const { med, quantity, unit } of requiredByMed.values()) {
+    if (med.inventory!.remaining < quantity) {
+      result.push({
+        med,
+        needed: quantity,
+        remaining: med.inventory!.remaining,
+        unit: med.inventory!.unit || unit,
+      });
+    }
+  }
+  return result;
+}
+
+function buildInsufficientWarning(insufficient: readonly InsufficientMedInfo[]): string {
+  const lines = insufficient.map((i) => `- ${i.med.name}：需 ${i.needed}${i.unit}，剩 ${i.remaining}${i.unit}`);
+  return `以下药品库存不足，仍会记录服药并扣至 0：\n\n${lines.join('\n')}\n\n记得补药。`;
 }
 
 async function applyActions(

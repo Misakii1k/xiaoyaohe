@@ -45,6 +45,15 @@ import { clearAsrConfig, getAsrConfig, isAsrCredentialsConfigured, setAsrConfig 
 import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
 import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
+import {
+  clearAvailableUpdate,
+  downloadUpdate,
+  getAvailableUpdate,
+  installApk,
+  isApkDistributionAvailable,
+  LOCAL_APP_VERSION,
+  LOCAL_APP_VERSION_CODE,
+} from '../sync/lan/apkTransport';
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations, openAppSettings } from '../features/keepAlive';
 
 const settingsPageCleanupByRoot = new WeakMap<HTMLElement, () => void>();
@@ -75,6 +84,8 @@ export async function renderSettingsPage(
   content.append(renderAsrPanel());
   const lanSyncPanel = renderLanSyncSettingsPanel(signal);
   content.append(lanSyncPanel.element);
+  const appUpdatePanel = renderAppUpdatePanel();
+  content.append(appUpdatePanel.element);
 
   const backupCard = renderBackupCard(root, signal, {
     meds: meds.length,
@@ -98,6 +109,7 @@ export async function renderSettingsPage(
     cleaned = true;
     llmPanel.cleanup();
     lanSyncPanel.cleanup();
+    appUpdatePanel.cleanup();
     backupCard.cleanup();
     signal?.removeEventListener('abort', cleanup);
     if (settingsPageCleanupByRoot.get(root) === cleanup) {
@@ -530,6 +542,117 @@ function renderKeepAlivePanel(): HTMLElement {
     },
   });
   return p;
+}
+
+/** ---------------- 应用更新面板（局域网分发 APK 自动更新） ---------------- */
+function renderAppUpdatePanel(): SettingsRenderPart {
+  const update = getAvailableUpdate();
+  const available = isApkDistributionAvailable();
+  const chip: PanelChip = !available
+    ? { text: '仅 App', tone: 'muted' }
+    : update
+      ? { text: `可更新 v${update.version}`, tone: 'info' }
+      : { text: '已是最新', tone: 'ok' };
+
+  let refreshFn: (() => void) | null = null;
+  const p = panel({
+    title: '应用更新',
+    iconName: 'cloud',
+    chip,
+    renderBody: (body) => {
+      const refresh = () => buildAppUpdateBody(body, p, available);
+      refreshFn = refresh;
+      queueMicrotask(refresh);
+    },
+  });
+
+  // 监听可用更新变化（如自动同步发现新版本后）
+  const onUpdate = () => {
+    refreshFn?.();
+    const nextUpdate = getAvailableUpdate();
+    setChip(p, nextUpdate
+      ? { text: `可更新 v${nextUpdate.version}`, tone: 'info' }
+      : { text: '已是最新', tone: 'ok' });
+  };
+  window.addEventListener('medbox:app-update-changed', onUpdate);
+
+  return {
+    element: p,
+    cleanup: () => window.removeEventListener('medbox:app-update-changed', onUpdate),
+  };
+}
+
+function buildAppUpdateBody(
+  body: HTMLElement,
+  panelEl: HTMLElement,
+  available: boolean,
+): void {
+  body.replaceChildren();
+
+  // 当前版本信息
+  const versionInfo = el('div', { class: 'settings-hint' } as any, [
+    el('span', { html: `当前版本：<b>v${LOCAL_APP_VERSION}</b>（versionCode ${LOCAL_APP_VERSION_CODE}）` }),
+  ]);
+  body.append(versionInfo);
+
+  if (!available) {
+    body.append(el('div', { class: 'banner info mt-3' } as any, [
+      el('span', { html: '应用更新仅在 Android App 中可用。其他设备同步时会发现可用更新。' }),
+    ]));
+    return;
+  }
+
+  const update = getAvailableUpdate();
+  if (!update) {
+    body.append(el('div', { class: 'settings-hint mt-3' } as any, [
+      el('span', { html: '其他设备升级后，会在同步时自动通知本机更新。' }),
+    ]));
+    return;
+  }
+
+  // 发现可用更新：显示版本、来源、操作按钮
+  body.append(el('div', { class: 'banner info mt-3' } as any, [
+    el('span', { html: `发现新版本 <b>v${update.version}</b>（versionCode ${update.versionCode}）。` }),
+    el('br'),
+    el('span', { html: `来源：${update.peerHost}（局域网内已升级设备）。` }),
+  ]));
+
+  const row = el('div', { class: 'btn-row mt-3' } as any);
+  const downloadBtn = el('button', { class: 'btn', html: '下载并安装' });
+  const skipBtn = el('button', { class: 'btn tonal', html: '本次跳过' });
+
+  downloadBtn.onclick = async () => {
+    if (downloadBtn.getAttribute('aria-busy') === 'true') return;
+    downloadBtn.setAttribute('aria-busy', 'true');
+    downloadBtn.textContent = '下载中...';
+    downloadBtn.disabled = true;
+    skipBtn.disabled = true;
+    try {
+      const apkPath = await downloadUpdate(update);
+      toast(`已下载 v${update.version}，正在调起安装器`, 3200);
+      await installApk(apkPath);
+      // 安装器调起后不立即清除可用更新——安装结果由用户在系统中确认。
+      // 安装成功后应用会重启，状态自然刷新。
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '未知错误';
+      toast(`更新失败：${msg}`, 4200);
+    } finally {
+      downloadBtn.removeAttribute('aria-busy');
+      downloadBtn.textContent = '下载并安装';
+      downloadBtn.disabled = false;
+      skipBtn.disabled = false;
+    }
+  };
+
+  skipBtn.onclick = () => {
+    clearAvailableUpdate();
+    toast('已跳过本次更新');
+    setChip(panelEl, { text: '已是最新', tone: 'ok' });
+    buildAppUpdateBody(body, panelEl, available);
+  };
+
+  row.append(downloadBtn, skipBtn);
+  body.append(row);
 }
 
 async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement): Promise<void> {

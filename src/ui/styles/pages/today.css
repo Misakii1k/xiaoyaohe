@@ -127,6 +127,16 @@
 .today-summary-stat-value { display: inline-flex; align-items: center; gap: 5px; color: var(--color-text); font-size: var(--fs-body); font-variant-numeric: tabular-nums; }
 .today-summary-stat-value .status-badge { inline-size: 5px; min-block-size: 5px; padding: 0; border-radius: 50%; }
 
+/* 窄屏下统计项避免参差不齐的 flex 换行，改用对齐的两列网格 */
+@media (max-width: 360px) {
+  .today-summary-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-3);
+  }
+  .today-summary-stat { min-inline-size: 0; }
+}
+
 .today-schedule { display: grid; gap: var(--space-4); }
 
 /* 每个服药时段一张白卡 */

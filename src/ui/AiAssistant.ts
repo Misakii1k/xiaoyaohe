@@ -101,12 +101,16 @@ export function mountGlobalAssistant(): void {
 
   const closeBtn = el('button', { class: 'ai-panel-close', type: 'button' }, [icon('close')]);
   closeBtn.setAttribute('aria-label', '收起小助手');
+  const expandBtn = el('button', { class: 'ai-panel-expand', type: 'button' }, [icon('expand')]);
+  expandBtn.setAttribute('aria-label', '展开面板');
+  expandBtn.title = '点一下铺满全屏，再点一下还原';
   const header = el('div', { class: 'ai-panel-header' }, [
     el('span', { class: 'ai-panel-badge' }, [icon('sparkles')]),
     el('div', { class: 'ai-panel-titles' }, [
       el('h2', { class: 'ai-panel-title', text: '小助手' }),
       el('p', { class: 'ai-panel-subtitle', text: '吃药、药品和库存都可以问我' }),
     ]),
+    expandBtn,
     closeBtn,
   ]);
 
@@ -352,6 +356,9 @@ export function mountGlobalAssistant(): void {
     closeAttachMenu();
     if (holdActive || holdSession) void endHoldTalk(true);
     setVoiceOverlay(false);
+    panel.classList.remove('is-fullscreen');
+    expandBtn.replaceChildren(icon('expand'));
+    expandBtn.setAttribute('aria-label', '展开面板');
     root.classList.remove('is-open');
     launcher.focus({ preventScroll: true });
   }
@@ -568,6 +575,11 @@ export function mountGlobalAssistant(): void {
   };
   closeBtn.onclick = closePanel;
   backdrop.onclick = closePanel;
+  expandBtn.onclick = () => {
+    const fullscreen = panel.classList.toggle('is-fullscreen');
+    expandBtn.setAttribute('aria-label', fullscreen ? '收起面板' : '展开面板');
+    expandBtn.replaceChildren(icon(fullscreen ? 'contract' : 'expand'));
+  };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && root.classList.contains('is-open')) closePanel();
   });
