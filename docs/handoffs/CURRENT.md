@@ -1,9 +1,9 @@
 # Current Integration State
 
-Updated: 2026-07-26
+Updated: 2026-07-30
 Integration branch: `main`
-Product version: `0.9.0`
-Latest integration commit: `4338f79 chore: release version 0.9.0`
+Product version: `0.9.2`
+Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
 ## Baseline
 
@@ -47,6 +47,13 @@ Latest integration commit: `4338f79 chore: release version 0.9.0`
 - Run connected Android instrumentation and installation smoke tests when an ADB device is available.
 - Validate a full transfer between two physical phones on the same local network, including pause/close behavior and repeated QR scans.
 - Install `0.9.0` on a physical cutout/gesture-navigation phone and smoke-test history rotation plus the bottom action sheet.
+
+## Workspace Consolidation & LAN APK Transport 2026-07-30
+
+- Consolidated root workspace layout into `medbox` repository.
+- Moved archived worktime module into `medbox/archive/工时模块归档`.
+- Merged LAN APK distribution features (`ApkDistributionPlugin.java`, `apkTransport.ts`), `appSettings.ts`, UI audit fixes, and extended assistant tool tests into `main`.
+- Vitest: 51 test files, 296 tests pass. TypeScript static checks pass clean.
 
 ## Medication History Integration And Release 2026-07-26
 
