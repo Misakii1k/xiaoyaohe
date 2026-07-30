@@ -1,0 +1,419 @@
+// 全应用共享的数据类型定义（前端与 Worker 对齐）
+
+/** 服药时段（不含"餐中"——餐中改为 mealRels 维度，可与早/中/晚组合） */
+export type Slot = 'morning' | 'noon' | 'evening' | 'bedtime';
+
+/** 与进餐的关系（多选；空 = 不限） */
+export type MealRel = 'before' | 'after' | 'with';
+
+export const SLOTS: Slot[] = ['morning', 'noon', 'evening', 'bedtime'];
+
+export const SLOT_LABEL: Record<Slot, string> = {
+  morning: '早上',
+  noon: '中午',
+  evening: '晚上',
+  bedtime: '睡前',
+};
+
+/** 各时段的默认提醒时间（北京时间），新建提醒时作默认值 */
+export const SLOT_DEFAULT_TIME: Record<Slot, string> = {
+  morning: '08:00',
+  noon: '12:00',
+  evening: '18:00',
+  bedtime: '21:30',
+};
+
+export const MEAL_RELS: MealRel[] = ['before', 'with', 'after'];
+
+export const MEAL_LABEL: Record<MealRel, string> = {
+  before: '餐前',
+  after: '餐后',
+  with: '餐中',
+};
+
+export type MealRelsBySlot = Partial<Record<Slot, MealRel[]>>;
+
+/** A calendar date in the device's local timezone (YYYY-MM-DD). */
+export type LocalDate = `${number}-${number}-${number}`;
+
+/** A confirmed, machine-readable dose used for inventory accounting. */
+export interface StructuredDose {
+  quantity: number;
+  unit: string;
+}
+
+/** 把 mealRels 数组拼成展示串，"餐前·餐中·餐后" */
+export function formatMealRels(rels: MealRel[] | undefined | null): string {
+  if (!rels || rels.length === 0) return '';
+  return MEAL_RELS.filter((r) => rels.includes(r))
+    .map((r) => MEAL_LABEL[r])
+    .join('·');
+}
+
+export function normalizeMealRels(rels: unknown): MealRel[] {
+  if (!Array.isArray(rels)) return [];
+  const set = new Set<MealRel>();
+  for (const r of rels) {
+    if (r === 'before' || r === 'with' || r === 'after') set.add(r);
+  }
+  return MEAL_RELS.filter((r) => set.has(r));
+}
+
+export function normalizeMealRelsBySlot(value: unknown, slots: Slot[], fallback?: MealRel[]): MealRelsBySlot {
+  const out: MealRelsBySlot = {};
+  const obj = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const validSlots = new Set(SLOTS);
+  for (const s of SLOTS) {
+    if (!slots.includes(s)) continue;
+    const rels = normalizeMealRels(obj[s]);
+    if (rels.length > 0) out[s] = rels;
+    else if (fallback && fallback.length > 0) out[s] = [...fallback];
+  }
+  for (const key of Object.keys(obj)) {
+    if (!validSlots.has(key as Slot) || slots.includes(key as Slot)) continue;
+    const rels = normalizeMealRels(obj[key]);
+    if (rels.length > 0) out[key as Slot] = rels;
+  }
+  return out;
+}
+
+export function mealRelsFromBySlot(value: MealRelsBySlot | undefined | null): MealRel[] {
+  const set = new Set<MealRel>();
+  if (!value) return [];
+  for (const s of SLOTS) {
+    for (const r of normalizeMealRels(value[s])) set.add(r);
+  }
+  return MEAL_RELS.filter((r) => set.has(r));
+}
+
+export function formatMealRelsForSlot(slot: Slot, bySlot?: MealRelsBySlot | null): string {
+  return formatMealRels(bySlot?.[slot]);
+}
+
+export function formatMealRelsBySlot(bySlot: MealRelsBySlot | undefined | null, slots?: Slot[]): string {
+  if (!bySlot) return '';
+  const parts: string[] = [];
+  const selectedSlots = slots && slots.length > 0 ? SLOTS.filter((s) => slots.includes(s)) : SLOTS;
+  for (const s of selectedSlots) {
+    const meal = formatMealRels(bySlot[s]);
+    if (meal) parts.push(`${SLOT_LABEL[s]}${meal}`);
+  }
+  return parts.join('·');
+}
+
+export const WEEKDAY_LABEL = ['日', '一', '二', '三', '四', '五', '六'];
+
+/**
+ * 一种药累积的识别信号集合 —— 越用越准，天然支持"换药厂/多规格"。
+ * 这些都是小字段，随快照同步到云端；药盒原图只存本地。
+ */
+export interface MedIdentity {
+  /** 产品标识码 GTIN（GS1 段 01），同规格全球唯一；可多个（不同药厂/规格） */
+  gtins: string[];
+  /** 无法解析出 GTIN 的整码（20 位监管码、进口码、自印码等） */
+  rawCodes: string[];
+  /** OCR 出的药名/关键字变体，模糊匹配用 */
+  ocrNames: string[];
+  /** 盒子参考图的感知哈希 pHash（十六进制串），离线相似度兜底用 */
+  photoHashes: string[];
+}
+
+export function emptyIdentity(): MedIdentity {
+  return { gtins: [], rawCodes: [], ocrNames: [], photoHashes: [] };
+}
+
+export interface MedicationInventory {
+  /** 当前剩余总量，按 unit 计数；例如 21 片 */
+  remaining: number;
+  /** 库存单位，例如 片 / 粒 / 袋 / mL */
+  unit: string;
+  /** 单盒/单瓶标称数量，可为空 */
+  packageQuantity?: number;
+  /** 低于该数量提醒，可为空 */
+  lowThreshold?: number;
+  /** 识别或人工填写来源说明 */
+  sourceNote?: string;
+  /** 最近一次提醒时间，避免低库存提醒刷屏 */
+  lastReminderAt?: number;
+  /** 日均用量（由提醒规则推算），用于预测可用天数 */
+  dailyConsumption?: number;
+}
+
+export type MedicationReminderMode = 'strong' | 'fullscreen-short' | 'fullscreen-persistent';
+
+export const MEDICATION_REMINDER_MODE_LABEL: Record<MedicationReminderMode, string> = {
+  strong: '增强通知',
+  'fullscreen-short': '短时全屏',
+  'fullscreen-persistent': '持续全屏',
+};
+
+export function normalizeMedicationReminderMode(value: unknown): MedicationReminderMode {
+  return value === 'fullscreen-short' || value === 'fullscreen-persistent' ? value : 'strong';
+}
+
+/** 药品 */
+export interface Medication {
+  id: string;
+  name: string;
+  /** 规格，如 "5mg/片" */
+  dosageText: string;
+  /** 每次用量，如 "1片" / "半片" */
+  amountPerDose: string;
+  /** 已由用户确认的结构化单次用量；库存扣减只使用该值。 */
+  doseQuantity?: number;
+  doseUnit?: string;
+  /** 确认结构化剂量时对应的原始文本；文本变化后需要重新确认。 */
+  doseSourceText?: string;
+  /** 旧自由文本可解析时仅保存建议，不直接用于库存扣减。 */
+  doseMigrationSuggestion?: StructuredDose;
+  doseReviewRequired?: boolean;
+  /** 涉及的时段（可多个） */
+  slots: Slot[];
+  /** 与进餐关系（可多选，例：餐前 + 餐后）；空数组 = 不限 */
+  mealRels: MealRel[];
+  /** 按服药时段绑定餐前/餐中/餐后，例如 morning: 餐前，noon: 餐中 */
+  mealRelsBySlot: MealRelsBySlot;
+  /** 服药星期 [0..6]（0=周日）；空数组 = 每天 */
+  daysOfWeek: number[];
+  /** 同一种药的所有提醒时间共用一个提醒强度。 */
+  reminderMode: MedicationReminderMode;
+  /** 剩余药量（第一版：按药品总库存） */
+  inventory?: MedicationInventory;
+  notes?: string;
+  /** @deprecated 旧版 UTC 时间戳；仅用于兼容旧编辑页和备份。 */
+  expiryDate?: number;
+  /** 药品过期日（本地日历日期）；当日结束前均不视为过期。 */
+  expiryLocalDate?: LocalDate;
+  /** 用于检测旧编辑页是否改动/清空了 expiryDate。 */
+  expirySourceTimestamp?: number;
+  identity: MedIdentity;
+  updatedAt: number;
+  /** 创建时间（UTC 毫秒），用于周期用药的 active/rest 日判断；老数据可能缺失 */
+  createdAt?: number;
+  /** 软删除，便于多端合并 */
+  deleted?: boolean;
+  /** @deprecated 旧字段：with_meal slot + 单值 mealRel；inflateMed 会迁移 */
+  mealRel?: 'before' | 'after' | 'with' | 'none';
+}
+
+/** 提醒升级策略 */
+export interface EscalatePolicy {
+  /** 未确认则每 N 分钟再推 */
+  repeatEveryMin: number;
+  /** 最多重推次数（含首次之外），防止超额度 */
+  maxRepeats: number;
+  /** 超过 X 分钟未确认则通知照护者 */
+  notifyCaregiverAfterMin: number;
+}
+
+export function defaultEscalate(): EscalatePolicy {
+  return { repeatEveryMin: 10, maxRepeats: 3, notifyCaregiverAfterMin: 30 };
+}
+
+/** 提醒规则：某药 + 某时段 + 具体时间 */
+export interface ReminderRule {
+  id: string;
+  medId: string;
+  slot: Slot;
+  /** "08:00" 北京时间；Worker 转 UTC 判定 */
+  timeLocal: string;
+  enabled: boolean;
+  /** 周期性用药规则（吃 N 天停 M 天），缺省时视为每日服药 */
+  cycle?: { activeDays: number; restDays: number };
+  /** 周期首日，按设备本地日历日期计算，避免创建时刻导致首日错位。 */
+  cycleStartDate?: LocalDate;
+  /** 旧数据缺少周期首日时提示用户复核，不静默猜测。 */
+  cycleStartNeedsReview?: boolean;
+  escalate: EscalatePolicy;
+  updatedAt: number;
+  deleted?: boolean;
+}
+
+/** 服药记录（照护闭环） */
+export interface IntakeLog {
+  id: string;
+  /** 新版记录引用确定性的 occurrence；旧记录可能缺失。 */
+  occurrenceId?: string;
+  scheduleRevisionId?: string;
+  sourceRuleId?: string;
+  medId: string;
+  slot: Slot;
+  /** 应服时间（UTC 毫秒） */
+  dueAt: number;
+  /** 新记录只持久化 taken/skipped；pending 仅兼容旧备份。 */
+  status: 'taken' | 'skipped' | 'pending';
+  /** 患者确认时间（UTC 毫秒） */
+  ackAt?: number;
+  /** 本次打卡扣减的库存数量；用于撤销时恢复，老记录为空表示无法自动恢复 */
+  inventoryDelta?: number;
+  updatedAt: number;
+}
+
+export type MedicationScheduleReviewFlag = 'cycle-start-missing' | 'dose-unstructured';
+
+/**
+ * An immutable snapshot of one reminder rule plus the medication fields that
+ * influence scheduling. New snapshots supersede earlier snapshots for the same
+ * sourceRuleId from effectiveDate onward; earlier snapshots are never mutated.
+ */
+export interface MedicationScheduleRevision {
+  readonly id: string;
+  readonly medId: string;
+  readonly sourceRuleId: string;
+  readonly effectiveDate: LocalDate;
+  readonly createdAt: number;
+  readonly enabled: boolean;
+  readonly slot: Slot;
+  readonly timeLocal: string;
+  readonly daysOfWeek: readonly number[];
+  readonly cycle?: Readonly<{ activeDays: number; restDays: number }>;
+  readonly cycleStartDate?: LocalDate;
+  readonly mealRels: readonly MealRel[];
+  readonly doseQuantity?: number;
+  readonly doseUnit?: string;
+  readonly reviewFlags: readonly MedicationScheduleReviewFlag[];
+}
+
+/** One expected dose generated deterministically from a schedule revision. */
+export interface MedicationOccurrence {
+  readonly id: string;
+  readonly medId: string;
+  readonly sourceRuleId: string;
+  readonly scheduleRevisionId: string;
+  readonly localDate: LocalDate;
+  readonly slot: Slot;
+  readonly dueAt: number;
+  readonly timeLocal: string;
+  readonly mealRels: readonly MealRel[];
+  readonly doseQuantity?: number;
+  readonly doseUnit?: string;
+  /** Legacy logs used ruleId_YYYYMMDD; this key keeps them readable in place. */
+  readonly legacyLogId: string;
+}
+
+/** 云同步的快照主体（KV: data:{household}） */
+export interface DataSnapshot {
+  meds: Medication[];
+  rules: ReminderRule[];
+  logs?: IntakeLog[];
+  updatedAt: number;
+}
+
+/** 本地存储的药盒原图（不上云） */
+export interface PhotoBlob {
+  id: string;
+  medId: string;
+  blob: Blob;
+  at: number;
+}
+
+/** 提醒推送状态（仅本地，防重复 + 升级用） */
+export interface PushState {
+  /** = IntakeLog.id，或派生 key（如照护者升级用 logId + '_care'） */
+  id: string;
+  /** 已发送次数 */
+  count: number;
+  /** 上次发送时间（UTC ms） */
+  lastSentAt: number;
+}
+
+export type WorkPayMode = 'salary' | 'hourly' | 'daily';
+export type WorkSettlementStatus = 'pending' | 'settled';
+
+export interface WorkPaySnapshot {
+  mode: WorkPayMode;
+  amount: number;
+  profileName: string;
+}
+
+/** 工作/雇主档案（仅本地，不参与云同步） */
+export interface WorkProfile {
+  id: string;
+  name: string;
+  payMode: WorkPayMode;
+  baseAmount: number;
+  settlementCycle: 'month' | 'day' | 'entry';
+  expectedWorkDaysPerMonth?: number;
+  defaultStartTime?: string;
+  defaultEndTime?: string;
+  defaultBreakMinutes?: number;
+  note?: string;
+  /** 任务名称模板列表（最多 10 条），开始班次时供快速选择 */
+  taskTemplates?: string[];
+  updatedAt: number;
+  deleted?: boolean;
+}
+
+/** 个人班次记录（仅本地，不参与云同步） */
+export interface WorkEntry {
+  id: string;
+  /** 兼容旧字段；新版本优先使用 profileId + paySnapshot */
+  projectName: string;
+  taskName: string;
+  profileId?: string;
+  paySnapshot?: WorkPaySnapshot;
+  startAt: number;
+  endAt?: number;
+  breakMinutes: number;
+  note?: string;
+  /** 班次标签（加班/节假日/外勤/补班等） */
+  tags?: string[];
+  status: 'running' | 'stopped';
+  amountOverride?: number;
+  settlementStatus?: WorkSettlementStatus;
+  settledAt?: number;
+  updatedAt: number;
+  deleted?: boolean;
+}
+
+export interface WorkSettlement {
+  id: string;
+  profileId: string;
+  periodKey: string;
+  amount: number;
+  status: WorkSettlementStatus;
+  settledAt?: number;
+  updatedAt: number;
+  deleted?: boolean;
+}
+
+export interface WorkAiDraft {
+  kind: 'profile' | 'entry' | 'entries' | 'summary' | 'issues';
+  profile?: Partial<WorkProfile>;
+  entry?: Partial<WorkEntry>;
+  entries?: Partial<WorkEntry>[];
+  summary?: string;
+  warnings: string[];
+  confidence: number;
+}
+
+/**
+ * 把旧字段 (mealRel 单值, with_meal slot) 升级到新字段 (mealRels[] 多选, 4 时段)。
+ * 幂等：已经是新版结构的 Medication 不会被改坏。
+ */
+export function inflateMed<T extends Partial<Medication> & { slots?: any; mealRel?: any; mealRels?: any; mealRelsBySlot?: any; reminderMode?: any }>(m: T): T {
+  if (!Array.isArray(m.slots)) m.slots = [];
+  // mealRels 字段补齐
+  if (!Array.isArray(m.mealRels)) {
+    const old = (m as any).mealRel;
+    if (old && old !== 'none' && (old === 'before' || old === 'after' || old === 'with')) {
+      m.mealRels = [old];
+    } else {
+      m.mealRels = [];
+    }
+  }
+  // with_meal slot 迁移 → 加 'with' 进 mealRels，原 with_meal 替换成 noon（如果还没 noon）
+  if (Array.isArray(m.slots) && m.slots.includes('with_meal')) {
+    m.slots = m.slots.filter((s: any) => s !== 'with_meal');
+    if (!m.slots.includes('noon')) m.slots.push('noon');
+    if (!m.mealRels.includes('with')) m.mealRels.push('with');
+  }
+  m.slots = SLOTS.filter((s) => (m.slots as any[]).includes(s));
+  m.mealRels = normalizeMealRels(m.mealRels) as any;
+  m.mealRelsBySlot = normalizeMealRelsBySlot(m.mealRelsBySlot, m.slots as Slot[], m.mealRels as MealRel[]) as any;
+  m.mealRels = mealRelsFromBySlot(m.mealRelsBySlot as MealRelsBySlot) as any;
+  if (!m.identity) m.identity = emptyIdentity() as any;
+  if (!Array.isArray(m.daysOfWeek)) m.daysOfWeek = [] as any;
+  m.reminderMode = normalizeMedicationReminderMode(m.reminderMode) as any;
+  return m;
+}

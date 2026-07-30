@@ -1,0 +1,17 @@
+Soft paper-craft semi-flat 2D illustration for an empty state in a work-hours tracking
+app. Subjects: one simple stopwatch with a blank face (no numerals, no digits), one blank
+calendar page with empty grid cells, one small checklist card with empty tick rows, and
+one small rising trend line chip. Conveys "no work records yet", calm and organized.
+Style: gentle light paper-craft layers, semi-flat 2D, identical style family to a matching
+medication empty-state illustration: clean, friendly, soft rounded shapes.
+Color palette strictly: white, soft misty blue #9DB8E8 and #3168D5, mint green #6CBFA3,
+a small touch of coral #E27A72.
+Composition: horizontal 4:3, subjects grouped in the center, generous 20% empty safe
+margin all around, readable at small display width.
+Shadows: only very short light shadows between the paper elements themselves; nothing
+casts shadow onto the background.
+Background: one single completely flat solid magenta #FF00FF over the entire canvas,
+perfectly uniform, no gradient, no texture, no floor plane.
+Strictly no text, no letters, no numbers, no clock numerals, no currency symbols, no
+human figures, no logo, no brand, no watermark, no gradient orbs, no bokeh, no complex
+background.

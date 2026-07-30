@@ -7,9 +7,21 @@ import {
   listLogsByDay,
   listLogsByRange,
   putRule,
+  putMed,
+  getMed,
+  softDeleteMed,
+  createMedicationBatch,
   setOccurrenceAction,
+  MedicationBatchValidationError,
 } from '../db/local';
-import { SLOT_LABEL, formatMealRels, type Slot } from '../db/schema';
+import {
+  SLOT_LABEL,
+  SLOT_DEFAULT_TIME,
+  formatMealRels,
+  type LocalDate,
+  type Medication,
+  type Slot,
+} from '../db/schema';
 import {
   addLocalDays,
   calculateAdherence,
@@ -20,8 +32,29 @@ import {
   projectScheduleDate,
   toLocalDate,
 } from '../domain/medicationSchedule';
-import { classifyInventoryStatus, estimateDaysLeft } from '../features/inventory';
+import {
+  classifyInventoryStatus,
+  estimateDaysLeft,
+  roundStock,
+  suggestStructuredDose,
+} from '../features/inventory';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
+import { createMedicationDraft, applyExplicitDose } from '../domain/medicationDraft';
+import {
+  listAdjustableSettings,
+  getSettingDescriptor,
+  coerceSettingValue,
+  setSetting as setAppSettingValue,
+} from '../features/appSettings';
+import { triggerManualJoinAll } from '../sync/lan/autoSync';
+import {
+  downloadUpdate,
+  getAvailableUpdate,
+  installApk,
+  isApkDistributionAvailable,
+  LOCAL_APP_VERSION,
+  LOCAL_APP_VERSION_CODE,
+} from '../sync/lan/apkTransport';
 import type {
   AssistantCardBlock,
   AssistantCardIcon,
@@ -47,7 +80,7 @@ const SLOT_VALUES: Slot[] = ['morning', 'noon', 'evening', 'bedtime'];
 const TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 const MAX_CARD_TEXT = 600;
 const CARD_VARIANTS: AssistantCardVariant[] = ['summary', 'medication', 'stats', 'search', 'notice', 'inventory'];
-const CARD_ICONS: AssistantCardIcon[] = ['pill', 'box', 'calendar', 'clock', 'timer', 'scan', 'bell', 'bell-ring', 'check', 'warn', 'sparkles', 'info'];
+const CARD_ICONS: AssistantCardIcon[] = ['pill', 'box', 'calendar', 'clock', 'timer', 'scan', 'bell', 'bell-ring', 'check', 'warn', 'sparkles', 'info', 'cloud', 'gear', 'trash'];
 const CARD_ITEM_STATUSES: AssistantCardItemStatus[] = ['pending', 'success', 'skipped', 'warning', 'muted'];
 
 function str(v: unknown): string {
@@ -361,6 +394,9 @@ const PAGE_TARGETS: Record<string, { path: string; label: string }> = {
   scan: { path: '/scan', label: '分药' },
   inventory: { path: '/meds/inventory', label: '库存' },
   settings: { path: '/settings', label: '设置' },
+  history: { path: '/history', label: '服药历史' },
+  edit_med: { path: '/meds/__MED_ID__/edit', label: '编辑药品' },
+  batch_add: { path: '/meds/batch', label: '批量添加药品' },
 };
 
 const PAGE_ICONS: Record<string, AssistantNavigationBlock['icon']> = {
@@ -370,6 +406,9 @@ const PAGE_ICONS: Record<string, AssistantNavigationBlock['icon']> = {
   scan: 'scan',
   inventory: 'box',
   settings: 'gear',
+  history: 'calendar',
+  edit_med: 'pill',
+  batch_add: 'plus',
 };
 
 const presentCard: AssistantTool = {
@@ -521,10 +560,13 @@ export const OPEN_PAGE_TOOL_NAME = 'open_page';
 const openPage: AssistantTool = {
   name: OPEN_PAGE_TOOL_NAME,
   label: '准备页面入口',
-  description: '给用户展示一个可点击的应用内页面跳转卡片：today=今天清单，meds=药品列表，add_med=添加药品，scan=分药（扫码认药/拍药盒/拍药单录入），inventory=库存，settings=设置。此工具只展示入口，不会立刻跳页。',
+  description: '给用户展示一个可点击的应用内页面跳转卡片：today=今天清单，meds=药品列表，add_med=添加药品，scan=分药（扫码认药/拍药盒/拍药单录入），inventory=库存，settings=设置，history=服药历史，edit_med=编辑药品（需提供 medId），batch_add=批量添加药品。此工具只展示入口，不会立刻跳页。',
   parameters: {
     type: 'object',
-    properties: { page: { type: 'string', enum: Object.keys(PAGE_TARGETS) } },
+    properties: {
+      page: { type: 'string', enum: Object.keys(PAGE_TARGETS), description: '要打开的页面标识' },
+      medId: { type: 'string', description: '药品 ID，仅当 page=edit_med 时需要' },
+    },
     required: ['page'],
     additionalProperties: false,
   },
@@ -532,15 +574,634 @@ const openPage: AssistantTool = {
     const page = str(args.page);
     const target = PAGE_TARGETS[page];
     if (!target) return { ok: false, 提示: '没有这个页面' };
+    let path = target.path;
+    if (page === 'edit_med') {
+      const medId = str(args.medId);
+      if (!medId) {
+        return { ok: false, 提示: '编辑药品需要提供药品 ID，请先用 list_my_medications 查询' };
+      }
+      path = `/meds/${medId}/edit`;
+    }
     const ui: AssistantNavigationBlock = {
       type: 'navigation',
       title: target.label,
       description: `前往「${target.label}」继续操作`,
       actionLabel: '打开页面',
-      path: target.path,
+      path,
       icon: PAGE_ICONS[page],
     };
     return { ok: true, ui };
+  },
+};
+
+/* ============================================================
+ * Phase F：新增 8 个工具（库存编辑、药品增删改、同步、更新、设置）
+ * ============================================================
+ *
+ * 设计原则：
+ * - 改数据的工具必带 confirm 文案，让用户在弹窗里看到具体改动。
+ * - 工具只返回数据，不直接操作 DOM；卡片用现有 presentCard 模式。
+ * - 失败时返回 { ok: false, 提示 }，不抛错，让模型自己组织答复。
+ */
+
+const INVENTORY_ACTION_VALUES = ['set', 'add', 'mark_empty'] as const;
+type InventoryAction = (typeof INVENTORY_ACTION_VALUES)[number];
+
+const MEDICATION_SLOT_TO_TIME: Record<Slot, string> = {
+  morning: SLOT_DEFAULT_TIME.morning,
+  noon: SLOT_DEFAULT_TIME.noon,
+  evening: SLOT_DEFAULT_TIME.evening,
+  bedtime: SLOT_DEFAULT_TIME.bedtime,
+};
+
+function describeMedForConfirm(med: Medication): string {
+  const inventory = med.inventory
+    ? `${med.inventory.remaining}${med.inventory.unit || ''}`
+    : '未设置库存';
+  const slots = med.slots.length > 0 ? med.slots.map((s) => SLOT_LABEL[s]).join('·') : '无提醒';
+  return `${med.name}（${med.dosageText || '无规格'}，${slots}，库存 ${inventory}）`;
+}
+
+const editInventory: AssistantTool = {
+  name: 'edit_inventory',
+  label: '帮忙改一下库存',
+  description: '修改某种药的库存数量。支持三种操作：set=直接设为剩余多少；add=在现有基础上加多少（补货）；mark_empty=直接标记用完。需要传药名，可用部分匹配。',
+  parameters: {
+    type: 'object',
+    properties: {
+      medName: { type: 'string', description: '药名，可以是部分名字' },
+      action: { type: 'string', enum: INVENTORY_ACTION_VALUES, description: 'set=设为剩余多少，add=补货加上多少，mark_empty=标记用完' },
+      quantity: { type: 'number', description: 'set/add 时要传的数量；mark_empty 可不传', minimum: 0 },
+      unit: { type: 'string', description: '单位（片/粒/袋/mL 等）；若与库存单位不一致会按字符串归一化处理', maxLength: 12 },
+      note: { type: 'string', description: '可选的来源说明，例如「补了一盒」', maxLength: 80 },
+    },
+    required: ['medName', 'action'],
+    additionalProperties: false,
+  },
+  confirm(args) {
+    const action = args.action as InventoryAction;
+    const name = str(args.medName);
+    const qty = args.quantity;
+    const unit = str(args.unit);
+    if (action === 'mark_empty') return `把「${name}」的库存标记为用完（剩余设为 0）？`;
+    const numStr = typeof qty === 'number' ? `${qty}${unit}` : String(qty ?? '');
+    if (action === 'add') return `给「${name}」补货 ${numStr}（加到现有库存上）？`;
+    return `把「${name}」的库存设为 ${numStr}？`;
+  },
+  async run(args) {
+    const name = str(args.medName);
+    const action = args.action as InventoryAction;
+    if (!INVENTORY_ACTION_VALUES.includes(action)) {
+      return { ok: false, 提示: 'action 必须是 set / add / mark_empty' };
+    }
+    // 先做参数校验，再查 med，避免"没找到"覆盖更具体的"数量无效"错误
+    let requestedQty: number | undefined;
+    if (action === 'set' || action === 'add') {
+      const rawQty = args.quantity;
+      const qty = typeof rawQty === 'number' ? rawQty : Number(rawQty);
+      if (!Number.isFinite(qty) || qty < 0) {
+        return { ok: false, 提示: '数量必须是 ≥ 0 的数字' };
+      }
+      requestedQty = qty;
+    }
+
+    const { med } = await findMedByName(name);
+    if (!med) return { ok: false, 提示: `没找到叫「${name}」的药，先用 list_my_medications 看看都登记了什么药` };
+
+    let nextRemaining: number;
+    let unit = str(args.unit) || med.inventory?.unit || '';
+    const note = str(args.note);
+
+    if (action === 'mark_empty') {
+      nextRemaining = 0;
+    } else if (action === 'set') {
+      nextRemaining = roundStock(requestedQty ?? 0);
+    } else {
+      // add
+      const base = med.inventory?.remaining ?? 0;
+      if (med.inventory?.unit && unit && med.inventory.unit !== unit) {
+        // 单位不一致：保守起见，按"对端库存单位"显示但记下不一致警告
+        return { ok: false, 提示: `补货单位 ${unit} 与库存单位 ${med.inventory.unit} 不一致，请先在库存页统一单位` };
+      }
+      if (!unit && med.inventory?.unit) unit = med.inventory.unit;
+      nextRemaining = roundStock(base + (requestedQty ?? 0));
+    }
+
+    // 在 med 上写入新库存
+    if (!med.inventory) {
+      if (!unit && nextRemaining > 0) {
+        return { ok: false, 提示: '该药还没有库存记录，请通过 update_medication 或库存页设置初始单位' };
+      }
+      med.inventory = {
+        remaining: nextRemaining,
+        unit: unit || '片',
+      };
+    } else {
+      med.inventory.remaining = nextRemaining;
+      if (unit) med.inventory.unit = unit;
+    }
+    if (note) med.inventory.sourceNote = note.slice(0, 80);
+    med.inventory.lastReminderAt = undefined; // 重置低库存提醒节流，便于下次重判
+    await putMed(med);
+    try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
+
+    const unitDisplay = med.inventory.unit || unit || '';
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'inventory',
+      icon: 'box',
+      eyebrow: '库存已更新',
+      title: med.name,
+      badge: `${med.inventory.remaining}${unitDisplay}`,
+      tone: med.inventory.remaining <= 0 ? 'warning' : 'success',
+      body: note ? `备注：${note}` : undefined,
+      facts: [
+        { label: '当前剩余', value: `${med.inventory.remaining}${unitDisplay}` },
+        { label: '操作', value: action === 'set' ? '设为' : action === 'add' ? '补货' : '标记用完' },
+      ],
+    };
+    return {
+      ok: true,
+      已更新: `「${med.name}」库存 → ${med.inventory.remaining}${unitDisplay}`,
+      药名: med.name,
+      剩余: med.inventory.remaining,
+      单位: unitDisplay,
+      ui,
+    };
+  },
+};
+
+const addMedication: AssistantTool = {
+  name: 'add_medication',
+  label: '帮忙新增一种药',
+  description: '在药箱里新增一种药。必填药名；可填规格、每次用量、提醒时段（早/中/晚/睡前 多选，默认带默认时间）、初始库存。会同时创建对应的提醒规则。',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: '药品名', maxLength: 120 },
+      dosageText: { type: 'string', description: '规格，如 "5mg/片"', maxLength: 80 },
+      amountPerDose: { type: 'string', description: '每次用量文本，如 "1片" / "半片" / "2喷"', maxLength: 40 },
+      slots: {
+        type: 'array',
+        items: { type: 'string', enum: SLOT_VALUES },
+        description: '提醒时段，多选；不传则不建提醒',
+        maxItems: 4,
+      },
+      inventoryRemaining: { type: 'number', description: '初始库存数量', minimum: 0 },
+      inventoryUnit: { type: 'string', description: '库存单位，如 片/粒/袋/mL', maxLength: 12 },
+      notes: { type: 'string', description: '可选备注', maxLength: 200 },
+    },
+    required: ['name'],
+    additionalProperties: false,
+  },
+  confirm(args) {
+    const name = str(args.name);
+    const slots = Array.isArray(args.slots)
+      ? (args.slots as Slot[]).filter((s) => SLOT_VALUES.includes(s))
+      : [];
+    const slotText = slots.length > 0 ? slots.map((s) => SLOT_LABEL[s]).join('·') : '不建提醒';
+    const inv = typeof args.inventoryRemaining === 'number'
+      ? `初始库存 ${args.inventoryRemaining}${str(args.inventoryUnit) || ''}`
+      : '不设库存';
+    return `新增药品「${name}」（${slotText}，${inv}）？`;
+  },
+  async run(args) {
+    const name = str(args.name);
+    if (!name) return { ok: false, 提示: '请提供药品名称' };
+    // 防止明显的重复药名
+    const existing = await listMeds();
+    const dup = existing.find((m) => !m.deleted && m.name.trim().toLowerCase() === name.toLowerCase());
+    if (dup) return { ok: false, 提示: `已经有一种叫「${dup.name}」的药了，要不要直接改它？` };
+
+    const slots: Slot[] = Array.isArray(args.slots)
+      ? (args.slots as Slot[]).filter((s) => SLOT_VALUES.includes(s))
+      : [];
+    const draft = createMedicationDraft({
+      sourceKind: 'manual',
+      medication: {
+        name,
+        dosageText: str(args.dosageText),
+        amountPerDose: str(args.amountPerDose),
+        slots,
+        daysOfWeek: [],
+        notes: str(args.notes) || undefined,
+      },
+    });
+    // 尝试把 amountPerDose 解析成结构化剂量（与新增药品页保持一致）
+    applyExplicitDose(draft);
+    // 若用户给了库存，写入 inventory
+    if (typeof args.inventoryRemaining === 'number' && args.inventoryRemaining >= 0) {
+      const unit = str(args.inventoryUnit) || draft.medication.doseUnit || '片';
+      draft.medication.inventory = {
+        remaining: roundStock(args.inventoryRemaining),
+        unit,
+      };
+    }
+    // 为每个时段建一条规则，时间用 SLOT_DEFAULT_TIME
+    draft.rules = slots.map((slot) => ({
+      id: `rule-${draft.id}-${slot}`,
+      slot,
+      timeLocal: MEDICATION_SLOT_TO_TIME[slot],
+      enabled: true,
+    }));
+    try {
+      const result = await createMedicationBatch([draft]);
+      try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
+      const created = await getMed(result.medIds[0]);
+      const summary = created ? describeMedForConfirm(created) : name;
+      const ui: AssistantCardBlock = {
+        type: 'card',
+        variant: 'medication',
+        icon: 'pill',
+        eyebrow: '已新增药品',
+        title: name,
+        tone: 'success',
+        body: summary,
+        facts: [
+          { label: '提醒时段', value: slots.length > 0 ? slots.map((s) => SLOT_LABEL[s]).join('·') : '未建提醒' },
+          { label: '库存', value: draft.medication.inventory ? `${draft.medication.inventory.remaining}${draft.medication.inventory.unit}` : '未设置' },
+        ],
+      };
+      return {
+        ok: true,
+        已新增: `「${name}」已加入药箱`,
+        medId: result.medIds[0],
+        ui,
+      };
+    } catch (error) {
+      if (error instanceof MedicationBatchValidationError) {
+        const messages = [...error.draftErrors.values()].flat().map((e) => e.message);
+        return { ok: false, 提示: `校验未通过：${messages.join('；') || '请检查填写'}` };
+      }
+      const msg = error instanceof Error ? error.message : String(error);
+      return { ok: false, 提示: `新增失败：${msg}` };
+    }
+  },
+};
+
+const updateMedication: AssistantTool = {
+  name: 'update_medication',
+  label: '帮忙改一下药品信息',
+  description: '修改一种已存在的药品的：名称、规格、每次用量、备注、过期日。提醒时段和库存请用其他对应工具。',
+  parameters: {
+    type: 'object',
+    properties: {
+      medName: { type: 'string', description: '药名，可以是部分名字' },
+      name: { type: 'string', description: '新药名（不改则不传）', maxLength: 120 },
+      dosageText: { type: 'string', description: '新规格，如 "5mg/片"', maxLength: 80 },
+      amountPerDose: { type: 'string', description: '新每次用量文本，如 "1片" / "半片"', maxLength: 40 },
+      notes: { type: 'string', description: '新备注；传空字符串等价于清空', maxLength: 200 },
+      expiryLocalDate: { type: 'string', description: '过期日 YYYY-MM-DD；传空字符串清空', pattern: '^\\d{4}-\\d{2}-\\d{2}$|^$' },
+    },
+    required: ['medName'],
+    additionalProperties: false,
+  },
+  confirm(args) {
+    const name = str(args.medName);
+    const changes: string[] = [];
+    if (typeof args.name === 'string' && args.name.trim()) changes.push(`改名→${args.name.trim()}`);
+    if (typeof args.dosageText === 'string') changes.push(`规格→${args.dosageText || '空'}`);
+    if (typeof args.amountPerDose === 'string') changes.push(`每次用量→${args.amountPerDose || '空'}`);
+    if (typeof args.notes === 'string') changes.push(`备注→${args.notes || '空'}`);
+    if (typeof args.expiryLocalDate === 'string') changes.push(`过期日→${args.expiryLocalDate || '空'}`);
+    if (changes.length === 0) return `确认不修改「${name}」任何字段？`;
+    return `把「${name}」的字段更新为：\n${changes.join('；\n')}？`;
+  },
+  async run(args) {
+    const name = str(args.medName);
+    // 先校验是否至少传了一个可更新字段，避免"没找到"覆盖更具体的"没有要更新的字段"错误
+    const hasAnyField = typeof args.name === 'string'
+      || typeof args.dosageText === 'string'
+      || typeof args.amountPerDose === 'string'
+      || typeof args.notes === 'string'
+      || typeof args.expiryLocalDate === 'string';
+    if (!hasAnyField) {
+      return { ok: false, 提示: '没有要更新的字段' };
+    }
+    const { med } = await findMedByName(name);
+    if (!med) return { ok: false, 提示: `没找到叫「${name}」的药` };
+
+    const changes: string[] = [];
+    if (typeof args.name === 'string') {
+      const newName = args.name.trim();
+      if (newName && newName !== med.name) {
+        // 防止与其他药重名
+        const others = (await listMeds()).filter((m) => !m.deleted && m.id !== med.id);
+        if (others.some((o) => o.name.trim().toLowerCase() === newName.toLowerCase())) {
+          return { ok: false, 提示: `已经有叫「${newName}」的药了，不能重名` };
+        }
+        med.name = newName;
+        changes.push(`名字→${newName}`);
+      }
+    }
+    if (typeof args.dosageText === 'string') {
+      med.dosageText = args.dosageText.trim();
+      changes.push(`规格→${med.dosageText || '空'}`);
+    }
+    if (typeof args.amountPerDose === 'string') {
+      const newDose = args.amountPerDose.trim();
+      med.amountPerDose = newDose;
+      // 重新尝试解析结构化剂量
+      if (newDose) {
+        const parsed = suggestStructuredDose(newDose, med.inventory?.unit || med.doseUnit);
+        if (parsed) {
+          med.doseQuantity = parsed.quantity;
+          med.doseUnit = parsed.unit;
+          med.doseSourceText = newDose;
+          med.doseReviewRequired = false;
+          delete med.doseMigrationSuggestion;
+        } else {
+          // 无法解析：清掉旧结构化剂量，要求复核
+          delete med.doseQuantity;
+          delete med.doseUnit;
+          delete med.doseSourceText;
+          med.doseReviewRequired = true;
+        }
+      } else {
+        delete med.doseQuantity;
+        delete med.doseUnit;
+        delete med.doseSourceText;
+        med.doseReviewRequired = false;
+      }
+      changes.push(`每次用量→${newDose || '空'}`);
+    }
+    if (typeof args.notes === 'string') {
+      med.notes = args.notes.trim() || undefined;
+      changes.push(`备注→${med.notes || '空'}`);
+    }
+    if (typeof args.expiryLocalDate === 'string') {
+      if (args.expiryLocalDate === '') {
+        med.expiryLocalDate = undefined;
+        delete med.expiryDate;
+        changes.push('过期日→空');
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(args.expiryLocalDate)) {
+        med.expiryLocalDate = args.expiryLocalDate as LocalDate;
+        changes.push(`过期日→${args.expiryLocalDate}`);
+      }
+    }
+
+    if (changes.length === 0) {
+      return { ok: false, 提示: '没有要更新的字段' };
+    }
+    await putMed(med);
+    try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'medication',
+      icon: 'pill',
+      eyebrow: '已更新药品',
+      title: med.name,
+      tone: 'success',
+      body: changes.join('；'),
+    };
+    return { ok: true, 已更新: `「${med.name}」字段已修改：${changes.join('；')}`, 改动: changes, ui };
+  },
+};
+
+const deleteMedication: AssistantTool = {
+  name: 'delete_medication',
+  label: '帮忙删除一种药',
+  description: '软删除一种药品（连带提醒规则、计划快照）。服药记录保留以便历史追溯，但药品会从清单消失。请先确认用户真的要删除，不要轻易调用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      medName: { type: 'string', description: '药名，可以是部分名字' },
+      reason: { type: 'string', description: '删除原因（可选，仅记录用）', maxLength: 80 },
+    },
+    required: ['medName'],
+    additionalProperties: false,
+  },
+  confirm(args) {
+    return `确认删除药品「${str(args.medName)}」？\n提醒规则会被停用，历史服药记录保留；之后可以从备份恢复。`;
+  },
+  async run(args) {
+    const name = str(args.medName);
+    const { med } = await findMedByName(name);
+    if (!med) return { ok: false, 提示: `没找到叫「${name}」的药` };
+    const medName = med.name;
+    const medId = med.id;
+    await softDeleteMed(medId);
+    try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'medication',
+      icon: 'trash',
+      eyebrow: '已删除药品',
+      title: medName,
+      tone: 'warning',
+      body: '相关提醒已停用，历史记录保留。',
+    };
+    return { ok: true, 已删除: `「${medName}」已从药箱删除`, medId, ui };
+  },
+};
+
+const triggerLanSync: AssistantTool = {
+  name: 'trigger_lan_sync',
+  label: '立即同步所有设备',
+  description: '立即触发一次局域网内所有已配对设备的数据同步，不用等 30 分钟自动轮询。无 peer 时返回 0，不报错。',
+  parameters: { type: 'object', properties: {}, additionalProperties: false },
+  async run() {
+    const summary = await triggerManualJoinAll();
+    const total = summary.joined + summary.failed + summary.skipped;
+    const tone = summary.failed > 0 ? 'warning' : 'success';
+    const body = total === 0
+      ? '本机还没有配对的设备，到「设置 → 局域网家庭同步」扫码或显示连接码来配对。'
+      : `本次同步：成功 ${summary.joined}，失败 ${summary.failed}，跳过 ${summary.skipped}。`;
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'summary',
+      icon: 'cloud',
+      eyebrow: '局域网同步',
+      title: total === 0 ? '暂无配对设备' : (summary.failed > 0 ? '同步完成（部分失败）' : '同步完成'),
+      tone,
+      body,
+      facts: [
+        { label: '成功', value: `${summary.joined} 台` },
+        { label: '失败', value: `${summary.failed} 台` },
+        { label: '跳过', value: `${summary.skipped} 台` },
+      ],
+    };
+    return {
+      ok: true,
+      摘要: summary,
+      ui,
+    };
+  },
+};
+
+const checkAppUpdate: AssistantTool = {
+  name: 'check_app_update',
+  label: '检查应用更新',
+  description: '查询本机当前应用版本，以及局域网内是否有已升级设备可分发的新版本 APK。',
+  parameters: { type: 'object', properties: {}, additionalProperties: false },
+  async run() {
+    const update = getAvailableUpdate();
+    const canSelfUpdate = isApkDistributionAvailable();
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'notice',
+      icon: 'cloud',
+      eyebrow: '应用更新',
+      title: update ? `发现新版本 v${update.version}` : '已是最新版本',
+      tone: update ? 'warning' : 'success',
+      badge: update ? `可更新` : '最新',
+      body: update
+        ? `来源：${update.peerHost}（局域网内已升级设备）。`
+        : (canSelfUpdate
+          ? '本机已是当前最新版本，其他设备会通过局域网同步发现。'
+          : '应用更新仅在 Android App 中可用；当前环境无法直接安装 APK。'),
+      facts: [
+        { label: '当前版本', value: `v${LOCAL_APP_VERSION}（${LOCAL_APP_VERSION_CODE}）` },
+        { label: '可用更新', value: update ? `v${update.version}（${update.versionCode}）` : '无' },
+      ],
+    };
+    return {
+      ok: true,
+      当前版本: LOCAL_APP_VERSION,
+      versionCode: LOCAL_APP_VERSION_CODE,
+      可用更新: update
+        ? { version: update.version, versionCode: update.versionCode, peerHost: update.peerHost }
+        : null,
+      可自动更新: canSelfUpdate,
+      ui,
+    };
+  },
+};
+
+const downloadAndInstallUpdate: AssistantTool = {
+  name: 'download_and_install_update',
+  label: '下载并安装新版本',
+  description: '当 check_app_update 发现可用更新后，调用此工具从局域网内已升级设备下载 APK 并调起系统安装器。安装器启动后应用可能重启，请提醒用户保存当前对话。',
+  parameters: { type: 'object', properties: {}, additionalProperties: false },
+  confirm() {
+    const update = getAvailableUpdate();
+    if (!update) return '当前没有可用更新，仍要继续吗？';
+    return `即将从 ${update.peerHost} 下载 v${update.version}（versionCode ${update.versionCode}）的 APK 并调起安装器。\n安装器启动后应用可能重启，请确认当前对话已保存。`;
+  },
+  async run() {
+    if (!isApkDistributionAvailable()) {
+      return { ok: false, 提示: '当前环境不支持 APK 自动更新（仅 Android App 可用）' };
+    }
+    const update = getAvailableUpdate();
+    if (!update) {
+      return { ok: false, 提示: '暂无可用更新。先用 check_app_update 看一下，或等待局域网同步发现新版本' };
+    }
+    let apkPath: string;
+    try {
+      apkPath = await downloadUpdate(update);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '未知错误';
+      return { ok: false, 提示: `下载失败：${msg}` };
+    }
+    try {
+      await installApk(apkPath);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '未知错误';
+      return { ok: false, 提示: `安装调起失败：${msg}`, apkPath };
+    }
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'notice',
+      icon: 'cloud',
+      eyebrow: '应用更新',
+      title: `已下载 v${update.version}`,
+      tone: 'success',
+      body: '系统安装器已启动。安装完成后应用会自动重启。',
+    };
+    // 安装成功后会重启，这里不立即 clearAvailableUpdate；安装取消时让用户重新触发
+    return {
+      ok: true,
+      已下载: apkPath,
+      版本: update.version,
+      ui,
+    };
+  },
+};
+
+const updateAppSettings: AssistantTool = {
+  name: 'update_app_settings',
+  label: '调整一下应用设置',
+  description: '批量调整应用设置（白名单）：appNotificationsEnabled（应用内提醒总开关）、lanAutoSyncEnabled（局域网自动同步）、lanAutoSyncSilent（自动同步静默处理冲突）、lanAllowRemoteOverwrite（允许同局域网设备覆盖本机数据）。一次可以传多项。',
+  parameters: {
+    type: 'object',
+    properties: {
+      settings: {
+        type: 'array',
+        description: '要修改的设置项',
+        maxItems: 8,
+        items: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', description: '设置项 key' },
+            value: { description: '新值（boolean）' },
+          },
+          required: ['key', 'value'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['settings'],
+    additionalProperties: false,
+  },
+  confirm(args) {
+    const items = Array.isArray(args.settings) ? args.settings : [];
+    const lines = items.map((item) => {
+      const desc = item && typeof item === 'object' ? getSettingDescriptor(String(item.key)) : undefined;
+      return `· ${desc?.label ?? String(item?.key ?? '?')} → ${String(item?.value)}`;
+    });
+    return `即将更新以下设置：\n${lines.join('\n')}`;
+  },
+  async run(args) {
+    const items = Array.isArray(args.settings) ? args.settings : [];
+    if (items.length === 0) return { ok: false, 提示: '请提供要修改的设置项' };
+    const applied: string[] = [];
+    const skipped: string[] = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const key = String((item as Record<string, unknown>).key ?? '');
+      const value = (item as Record<string, unknown>).value;
+      const descriptor = getSettingDescriptor(key);
+      if (!descriptor) {
+        skipped.push(`${key}（不在白名单内）`);
+        continue;
+      }
+      const coerced = coerceSettingValue(descriptor, value);
+      if (coerced === undefined) {
+        skipped.push(`${descriptor.label}（值无效：${String(value)}）`);
+        continue;
+      }
+      try {
+        await setAppSettingValue(key, coerced);
+        applied.push(`${descriptor.label}→${coerced}`);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : '未知错误';
+        skipped.push(`${descriptor.label}（${msg}）`);
+      }
+    }
+    const tone = skipped.length > 0 ? 'warning' : 'success';
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'summary',
+      icon: 'gear',
+      eyebrow: '应用设置',
+      title: applied.length > 0 ? '设置已更新' : '设置未变更',
+      tone,
+      body: [
+        applied.length > 0 ? `已应用：${applied.join('；')}` : '',
+        skipped.length > 0 ? `跳过：${skipped.join('；')}` : '',
+      ].filter(Boolean).join('\n'),
+      facts: [
+        { label: '已应用', value: `${applied.length} 项` },
+        { label: '跳过', value: `${skipped.length} 项` },
+      ],
+    };
+    return {
+      ok: applied.length > 0,
+      已应用: applied,
+      跳过: skipped,
+      可调项: listAdjustableSettings().map((s) => ({ key: s.key, label: s.label, type: s.type, 当前值: String(s.get()) })),
+      ui,
+    };
   },
 };
 
@@ -553,6 +1214,14 @@ export const assistantTools: readonly AssistantTool[] = [
   webSearchExa,
   presentCard,
   openPage,
+  editInventory,
+  addMedication,
+  updateMedication,
+  deleteMedication,
+  triggerLanSync,
+  checkAppUpdate,
+  downloadAndInstallUpdate,
+  updateAppSettings,
 ];
 
 export function findAssistantTool(name: string): AssistantTool | undefined {

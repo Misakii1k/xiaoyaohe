@@ -116,6 +116,8 @@ export function describeLanSyncTransportError(code?: string): string {
       return '等待时间太久，请让两台手机都停留在这个页面后重试。';
     case 'FRAME_TOO_LARGE':
       return '要传送的资料太多，请先减少旧记录后再试。';
+    case 'SESSION_ACTIVE':
+      return '自动同步正在占用连接，请稍等几秒再试。';
     default:
       return '当前 Wi-Fi 可能不允许手机互相连接，可以换一个网络后重试。';
   }

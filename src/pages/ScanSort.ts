@@ -16,9 +16,11 @@ import {
   listScheduleRevisions,
   putMed,
   putRule,
+  recordPreDeduction,
   uid,
 } from '../db/local';
 import { getMedPhotoUrls, saveMedPhoto } from '../features/medPhotos';
+import { sendLowStockReminderIfDue } from '../features/inventoryReminder';
 import {
   SLOTS,
   SLOT_DEFAULT_TIME,
@@ -316,13 +318,16 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
           grouped.set(med.id, group);
         }
         group.earliest = Math.min(group.earliest, projection.dueAt);
-        if (projection.isRest) continue;
+        if (projection.isRest || !projection.occurrence) continue;
         group.entries.push({
+          occurrenceId: projection.occurrence.id,
           slot: projection.revision.slot,
           timeLocal: projection.revision.timeLocal,
-          doseLabel: projection.revision.doseQuantity && projection.revision.doseUnit
-            ? `${projection.revision.doseQuantity}${projection.revision.doseUnit}`
+          doseLabel: projection.occurrence.doseQuantity && projection.occurrence.doseUnit
+            ? `${projection.occurrence.doseQuantity}${projection.occurrence.doseUnit}`
             : med.amountPerDose || '',
+          doseQuantity: projection.occurrence.doseQuantity,
+          doseUnit: projection.occurrence.doseUnit,
           mealRels: [...projection.revision.mealRels],
         });
       }
@@ -345,7 +350,48 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
           isRest: group.entries.length === 0,
           expired: isMedicationExpiredOn(medById.get(medId)!, today),
         }));
-      openSortWizard(items);
+      openSortWizard(items, {
+        onComplete: async (summary) => {
+          let deducted = 0;
+          let skipped = 0;
+          let failed = 0;
+          const lowStockMessages = new Set<string>();
+          for (const entry of summary.items) {
+            skipped += entry.entryCount - entry.entries.length;
+            const med = medById.get(entry.medId);
+            if (!med) {
+              failed += entry.entryCount;
+              continue;
+            }
+            if (isMedicationExpiredOn(med, today)) {
+              skipped += entry.entryCount;
+              continue;
+            }
+            try {
+              const result = await recordPreDeduction(med, entry.entries, today);
+              deducted += result.deductedOccurrences;
+              skipped += result.skippedOccurrences;
+              if (result.lowStockMessage) {
+                lowStockMessages.add(result.lowStockMessage);
+                await sendLowStockReminderIfDue(result.med, result.lowStockMessage);
+              }
+            } catch {
+              failed += entry.entryCount;
+            }
+          }
+          if (deducted > 0) {
+            const parts = [`已扣减 ${deducted} 个服药时段的库存`];
+            if (skipped > 0) parts.push(`跳过 ${skipped} 个时段`);
+            if (failed > 0) parts.push(`失败 ${failed} 个时段`);
+            toast(parts.join('，'));
+          } else if (skipped > 0) {
+            toast(`本次无需重复扣减（${skipped} 个时段已扣或待复核）`);
+          } else if (failed > 0) {
+            toast(`库存扣减失败：${failed} 个时段`);
+          }
+          for (const message of lowStockMessages) toast(message);
+        },
+      });
     } finally {
       sortLaunching = false;
     }

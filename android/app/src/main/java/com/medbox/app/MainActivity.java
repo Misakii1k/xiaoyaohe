@@ -6,12 +6,14 @@ import android.os.Bundle;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
+import com.medbox.app.lansync.ApkDistributionPlugin;
 import com.medbox.app.lansync.LanSyncPlugin;
 
 public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(LanSyncPlugin.class);
+        registerPlugin(ApkDistributionPlugin.class);
         registerPlugin(MedicationAlarmPlugin.class);
         registerPlugin(NativeSpeechPlugin.class);
         registerPlugin(PowerSettingsPlugin.class);

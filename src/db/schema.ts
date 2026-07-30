@@ -192,6 +192,16 @@ export interface Medication {
   createdAt?: number;
   /** 软删除，便于多端合并 */
   deleted?: boolean;
+  /** 最近一次分药向导预扣库存的时间戳（UTC 毫秒）；保留用于兼容旧数据。 */
+  lastPreDeductedAt?: number;
+  /** 当前分药日已成功预扣的具体服药时段，避免补计划后整味药都被误判为已扣。 */
+  preDeduction?: {
+    localDate: LocalDate;
+    occurrenceIds: string[];
+    totalDose: number;
+    doseUnit: string;
+    updatedAt: number;
+  };
   /** @deprecated 旧字段：with_meal slot + 单值 mealRel；inflateMed 会迁移 */
   mealRel?: 'before' | 'after' | 'with' | 'none';
 }
@@ -246,6 +256,13 @@ export interface IntakeLog {
   ackAt?: number;
   /** 本次打卡扣减的库存数量；用于撤销时恢复，老记录为空表示无法自动恢复 */
   inventoryDelta?: number;
+  /**
+   * 标记此条服药记录的库存已在分药向导完成时预扣。
+   * - taken 记录：true 表示库存已扣，setOccurrenceAction 跳过 deductInventory，
+   *   撤销时也不回滚库存（因为药已分到药盒格中）。
+   * - 分药后实际打卡产生的 taken 记录使用此标记。
+   */
+  preDeducted?: boolean;
   updatedAt: number;
 }
 

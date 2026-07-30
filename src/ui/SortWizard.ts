@@ -1,5 +1,5 @@
-// 按顺序分药向导：一盒一盒弹卡展示「药盒长什么样、放哪些格、每格几粒」，
-// 长辈照着做即可；不改任何数据，纯引导。复用 med-wizard 的底部弹卡样式。
+// 按顺序分药向导：一盒一盒弹卡展示「药盒长什么样、放哪些格、每格几粒」。
+// 逐盒步骤只做引导，完成页确认后由调用方按具体服药时段预扣库存。
 import { SLOT_LABEL, formatMealRels, type MealRel, type Medication, type Slot } from '../db/schema';
 import { registerRouteTransitionCleanup, navigate } from '../router';
 import { el, icon, banner, SLOT_ICON } from './components';
@@ -7,10 +7,13 @@ import { createButton } from './primitives/Button';
 import { doseFormLabel } from './MedOnboardWizard';
 
 export interface SortWizardEntry {
+  occurrenceId: string;
   slot: Slot;
   timeLocal: string;
   /** 每格放多少：结构化剂量或自由文本，空串显示“按医嘱” */
   doseLabel: string;
+  doseQuantity?: number;
+  doseUnit?: string;
   mealRels: MealRel[];
 }
 
@@ -23,8 +26,52 @@ export interface SortWizardItem {
   expired: boolean;
 }
 
+/**
+ * 分药向导完成时的摘要。每项对应一种被分装的药品及其总剂量。
+ * 调用方（如 ScanSort.ts）可据此调用 recordPreDeduction 预扣库存。
+ */
+export interface SortWizardSummary {
+  items: Array<{
+    medId: string;
+    medName: string;
+    /** 本次可安全预扣的具体时段；剂量未结构化的时段不会进入此数组。 */
+    entries: Array<{ occurrenceId: string; quantity: number; unit: string }>;
+    totalDose: number;
+    doseUnit?: string;
+    /** 实际分装的时段数（不含停药/过期项，包含剂量待复核项） */
+    entryCount: number;
+  }>;
+  completedAt: number;
+}
+
 export interface SortWizardHandle {
   close: () => void;
+}
+
+export function buildSortWizardSummary(
+  items: readonly SortWizardItem[],
+  completedAt = Date.now(),
+): SortWizardSummary {
+  return {
+    items: items
+      .filter((item) => !item.isRest && !item.expired)
+      .map((item) => {
+        const entries = item.entries.flatMap((entry) =>
+          entry.occurrenceId && Number.isFinite(entry.doseQuantity) && (entry.doseQuantity as number) > 0 && entry.doseUnit?.trim()
+            ? [{ occurrenceId: entry.occurrenceId, quantity: entry.doseQuantity as number, unit: entry.doseUnit.trim() }]
+            : [],
+        );
+        return {
+          medId: item.med.id,
+          medName: item.med.name,
+          entries,
+          totalDose: entries.reduce((sum, entry) => sum + entry.quantity, 0),
+          doseUnit: entries[0]?.unit,
+          entryCount: item.entries.length,
+        };
+      }),
+    completedAt,
+  };
 }
 
 const SLOT_ORDER: readonly Slot[] = ['morning', 'noon', 'evening', 'bedtime'];
@@ -35,11 +82,15 @@ registerRouteTransitionCleanup(() => {
   for (const dispose of Array.from(activeSortWizards)) dispose();
 });
 
-export function openSortWizard(items: readonly SortWizardItem[]): SortWizardHandle {
+export function openSortWizard(
+  items: readonly SortWizardItem[],
+  options: { onComplete?: (summary: SortWizardSummary) => Promise<void> | void } = {},
+): SortWizardHandle {
   if (items.length === 0) return { close: () => undefined };
 
   let step = 0; // 0..items.length-1 为逐盒卡，items.length 为完成卡
   let disposed = false;
+  let completing = false;
   const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
 
   const overlay = el('div', { class: 'med-wizard-overlay' });
@@ -159,7 +210,7 @@ export function openSortWizard(items: readonly SortWizardItem[]): SortWizardHand
     const view = el('div', { class: 'med-wizard-summary' });
     const check = el('div', { class: 'med-wizard-check', 'aria-hidden': 'true' } as any);
     check.append(icon('check'));
-    const sorted = items.filter((item) => !item.isRest).length;
+    const sorted = items.filter((item) => !item.isRest && !item.expired).length;
     const title = el('h3', { class: 'med-wizard-name', html: `${sorted} 盒药都分好了` });
     const sub = el('p', { class: 'med-wizard-sub', html: '到点会提醒您吃；吃完记得在「今天」里打个勾。' });
     const list = el('div', { class: 'med-wizard-summary-list' });
@@ -179,7 +230,9 @@ export function openSortWizard(items: readonly SortWizardItem[]): SortWizardHand
         el('span', {
           text: item.isRest
             ? '今天停药，没有分'
-            : item.entries.map((entry) => SLOT_LABEL[entry.slot]).join('、') || '时段待补',
+            : item.expired
+              ? '药品已过期，没有分'
+              : item.entries.map((entry) => SLOT_LABEL[entry.slot]).join('、') || '时段待补',
         }),
       );
       row.append(thumb, copy);
@@ -207,6 +260,18 @@ export function openSortWizard(items: readonly SortWizardItem[]): SortWizardHand
     updateChrome();
   }
 
+  function complete(navigateToToday: boolean): void {
+    if (disposed || completing) return;
+    completing = true;
+    const summary = buildSortWizardSummary(items);
+    dispose();
+    void Promise.resolve(options.onComplete?.(summary))
+      .catch(() => undefined)
+      .finally(() => {
+        if (navigateToToday) navigate('/today');
+      });
+  }
+
   function updateChrome(): void {
     const onSummary = step >= items.length;
     progress.textContent = onSummary ? '都分好了' : `第 ${step + 1} 盒，共 ${items.length} 盒`;
@@ -222,12 +287,13 @@ export function openSortWizard(items: readonly SortWizardItem[]): SortWizardHand
           label: '看今日清单',
           variant: 'secondary',
           icon: 'calendar',
-          onClick: () => {
-            dispose();
-            navigate('/today');
-          },
+          onClick: () => complete(true),
         }),
-        createButton({ label: '完成', icon: 'check', onClick: dispose }),
+        createButton({
+          label: '完成',
+          icon: 'check',
+          onClick: () => complete(false),
+        }),
       );
       return;
     }

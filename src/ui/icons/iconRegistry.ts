@@ -39,6 +39,8 @@ import plugSvg from '@tabler/icons/icons/outline/plug-connected.svg?raw';
 import robotSvg from '@tabler/icons/icons/outline/robot.svg?raw';
 import lockSvg from '@tabler/icons/icons/outline/lock.svg?raw';
 import devicesSvg from '@tabler/icons/icons/outline/devices.svg?raw';
+import expandSvg from '@tabler/icons/icons/outline/arrows-maximize.svg?raw';
+import contractSvg from '@tabler/icons/icons/outline/arrows-minimize.svg?raw';
 
 export type AppIconName =
   | 'pill'
@@ -81,7 +83,9 @@ export type AppIconName =
   | 'chevron-right'
   | 'send'
   | 'share'
-  | 'close';
+  | 'close'
+  | 'expand'
+  | 'contract';
 
 export const iconRegistry: Readonly<Record<AppIconName, string>> = {
   pill: pillSvg,
@@ -125,4 +129,6 @@ export const iconRegistry: Readonly<Record<AppIconName, string>> = {
   send: sendSvg,
   share: shareSvg,
   close: closeSvg,
+  expand: expandSvg,
+  contract: contractSvg,
 };

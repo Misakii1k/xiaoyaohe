@@ -8,6 +8,8 @@ import {
   putLog,
   putMed,
   putRule,
+  recordPreDeduction,
+  isOccurrencePreDeducted,
   setOccurrenceAction,
 } from '../src/db/local';
 import { defaultEscalate, emptyIdentity, type Medication, type ReminderRule } from '../src/db/schema';
@@ -83,10 +85,14 @@ describe('atomic occurrence actions', () => {
     const empty = (await getMed(med.id))!;
     empty.inventory!.remaining = 0;
     await putMed(empty);
-    await expect(setOccurrenceAction(occurrence, 'taken')).rejects.toMatchObject({
-      code: 'insufficient-inventory',
-    });
+    // 库存为 0 时不再阻塞：记录成功，库存不变（仍为 0），日志已创建。
+    const takenEmpty = await setOccurrenceAction(occurrence, 'taken');
+    expect(takenEmpty.inventoryChanged).toBe(false);
     expect((await getMed(med.id))?.inventory?.remaining).toBe(0);
+    const emptyLog = await getLogForOccurrence(occurrence);
+    expect(emptyLog?.status).toBe('taken');
+    // 撤销以清除日志，便于后续过期测试从无日志状态开始。
+    await setOccurrenceAction(occurrence, undefined);
     expect(await getLogForOccurrence(occurrence)).toBeUndefined();
 
     const expired = (await getMed(med.id))!;
@@ -171,6 +177,91 @@ describe('atomic occurrence actions', () => {
     expect(result.inventoryChanged).toBe(false);
     expect(result.log).toMatchObject({ status: 'taken', inventoryDelta: undefined });
     expect((await getMed(med.id))?.inventory?.remaining).toBe(6);
+  });
+
+  it('pre-deducts exact occurrences, avoids duplicate deductions, and still deducts schedules added later', async () => {
+    const med: Medication = {
+      id: 'med-pre-deduction',
+      name: '分药预扣测试药',
+      dosageText: '',
+      amountPerDose: '1片',
+      doseQuantity: 1,
+      doseUnit: '片',
+      slots: ['morning', 'noon'],
+      mealRels: [],
+      mealRelsBySlot: {},
+      daysOfWeek: [],
+      inventory: { remaining: 10, unit: '片' },
+      identity: emptyIdentity(),
+      createdAt: Date.now(),
+      updatedAt: 1,
+    };
+    await putMed(med);
+    for (const [id, slot, timeLocal] of [
+      ['rule-pre-morning', 'morning', '08:00'],
+      ['rule-pre-noon', 'noon', '12:00'],
+    ] as const) {
+      await putRule({
+        id,
+        medId: med.id,
+        slot,
+        timeLocal,
+        enabled: true,
+        escalate: defaultEscalate(),
+        updatedAt: 1,
+      });
+    }
+    const today = toLocalDate();
+    const initial = projectScheduleDate(
+      (await listScheduleRevisions()).filter((revision) => revision.medId === med.id),
+      today,
+    ).map((projection) => projection.occurrence!);
+
+    const first = await recordPreDeduction(med, [{
+      occurrenceId: initial[0].id,
+      quantity: initial[0].doseQuantity!,
+      unit: initial[0].doseUnit!,
+    }], today);
+    expect(first).toMatchObject({ deducted: 1, deductedOccurrences: 1, skippedOccurrences: 0, remaining: 9 });
+
+    const repeated = await recordPreDeduction(first.med, [{
+      occurrenceId: initial[0].id,
+      quantity: 1,
+      unit: '片',
+    }], today);
+    expect(repeated).toMatchObject({ deducted: 0, deductedOccurrences: 0, skippedOccurrences: 1, remaining: 9 });
+
+    const supplemented = await recordPreDeduction(repeated.med, initial.map((occurrence) => ({
+      occurrenceId: occurrence.id,
+      quantity: occurrence.doseQuantity!,
+      unit: occurrence.doseUnit!,
+    })), today);
+    expect(supplemented).toMatchObject({ deducted: 1, deductedOccurrences: 1, skippedOccurrences: 1, remaining: 8 });
+    expect(initial.every((occurrence) => isOccurrencePreDeducted(supplemented.med, occurrence))).toBe(true);
+
+    const taken = await setOccurrenceAction(initial[0], 'taken');
+    expect(taken.log).toMatchObject({ status: 'taken', preDeducted: true, inventoryDelta: undefined });
+    expect((await getMed(med.id))?.inventory?.remaining).toBe(8);
+    await setOccurrenceAction(initial[0], undefined);
+    expect((await getMed(med.id))?.inventory?.remaining).toBe(8);
+
+    await putRule({
+      id: 'rule-pre-evening',
+      medId: med.id,
+      slot: 'evening',
+      timeLocal: '18:00',
+      enabled: true,
+      escalate: defaultEscalate(),
+      updatedAt: Date.now(),
+    });
+    const expanded = projectScheduleDate(
+      (await listScheduleRevisions()).filter((revision) => revision.medId === med.id),
+      today,
+    ).map((projection) => projection.occurrence!);
+    const added = expanded.find((occurrence) => occurrence.slot === 'evening')!;
+    expect(isOccurrencePreDeducted((await getMed(med.id))!, added)).toBe(false);
+    await setOccurrenceAction(added, 'taken');
+    expect((await getMed(med.id))?.inventory?.remaining).toBe(7);
   });
 
   it('imports immutable schedule history without overwriting an existing revision', async () => {

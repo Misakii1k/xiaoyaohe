@@ -30,7 +30,18 @@ export const VERSION_CODE_BY_VERSION = Object.freeze({
   '0.8.1': 17,
   '0.8.2': 18,
   '0.9.0': 19,
+  '0.9.1': 20,
+  '0.9.2': 21,
 });
+
+/**
+ * 在 vite.config.ts 中由构建期注入到 WebView：把 package.json 的 version
+ * 映射成 Android versionCode（与 release-utils 中的校验保持一致）。
+ * 未在表中登记的版本返回 null，构建期常量变为 undefined，TS 侧用 0 兜底。
+ */
+export function getVersionCode(packageVersion) {
+  return VERSION_CODE_BY_VERSION[packageVersion] ?? null;
+}
 
 const ZIP_LOCAL_FILE_HEADER = 0x04034b50;
 const ZIP_CENTRAL_DIRECTORY_HEADER = 0x02014b50;

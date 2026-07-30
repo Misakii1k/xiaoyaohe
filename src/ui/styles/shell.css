@@ -170,6 +170,11 @@
   margin-inline: max(var(--space-3), var(--safe-right));
 }
 
+/* 窄屏下把 Toast 再抬高，避免遮住底部卡片里的撤销/操作按钮 */
+@media (max-width: 360px) {
+  .toast { inset-block-end: calc(148px + var(--safe-bottom)); }
+}
+
 .overlay {
   padding: max(20px, var(--safe-top)) max(16px, var(--safe-right)) max(20px, var(--safe-bottom)) max(16px, var(--safe-left));
 }

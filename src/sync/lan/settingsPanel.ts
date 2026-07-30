@@ -28,7 +28,12 @@ import {
 } from './knownPeers';
 import {
   isAutoSyncEnabled,
+  isLanAutoSyncSilent,
+  pausePersistentHost,
   setAutoSyncEnabled,
+  setLanAutoSyncSilent,
+  triggerManualJoinAll,
+  type ManualJoinSummary,
 } from './autoSync';
 
 export interface LanSyncSettingsPart {
@@ -126,6 +131,30 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     }),
   ]);
 
+  const silentToggle = el('input', {
+    type: 'checkbox',
+    id: `lan-sync-auto-silent-${panelSequence}`,
+  } as any) as HTMLInputElement;
+  silentToggle.checked = isLanAutoSyncSilent();
+  const silentHint = el('span', {
+    style: 'font-size:13px;line-height:1.45' as any,
+    text: '自动同步冲突时静默处理：开启后用推荐策略（合并或整库覆盖）直接同步；关闭后遇到整库覆盖会跳过本次，留给手动同步确认。',
+  });
+  silentToggle.onchange = () => {
+    setLanAutoSyncSilent(silentToggle.checked);
+    toast(silentToggle.checked
+      ? '已开启静默处理：自动同步按推荐策略执行'
+      : '已关闭静默处理：整库覆盖将被跳过，请用手动同步确认');
+  };
+  const silentField = el('label', {
+    class: 'lan-sync-extras-item',
+    htmlFor: silentToggle.id,
+    style: 'display:flex;align-items:flex-start;gap:10px;margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:var(--color-surface-muted,#f2f1f5);',
+  } as any, [
+    silentToggle,
+    silentHint,
+  ]);
+
   const peersBox = el('div', { class: 'lan-sync-peers', style: 'margin:8px 0 4px' } as any);
   const renderPeersList = (): void => {
     peersBox.replaceChildren();
@@ -181,10 +210,14 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   const showCode = actionButton('send', '显示连接码');
   const scanCode = actionButton('scan', '扫一扫连接', 'tonal');
   const actions = el('div', { class: 'btn-row lan-sync-actions' }, [showCode, scanCode]);
-  body.append(info, inventoryNote, nameField, allowField, autoSyncField, peersBox, extrasFieldset, actions, status);
+  // 一键同步：立即对所有已配对设备做一次 join，不等 30 分钟轮询。
+  const syncAllBtn = actionButton('retry', '一键同步所有设备', 'tonal');
+  const syncAllRow = el('div', { class: 'btn-row lan-sync-syncall-row', style: 'margin-top:8px' } as any, [syncAllBtn]);
+  body.append(info, inventoryNote, nameField, allowField, autoSyncField, silentField, peersBox, extrasFieldset, actions, syncAllRow, status);
   if (!available) {
     showCode.disabled = true;
     scanCode.disabled = true;
+    syncAllBtn.disabled = true;
     body.append(el('div', {
       class: 'banner warn',
       text: '请在 Android App 里使用家庭同步。',
@@ -218,6 +251,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
 
   showCode.onclick = () => void runHostFlow();
   scanCode.onclick = () => void openScannerSheet();
+  syncAllBtn.onclick = () => void runSyncAllFlow();
 
   const cleanup = (): void => {
     if (disposed) return;
@@ -243,6 +277,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     if (disposed || hostedSession || !available) return;
     setActionsBusy(true);
     setStatus(status, 'info', '正在准备连接码');
+    const resumeAutoSync = await pausePersistentHost();
     try {
       const deviceName = setLanSyncDeviceName(nameInput.value);
       const syncOptions = getSyncOptions();
@@ -282,6 +317,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
       const sheet = activeSheet;
       activeSheet = null;
       sheet?.close();
+      resumeAutoSync();
       if (!disposed) setActionsBusy(false);
     }
   }
@@ -404,6 +440,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
       await scanner?.pause();
       scanStatus.className = 'banner info';
       scanStatus.textContent = '正在连接';
+      const resumeAutoSync = await pausePersistentHost();
       try {
         const result = await joinLanSyncHost(raw, {
           signal: controller.signal,
@@ -427,6 +464,8 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
         scanStatus.textContent = errorMessage(error);
         processing = false;
         await scanner?.resume();
+      } finally {
+        resumeAutoSync();
       }
     }
   }
@@ -441,9 +480,45 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   function setActionsBusy(busy: boolean): void {
     showCode.disabled = busy || !available;
     scanCode.disabled = busy || !available;
-    for (const button of [showCode, scanCode]) {
+    syncAllBtn.disabled = busy || !available;
+    for (const button of [showCode, scanCode, syncAllBtn]) {
       if (busy) button.setAttribute('aria-busy', 'true');
       else button.removeAttribute('aria-busy');
+    }
+  }
+
+  async function runSyncAllFlow(): Promise<void> {
+    if (disposed || !available) return;
+    if (syncAllBtn.getAttribute('aria-busy') === 'true') return;
+    const peers = listKnownPeers();
+    if (peers.length === 0) {
+      toast('还没有已配对设备，请先扫码配对一次');
+      return;
+    }
+    setActionsBusy(true);
+    setStatus(status, 'info', `正在同步 ${peers.length} 台设备...`);
+    try {
+      const summary: ManualJoinSummary = await triggerManualJoinAll();
+      if (disposed) return;
+      const parts: string[] = [];
+      if (summary.joined > 0) parts.push(`已同步 ${summary.joined} 台`);
+      if (summary.skipped > 0) parts.push(`跳过 ${summary.skipped} 台（请手动确认）`);
+      if (summary.failed > 0) parts.push(`失败 ${summary.failed} 台`);
+      const message = parts.length > 0
+        ? parts.join('，')
+        : '没有需要同步的设备';
+      const tone: 'ok' | 'warn' = summary.failed > 0 ? 'warn' : 'ok';
+      setStatus(status, tone, message);
+      toast(message);
+      // 同步完成后刷新最近一次结果展示
+      const latest = getLastLanSyncResult();
+      if (latest) renderLastResult(status, latest);
+    } catch (error) {
+      if (disposed) return;
+      setStatus(status, 'warn', errorMessage(error));
+      toast(errorMessage(error), 4200);
+    } finally {
+      if (!disposed) setActionsBusy(false);
     }
   }
 }

@@ -9,13 +9,17 @@ import {
   toLocalDate,
 } from '../domain/medicationSchedule';
 import {
+  areDoseUnitsCompatible,
   deductInventory,
   getConfirmedDose,
+  isLowStock,
   restoreInventory,
+  roundStock,
   suggestStructuredDose,
 } from '../features/inventory';
 import {
   inflateMed,
+  type LocalDate,
   type Medication,
   type MedicationOccurrence,
   type MedicationScheduleRevision,
@@ -114,11 +118,16 @@ export function upgradeMedboxDatabase(d: IDBPDatabase<MedboxDB>, oldVersion: num
       d.createObjectStore('syncLanMetadata', { keyPath: 'key' });
     }
   }
+  // v7: 标记 schema 扩展——Medication 新增分药预扣状态，IntakeLog 新增 preDeducted。
+  // 字段均为可选，无需新建 store 或索引，旧数据可正常读。
+  if (oldVersion < 7) {
+    // no-op; 字段为可选，旧记录读取时为 undefined
+  }
 }
 
 export function openMedboxDatabase(): Promise<IDBPDatabase<MedboxDB>> {
   if (!dbp) {
-    dbp = openDB<MedboxDB>('medbox', 6, {
+    dbp = openDB<MedboxDB>('medbox', 7, {
       upgrade: upgradeMedboxDatabase,
       blocked() {
         console.warn('IndexedDB 升级被旧页面阻塞，请关闭其他已打开的 medbox 页面后刷新。');
@@ -489,8 +498,11 @@ export async function setOccurrenceAction(
     : currentLog ?? legacyLog;
   const now = options.ackAt ?? Date.now();
   let inventoryChanged = false;
+  let inventoryDelta: number | undefined;
   let lowStock = false;
   let lowStockMessage: string | undefined;
+  // 只对分药向导实际包含的服药时段跳过扣减；同日后补的新时段仍会正常扣库存。
+  const occurrencePreDeducted = isOccurrencePreDeducted(med, occurrence);
 
   if (options.confirmedDose) {
     const quantity = options.confirmedDose.quantity;
@@ -504,6 +516,13 @@ export async function setOccurrenceAction(
     }
   }
 
+  const occurrenceDose =
+    Number.isFinite(options.confirmedDose?.quantity) && (options.confirmedDose?.quantity ?? 0) > 0 && options.confirmedDose?.unit.trim()
+      ? { quantity: options.confirmedDose!.quantity, unit: options.confirmedDose!.unit.trim() }
+      : Number.isFinite(occurrence.doseQuantity) && (occurrence.doseQuantity ?? 0) > 0 && occurrence.doseUnit?.trim()
+        ? { quantity: occurrence.doseQuantity as number, unit: occurrence.doseUnit.trim() }
+        : getConfirmedDose(med);
+
   if (action === 'taken' && previous?.status !== 'taken') {
     if (isMedicationExpiredOn(med, occurrence.localDate)) {
       tx.abort();
@@ -513,12 +532,12 @@ export async function setOccurrenceAction(
         `${med.name} 已于 ${getMedicationExpiryLocalDate(med) ?? '此前'} 过期，不能记录服用`,
       );
     }
-    if (med.inventory) {
+    if (med.inventory && !occurrencePreDeducted) {
       // A legacy free-text dose must never block an intake record or be used
       // to guess an inventory delta. Structured but incompatible doses still
       // fail atomically so inventory cannot become inconsistent.
-      if (getConfirmedDose(med)) {
-        const inventoryResult = deductInventory(med);
+      if (occurrenceDose) {
+        const inventoryResult = deductInventory(med, occurrenceDose, { allowPartial: true });
         if (inventoryResult.reviewRequired) {
           tx.abort();
           void tx.done.catch(() => undefined);
@@ -527,22 +546,19 @@ export async function setOccurrenceAction(
             inventoryResult.message ?? `${med.name} 的剂量需要复核`,
           );
         }
-        if (inventoryResult.insufficient) {
-          tx.abort();
-          void tx.done.catch(() => undefined);
-          throw new MedicationIntakeError(
-            'insufficient-inventory',
-            inventoryResult.message ?? `${med.name} 库存不足`,
-          );
-        }
+        // 库存不足时不再阻塞：allowPartial 已将库存扣至 0，继续记录服药。
         inventoryChanged = inventoryResult.changed;
+        inventoryDelta = inventoryResult.changed
+          ? (inventoryResult.deductedQuantity ?? occurrenceDose.quantity)
+          : undefined;
         lowStock = inventoryResult.low;
         lowStockMessage = inventoryResult.message;
       }
     }
   } else if (previous?.status === 'taken' && action !== 'taken') {
     // Legacy logs without an explicit delta are intentionally not restored.
-    if (previous.inventoryDelta != null) {
+    // 预扣标记的记录撤销时不回滚库存（药仍分装在药盒格中）。
+    if (previous.inventoryDelta != null && !previous.preDeducted) {
       inventoryChanged = restoreInventory(med, previous.inventoryDelta);
     }
   }
@@ -582,16 +598,157 @@ export async function setOccurrenceAction(
         action === 'taken'
           ? previous?.status === 'taken'
             ? previous.inventoryDelta
-            : inventoryChanged
-              ? med.doseQuantity
-              : undefined
+            : inventoryDelta
           : undefined,
+      // 若该具体时段已通过分药向导预扣，撤销时不回滚库存。
+      preDeducted: action === 'taken' ? occurrencePreDeducted : undefined,
       updatedAt: now,
     };
     await logStore.put(nextLog);
   }
   await tx.done;
   return { med, log: nextLog, inventoryChanged, lowStock, lowStockMessage };
+}
+
+/**
+ * 判断药品是否在指定日期存在成功的分药预扣。
+ * preDeduction 是新版按时段记录；lastPreDeductedAt 仅兼容旧版整日标记。
+ */
+export function isPreDeductedToday(med: Medication, localDate: LocalDate): boolean {
+  if (med.preDeduction?.localDate === localDate && med.preDeduction.occurrenceIds.length > 0) return true;
+  return !!med.lastPreDeductedAt && toLocalDate(new Date(med.lastPreDeductedAt)) === localDate;
+}
+
+export function isOccurrencePreDeducted(
+  med: Medication,
+  occurrence: Pick<MedicationOccurrence, 'id' | 'localDate'>,
+): boolean {
+  if (med.preDeduction?.localDate === occurrence.localDate) {
+    return med.preDeduction.occurrenceIds.includes(occurrence.id);
+  }
+  // 兼容 0.9.1 当天已经产生的整日预扣，避免升级后重复扣一次。
+  return !med.preDeduction && isPreDeductedToday(med, occurrence.localDate);
+}
+
+export interface PreDeductionEntry {
+  occurrenceId: string;
+  quantity: number;
+  unit: string;
+}
+
+export interface PreDeductionResult {
+  med: Medication;
+  deducted: number;
+  deductedOccurrences: number;
+  skippedOccurrences: number;
+  remaining: number;
+  skipped: boolean;
+  lowStock: boolean;
+  lowStockMessage?: string;
+}
+
+/**
+ * 按具体服药时段预扣库存。重复运行时只扣新增时段，不恢复已经从原包装取出的药。
+ * 有效时段在同一个 IndexedDB 事务中一次性扣减，库存不足时整批不扣。
+ */
+export async function recordPreDeduction(
+  med: Medication,
+  entries: readonly PreDeductionEntry[],
+  localDate: LocalDate,
+): Promise<PreDeductionResult> {
+  const skippedResult = (current: Medication, skippedOccurrences = entries.length, lowStockMessage?: string): PreDeductionResult => ({
+    med: current,
+    deducted: 0,
+    deductedOccurrences: 0,
+    skippedOccurrences,
+    remaining: current.inventory?.remaining ?? 0,
+    skipped: true,
+    lowStock: lowStockMessage ? true : isLowStock(current),
+    lowStockMessage,
+  });
+  if (!med.inventory || entries.length === 0) return skippedResult(med);
+
+  const d = await db();
+  const tx = d.transaction('meds', 'readwrite');
+  const medStore = tx.objectStore('meds');
+  const fresh = await medStore.get(med.id);
+  if (!fresh) {
+    tx.abort();
+    void tx.done.catch(() => undefined);
+    throw new MedicationIntakeError('medication-not-found', '找不到对应药品');
+  }
+  const latest = normalizeMedication(fresh);
+  if (!latest.inventory) {
+    tx.abort();
+    void tx.done.catch(() => undefined);
+    return skippedResult(latest);
+  }
+
+  const state = latest.preDeduction?.localDate === localDate ? latest.preDeduction : undefined;
+  // 兼容旧版只有整日时间戳的数据；仅影响升级当天。
+  if (!state && latest.lastPreDeductedAt && toLocalDate(new Date(latest.lastPreDeductedAt)) === localDate) {
+    await tx.done;
+    return skippedResult(latest);
+  }
+
+  const existingIds = new Set(state?.occurrenceIds ?? []);
+  const seenIds = new Set<string>();
+  const pending = entries.filter((entry) => {
+    const unit = entry.unit.trim();
+    if (!entry.occurrenceId || existingIds.has(entry.occurrenceId) || seenIds.has(entry.occurrenceId)) return false;
+    seenIds.add(entry.occurrenceId);
+    if (!Number.isFinite(entry.quantity) || entry.quantity <= 0 || !unit) return false;
+    if (latest.inventory!.unit && !areDoseUnitsCompatible(latest.inventory!.unit, unit)) return false;
+    return true;
+  });
+  if (pending.length === 0) {
+    await tx.done;
+    return skippedResult(latest);
+  }
+
+  const totalDose = roundStock(pending.reduce((sum, entry) => sum + entry.quantity, 0));
+  const skippedOccurrences = entries.length - pending.length;
+  const doseUnit = latest.inventory.unit?.trim() || pending[0].unit.trim();
+  if (latest.inventory.remaining < totalDose) {
+    tx.abort();
+    void tx.done.catch(() => undefined);
+    return skippedResult(
+      latest,
+      entries.length,
+      `${latest.name} 库存不足（本次需 ${totalDose}${doseUnit}，剩余 ${latest.inventory.remaining}${doseUnit}），未执行预扣`,
+    );
+  }
+
+  const now = Date.now();
+  latest.inventory.remaining = roundStock(latest.inventory.remaining - totalDose);
+  if (!latest.inventory.unit) latest.inventory.unit = doseUnit;
+  latest.preDeduction = {
+    localDate,
+    occurrenceIds: [...existingIds, ...pending.map((entry) => entry.occurrenceId)],
+    totalDose: roundStock((state?.totalDose ?? 0) + totalDose),
+    doseUnit,
+    updatedAt: now,
+  };
+  latest.lastPreDeductedAt = now;
+  latest.updatedAt = now;
+  await medStore.put(latest);
+  await tx.done;
+
+  const lowStock = isLowStock(latest);
+  return {
+    med: latest,
+    deducted: totalDose,
+    deductedOccurrences: pending.length,
+    skippedOccurrences,
+    remaining: latest.inventory.remaining,
+    skipped: false,
+    lowStock,
+    lowStockMessage: lowStock
+      ? latest.inventory.remaining <= 0
+        ? `${latest.name} 已无库存`
+        : `${latest.name} 仅剩 ${latest.inventory.remaining}${doseUnit}`
+      : undefined,
+  };
 }
 
 // ---- 药盒原图（仅本地） ----
