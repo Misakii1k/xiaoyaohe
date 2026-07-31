@@ -40,10 +40,11 @@ describe('shared UI primitive contracts', () => {
     expect(pickers).toContain('openBottomSheet');
   });
 
-  it('uses a modal, keyboard-dismissible bottom sheet with focus restoration', () => {
+  // BottomSheet 的模态语义、Escape 关闭与焦点恢复改由 tests/bottomSheetBehavior.test.ts
+  // 真实开关弹层来验证。此处不再匹配源码文本：焦点陷阱已抽到 components.ts 的
+  // trapFocusIn，按实现细节断言只会在每次重构时误报。
+  it('delegates the bottom sheet focus trap to the shared helper', () => {
     const sheet = source('src/ui/primitives/BottomSheet.ts');
-    expect(sheet).toContain("'aria-modal', 'true'");
-    expect(sheet).toContain("event.key === 'Escape'");
-    expect(sheet).toContain('previouslyFocused?.focus');
+    expect(sheet).toContain('trapFocusIn');
   });
 });

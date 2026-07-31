@@ -1,6 +1,6 @@
 {
   "name": "xiaoyaohe",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "private": true,
   "type": "module",
   "description": "小药盒：吃药提醒、药品管理与库存记录 Android App",
@@ -38,6 +38,8 @@
     "@playwright/test": "^1.61.1",
     "@types/qrcode": "^1.5.6",
     "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^20.11.1",
+    "jpeg-js": "^0.4.4",
     "typescript": "^5.6.3",
     "vite": "^6.0.7",
     "vitest": "^4.1.0"

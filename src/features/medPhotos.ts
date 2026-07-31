@@ -2,7 +2,13 @@
 // 照片只存本地 IndexedDB（photos 表），不参与云同步。
 // 手机拍照原图常 3–8MB；若不先压小，保存/解码时容易把 WebView 内存打爆导致闪退。
 // 旧版本可能已把大图写进库：读取时懒压缩回写，列表加载限并发，避免一进页就 OOM。
-import { deletePhotosByMed, getPhotosByMed, putPhoto, uid } from '../db/local';
+import {
+  deletePhotosByMed,
+  getPhotosByMed,
+  putPhoto,
+  uid,
+} from '../db/local';
+import type { PhotoBlob } from '../db/schema';
 
 /** 展示图最长边；手机屏幕看图够用，再大只增加内存压力 */
 const MAX_EDGE = 720;
@@ -29,10 +35,8 @@ export async function getMedPhotoUrl(medId: string): Promise<string | null> {
       try {
         const compressed = await compressBoxPhoto(latest.blob);
         if (compressed.size > 0 && compressed.size < latest.blob.size) {
-          await deletePhotosByMed(medId);
-          invalidateMedPhotoCache(medId);
-          const next = { id: uid(), medId, blob: compressed, at: Date.now() };
-          await putPhoto(next);
+          const next: PhotoBlob = { id: uid(), medId, blob: compressed, at: Date.now() };
+          await writeReplacementPhoto(medId, next);
           latest = next;
         }
       } catch {
@@ -96,9 +100,7 @@ export async function getLatestMedPhotoBlob(medId: string): Promise<Blob | null>
  */
 export async function saveMedPhoto(medId: string, blob: Blob): Promise<void> {
   const compressed = await compressBoxPhoto(blob);
-  await deletePhotosByMed(medId);
-  invalidateMedPhotoCache(medId);
-  await putPhoto({ id: uid(), medId, blob: compressed, at: Date.now() });
+  await writeReplacementPhoto(medId, { id: uid(), medId, blob: compressed, at: Date.now() });
 }
 
 /** 拍照/选图后立刻压一版再挂到页面上，避免会话里一直挂着几 MB 原图 */
@@ -124,9 +126,12 @@ export async function migrateOversizedMedPhotos(limit = 12): Promise<number> {
         if (latest.blob.size <= RECOMPRESS_THRESHOLD) continue;
         const compressed = await compressBoxPhoto(latest.blob);
         if (compressed.size > 0 && compressed.size < latest.blob.size) {
-          await deletePhotosByMed(med.id);
-          invalidateMedPhotoCache(med.id);
-          await putPhoto({ id: uid(), medId: med.id, blob: compressed, at: Date.now() });
+          await writeReplacementPhoto(med.id, {
+            id: uid(),
+            medId: med.id,
+            blob: compressed,
+            at: Date.now(),
+          });
           fixed += 1;
         }
       } catch {
@@ -143,12 +148,13 @@ export async function migrateOversizedMedPhotos(limit = 12): Promise<number> {
 export async function compressBoxPhoto(blob: Blob): Promise<Blob> {
   if (blob.size > 0 && blob.size <= TARGET_BYTES && blob.type === 'image/jpeg') {
     try {
-      const probe = await decodeImage(blob);
-      if (Math.max(probe.width, probe.height) <= MAX_EDGE) {
-        probe.close();
-        return blob;
-      }
+      // 这里要判断的是「原图长边是否已经够小」，所以必须按原始尺寸解码，
+      // 不能用会缩边的 decodeImage（那样 width 恒为 MAX_EDGE，判断失去意义）。
+      // 本分支已限定体积不超过 TARGET_BYTES，全尺寸解码的内存开销可控。
+      const probe = await createImageBitmap(blob);
+      const longEdge = Math.max(probe.width, probe.height);
       probe.close();
+      if (longEdge <= MAX_EDGE) return blob;
     } catch {
       /* 下面走完整压缩 */
     }
@@ -197,6 +203,17 @@ function preferSmaller(original: Blob, candidate: Blob | null): Blob {
   return original;
 }
 
+/**
+ * 用一张新图整体替换某药的照片记录（本应用只保留最新一张）。
+ * 顺序固定为「先删旧 → 再失效缓存 → 最后写新」，避免中途失败时
+ * 缓存里还挂着已被删掉的 Blob 的 object URL。
+ */
+async function writeReplacementPhoto(medId: string, next: PhotoBlob): Promise<void> {
+  await deletePhotosByMed(medId);
+  invalidateMedPhotoCache(medId);
+  await putPhoto(next);
+}
+
 function invalidateMedPhotoCache(medId: string): void {
   const cached = urlCache.get(medId);
   if (cached) {
@@ -206,11 +223,15 @@ function invalidateMedPhotoCache(medId: string): void {
 }
 
 async function decodeImage(blob: Blob): Promise<ImageBitmap> {
-  // 优先让浏览器在解码时就缩边，显著降低峰值内存
+  // 优先让浏览器在解码时就缩边，显著降低峰值内存。
+  //
+  // 只能给出 resizeWidth 一个维度：规范规定另一个维度会按原图宽高比自动推导。
+  // 若两个维度都写死 MAX_EDGE，任何非正方形照片都会被拉伸成正方形。
+  // 竖图这里会得到「宽 720、高 > 720」的中间结果，长边由下游 compressBoxPhoto
+  // 的等比缩放收敛到 MAX_EDGE，比例始终保持正确。
   try {
     return await createImageBitmap(blob, {
       resizeWidth: MAX_EDGE,
-      resizeHeight: MAX_EDGE,
       resizeQuality: 'low',
     } as ImageBitmapOptions);
   } catch {

@@ -21,15 +21,20 @@ describe('dialog and route lifecycle', () => {
     expect(components).toMatch(
       /activeDialogs\.delete\(overlay\);[\s\S]*?overlay\.remove\(\);[\s\S]*?restoreAppAfterLastDialog\(\);/,
     );
-    expect(components).toMatch(/if \(activeDialogs\.size > 0 \|\| !dialogAppState\) return;/);
+    // 「只在最后一个弹层关闭后才恢复主体」的计数逻辑由 appInertOwners 维护，
+    // 而不是 activeDialogs.size —— BottomSheet 与 VoiceMedEntry 同样共用 inert，
+    // 却不登记在 activeDialogs 里。实际行为见 tests/bottomSheetBehavior.test.ts。
+    expect(components).toMatch(/if \(appInertOwners > 0 \|\| !dialogAppState\) return;/);
   });
 
   it('closes active bottom sheets during route transitions and releases their listeners', () => {
     expect(bottomSheet).toContain("import { registerRouteTransitionCleanup } from '../../router';");
     expect(bottomSheet).toContain('export function closeAllBottomSheets(): void');
     expect(bottomSheet).toContain('registerRouteTransitionCleanup(closeAllBottomSheets);');
+    // 键盘监听的摘除由 trapFocusIn 返回的清理函数负责，BottomSheet 只需在 close 里调用它。
+    // 「关闭后监听器确实失效」这一点用行为验证，见 tests/bottomSheetBehavior.test.ts。
     expect(bottomSheet).toMatch(
-      /document\.removeEventListener\('keydown', onKeyDown\);[\s\S]*?activeBottomSheets\.delete\(close\);[\s\S]*?overlay\.remove\(\);/,
+      /removeTrap\?\.\(\);[\s\S]*?activeBottomSheets\.delete\(close\);[\s\S]*?overlay\.remove\(\);/,
     );
   });
 
