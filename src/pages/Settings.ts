@@ -43,6 +43,12 @@ import {
 import { getAsrHealth, isNativeSpeechFallbackAvailable } from '../ai/asr';
 import { clearAsrConfig, getAsrConfig, isAsrCredentialsConfigured, setAsrConfig } from '../ai/asrConfig';
 import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
+import {
+  getWebSecretPersistence,
+  isNativeSecretStore,
+  setWebSecretPersistence,
+  WEB_SECRET_STORAGE_NOTICE,
+} from '../ai/secretStore';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
 import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
 import {
@@ -630,7 +636,7 @@ function buildAppUpdateBody(
     try {
       const apkPath = await downloadUpdate(update);
       toast(`已下载 v${update.version}，正在调起安装器`, 3200);
-      await installApk(apkPath);
+      await installApk(apkPath, update.versionCode);
       // 安装器调起后不立即清除可用更新——安装结果由用户在系统中确认。
       // 安装成功后应用会重启，状态自然刷新。
     } catch (error) {
@@ -731,10 +737,22 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     body.append(
       el('div', { class: 'banner info mt-3' } as any, [
         el('span', {
-          html: '还没填 AI 密钥。手机 App 里会替您安全保管；网页版为了安全，每次重新打开都要再填一次。',
+          html: isNativeSecretStore()
+            ? '还没填 AI 密钥。手机 App 会把它存进系统安全存储替您保管。'
+            : '还没填 AI 密钥。网页版只能把它明文存在这台电脑的浏览器里，请看下方的保存方式说明。',
         }),
       ])
     );
+  }
+
+  // 网页端没有系统安全存储可用，密钥只能明文留在浏览器里。如实告知 + 给一个真正有效的选项。
+  if (!isNativeSecretStore()) {
+    body.append(
+      el('div', { class: 'banner warn mt-3' } as any, [
+        el('span', { text: WEB_SECRET_STORAGE_NOTICE }),
+      ])
+    );
+    body.append(buildWebSecretPersistenceRow());
   }
 
   // ====== 表单 ======
@@ -854,7 +872,11 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     }
     if (!apiKey) return toast('请填写 API 密钥');
     if (!model) return toast('请填写或选择模型');
-    await setLlmConfig({ baseUrl, apiKey, model });
+    try {
+      await setLlmConfig({ baseUrl, apiKey, model });
+    } catch (e) {
+      return toast('保存失败：' + (e instanceof Error ? e.message : String(e)));
+    }
     toast('已保存 ✓');
     // 保存后顺手体检一次
     const h = await pingLlm({ baseUrl, apiKey, model });
@@ -905,9 +927,52 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
       html:
         '· 接口需兼容 OpenAI /chat/completions 协议。\n' +
         `· 默认模型 ${DEFAULT_LLM_CONFIG.model}，也可换成其他兼容模型。\n` +
-        '· 密钥保存在这台手机的安全存储中。',
+        (isNativeSecretStore()
+          ? '· 密钥保存在这台手机的系统安全存储中。'
+          : '· 网页版没有系统安全存储可用，密钥在浏览器里是明文保存的。'),
     } as any)
   );
+}
+
+/**
+ * 网页端密钥存放方式的开关。
+ *
+ * 这里不提供「加密保存」这种选项：密钥和解开它所需的一切都在同一个浏览器里，
+ * 前端加密拦不住任何真正能读到存储的人，只会给用户虚假的安全感。
+ * 真正有意义的区别只有「关掉标签页还在不在」，所以就只给这一个选择。
+ */
+function buildWebSecretPersistenceRow(): HTMLElement {
+  const sessionOnly = getWebSecretPersistence() === 'session';
+  const row = el('div', { class: 'settings-toggle-row' } as any);
+  const copy = el('div', { class: 'settings-toggle-copy' } as any);
+  copy.append(
+    el('div', { class: 'settings-toggle-title', text: '仅本次会话保存密钥' } as any),
+    el('div', {
+      class: 'settings-toggle-desc',
+      text: sessionOnly
+        ? '关掉这个标签页密钥就没了，下次要重新填。适合公用电脑。'
+        : '密钥会留在这台电脑上，关掉浏览器再打开还在。',
+    } as any),
+  );
+  const toggle = el('input', {
+    type: 'checkbox',
+    role: 'switch',
+    'aria-label': '仅本次会话保存密钥',
+  } as any) as HTMLInputElement;
+  toggle.checked = sessionOnly;
+  toggle.onchange = () => {
+    // 已填的密钥会被就地搬到新位置，用户不必重输
+    setWebSecretPersistence(toggle.checked ? 'session' : 'device');
+    toast(toggle.checked ? '密钥改为仅本次会话保存' : '密钥将保留在这台电脑上');
+    const desc = copy.querySelector<HTMLElement>('.settings-toggle-desc');
+    if (desc) {
+      desc.textContent = toggle.checked
+        ? '关掉这个标签页密钥就没了，下次要重新填。适合公用电脑。'
+        : '密钥会留在这台电脑上，关掉浏览器再打开还在。';
+    }
+  };
+  row.append(copy, toggle);
+  return row;
 }
 
 function aiConsentChip(): PanelChip {
@@ -1075,7 +1140,9 @@ function renderAsrPanel(): HTMLElement {
   body.append(
     el('div', {
       class: 'settings-hint mb-3',
-      text: '小助手按住说话、说话录药、库存智能录入共用腾讯云一句话识别。密钥只保存在这台手机（Web 预览 = localStorage；Android App = 安全存储），App 直连腾讯云，任意设备装好填密钥即可用，无需再跑代理。',
+      text: isNativeSecretStore()
+        ? '小助手按住说话、说话录药、库存智能录入共用腾讯云一句话识别。密钥存进这台手机的系统安全存储，App 直连腾讯云，任意设备装好填密钥即可用，无需再跑代理。'
+        : '小助手按住说话、说话录药、库存智能录入共用腾讯云一句话识别。网页版的密钥是明文存在浏览器里的（存放方式跟随上面「AI 接口」里的设置），公用电脑请当心。',
     })
   );
 
@@ -1204,7 +1271,7 @@ function renderAsrPanel(): HTMLElement {
   }
   body.append(row);
 
-  let panelEl: HTMLElement = document.createElement('div'); // 由 panel() 赋值，saveBtn 闭包依赖
+  let panelEl: HTMLElement; // 由 panel() 赋值，saveBtn 闭包依赖
   panelEl = panel({
     title: '语音识别（腾讯云）',
     iconName: 'mic',

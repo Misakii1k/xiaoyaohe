@@ -52,12 +52,36 @@ describe('settings information architecture contracts', () => {
     expect(settings).not.toContain("from '@capacitor/core'");
     expect(settings).not.toContain('openDialog');
     expect(settings).not.toContain('closeDialog');
-    expect(settings).not.toContain('浏览器');
     expect(settings).toContain('通知已开启，应用会按计划发送提醒。');
-    expect(settings).toContain('密钥保存在这台手机的安全存储中。');
     expect(settings).not.toContain("from '../ai/imageGen'");
     expect(settings).not.toContain('图像 AI');
     expect(settings).not.toContain('setImageGenConfig');
     expect(settings).not.toContain('resetImageGenConfig');
+  });
+
+  // 原先这条契约禁止设置页出现「浏览器」二字，并要求密钥说明写死成
+  // 「保存在这台手机的安全存储中」——那是把网页端当开发预览时的措辞。
+  // 网页端现在是正式使用场景，而它**没有**系统安全存储可用：密钥只能明文放在
+  // 浏览器里。此时统一说成「安全存储」等于对网页端用户说假话，所以改为要求
+  // 按平台分别给出如实说明。
+  it('tells the truth about where API keys live on each platform', () => {
+    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const secretStore = readFileSync(join(root, 'src/ai/secretStore.ts'), 'utf8');
+
+    // 原生端：系统安全存储
+    expect(settings).toContain('密钥保存在这台手机的系统安全存储中。');
+    // 网页端：如实说明是明文，且提示公用电脑的风险
+    expect(settings).toContain('密钥在浏览器里是明文保存的。');
+    expect(secretStore).toContain('以明文保存在本机');
+    expect(secretStore).toContain('公用电脑');
+    // 两套文案必须由平台判断分流，不能只留一句糊过去
+    expect(settings).toMatch(/isNativeSecretStore\(\)\s*\n?\s*\?/);
+
+    // 不做前端假加密：密钥与解密它所需的一切都在同一个浏览器里，那是安全剧场。
+    // 真正给用户的选项是「关掉标签页就失效」。
+    expect(secretStore).toContain("export type WebSecretPersistence = 'device' | 'session'");
+    expect(settings).toContain('仅本次会话保存密钥');
+    // 只认真正的加解密调用，不误伤解释「为什么不这么做」的注释
+    expect(secretStore).not.toMatch(/encrypt|crypto\.subtle/i);
   });
 });

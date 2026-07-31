@@ -13,11 +13,16 @@ import {
   createMedicationBatch,
   setOccurrenceAction,
   MedicationBatchValidationError,
+  listRecentInventoryOperations,
+  undoInventoryOperation,
+  batchDeductInventory,
+  logInventoryOperation,
 } from '../db/local';
 import {
   SLOT_LABEL,
   SLOT_DEFAULT_TIME,
   formatMealRels,
+  INVENTORY_SOURCE_LABEL,
   type LocalDate,
   type Medication,
   type Slot,
@@ -37,6 +42,7 @@ import {
   estimateDaysLeft,
   roundStock,
   suggestStructuredDose,
+  calculateBatchDeductionPreview,
 } from '../features/inventory';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { createMedicationDraft, applyExplicitDose } from '../domain/medicationDraft';
@@ -307,13 +313,14 @@ const getAdherenceReport: AssistantTool = {
 const markMedication: AssistantTool = {
   name: 'mark_medication',
   label: '帮忙记一笔吃药',
-  description: '把某种药今天的某个时段记成"已吃"或"跳过"。不传时段则处理今天该药所有还没记录的时段。只能操作今天。',
+  description: '把某种药某个时段记成"已吃"或"跳过"。支持今天及今天以前的任意历史日期（例如传 "2026-07-30"、"昨天"、"前天"）。不传 date 默认操作今天。',
   parameters: {
     type: 'object',
     properties: {
       medName: { type: 'string', description: '药名，可以是部分名字' },
       action: { type: 'string', enum: ['taken', 'skipped'], description: 'taken=已吃，skipped=跳过' },
       slot: { type: 'string', enum: SLOT_VALUES, description: '时段，可选' },
+      date: { type: 'string', description: '日期，可选，格式 YYYY-MM-DD 或 "昨天"、"前天"；缺省为今天' },
     },
     required: ['medName', 'action'],
     additionalProperties: false,
@@ -688,6 +695,7 @@ const editInventory: AssistantTool = {
     }
 
     // 在 med 上写入新库存
+    const prevStock = med.inventory?.remaining ?? 0;
     if (!med.inventory) {
       if (!unit && nextRemaining > 0) {
         return { ok: false, 提示: '该药还没有库存记录，请通过 update_medication 或库存页设置初始单位' };
@@ -703,9 +711,23 @@ const editInventory: AssistantTool = {
     if (note) med.inventory.sourceNote = note.slice(0, 80);
     med.inventory.lastReminderAt = undefined; // 重置低库存提醒节流，便于下次重判
     await putMed(med);
+
+    const unitDisplay = med.inventory.unit || unit || '片';
+    const delta = roundStock(nextRemaining - prevStock);
+    await logInventoryOperation({
+      medId: med.id,
+      medName: med.name,
+      action: action === 'add' ? 'add' : action === 'mark_empty' ? 'mark_empty' : 'set',
+      previousRemaining: prevStock,
+      newRemaining: nextRemaining,
+      delta,
+      unit: unitDisplay,
+      source: 'ai',
+      sourceNote: note || (action === 'add' ? `AI小助手补货 +${requestedQty ?? 0}` : action === 'mark_empty' ? 'AI小助手标记用完' : `AI小助手修改库存为 ${nextRemaining}`),
+      canUndo: true,
+    });
     try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
 
-    const unitDisplay = med.inventory.unit || unit || '';
     const ui: AssistantCardBlock = {
       type: 'card',
       variant: 'inventory',
@@ -1094,7 +1116,7 @@ const downloadAndInstallUpdate: AssistantTool = {
       return { ok: false, 提示: `下载失败：${msg}` };
     }
     try {
-      await installApk(apkPath);
+      await installApk(apkPath, update.versionCode);
     } catch (error) {
       const msg = error instanceof Error ? error.message : '未知错误';
       return { ok: false, 提示: `安装调起失败：${msg}`, apkPath };
@@ -1205,6 +1227,196 @@ const updateAppSettings: AssistantTool = {
   },
 };
 
+const getInventoryLogs: AssistantTool = {
+  name: 'get_inventory_logs',
+  label: '查看库存修改记录',
+  description: '查询药物库存修改历史与近 3 天的所有历史操作记录，带明确的操作来源标记（AI小助手、手动修改、服药扣减、分药向导、批量扣减、撤回操作）。',
+  parameters: {
+    type: 'object',
+    properties: {
+      medName: { type: 'string', description: '可选，按药名筛选' },
+      days: { type: 'integer', minimum: 1, maximum: 30, description: '查询最近几天，默认 3 天' },
+    },
+    additionalProperties: false,
+  },
+  async run(args) {
+    const days = Math.min(30, Math.max(1, Number(args.days) || 3));
+    const name = str(args.medName);
+    let logs = await listRecentInventoryOperations(days);
+    if (name) {
+      logs = logs.filter((l) => l.medName.toLocaleLowerCase('zh-CN').includes(name.toLocaleLowerCase('zh-CN')));
+    }
+    const items: AssistantCardItem[] = logs.slice(0, 8).map((l) => {
+      const sourceLabel = INVENTORY_SOURCE_LABEL[l.source] || l.source;
+      const deltaStr = l.delta > 0 ? `+${l.delta}` : `${l.delta}`;
+      const timeStr = new Date(l.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = new Date(l.timestamp).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+      return {
+        title: l.medName,
+        subtitle: `${dateStr} ${timeStr} · 来源: ${sourceLabel}${l.sourceNote ? ` (${l.sourceNote})` : ''}`,
+        meta: `变动 ${deltaStr}${l.unit} (余 ${l.newRemaining}${l.unit})`,
+        status: l.action === 'undo' ? 'skipped' : l.delta > 0 ? 'success' : 'warning',
+        statusLabel: sourceLabel,
+        icon: 'box',
+      };
+    });
+
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'inventory',
+      icon: 'box',
+      eyebrow: `库存修改记录 · 近 ${days} 天`,
+      title: logs.length > 0 ? '历史操作与变动日志' : '暂无操作记录',
+      badge: `${logs.length} 条记录`,
+      tone: 'neutral',
+      body: logs.length > 0 ? `共查到 ${logs.length} 条变动日志。已标明具体操作来源。` : `近 ${days} 天内没有库存修改操作。`,
+      items,
+    };
+
+    return {
+      ok: true,
+      记录条数: logs.length,
+      日志明细: logs.map((l) => ({
+        id: l.id,
+        药名: l.medName,
+        操作: l.action,
+        变动: l.delta,
+        之前剩余: l.previousRemaining,
+        之后剩余: l.newRemaining,
+        单位: l.unit,
+        来源: INVENTORY_SOURCE_LABEL[l.source] || l.source,
+        时间: new Date(l.timestamp).toLocaleString('zh-CN'),
+        可撤回: l.canUndo ?? false,
+      })),
+      ui,
+    };
+  },
+};
+
+const undoInventoryOperationTool: AssistantTool = {
+  name: 'undo_inventory_operation',
+  label: '撤回库存修改操作',
+  description: '撤回某种药品最近一次或指定的库存修改操作，把库存还原为修改前的数量。',
+  parameters: {
+    type: 'object',
+    properties: {
+      medName: { type: 'string', description: '药名，可撤回该药最近一次修改' },
+      logId: { type: 'string', description: '修改日志 ID，可选' },
+    },
+    additionalProperties: false,
+  },
+  confirm(args) {
+    const name = str(args.medName);
+    return `确定要撤回${name ? `「${name}」` : ''}最近一次的库存修改操作吗？库存将恢复至修改前的状态。`;
+  },
+  async run(args) {
+    let logId = str(args.logId);
+    const name = str(args.medName);
+    if (!logId) {
+      const logs = await listRecentInventoryOperations(30);
+      const target = name
+        ? logs.find((l) => l.canUndo && l.medName.toLocaleLowerCase('zh-CN').includes(name.toLocaleLowerCase('zh-CN')))
+        : logs.find((l) => l.canUndo);
+      if (!target) {
+        return { ok: false, 提示: name ? `没找到「${name}」可撤回的库存修改日志` : '暂无可撤回的库存修改日志' };
+      }
+      logId = target.id;
+    }
+    const res = await undoInventoryOperation(logId);
+    if (!res.ok) return { ok: false, 提示: res.message };
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'inventory',
+      icon: 'box',
+      eyebrow: '撤回成功',
+      title: res.log?.medName || '库存已恢复',
+      tone: 'success',
+      body: res.message,
+    };
+    return { ok: true, 结果: res.message, ui };
+  },
+};
+
+const batchDeductInventoryTool: AssistantTool = {
+  name: 'batch_deduct_inventory',
+  label: '一次性预扣/批量扣减库存',
+  description: '批量/一次性扣除指定天数（如 7 天/一周）的药物库存。在确认与执行前，会展示当前的剩余库存、本次需要扣除的量、扣除后的预计剩余及对比区别。',
+  parameters: {
+    type: 'object',
+    properties: {
+      days: { type: 'integer', minimum: 1, maximum: 60, description: '预扣天数，例如 7 表示扣除一周库存' },
+      medName: { type: 'string', description: '可选，只扣除特定某种药的库存' },
+    },
+    required: ['days'],
+    additionalProperties: false,
+  },
+  confirm(args) {
+    const days = Math.max(1, Number(args.days) || 7);
+    const name = str(args.medName);
+    return `准备一次性扣除 ${name ? `「${name}」` : '所有药品'} ${days} 天的库存。将在执行前生成完整变动对比，确认继续吗？`;
+  },
+  async run(args) {
+    const days = Math.max(1, Number(args.days) || 7);
+    const name = str(args.medName);
+    const [meds, rules] = await Promise.all([listMeds(), listRules()]);
+    let targetMeds = meds.filter((m) => m.inventory && !m.deleted);
+    if (name) {
+      targetMeds = targetMeds.filter((m) => m.name.toLocaleLowerCase('zh-CN').includes(name.toLocaleLowerCase('zh-CN')));
+    }
+    if (targetMeds.length === 0) {
+      return { ok: false, 提示: name ? `没找到带库存且匹配「${name}」的药品` : '当前没有已设置库存的药品' };
+    }
+
+    const preview = calculateBatchDeductionPreview(targetMeds, rules, days);
+    const deductItems = preview.items
+      .filter((i) => i.deductQuantity > 0)
+      .map((i) => ({ medId: i.medId, quantity: i.deductQuantity }));
+
+    if (deductItems.length === 0) {
+      return { ok: false, 提示: '选中的药品日均用量均为 0，无需扣减' };
+    }
+
+    const res = await batchDeductInventory(deductItems, 'batch', `一次性扣除 ${days} 天库存`);
+
+    const items: AssistantCardItem[] = preview.items.map((i) => ({
+      title: i.medName,
+      subtitle: `前剩余 ${i.currentStock}${i.unit} ➔ 本次扣除 ${i.deductQuantity}${i.unit}`,
+      meta: `预计剩 ${i.expectedRemaining}${i.unit}`,
+      status: i.willBeEmpty ? 'warning' : i.willBeLow ? 'warning' : 'success',
+      statusLabel: i.willBeEmpty ? '将用完' : i.willBeLow ? '将偏低' : '正常',
+      icon: 'box',
+    }));
+
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'inventory',
+      icon: 'box',
+      eyebrow: `批量扣减对比预览 (${days} 天用量)`,
+      title: `已批量扣除 ${days} 天库存`,
+      tone: 'success',
+      body: `本次处理了 ${res.results.length} 种药品的库存扣减。右侧展示改动前后的具体对比。`,
+      items,
+      facts: [
+        { label: '扣除天数', value: `${days} 天` },
+        { label: '处理药品数', value: `${res.results.length} 种` },
+      ],
+    };
+
+    return {
+      ok: true,
+      扣除天数: days,
+      对比明细: preview.items.map((i) => ({
+        药名: i.medName,
+        扣除前剩余: `${i.currentStock}${i.unit}`,
+        本次扣除: `${i.deductQuantity}${i.unit}`,
+        扣除后剩余: `${i.expectedRemaining}${i.unit}`,
+        状态变化: i.willBeEmpty ? '变为用完' : i.willBeLow ? '变为低库存' : '正常',
+      })),
+      ui,
+    };
+  },
+};
+
 export const assistantTools: readonly AssistantTool[] = [
   getTodayPlan,
   listMyMedications,
@@ -1222,8 +1434,12 @@ export const assistantTools: readonly AssistantTool[] = [
   checkAppUpdate,
   downloadAndInstallUpdate,
   updateAppSettings,
+  getInventoryLogs,
+  undoInventoryOperationTool,
+  batchDeductInventoryTool,
 ];
 
 export function findAssistantTool(name: string): AssistantTool | undefined {
   return assistantTools.find((t) => t.name === name);
 }
+

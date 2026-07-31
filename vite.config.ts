@@ -46,6 +46,9 @@ export default defineConfig({
       '/api': {
         target: process.env.ASR_PROXY_TARGET ?? 'http://127.0.0.1:8787',
         changeOrigin: true,
+        // 代理只绑 127.0.0.1，不转发真实客户端地址的话，它那边的按来源限流
+        // 会退化成所有人共用一个配额。xfwd 会把对端地址追加到 X-Forwarded-For。
+        xfwd: true,
       },
     },
   },

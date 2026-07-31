@@ -40,7 +40,12 @@ interface ApkDistributionPlugin {
   startServer(options: { apkPath: string }): Promise<{ port: number; apkPath: string }>;
   stopServer(): Promise<void>;
   download(options: { host: string; port: number; destPath: string }): Promise<{ bytes: number; destPath: string }>;
-  installApk(options: { apkPath: string }): Promise<void>;
+  verifyApk(options: { apkPath: string; expectedVersionCode?: number }): Promise<{
+    packageName: string;
+    versionCode: number;
+    versionName: string;
+  }>;
+  installApk(options: { apkPath: string; expectedVersionCode?: number }): Promise<void>;
   deleteApk(options: { apkPath: string }): Promise<{ deleted: boolean }>;
 }
 
@@ -198,7 +203,7 @@ export async function stopServingApk(): Promise<void> {
 }
 
 /**
- * 下载可用更新到本机 cacheDir，返回 apkPath。
+ * 下载可用更新到本机 cacheDir，校验通过后返回 apkPath。
  * 失败时抛出错误（含中文文案）。
  */
 export async function downloadUpdate(update: AvailableUpdate): Promise<string> {
@@ -206,26 +211,43 @@ export async function downloadUpdate(update: AvailableUpdate): Promise<string> {
     throw new Error('当前环境不支持 APK 自动更新');
   }
   const destPath = await resolveApkCachePath(update.versionCode);
+  let downloadedPath: string;
   try {
     const result = await plugin.download({
       host: update.peerHost,
       port: update.peerPort,
       destPath,
     });
-    return result.destPath;
+    downloadedPath = result.destPath;
   } catch (error) {
     const msg = error instanceof Error ? error.message : '';
     throw new Error(`下载更新失败：${msg || '未知错误'}`);
   }
+
+  // APK 走的是明文 TCP，同网段的第三方有机会掉包，所以下载完必须验过才算数：
+  // 签名要与本机应用一致，版本号要与 update.versionCode 精确对上——后者来自
+  // 已加密的同步通道，等于把不可信的下载绑定到可信的版本公告上。
+  // 校验不过就地删文件，不给用户留一个「点一下就装」的坏包。
+  try {
+    await plugin.verifyApk({ apkPath: downloadedPath, expectedVersionCode: update.versionCode });
+  } catch (error) {
+    await deleteApk(downloadedPath);
+    const msg = error instanceof Error ? error.message : '';
+    throw new Error(`更新包校验未通过，已自动删除：${msg || '未知原因'}。请改用官方渠道安装。`);
+  }
+  return downloadedPath;
 }
 
-/** 调起系统安装器安装指定 APK。 */
-export async function installApk(apkPath: string): Promise<void> {
+/**
+ * 调起系统安装器安装指定 APK。
+ * expectedVersionCode 会一并传给原生侧再验一次（原生 installApk 内部强制验签，绕不过）。
+ */
+export async function installApk(apkPath: string, expectedVersionCode?: number): Promise<void> {
   if (!isApkDistributionAvailable()) {
     throw new Error('当前环境不支持 APK 安装');
   }
   try {
-    await plugin.installApk({ apkPath });
+    await plugin.installApk({ apkPath, ...(expectedVersionCode ? { expectedVersionCode } : {}) });
   } catch (error) {
     const msg = error instanceof Error ? error.message : '';
     throw new Error(`调起安装器失败：${msg || '未知错误'}`);

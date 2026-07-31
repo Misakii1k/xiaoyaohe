@@ -2,6 +2,10 @@ package com.medbox.app.lansync;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.webkit.MimeTypeMap;
@@ -24,6 +28,10 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -38,7 +46,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * - 「已升级设备」作为分发源：startServer() 在 38473 监听，accept 后流式发送 APK 字节。
  * - 「待升级设备」调用 download() 连接对端 38473，把字节流写入 cache 路径。
  * - installApk() 通过 FileProvider + ACTION_VIEW 调起系统安装器。
- * - 协议极简：8 字节 magic + 4 字节版本号 + 8 字节文件长度 + 字节流。无加密（局域网内可信）。
+ * - 协议极简：8 字节 magic + 4 字节版本号 + 8 字节文件长度 + 字节流。传输本身不加密。
+ *
+ * 安全模型：传输层不可信，信任建立在「安装前验签」上。
+ * 同网段的第三方可以抢占 38473 端口或中间人掉包，因此收到的字节流一律当作不可信输入，
+ * 由 verifyApkFile() 在调起安装器之前校验包名 + 签名证书 + 版本号，任何一项不符即拒绝。
+ * 该校验被放在 installApk() 内部，任何调用方都绕不过去。
  */
 @CapacitorPlugin(name = "ApkDistribution")
 public final class ApkDistributionPlugin extends Plugin {
@@ -162,7 +175,36 @@ public final class ApkDistributionPlugin extends Plugin {
         });
     }
 
-    /** 调起系统安装器安装指定 APK。 */
+    /**
+     * 校验一个待安装的 APK 是否可信；不通过则 reject（错误码 VERIFY_FAILED）。
+     * 可选传 expectedVersionCode 把安装包绑定到「同步通道公告过的版本」。
+     */
+    @PluginMethod
+    public void verifyApk(PluginCall call) {
+        String apkPath = call.getString("apkPath");
+        if (apkPath == null || apkPath.isEmpty()) {
+            call.reject("apkPath is required", "INVALID_PATH");
+            return;
+        }
+        File apk = new File(apkPath);
+        if (!apk.exists() || !apk.isFile()) {
+            call.reject("APK file does not exist: " + apkPath, "FILE_NOT_FOUND");
+            return;
+        }
+        Integer expectedVersionCode = call.getInt("expectedVersionCode");
+        try {
+            PackageInfo archive = verifyApkFile(apk, expectedVersionCode);
+            JSObject result = new JSObject();
+            result.put("packageName", archive.packageName);
+            result.put("versionCode", versionCodeOf(archive));
+            result.put("versionName", archive.versionName);
+            call.resolve(result);
+        } catch (SecurityException error) {
+            call.reject(error.getMessage(), "VERIFY_FAILED");
+        }
+    }
+
+    /** 调起系统安装器安装指定 APK；安装前强制验签，不通过绝不调起安装器。 */
     @PluginMethod
     public void installApk(PluginCall call) {
         String apkPath = call.getString("apkPath");
@@ -173,6 +215,14 @@ public final class ApkDistributionPlugin extends Plugin {
         File apk = new File(apkPath);
         if (!apk.exists() || !apk.isFile()) {
             call.reject("APK file does not exist: " + apkPath, "FILE_NOT_FOUND");
+            return;
+        }
+
+        // 最后一道关卡：TS 层已经验过一次，这里再验一次，确保没有调用方能绕过。
+        try {
+            verifyApkFile(apk, call.getInt("expectedVersionCode"));
+        } catch (SecurityException error) {
+            call.reject(error.getMessage(), "VERIFY_FAILED");
             return;
         }
 
@@ -308,6 +358,110 @@ public final class ApkDistributionPlugin extends Plugin {
             }
             return received;
         }
+    }
+
+    /**
+     * 安装前的可信性校验。任何一项不通过都抛 SecurityException（消息已是中文，可直接展示）。
+     *
+     * APK 字节流走明文 TCP，同网段的第三方有机会掉包，所以「装之前必须自己验」，
+     * 不能只依赖系统安装器：用户一旦打开「未知来源」，一个包名不同的恶意 APK
+     * 会被系统当成**新应用**直接装上，签名一致性检查根本不会触发。
+     *
+     * 三重校验：
+     * 1. 包名必须与本机一致 —— 堵死「以新应用身份装上」这条路。
+     * 2. 签名证书必须与本机已装应用一致 —— 挡住任何非本人签名的安装包。
+     * 3. 版本号不得低于已装版本（防降级到有已知问题的旧版）；调用方给出
+     *    expectedVersionCode 时还须精确匹配 —— 该值来自**已加密**的同步通道，
+     *    以此把不可信的明文下载绑定到可信的版本公告上。
+     *
+     * 注：本项目从未做过签名密钥轮换，因此第 2 步用「证书集合完全相等」判定。
+     */
+    @SuppressWarnings("deprecation") // GET_SIGNATURES：API 28 以下没有替代品，minSdk 是 24
+    private PackageInfo verifyApkFile(File apk, Integer expectedVersionCode) throws SecurityException {
+        Context context = getContext();
+        if (context == null) throw new SecurityException("无法校验安装包：应用上下文不可用");
+        PackageManager pm = context.getPackageManager();
+
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? PackageManager.GET_SIGNING_CERTIFICATES
+                : PackageManager.GET_SIGNATURES;
+
+        PackageInfo archive = pm.getPackageArchiveInfo(apk.getAbsolutePath(), flags);
+        if (archive == null) throw new SecurityException("安装包已损坏或不是有效的 APK");
+
+        PackageInfo installed;
+        try {
+            installed = pm.getPackageInfo(context.getPackageName(), flags);
+        } catch (PackageManager.NameNotFoundException error) {
+            throw new SecurityException("无法读取本机应用签名，已中止安装");
+        }
+
+        // 1. 包名
+        if (!context.getPackageName().equals(archive.packageName)) {
+            throw new SecurityException("安装包的应用标识与本机不符，可能已被掉包");
+        }
+
+        // 2. 签名证书
+        Set<String> archiveCerts = signingDigests(archive);
+        Set<String> installedCerts = signingDigests(installed);
+        if (archiveCerts.isEmpty() || installedCerts.isEmpty()) {
+            throw new SecurityException("安装包缺少有效签名，已中止安装");
+        }
+        if (!archiveCerts.equals(installedCerts)) {
+            throw new SecurityException("安装包的签名与本机应用不一致，可能已被掉包");
+        }
+
+        // 3. 版本号
+        long archiveCode = versionCodeOf(archive);
+        long installedCode = versionCodeOf(installed);
+        if (archiveCode < installedCode) {
+            throw new SecurityException("安装包版本（" + archiveCode + "）低于当前版本（" + installedCode + "），已中止安装");
+        }
+        if (expectedVersionCode != null && archiveCode != expectedVersionCode.longValue()) {
+            throw new SecurityException("安装包版本（" + archiveCode + "）与对方公告的版本（" + expectedVersionCode + "）不符，可能已被掉包");
+        }
+
+        return archive;
+    }
+
+    /** 取签名证书的 SHA-256 摘要集合；用摘要而非原始字节，便于比较也便于日后打日志。 */
+    @SuppressWarnings("deprecation") // info.signatures：API 28 以下的唯一取法
+    private static Set<String> signingDigests(PackageInfo info) {
+        Signature[] signatures = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            SigningInfo signingInfo = info.signingInfo;
+            if (signingInfo != null) signatures = signingInfo.getApkContentsSigners();
+        } else {
+            signatures = info.signatures;
+        }
+        Set<String> digests = new HashSet<>();
+        if (signatures == null) return digests;
+        try {
+            MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+            for (Signature signature : signatures) {
+                if (signature == null) continue;
+                digests.add(toHex(sha256.digest(signature.toByteArray())));
+            }
+        } catch (NoSuchAlgorithmException error) {
+            // SHA-256 是 Android 平台必备算法，走不到这里；真走到了就当作「验不了」处理。
+            return new HashSet<>();
+        }
+        return digests;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static long versionCodeOf(PackageInfo info) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return info.getLongVersionCode();
+        return info.versionCode;
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder out = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            out.append(Character.forDigit((b >> 4) & 0xF, 16));
+            out.append(Character.forDigit(b & 0xF, 16));
+        }
+        return out.toString();
     }
 
     private static byte[] readN(InputStream in, int n) throws IOException {

@@ -10,6 +10,8 @@ const MAX_BODY_BYTES = 4_300_000;
 const MAX_AUDIO_BYTES = 3 * 1024 * 1024;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT = 30;
+/** 限流表最多跟踪多少个来源；超出后先清理，仍超出则拒绝，避免表无限膨胀。 */
+const MAX_TRACKED_ADDRESSES = 5_000;
 const requestsByAddress = new Map();
 
 export function createTencentAsrProxy(options = {}) {
@@ -22,11 +24,23 @@ export function createTencentAsrProxy(options = {}) {
       .map((value) => value.trim())
       .filter(Boolean),
   );
+  if (allowedOrigins.size === 0 && options.quiet !== true) {
+    console.error(
+      '[asr-proxy] 未配置 ALLOWED_ORIGINS，默认只放行本机回环来源（localhost / 127.0.0.1）。\n'
+      + '            若要用手机经局域网访问 dev 站点，请显式配置，例如：\n'
+      + '            ALLOWED_ORIGINS=http://192.168.1.7:5173',
+    );
+  }
 
   return async function handle(request, response) {
     const origin = request.headers.origin ?? '';
-    if (origin && allowedOrigins.size > 0 && !allowedOrigins.has(origin)) {
-      return send(response, 403, { code: 'ORIGIN_NOT_ALLOWED', message: '请求来源未获允许' });
+    // 白名单未配置时默认只认本机回环，而不是「全部放行」。
+    // 注意 CORS 只约束浏览器，挡不住 curl 直连；真正限制滥用的是下面的按来源限流。
+    if (origin && !isOriginAllowed(origin, allowedOrigins)) {
+      return send(response, 403, {
+        code: 'ORIGIN_NOT_ALLOWED',
+        message: '请求来源未获允许（如需从局域网访问，请在服务端配置 ALLOWED_ORIGINS）',
+      });
     }
     if (origin) {
       response.setHeader('Access-Control-Allow-Origin', origin);
@@ -42,7 +56,7 @@ export function createTencentAsrProxy(options = {}) {
     if (!secretId || !secretKey) {
       return send(response, 503, { code: 'PROXY_NOT_CONFIGURED', message: '语音代理尚未配置' });
     }
-    if (!consumeRateLimit(request.socket.remoteAddress ?? 'unknown')) {
+    if (!consumeRateLimit(clientKey(request))) {
       return send(response, 429, { code: 'RATE_LIMITED', message: '请求过于频繁，请稍后再试' });
     }
 
@@ -147,13 +161,74 @@ function wavDurationSeconds(audio) {
   return byteRate > 0 ? dataBytes / byteRate : Number.POSITIVE_INFINITY;
 }
 
+/** 白名单未配置时退回「只认本机回环」，而不是放行一切。 */
+function isOriginAllowed(origin, allowedOrigins) {
+  if (allowedOrigins.size > 0) return allowedOrigins.has(origin);
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+  } catch {
+    return false; // 畸形 Origin 一律不放行
+  }
+}
+
+function isLoopbackAddress(address) {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+/**
+ * 限流用的来源标识。
+ *
+ * 这台代理只绑 127.0.0.1，所以 remoteAddress 恒为回环地址——直接拿它当键，
+ * 会让所有经 Vite dev proxy 转发的用户共用同一个配额：既隔离不了滥用者，
+ * 又会误伤正常用户。因此仅在直连来自回环时才采信 X-Forwarded-For
+ * （由 vite.config.ts 的 `xfwd: true` 写入）。
+ *
+ * 取链条的**最后一段**：那是可信代理亲手追加的对端地址；前面的段都可能是
+ * 客户端自己伪造塞进来的，不能用来当配额键。
+ */
+function clientKey(request) {
+  const socketAddress = request.socket?.remoteAddress ?? 'unknown';
+  if (!isLoopbackAddress(socketAddress)) return socketAddress;
+  const forwarded = request.headers['x-forwarded-for'];
+  if (!forwarded) return socketAddress;
+  const chain = String(forwarded).split(',').map((value) => value.trim()).filter(Boolean);
+  return chain.at(-1) ?? socketAddress;
+}
+
 function consumeRateLimit(address) {
   const now = Date.now();
+  pruneRateLimit(now);
+  if (!requestsByAddress.has(address) && requestsByAddress.size >= MAX_TRACKED_ADDRESSES) {
+    return false; // 跟踪表已满，宁可拒绝也不让它无限增长
+  }
   const recent = (requestsByAddress.get(address) ?? []).filter((at) => now - at < RATE_WINDOW_MS);
-  if (recent.length >= RATE_LIMIT) return false;
+  if (recent.length >= RATE_LIMIT) {
+    requestsByAddress.set(address, recent);
+    return false;
+  }
   recent.push(now);
   requestsByAddress.set(address, recent);
   return true;
+}
+
+/** 清掉过期时间戳；某个来源全过期就把键一并删掉，否则长跑会缓慢泄漏内存。 */
+function pruneRateLimit(now) {
+  for (const [address, timestamps] of requestsByAddress) {
+    const recent = timestamps.filter((at) => now - at < RATE_WINDOW_MS);
+    if (recent.length === 0) requestsByAddress.delete(address);
+    else requestsByAddress.set(address, recent);
+  }
+}
+
+/** 仅供测试：重置限流表。 */
+export function __resetRateLimitForTests() {
+  requestsByAddress.clear();
+}
+
+/** 仅供测试：当前跟踪的来源数量，用于验证过期键确实被删掉。 */
+export function __rateLimitSizeForTests() {
+  return requestsByAddress.size;
 }
 
 function tc3Authorization({ secretId, secretKey, payload, timestamp }) {
