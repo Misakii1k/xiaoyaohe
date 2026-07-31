@@ -10,6 +10,7 @@ import {
   cancelNativeMedicationAlarm,
   reconcileNativeMedicationAlarms,
 } from './nativeMedicationAlarm';
+import { WebReminderTransport } from './webReminderTransport';
 
 const OWNER = 'medbox-medication-reminder-v1';
 const REGISTRY_KEY = 'medbox.reminder.notification-ids.v1';
@@ -25,6 +26,18 @@ const REGISTRY_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 const ACTION_TYPE_ID = 'medication-reminder-actions-v1';
 const STRONG_CHANNEL_ID = 'medication_strong_v2';
 const ALARM_CHANNEL_ID = 'medication_alarm_v1';
+
+interface TruncationInfo {
+  truncated: number;
+  at: number;
+}
+
+let lastTruncation: TruncationInfo | null = null;
+
+/** 最近一次 reconcile 因上限未排入的提醒数量；UI 层据此提示「提醒数量已达上限」。 */
+export function getLastTruncationInfo(): TruncationInfo | null {
+  return lastTruncation;
+}
 
 export type ExactAlarmCapability = 'granted' | 'denied' | 'prompt' | 'unavailable';
 export type ReminderPlatform = 'android' | 'web';
@@ -94,6 +107,8 @@ interface RegistryEntry {
 type ReminderRegistry = Record<string, RegistryEntry>;
 
 export function notificationIdFor(tag: string, key = 'dose'): number {
+  // 32 位 FNV-1a 哈希存在碰撞可能：极端情况下两个不同 (tag, key) 会得到同一 id，
+  // 导致同 id 通知相互覆盖。按单个用户的规则规模碰撞概率可忽略，暂不引入 64 位哈希。
   let hash = 0x811c9dc5;
   const value = `${tag}\u0000${key}`;
   for (let index = 0; index < value.length; index += 1) {
@@ -189,6 +204,7 @@ export class AndroidReminderTransport implements ReminderTransport {
   ): Promise<ReminderReconcileResult> {
     const exactAlarm = await this.checkExactAlarmCapability();
     if ((await this.refreshPermission()) !== 'granted') {
+      lastTruncation = { truncated: 0, at: this.now() };
       return {
         status: 'permission-denied',
         scheduled: 0,
@@ -219,11 +235,14 @@ export class AndroidReminderTransport implements ReminderTransport {
     // Capacitor 原生 schedule 会抛 IllegalStateException 并直接杀进程。
     try {
       const pendingResult = await this.plugin.getPending();
+      // 注册表里的历史 id 一起纳入取消目标，避免 getPending 漏掉的残留闹钟；
+      // 无 envelope 的 pending 仅在 id 已在注册表登记时才视为本应用的提醒，避免误伤其他本地通知。
+      const registry = this.readRegistry();
+      const registryIds = Object.values(registry).flatMap((entry) => entry.ids);
+      const registryIdSet = new Set(registryIds);
       const allPending = pendingResult.notifications.filter(
-        (pending) => isOwnedPending(pending) || isLikelyMedicationPending(pending),
+        (pending) => isMedicationPending(pending, registryIdSet),
       );
-      // 注册表里历史 id 也一起取消，避免 getPending 漏掉的残留闹钟
-      const registryIds = Object.values(this.readRegistry()).flatMap((entry) => entry.ids);
       const cancelTargets = [...new Set([...allPending.map(({ id }) => id), ...registryIds])];
       const cancelled = await this.cancelIds(cancelTargets);
 
@@ -252,6 +271,8 @@ export class AndroidReminderTransport implements ReminderTransport {
       this.purgeRegistry();
 
       const scheduledCount = useNativeAlarms ? nativeScheduled : scheduled.ids.size;
+      const truncated = Math.max(0, future.length - selected.length) + (useNativeAlarms ? 0 : scheduled.skipped);
+      lastTruncation = { truncated, at: this.now() };
       return {
         status: useNativeAlarms
           ? nativeScheduled > 0 || selected.length === 0
@@ -264,7 +285,7 @@ export class AndroidReminderTransport implements ReminderTransport {
               : 'failed',
         scheduled: scheduledCount,
         cancelled,
-        truncated: Math.max(0, future.length - selected.length) + (useNativeAlarms ? 0 : scheduled.skipped),
+        truncated,
         exactAlarm,
       };
     } catch {
@@ -275,11 +296,13 @@ export class AndroidReminderTransport implements ReminderTransport {
       } catch {
         /* ignore */
       }
+      const truncated = Math.max(0, future.length - selected.length);
+      lastTruncation = { truncated, at: this.now() };
       return {
         status: 'failed',
         scheduled: 0,
         cancelled: 0,
-        truncated: Math.max(0, future.length - selected.length),
+        truncated,
         exactAlarm,
       };
     }
@@ -514,7 +537,16 @@ private async scheduleInChunksSafe(
   }
 }
 
-/** Browser builds are development previews only; reminders require the Android app. */
+/**
+ * 兜底通道：当前浏览器**确实**没有承载提醒的能力。
+ *
+ * 命中场景是真实存在的，不是「网页端一律不支持」：
+ * - 通过局域网 http://192.168.x.x 打开（非安全上下文，Service Worker 不可用）
+ * - 浏览器/系统层面禁用了通知或 Service Worker
+ * - 老旧 iOS Safari（网页通知需 16.4+ 且已添加到主屏幕）
+ *
+ * 具备能力的浏览器走 `WebReminderTransport`，见 `webReminderTransport.ts`。
+ */
 export class UnsupportedBrowserReminderTransport implements ReminderTransport {
   readonly platform = 'web' as const;
 
@@ -573,10 +605,16 @@ export class UnsupportedBrowserReminderTransport implements ReminderTransport {
 let transport: ReminderTransport | undefined;
 
 export function getReminderTransport(): ReminderTransport {
-  transport ??= isAndroidNative()
-    ? new AndroidReminderTransport()
-    : new UnsupportedBrowserReminderTransport();
+  transport ??= createReminderTransport();
   return transport;
+}
+
+function createReminderTransport(): ReminderTransport {
+  if (isAndroidNative()) return new AndroidReminderTransport();
+  const web = new WebReminderTransport();
+  // 能力探测放在这里而不是让 WebReminderTransport 自己报「不支持」，
+  // 是为了让 `platform === 'web' 且 isSupported()` 恒等于「网页端真的能提醒」。
+  return web.isSupported() ? web : new UnsupportedBrowserReminderTransport();
 }
 
 export function setReminderTransportForTesting(next: ReminderTransport | undefined): void {
@@ -603,12 +641,17 @@ function isOwnedPending(notification: PendingLocalNotificationSchema): boolean {
   return readEnvelope(notification.extra)?.owner === OWNER;
 }
 
-/** 没有 envelope 的旧闹钟/异常残留，也尽量纳入清理，避免撞 500 上限 */
-function isLikelyMedicationPending(notification: PendingLocalNotificationSchema): boolean {
+/**
+ * 只把带用药提醒 envelope 的 pending 视为本应用提醒；没有 envelope 的
+ * 仅当其 id 出现在注册表（notificationIdFor 登记表）时才纳入清理，
+ * 避免把所有本地通知都当作用药提醒误删。
+ */
+function isMedicationPending(
+  notification: PendingLocalNotificationSchema,
+  registryIds: ReadonlySet<number>,
+): boolean {
   if (isOwnedPending(notification)) return true;
-  if (readEnvelope(notification.extra)) return true;
-  // Capacitor Local Notifications 未带 owner 时仍可能是本应用排程的
-  return typeof notification.id === 'number' && notification.id > 0;
+  return typeof notification.id === 'number' && registryIds.has(notification.id);
 }
 
 function readEnvelope(extra: unknown): NativeEnvelope | undefined {

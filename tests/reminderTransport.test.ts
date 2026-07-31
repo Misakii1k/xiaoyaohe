@@ -77,8 +77,13 @@ function fakePlugin(permission: 'granted' | 'denied' = 'granted') {
   };
 }
 
+// 这个类原本代表「浏览器一律不支持提醒」。网页端转为正式使用场景后，具备能力的
+// 浏览器走 WebReminderTransport（见 webReminderTransport.test.ts），这个类只剩下
+// 真正没能力的场景：http 局域网地址（非安全上下文，Service Worker 不可用）、
+// 浏览器禁用了通知、老旧 iOS Safari。
+// 它的行为契约不变，且必须保持完全惰性——半可用比明确不可用更坑用户。
 describe('UnsupportedBrowserReminderTransport', () => {
-  it('reports browser previews as unsupported and keeps every operation inert', async () => {
+  it('keeps every operation inert on browsers that genuinely cannot deliver reminders', async () => {
     const transport = new UnsupportedBrowserReminderTransport();
     const listener = vi.fn();
 

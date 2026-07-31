@@ -1,9 +1,14 @@
-// Android WebView application entry.
+// Android WebView / 浏览器 双入口。
 import './ui/styles.css';
 import { route, setNotFound, startRouter, navigate } from './router';
 import { appModuleRoutes } from './app/moduleRegistry';
+import { installGlobalErrorBoundary } from './app/globalErrorBoundary';
 import { startReminderScheduler } from './features/reminderScheduler';
 import { initializeNotifier } from './features/notifier';
+import {
+  registerWebReminderWorker,
+  requestWebReminderCatchUp,
+} from './features/webReminderTransport';
 import { initializeLlmSecretStore, silentHealthCheck } from './ai/llmConfig';
 import { mountGlobalAssistant } from './ui/AiAssistant';
 import {
@@ -14,6 +19,13 @@ import { migrateOversizedMedPhotos } from './features/medPhotos';
 import { cleanupRetiredCloudSyncStorage } from './sync/retiredCloudStorage';
 import { cleanupRetiredWorkStorage } from './sync/retiredWorkStorage';
 import { startAutoSync } from './sync/lan/autoSync';
+
+// 网页端：先把 Service Worker 注册上，下面 initializeNotifier 要靠它收发通知。
+// 必须在同一个 tick 内发起，否则 navigator.serviceWorker.ready 会等到超时。
+// 原生 App 走系统闹钟，这里内部会自行判断并直接返回 false。
+void registerWebReminderWorker().catch(() => false);
+// 页面即将关闭时踢 Service Worker 一脚，让它把刚到点的提醒补发出去。
+window.addEventListener('pagehide', () => requestWebReminderCatchUp());
 
 // Register notification click routing before the router starts. The target is
 // retained so the Today page can focus the exact occurrence when it supports it.
@@ -57,6 +69,9 @@ const root = document.getElementById('app');
 if (!root) {
   document.body.textContent = '页面容器丢失，请重装应用。';
 } else {
+  // 兜底要在路由启动前装好，否则首屏就崩的那一类错误正好漏在窗口外。
+  installGlobalErrorBoundary(root);
+
   route('/tools', () => navigate('/today'));
   for (const moduleRoute of appModuleRoutes) route(moduleRoute.path, moduleRoute.handler);
 

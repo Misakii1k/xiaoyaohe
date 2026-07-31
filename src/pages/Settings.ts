@@ -360,10 +360,16 @@ function renderReminderPanel(): HTMLElement {
 }
 
 function buildReminderBody(body: HTMLElement, rerender: () => void): void {
+  const native = isNativeReminderPlatform();
   if (!notificationsSupported()) {
+    // 手机 App 和浏览器「收不到提醒」的原因完全不同，给同一句话等于两边都没说清。
     body.append(
       el('div', { class: 'banner warn' } as any, [
-        el('span', { html: '当前手机无法使用系统通知。请更新应用，并在系统设置中允许通知。' }),
+        el('span', {
+          html: native
+            ? '当前手机无法使用系统通知。请更新应用，并在系统设置中允许通知。'
+            : '当前浏览器发不了用药提醒。常见原因：用 http 的局域网地址打开的（需要 https 或本机地址）、浏览器里关掉了通知、或者 iPhone 上还没把本页「添加到主屏幕」。想稳定收到提醒，建议装手机 App。',
+        }),
       ])
     );
     return;
@@ -412,13 +418,28 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   const perm = getPermission();
   const cls = perm === 'granted' ? 'ok' : perm === 'denied' ? 'warn' : 'info';
   const text = perm === 'granted'
-    ? '通知已开启，应用会按计划发送提醒。'
+    ? native
+      ? '通知已开启，应用会按计划发送提醒。'
+      : '通知已开启。这个页面开着的时候会准点提醒。'
     : perm === 'denied'
       ? '通知被拒绝。请到系统设置中允许通知。'
       : '通知尚未开启，开启后才能按时收到提醒。';
   body.append(
     el('div', { class: 'banner ' + cls } as any, [el('span', { html: text })])
   );
+
+  // 诚实降级：网页端做不到手机 App 那种「到点必响」，这一点必须写在用户看得见的
+  // 地方，而不是藏在文档里。把话说满，用户漏吃药才是真正的代价。
+  if (perm === 'granted' && !native) {
+    body.append(
+      el('div', { class: 'banner warn mt-3' } as any, [
+        el('span', {
+          html:
+            '网页端的提醒没有手机 App 可靠：页面关掉之后，浏览器只会在它自己愿意醒来的时候补发提醒，可能晚几十分钟，手机清后台时也可能收不到。每天都要按时吃的药，请装手机 App。',
+        }),
+      ]),
+    );
+  }
 
   const row = el('div', { class: 'btn-row mt-3' } as any);
   if (perm !== 'granted') {
@@ -526,12 +547,17 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   body.append(
     el('div', {
       class: 'settings-hint',
-      html:
-        '提醒说明：\n· 请允许通知、精确闹钟，以及（Android 14+）全屏提醒权限。\n' +
-        '· 药品编辑页可选择「增强通知 / 短时全屏 / 持续全屏」。\n' +
-        '· 全屏模式会在锁屏时点亮屏幕并弹出服药页；无权限时自动降级为增强通知。\n' +
-        '· 若系统限制后台运行，请在电池优化里允许本应用。\n' +
-        '· 回到应用时会自动检查遗漏的任务并重建闹钟。',
+      html: native
+        ? '提醒说明：\n· 请允许通知、精确闹钟，以及（Android 14+）全屏提醒权限。\n' +
+          '· 药品编辑页可选择「增强通知 / 短时全屏 / 持续全屏」。\n' +
+          '· 全屏模式会在锁屏时点亮屏幕并弹出服药页；无权限时自动降级为增强通知。\n' +
+          '· 若系统限制后台运行，请在电池优化里允许本应用。\n' +
+          '· 回到应用时会自动检查遗漏的任务并重建闹钟。'
+        : '网页端提醒说明：\n· 把本页「添加到主屏幕」再打开，后台补发的成功率会高不少。\n' +
+          '· 页面开着（包括切到后台但没被系统清掉）时，提醒最准时。\n' +
+          '· 手机息屏久了、或者你清了后台，补发会延迟，也可能直接丢失。\n' +
+          '· 网页端没有锁屏全屏提醒，那是手机 App 才有的能力。\n' +
+          '· 重新打开页面时会自动补查一次遗漏的任务。',
     } as any)
   );
 }

@@ -1,0 +1,45 @@
+{
+  "name": "小药盒",
+  "short_name": "小药盒",
+  "description": "按时吃药提醒与用药记录",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./#/today",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f2f3f6",
+  "theme_color": "#f2f3f6",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "今天要吃的药",
+      "short_name": "今日",
+      "url": "./#/today"
+    },
+    {
+      "name": "药品列表",
+      "short_name": "药品",
+      "url": "./#/meds"
+    }
+  ]
+}

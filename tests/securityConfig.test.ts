@@ -13,16 +13,35 @@ describe('security release configuration', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('keeps the embedded WebView CSP strict without registering a PWA service worker', () => {
+  // 原先这条契约禁止一切 PWA 痕迹（manifest-src、apple-mobile-web-app-capable、
+  // Service Worker），依据是「网页端只是开发预览，装 App 才是正路」。
+  // 网页端现在是正式使用场景，且浏览器里除了 Service Worker 没有第二种办法在
+  // 页面关掉后弹提醒，所以「不许有 SW」这条前提本身已经不成立。
+  //
+  // 但当初这条契约真正想挡的风险仍然成立，而且必须继续挡住：**离线缓存壳**。
+  // 缓存了应用外壳的 SW 会出现「装了新版还在跑旧版」，在一个吃药 App 上意味着
+  // 用户可能按旧的用药规则被提醒，排查还极其困难。
+  // 所以断言改成：允许有 SW，但它只能发通知，不许碰 Cache / fetch，
+  // 也不许引入会自动生成缓存壳的 VitePWA。
+  it('keeps the CSP strict and allows only a notification-only service worker', () => {
     const html = readFileSync(join(root, 'index.html'), 'utf8');
     const vite = readFileSync(join(root, 'vite.config.ts'), 'utf8');
     const main = readFileSync(join(root, 'src', 'main.ts'), 'utf8');
+    const worker = readFileSync(join(root, 'public', 'sw.js'), 'utf8');
 
     expect(html).toMatch(/script-src 'self'/);
     expect(html).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(html).toMatch(/object-src 'none'/);
-    expect(html).not.toContain('manifest-src');
-    expect(html).not.toContain('apple-mobile-web-app-capable');
+    // SW 与 manifest 都必须限定同源，不能借 default-src 的回退含糊过去
+    expect(html).toMatch(/worker-src 'self'/);
+    expect(html).toMatch(/manifest-src 'self'/);
+
+    // 不缓存任何东西：没有 fetch 拦截，也不碰 Cache Storage
+    expect(worker).not.toMatch(/addEventListener\(\s*['"]fetch['"]/);
+    expect(worker).not.toMatch(/\bcaches\b/);
+    expect(worker).not.toMatch(/new\s+Response\b/);
+
+    // 也不许由构建插件偷偷生成一个缓存壳
     expect(vite).not.toMatch(/runtimeCaching\s*:/);
     expect(vite).not.toContain('VitePWA');
     expect(main).not.toContain('virtual:pwa-register');

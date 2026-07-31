@@ -1,4 +1,5 @@
-// Android App 由原生闹钟负责后台提醒；这里维护本地计划与前台状态。
+// Android App 由原生闹钟负责后台提醒；网页端由 Service Worker 尽力补发。
+// 两端的前台状态（本地计划、升级重复提醒）都在这里维护。
 import {
   listMeds,
   listLogs,
@@ -39,13 +40,21 @@ import {
 import { triggerReminderVibration } from './reminderVibration';
 
 const TICK_MS = 60_000;
+const NAVIGATION_RECONCILE_THROTTLE_MS = 2 * 60_000;
 let timer: number | null = null;
 let tickInFlight: Promise<void> | null = null;
+let lastReconcileAt = 0;
 const onVisibilityChange = (): void => {
   if (!document.hidden) void tick();
 };
 const onOnline = (): void => void tick();
-const onNavigation = (): void => void tick();
+const onNavigation = (): void => {
+  // 路由切换会频繁触发 hashchange；距上次 reconcile 不足 2 分钟就跳过，
+  // 避免每次切页都全量重建原生闹钟。
+  if (Date.now() - lastReconcileAt < NAVIGATION_RECONCILE_THROTTLE_MS) return;
+  void tick();
+};
+const onTimezoneChange = (): void => void tick();
 const onCapabilityChange = (): void => void tick();
 const onNotificationPrefChange = (): void => void tick();
 
@@ -65,6 +74,8 @@ export function startReminderScheduler(): void {
   // 联网恢复后追一次，便于系统服务恢复时重建提醒。
   window.addEventListener('online', onOnline);
   window.addEventListener('hashchange', onNavigation);
+  // 时区变更后原排程时刻全部失效，立即重排
+  window.addEventListener('timezonechange', onTimezoneChange);
   window.addEventListener(REMINDER_CAPABILITY_CHANGE_EVENT, onCapabilityChange);
   window.addEventListener(NOTIFICATION_PREF_CHANGE_EVENT, onNotificationPrefChange);
 }
@@ -77,6 +88,7 @@ export function stopReminderScheduler(): void {
   document.removeEventListener('visibilitychange', onVisibilityChange);
   window.removeEventListener('online', onOnline);
   window.removeEventListener('hashchange', onNavigation);
+  window.removeEventListener('timezonechange', onTimezoneChange);
   window.removeEventListener(REMINDER_CAPABILITY_CHANGE_EVENT, onCapabilityChange);
   window.removeEventListener(NOTIFICATION_PREF_CHANGE_EVENT, onNotificationPrefChange);
 }
@@ -104,24 +116,33 @@ export async function runOnce(): Promise<void> {
   await tick();
 }
 
-/** Rebuild the native OS schedule after rules, timezone, or permissions change. */
+/**
+ * 规则、时区或权限变化后重建排期。
+ * 原生端重建系统闹钟，网页端刷新交给 Service Worker 的补发计划——
+ * 两者都必须在用户改完规则的当下就更新，否则会按旧规则提醒。
+ */
 export async function rescheduleMedicationReminders() {
-  if (!isNativeReminderPlatform()) return undefined;
+  if (!notificationsSupported()) return undefined;
   await refreshPermission();
   if (getPermission() !== 'granted') return undefined;
+  let result;
   if (!isAppNotificationsEnabled()) {
     // Clear OS schedules when the in-app switch is off.
-    return reconcileScheduledNotifications([]);
+    result = await reconcileScheduledNotifications([]);
+  } else {
+    const [meds, rules, revisions, logs] = await Promise.all([
+      listMeds(),
+      listRules(),
+      listScheduleRevisions(),
+      listLogs(),
+    ]);
+    result = await reconcileScheduledNotifications(
+      buildMedicationReminderPlan({ meds, rules, revisions, logs }),
+    );
   }
-  const [meds, rules, revisions, logs] = await Promise.all([
-    listMeds(),
-    listRules(),
-    listScheduleRevisions(),
-    listLogs(),
-  ]);
-  return reconcileScheduledNotifications(
-    buildMedicationReminderPlan({ meds, rules, revisions, logs }),
-  );
+  lastReconcileAt = Date.now();
+  warnIfTruncated(result);
+  return result;
 }
 
 async function tick(): Promise<void> {
@@ -134,9 +155,10 @@ async function tick(): Promise<void> {
 async function runTick(): Promise<void> {
   if (getPermission() !== 'granted') return;
   if (!isAppNotificationsEnabled()) {
-    if (isNativeReminderPlatform()) {
-      await reconcileScheduledNotifications([]);
-    }
+    // 关掉应用内开关时两端都要清空已下发的排期，否则系统闹钟／SW 计划会继续响。
+    const result = await reconcileScheduledNotifications([]);
+    lastReconcileAt = Date.now();
+    warnIfTruncated(result);
     return;
   }
   const native = isNativeReminderPlatform();
@@ -144,14 +166,17 @@ async function runTick(): Promise<void> {
     listMeds(),
     listRules(),
     listScheduleRevisions(),
-    native ? listLogs() : Promise.resolve([]),
+    listLogs(),
   ]);
-  if (native) {
-    await reconcileScheduledNotifications(
-      buildMedicationReminderPlan({ meds, rules, revisions, logs }),
-    );
-    return;
-  }
+  const result = await reconcileScheduledNotifications(
+    buildMedicationReminderPlan({ meds, rules, revisions, logs }),
+  );
+  lastReconcileAt = Date.now();
+  warnIfTruncated(result);
+  // 原生端到此为止：系统闹钟会自己响，前台再发一遍就是重复通知。
+  if (native) return;
+  // 网页端上面那次 reconcile 只是把计划交给 Service Worker 兜底补发；
+  // 页面开着的这段时间仍由下面的轮询负责准点提醒和升级重复。
   if (!rules.length) return;
   const medMap = new Map(meds.map((m) => [m.id, m]));
   const ruleMap = new Map(rules.map((rule) => [rule.id, rule]));
@@ -195,5 +220,12 @@ async function runTick(): Promise<void> {
         await putPushState({ id: logId, count: next, lastSentAt: Date.now() });
       }
     }
+  }
+}
+
+function warnIfTruncated(result: { truncated?: number } | undefined): void {
+  const truncated = result?.truncated ?? 0;
+  if (truncated > 0) {
+    console.warn(`[medbox] 提醒数量已达上限，部分提醒未排入（${truncated} 条）。`);
   }
 }
