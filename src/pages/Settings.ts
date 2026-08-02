@@ -86,16 +86,27 @@ export async function renderSettingsPage(
   root: HTMLElement,
   signal?: AbortSignal,
 ): Promise<void | (() => void)> {
-  const [meds, rules, logs] = await Promise.all([
+  const [meds, rules, logs, secretInitialization] = await Promise.all([
     listMeds(),
     listRules(),
     listLogs(),
-    initializeLlmSecretStore(),
-    initializeAsrSecretStore(),
+    Promise.allSettled([
+      initializeLlmSecretStore(),
+      initializeAsrSecretStore(),
+    ]),
   ]);
   if (signal?.aborted) return;
 
   const content = el('div', { class: 'page page-light settings-page' });
+  if (secretInitialization.some((result) => result.status === 'rejected')) {
+    content.append(el('div', {
+      class: 'settings-storage-warning',
+      role: 'status',
+      text: isNativeSecretStore()
+        ? 'AI 密钥安全存储暂时不可用；其他设置仍可使用，请稍后重试保存密钥。'
+        : '浏览器未能初始化 AI 密钥存储；其他设置仍可使用，可切换“仅本次会话”后重试。',
+    } as any));
+  }
 
   content.append(renderReminderPanel());
   content.append(renderKeepAlivePanel());

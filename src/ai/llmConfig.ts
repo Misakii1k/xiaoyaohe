@@ -46,12 +46,7 @@ export function initializeLlmSecretStore(): Promise<void> {
       return;
     }
 
-    const legacy = readLegacyLlmConfig();
-    const migrated: LlmConfig = {
-      baseUrl: normalizeLegacyBaseUrl(legacy.baseUrl),
-      apiKey: getSessionSecret() || legacy.apiKey?.trim() || '',
-      model: legacy.model?.trim() || DEFAULT_LLM_CONFIG.model,
-    };
+    const migrated = buildLegacyLlmConfig(readLegacyLlmConfig());
     await setSessionSecret(JSON.stringify(migrated), LLM_CONFIG_SECRET_KEY);
     cleanupLegacyLlmConfig();
     await cleanupLegacyLlmSecret();
@@ -63,12 +58,7 @@ export function getLlmConfig(): LlmConfig {
   if (stored) return parseStoredLlmConfig(stored);
 
   // 启动迁移完成前短暂兼容旧版；新版一旦写入组合记录便永远以它为准。
-  const legacy = readLegacyLlmConfig();
-  return {
-    baseUrl: normalizeLegacyBaseUrl(legacy.baseUrl),
-    apiKey: getSessionSecret() || legacy.apiKey?.trim() || '',
-    model: legacy.model?.trim() || DEFAULT_LLM_CONFIG.model,
-  };
+  return buildLegacyLlmConfig(readLegacyLlmConfig());
 }
 
 export function setLlmConfig(cfg: LlmConfig): Promise<void> {
@@ -191,13 +181,14 @@ function serializeConfigMutation(operation: () => Promise<void>): Promise<void> 
 function parseStoredLlmConfig(raw: string): LlmConfig {
   try {
     const parsed = JSON.parse(raw) as Partial<LlmConfig>;
+    if (typeof parsed.baseUrl !== 'string' || !parsed.baseUrl.trim()) throw new Error('Invalid base URL');
     return {
-      baseUrl: normalizeLegacyBaseUrl(parsed.baseUrl),
-      apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
+      baseUrl: normalizeAndValidateBaseUrl(parsed.baseUrl),
+      apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey.trim() : '',
       model: parsed.model?.trim() || DEFAULT_LLM_CONFIG.model,
     };
   } catch {
-    // 权威记录损坏时失败关闭，不回退到可能残留的旧密钥。
+    // 权威记录损坏或端点无效时整组失败关闭，不把旧密钥改配到默认服务商。
     return { ...DEFAULT_LLM_CONFIG };
   }
 }
@@ -224,11 +215,21 @@ async function cleanupLegacyLlmSecret(): Promise<void> {
   }
 }
 
-function normalizeLegacyBaseUrl(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim()) return DEFAULT_LLM_CONFIG.baseUrl;
+function buildLegacyLlmConfig(legacy: Partial<LlmConfig>): LlmConfig {
+  const legacyKey = getSessionSecret() || legacy.apiKey?.trim() || '';
+  const model = legacy.model?.trim() || DEFAULT_LLM_CONFIG.model;
+  if (typeof legacy.baseUrl !== 'string' || !legacy.baseUrl.trim()) {
+    // 没有旧端点时，旧密钥的服务商归属无法确认，不能默认发送给 Agnes。
+    return { ...DEFAULT_LLM_CONFIG, model };
+  }
   try {
-    return normalizeAndValidateBaseUrl(value);
+    return {
+      baseUrl: normalizeAndValidateBaseUrl(legacy.baseUrl),
+      apiKey: legacyKey,
+      model,
+    };
   } catch {
-    return DEFAULT_LLM_CONFIG.baseUrl;
+    // 端点无效时整组失败关闭，避免“默认端点 + 旧服务商密钥”的危险重配对。
+    return { ...DEFAULT_LLM_CONFIG, model };
   }
 }

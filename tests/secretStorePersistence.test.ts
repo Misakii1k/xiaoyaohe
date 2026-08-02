@@ -38,6 +38,7 @@ describe('secretStore persistence', () => {
     await store.setSessionSecret(' llm-key ');
     await store.setSessionSecret(' asr-id ', store.ASR_SECRET_ID_KEY);
     await store.setSessionSecret(' asr-key ', store.ASR_SECRET_KEY_KEY);
+    localStorage.setItem(store.ASR_REGION_STORAGE_KEY, 'ap-shanghai');
 
     await store.setWebSecretPersistence('session');
 
@@ -46,12 +47,16 @@ describe('secretStore persistence', () => {
     expect(sessionStorage.getItem('medbox_web_secret::ai-api-key')).toBe('llm-key');
     expect(sessionStorage.getItem('medbox_web_secret::ai-asr-secret-id')).toBe('asr-id');
     expect(sessionStorage.getItem('medbox_web_secret::ai-asr-secret-key')).toBe('asr-key');
+    expect(sessionStorage.getItem(store.ASR_REGION_STORAGE_KEY)).toBe('ap-shanghai');
+    expect(localStorage.getItem(store.ASR_REGION_STORAGE_KEY)).toBeNull();
 
     await store.setWebSecretPersistence('device');
 
     expect(store.getWebSecretPersistence()).toBe('device');
     expect(sessionStorage.getItem('medbox_web_secret::ai-api-key')).toBeNull();
     expect(localStorage.getItem('medbox_web_secret::ai-api-key')).toBe('llm-key');
+    expect(localStorage.getItem(store.ASR_REGION_STORAGE_KEY)).toBe('ap-shanghai');
+    expect(sessionStorage.getItem(store.ASR_REGION_STORAGE_KEY)).toBeNull();
   });
 
   it('keeps the source copy and mode when the migration target rejects a key', async () => {
@@ -79,7 +84,7 @@ describe('secretStore persistence', () => {
     const store = await import('../src/ai/secretStore');
     await store.setSessionSecret('temporary-key');
     const originalSetItem = localStorage.setItem.bind(localStorage);
-    vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
       if (key === 'medbox.web-secret-persistence.v1') throw new DOMException('blocked');
       originalSetItem(key, value);
     });
@@ -96,6 +101,100 @@ describe('secretStore persistence', () => {
     await reloaded.initializeSecretStore();
     expect(reloaded.getWebSecretPersistence()).toBe('session');
     expect(reloaded.getSessionSecret()).toBe('temporary-key');
+    setItem.mockRestore();
+  });
+
+  it('keeps a session fallback ahead of an older readable device preference after reload', async () => {
+    localStorage.setItem('medbox.web-secret-persistence.v1', 'device');
+    const store = await import('../src/ai/secretStore');
+    await store.setSessionSecret('temporary-key');
+    const originalSetItem = localStorage.setItem.bind(localStorage);
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key === 'medbox.web-secret-persistence.v1') throw new DOMException('blocked');
+      originalSetItem(key, value);
+    });
+
+    await store.setWebSecretPersistence('session');
+    expect(localStorage.getItem('medbox.web-secret-persistence.v1')).toBe('device');
+    expect(sessionStorage.getItem('medbox.web-secret-persistence.v1')).toBe('session');
+
+    vi.resetModules();
+    const reloaded = await import('../src/ai/secretStore');
+    await reloaded.initializeSecretStore();
+    expect(reloaded.getWebSecretPersistence()).toBe('session');
+    expect(reloaded.getSessionSecret()).toBe('temporary-key');
+    setItem.mockRestore();
+  });
+
+  it('re-reads a newer shared device value before moving secrets to the current session', async () => {
+    const store = await import('../src/ai/secretStore');
+    await store.setSessionSecret('stale-key');
+    // 模拟另一标签页已在共享 localStorage 提交了新组合，而当前模块内存仍是旧值。
+    localStorage.setItem('medbox_web_secret::ai-api-key', 'newer-key');
+
+    await store.setWebSecretPersistence('session');
+
+    expect(store.getSessionSecret()).toBe('newer-key');
+    expect(sessionStorage.getItem('medbox_web_secret::ai-api-key')).toBe('newer-key');
+    expect(localStorage.getItem('medbox_web_secret::ai-api-key')).toBeNull();
+  });
+
+  it('can switch to session storage when localStorage rejects every write', async () => {
+    const store = await import('../src/ai/secretStore');
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('blocked');
+    });
+
+    await store.setWebSecretPersistence('session');
+    await store.setSessionSecret('session-key');
+
+    expect(store.getWebSecretPersistence()).toBe('session');
+    expect(sessionStorage.getItem('medbox.web-secret-persistence.v1')).toBe('session');
+    expect(sessionStorage.getItem('medbox_web_secret::ai-api-key')).toBe('session-key');
+    setItem.mockRestore();
+  });
+
+  it('stores ASR credentials and region in the session fallback when device storage is blocked', async () => {
+    const store = await import('../src/ai/secretStore');
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('blocked');
+    });
+    await store.setWebSecretPersistence('session');
+    const asr = await import('../src/ai/asrConfig');
+
+    await asr.setAsrConfig({
+      secretId: 'session-id',
+      secretKey: 'session-key',
+      region: 'ap-shanghai',
+    });
+
+    expect(asr.getAsrConfig()).toEqual({
+      secretId: 'session-id',
+      secretKey: 'session-key',
+      region: 'ap-shanghai',
+    });
+    expect(sessionStorage.getItem('medbox_web_secret::ai-asr-credentials-v1')).toBe(
+      JSON.stringify({ secretId: 'session-id', secretKey: 'session-key' }),
+    );
+    expect(sessionStorage.getItem('medbox.asrRegion.v1')).toBe('ap-shanghai');
+    setItem.mockRestore();
+  });
+
+  it('fails closed when a legacy key has no valid provider endpoint', async () => {
+    localStorage.setItem('medbox.llmConfig.v1', JSON.stringify({
+      baseUrl: 'http://old-provider.example.com/v1',
+      apiKey: 'provider-secret',
+      model: 'legacy-model',
+    }));
+    const llm = await import('../src/ai/llmConfig');
+
+    await llm.initializeLlmSecretStore();
+
+    expect(llm.getLlmConfig()).toEqual({
+      ...llm.DEFAULT_LLM_CONFIG,
+      model: 'legacy-model',
+    });
+    expect(llm.getLlmConfig().apiKey).toBe('');
   });
 
   it('shares one initialization promise across concurrent native callers', async () => {
@@ -221,8 +320,9 @@ describe('secretStore persistence', () => {
     expect(asr.getAsrConfig()).toMatchObject({ secretId: '', secretKey: '' });
   });
 
-  it('keeps the old ASR pair when the combined record cannot be replaced', async () => {
+  it('keeps the old ASR pair and region when the combined record cannot be replaced', async () => {
     platform.native = true;
+    localStorage.setItem('medbox.asrRegion.v1', 'ap-beijing');
     const store = await import('../src/ai/secretStore');
     const previous = JSON.stringify({ secretId: 'old-id', secretKey: 'old-key' });
     secureStorage.get.mockImplementation(async (key) => key === store.ASR_CREDENTIALS_SECRET_KEY ? previous : null);
@@ -230,12 +330,41 @@ describe('secretStore persistence', () => {
     const asr = await import('../src/ai/asrConfig');
     secureStorage.set.mockRejectedValue(new Error('write blocked'));
 
-    await expect(asr.setAsrConfig({ secretId: 'new-id', secretKey: 'new-key' }))
-      .rejects.toMatchObject({ code: 'write-failed' });
-    expect(asr.getAsrConfig()).toMatchObject({ secretId: 'old-id', secretKey: 'old-key' });
+    await expect(asr.setAsrConfig({
+      secretId: 'new-id',
+      secretKey: 'new-key',
+      region: 'ap-shanghai',
+    })).rejects.toMatchObject({ code: 'write-failed' });
+    expect(asr.getAsrConfig()).toMatchObject({
+      secretId: 'old-id',
+      secretKey: 'old-key',
+      region: 'ap-beijing',
+    });
 
     await expect(asr.clearAsrConfig()).rejects.toMatchObject({ code: 'write-failed' });
     expect(asr.getAsrConfig()).toMatchObject({ secretId: 'old-id', secretKey: 'old-key' });
+  });
+
+  it('does not replace ASR credentials when the region cannot be persisted', async () => {
+    platform.native = true;
+    const store = await import('../src/ai/secretStore');
+    const previous = JSON.stringify({ secretId: 'old-id', secretKey: 'old-key' });
+    secureStorage.get.mockImplementation(async (key) => key === store.ASR_CREDENTIALS_SECRET_KEY ? previous : null);
+    await store.initializeSecretStore();
+    const asr = await import('../src/ai/asrConfig');
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key === 'medbox.asrRegion.v1') throw new DOMException('blocked');
+      Storage.prototype.setItem.call(localStorage, key, value);
+    });
+
+    await expect(asr.setAsrConfig({
+      secretId: 'new-id',
+      secretKey: 'new-key',
+      region: 'ap-shanghai',
+    })).rejects.toMatchObject({ code: 'write-failed' });
+    expect(secureStorage.set).not.toHaveBeenCalled();
+    expect(asr.getAsrConfig()).toMatchObject({ secretId: 'old-id', secretKey: 'old-key' });
+    setItem.mockRestore();
   });
 
   it('propagates native removal failures without clearing memory', async () => {

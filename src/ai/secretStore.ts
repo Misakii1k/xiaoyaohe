@@ -9,6 +9,9 @@ export const ASR_CREDENTIALS_SECRET_KEY = 'ai-asr-credentials-v1';
 /** 腾讯云 ASR 旧版 SecretId / SecretKey，仅用于迁移。 */
 export const ASR_SECRET_ID_KEY = 'ai-asr-secret-id';
 export const ASR_SECRET_KEY_KEY = 'ai-asr-secret-key';
+/** ASR 地域不是密钥，但跟随网页密钥的 device/session 生命周期迁移。 */
+export const ASR_REGION_STORAGE_KEY = 'medbox.asrRegion.v1';
+const WEB_AUXILIARY_KEYS = [ASR_REGION_STORAGE_KEY] as const;
 const KNOWN_KEYS = [
   SECRET_KEY,
   LLM_CONFIG_SECRET_KEY,
@@ -49,8 +52,17 @@ export class SecretStoreError extends Error {
 export type WebSecretPersistence = 'device' | 'session';
 
 const WEB_PERSISTENCE_KEY = 'medbox.web-secret-persistence.v1';
+const WEB_STORAGE_LOCK_KEY = 'medbox.web-secret-storage-lock.v1';
 /** 仅在浏览器拒绝持久化偏好时使用；成功持久化后不遮蔽跨标签页更新。 */
 let volatileWebPersistence: WebSecretPersistence | undefined;
+
+interface WebLockManager {
+  request<T>(
+    name: string,
+    options: { mode: 'exclusive' },
+    callback: () => Promise<T>,
+  ): Promise<T>;
+}
 
 /**
  * 网页端密钥存储的风险提示文案。
@@ -190,9 +202,66 @@ function replaceSessionSecrets(values: ReadonlyMap<string, string>): void {
 }
 
 function serializeWebStorageMutation(operation: () => Promise<void>): Promise<void> {
-  const result = webStorageMutation.then(operation, operation);
+  const lockedOperation = () => withWebStorageLock(operation);
+  const result = webStorageMutation.then(lockedOperation, lockedOperation);
   webStorageMutation = result.catch(() => undefined);
   return result;
+}
+
+async function withWebStorageLock<T>(operation: () => Promise<T>): Promise<T> {
+  const lockManager = typeof navigator !== 'undefined'
+    ? (navigator as Navigator & { locks?: WebLockManager }).locks
+    : undefined;
+  if (lockManager?.request) {
+    return lockManager.request('medbox-web-secret-storage', { mode: 'exclusive' }, operation);
+  }
+
+  // Safari 等尚无 Web Locks 的浏览器用 localStorage 短租约兜底；存储本身不可用时，
+  // 后续写入验证仍会失败关闭，不会为获得锁而吞掉真正的存储错误。
+  const owner = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    let acquired = false;
+    try {
+      const now = Date.now();
+      const current = parseWebStorageLease(localStorage.getItem(WEB_STORAGE_LOCK_KEY));
+      if (!current || current.expiresAt <= now) {
+        const lease = JSON.stringify({ owner, expiresAt: now + 5_000 });
+        localStorage.setItem(WEB_STORAGE_LOCK_KEY, lease);
+        // localStorage 没有原子 compare-and-set；短暂让出执行权后再次确认所有权，
+        // 可避免两个标签页同拍写入时都在第一次回读后误以为自己获得了租约。
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        acquired = localStorage.getItem(WEB_STORAGE_LOCK_KEY) === lease;
+      }
+    } catch {
+      return operation();
+    }
+    if (acquired) {
+      try {
+        return await operation();
+      } finally {
+        try {
+          const latest = parseWebStorageLease(localStorage.getItem(WEB_STORAGE_LOCK_KEY));
+          if (latest?.owner === owner) localStorage.removeItem(WEB_STORAGE_LOCK_KEY);
+        } catch {
+          /* 租约会自动过期；清理失败不能把已完成的密钥写入误报为失败。 */
+        }
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new SecretStoreError('write-failed', '浏览器密钥存储正被其他页面使用，请重试');
+}
+
+function parseWebStorageLease(raw: string | null): { owner: string; expiresAt: number } | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as { owner?: unknown; expiresAt?: unknown };
+    if (typeof parsed.owner !== 'string' || typeof parsed.expiresAt !== 'number') return undefined;
+    return { owner: parsed.owner, expiresAt: parsed.expiresAt };
+  } catch {
+    return undefined;
+  }
 }
 
 async function migrateWebSecrets(mode: WebSecretPersistence): Promise<void> {
@@ -201,6 +270,8 @@ async function migrateWebSecrets(mode: WebSecretPersistence): Promise<void> {
   const source = storageForMode(previousMode);
   const target = storageForMode(mode);
   const snapshots = new Map<string, { source: string | null; target: string | null }>();
+  const auxiliarySnapshots = new Map<string, { source: string | null; target: string | null }>();
+  const migratedValues = new Map<string, string>();
   let localPreference: string | null = null;
   let sessionPreference: string | null = null;
   let preferencesReadable = true;
@@ -214,11 +285,27 @@ async function migrateWebSecrets(mode: WebSecretPersistence): Promise<void> {
   try {
     for (const key of KNOWN_KEYS) {
       const storageKey = webSecretKey(key);
-      snapshots.set(key, {
-        source: source.getItem(storageKey),
-        target: target.getItem(storageKey),
-      });
-      setStorageValue(target, storageKey, sessionSecrets.get(key) ?? '');
+      const sourceValue = source.getItem(storageKey);
+      const targetValue = target.getItem(storageKey);
+      snapshots.set(key, { source: sourceValue, target: targetValue });
+      // 持有跨标签锁后重读真实存储。共享 localStorage 中若已有值，说明其他标签页
+      // 已提交了更新，迁移不能再用本标签页的旧内存快照覆盖它。
+      const localValue = localStorage.getItem(storageKey);
+      const nextValue = mode === 'session'
+        ? localValue ?? sourceValue ?? targetValue ?? ''
+        : sourceValue ?? targetValue ?? localValue ?? '';
+      migratedValues.set(key, nextValue);
+      setStorageValue(target, storageKey, nextValue);
+    }
+    for (const storageKey of WEB_AUXILIARY_KEYS) {
+      const sourceValue = source.getItem(storageKey);
+      const targetValue = target.getItem(storageKey);
+      auxiliarySnapshots.set(storageKey, { source: sourceValue, target: targetValue });
+      const localValue = localStorage.getItem(storageKey);
+      const nextValue = mode === 'session'
+        ? localValue ?? sourceValue ?? targetValue ?? ''
+        : sourceValue ?? targetValue ?? localValue ?? '';
+      setStorageValue(target, storageKey, nextValue);
     }
     try {
       setStorageValue(localStorage, WEB_PERSISTENCE_KEY, mode);
@@ -229,11 +316,25 @@ async function migrateWebSecrets(mode: WebSecretPersistence): Promise<void> {
       setStorageValue(sessionStorage, WEB_PERSISTENCE_KEY, mode);
       volatileWebPersistence = mode;
     }
-    for (const key of KNOWN_KEYS) setStorageValue(source, webSecretKey(key), '');
+    for (const [key, snapshot] of snapshots) {
+      if (snapshot.source !== null) setStorageValue(source, webSecretKey(key), '');
+    }
+    for (const [storageKey, snapshot] of auxiliarySnapshots) {
+      if (snapshot.source !== null) setStorageValue(source, storageKey, '');
+    }
+    replaceSessionSecrets(migratedValues);
   } catch (cause) {
     let rollbackFailed = false;
     for (const [key, snapshot] of snapshots) {
       const storageKey = webSecretKey(key);
+      try {
+        restoreStorageValue(source, storageKey, snapshot.source);
+        restoreStorageValue(target, storageKey, snapshot.target);
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+    for (const [storageKey, snapshot] of auxiliarySnapshots) {
       try {
         restoreStorageValue(source, storageKey, snapshot.source);
         restoreStorageValue(target, storageKey, snapshot.target);
@@ -267,7 +368,7 @@ function persistWebSecret(key: string, value: string): void {
   const inactiveBefore = inactive.getItem(storageKey);
   try {
     setStorageValue(active, storageKey, value);
-    setStorageValue(inactive, storageKey, '');
+    if (inactiveBefore !== null) setStorageValue(inactive, storageKey, '');
   } catch (cause) {
     let rollbackFailed = false;
     try { restoreStorageValue(active, storageKey, activeBefore); } catch { rollbackFailed = true; }
@@ -289,6 +390,7 @@ function setStorageValue(storage: Storage, key: string, value: string): void {
 function restoreStorageValue(storage: Storage, key: string, value: string | null): void {
   if (value == null) storage.removeItem(key);
   else storage.setItem(key, value);
+  if (storage.getItem(key) !== value) throw new Error('Storage rollback verification failed');
 }
 
 function storageForMode(mode: WebSecretPersistence): Storage {

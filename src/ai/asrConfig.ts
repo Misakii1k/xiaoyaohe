@@ -1,15 +1,18 @@
-// 腾讯云 ASR 本机配置：凭据对走一条安全存储记录，region 可进 localStorage。
+// 腾讯云 ASR 本机配置：凭据对走一条安全存储记录，region 跟随网页端 device/session 模式。
 import {
   ASR_CREDENTIALS_SECRET_KEY,
+  ASR_REGION_STORAGE_KEY,
   ASR_SECRET_ID_KEY,
   ASR_SECRET_KEY_KEY,
   clearSessionSecret,
   getSessionSecret,
+  getWebSecretPersistence,
   initializeSecretStore,
+  isNativeSecretStore,
+  SecretStoreError,
   setSessionSecret,
 } from './secretStore';
 
-const LS_REGION_KEY = 'medbox.asrRegion.v1';
 const DEFAULT_REGION = 'ap-guangzhou';
 let credentialsMutation: Promise<void> = Promise.resolve();
 
@@ -52,9 +55,21 @@ export function setAsrConfig(cfg: Partial<AsrConfig>): Promise<void> {
       secretId: cfg.secretId !== undefined ? cfg.secretId.trim() : current.secretId,
       secretKey: cfg.secretKey !== undefined ? cfg.secretKey.trim() : current.secretKey,
     };
-    await setSessionSecret(JSON.stringify(next), ASR_CREDENTIALS_SECRET_KEY);
-    await cleanupLegacyCredentials();
+    const previousRegion = cfg.region !== undefined ? readStoredRegion() : null;
     if (cfg.region !== undefined) writeRegion(cfg.region.trim() || DEFAULT_REGION);
+    try {
+      await setSessionSecret(JSON.stringify(next), ASR_CREDENTIALS_SECRET_KEY);
+    } catch (cause) {
+      if (cfg.region !== undefined) {
+        try {
+          restoreRegion(previousRegion);
+        } catch {
+          throw new SecretStoreError('state-unknown', '语音配置状态无法确认，请重新填写', cause);
+        }
+      }
+      throw cause;
+    }
+    await cleanupLegacyCredentials();
   });
 }
 
@@ -64,11 +79,8 @@ export function clearAsrConfig(): Promise<void> {
     // 一条权威空记录即可同时清除两项凭据；失败时旧凭据对完整保留。
     await setSessionSecret(JSON.stringify({ secretId: '', secretKey: '' }), ASR_CREDENTIALS_SECRET_KEY);
     await cleanupLegacyCredentials();
-    try {
-      localStorage.removeItem(LS_REGION_KEY);
-    } catch {
-      /* ignore */
-    }
+    try { localStorage.removeItem(ASR_REGION_STORAGE_KEY); } catch { /* ignore */ }
+    try { sessionStorage.removeItem(ASR_REGION_STORAGE_KEY); } catch { /* ignore */ }
   });
 }
 
@@ -110,18 +122,47 @@ async function cleanupLegacyCredentials(): Promise<void> {
 }
 
 function writeRegion(region: string): void {
+  const storage = regionStorage();
   try {
-    localStorage.setItem(LS_REGION_KEY, region);
-  } catch {
-    /* ignore */
+    storage.setItem(ASR_REGION_STORAGE_KEY, region);
+    if (storage.getItem(ASR_REGION_STORAGE_KEY) !== region) throw new Error('Storage verification failed');
+  } catch (cause) {
+    throw new SecretStoreError('write-failed', '浏览器无法保存语音地域，请检查存储权限', cause);
   }
 }
 
-function readRegion(): string {
+function readStoredRegion(): string | null {
   try {
-    const raw = localStorage.getItem(LS_REGION_KEY)?.trim();
-    return raw || DEFAULT_REGION;
+    return regionStorage().getItem(ASR_REGION_STORAGE_KEY);
+  } catch (cause) {
+    throw new SecretStoreError('write-failed', '浏览器无法读取当前语音地域，请检查存储权限', cause);
+  }
+}
+
+function restoreRegion(region: string | null): void {
+  const storage = regionStorage();
+  if (region == null) storage.removeItem(ASR_REGION_STORAGE_KEY);
+  else storage.setItem(ASR_REGION_STORAGE_KEY, region);
+  if (storage.getItem(ASR_REGION_STORAGE_KEY) !== region) throw new Error('Storage rollback verification failed');
+}
+
+function readRegion(): string {
+  const primary = regionStorage();
+  const secondary = primary === sessionStorage ? localStorage : sessionStorage;
+  try {
+    const raw = primary.getItem(ASR_REGION_STORAGE_KEY)?.trim();
+    if (raw) return raw;
+  } catch {
+    /* fall back to the other browser store */
+  }
+  try {
+    return secondary.getItem(ASR_REGION_STORAGE_KEY)?.trim() || DEFAULT_REGION;
   } catch {
     return DEFAULT_REGION;
   }
+}
+
+function regionStorage(): Storage {
+  if (isNativeSecretStore()) return localStorage;
+  return getWebSecretPersistence() === 'session' ? sessionStorage : localStorage;
 }

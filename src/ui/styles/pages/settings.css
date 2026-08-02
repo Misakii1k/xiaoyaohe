@@ -5,6 +5,16 @@
 
 .settings-page > * + * { margin-block-start: var(--space-4); }
 
+.settings-storage-warning {
+  padding: var(--space-3);
+  border: 1px solid var(--tone-warn-border);
+  border-radius: var(--radius-lg);
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+  font-size: var(--fs-footnote);
+  line-height: 1.5;
+}
+
 .settings-section h2,
 .settings-about h2 {
   margin: 0;

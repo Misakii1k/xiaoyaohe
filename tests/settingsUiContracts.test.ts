@@ -64,6 +64,15 @@ describe('settings information architecture contracts', () => {
   // 网页端现在是正式使用场景，而它**没有**系统安全存储可用：密钥只能明文放在
   // 浏览器里。此时统一说成「安全存储」等于对网页端用户说假话，所以改为要求
   // 按平台分别给出如实说明。
+  it('keeps non-AI settings available when secret storage initialization fails', () => {
+    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+
+    expect(settings).toContain('Promise.allSettled([');
+    expect(settings).toContain("result.status === 'rejected'");
+    expect(settings).toContain('其他设置仍可使用');
+    expect(settings).toContain('可切换“仅本次会话”后重试');
+  });
+
   it('tells the truth about where API keys live on each platform', () => {
     const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
     const secretStore = readFileSync(join(root, 'src/ai/secretStore.ts'), 'utf8');
