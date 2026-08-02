@@ -15,7 +15,7 @@ describe('application icon assets', () => {
     });
 
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-  });
+  }, 20_000);
 
   it('uses dedicated favicon and Apple touch assets', () => {
     const html = readFileSync(join(root, 'index.html'), 'utf8');

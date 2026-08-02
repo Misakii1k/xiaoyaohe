@@ -3,6 +3,9 @@
   "version": "0.9.4",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "description": "小药盒：吃药提醒、药品管理与库存记录 Android App",
   "scripts": {
     "dev": "vite",

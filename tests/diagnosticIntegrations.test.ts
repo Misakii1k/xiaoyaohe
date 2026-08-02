@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const root = process.cwd();
+const root = resolve(import.meta.dirname, '..');
 
 describe('diagnostic integrations', () => {
   it('records reminder startup and action failures without changing fallback flow', () => {
