@@ -6,23 +6,34 @@
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
   --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
 
-  /* 参考图 4（浅色卡片 Dashboard）色板，2026-07-15 用户确认；2026-07-16 深度对齐设计稿 */
-  --color-bg: #f1efec;
-  --color-surface: #ffffff;
-  --color-surface-muted: #f2f1f5;
-  --color-text: #23242d;
-  --color-text-muted: #8f92a0;
-  --color-border: #eeedf2;
-  --color-primary: #666dd2;
-  --color-primary-pressed: #5157bd;
-  --color-primary-soft: #edeefc;
-  --color-lilac: #838ae0;
-  --color-ink-purple: #3f4470;
-  --color-success: #2e9e6b;
-  --color-warning: #b66a1e;
-  --color-danger: #d9494f;
-  --color-accent-coral: #e0696b;
-  --color-accent-mint: #4fbdc3;
+  /* 参考图 1（微拟物柔和卡片）与 参考图 2（水凝玻璃 + 弥散渐变 + 3D 立绘）深度融合色板 */
+  --color-bg: #f2f4f9;
+  --color-bg-mesh: radial-gradient(at 10% 10%, #e0e7ff 0px, transparent 50%),
+                    radial-gradient(at 90% 20%, #fae8ff 0px, transparent 50%),
+                    radial-gradient(at 50% 80%, #e0f2fe 0px, transparent 50%),
+                    #f1f3f9;
+  --color-surface: rgba(255, 255, 255, 0.88);
+  --color-surface-solid: #ffffff;
+  --color-surface-glass: rgba(255, 255, 255, 0.78);
+  --color-surface-muted: rgba(243, 244, 248, 0.85);
+  --color-text: #1e202e;
+  --color-text-muted: #787c91;
+  --color-border: rgba(226, 230, 242, 0.8);
+  --color-border-glass: rgba(255, 255, 255, 0.88);
+
+  --color-primary: #5c62d6;
+  --color-primary-pressed: #4a50bd;
+  --color-primary-soft: #eef0ff;
+  --color-primary-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  --color-hero-gradient: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #38bdf8 100%);
+  --color-lilac: #818cf8;
+  --color-ink-purple: #35385e;
+
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-accent-coral: #fb7185;
+  --color-accent-mint: #06b6d4;
 
   /* 助手 Markdown 渲染面：代码块 / inline code / 表格 / 引用 */
   --color-code-bg: #2a2c36;
@@ -84,34 +95,34 @@
   --radius-xl: 26px;
   --radius-full: 999px;
   --tap: 44px;
-  --shadow-sm: 0 2px 8px rgb(40 42 66 / 3%), 0 12px 28px rgb(40 42 66 / 6%);
-  --shadow-md: 0 4px 12px rgb(40 42 66 / 4%), 0 18px 44px rgb(40 42 66 / 9%);
-  --shadow-lg: 0 8px 20px rgb(40 42 66 / 6%), 0 28px 64px rgb(40 42 66 / 14%);
+  --shadow-sm: 0 4px 12px rgba(30, 32, 46, 0.04), 0 1px 3px rgba(30, 32, 46, 0.02);
+  --shadow-md: 0 8px 24px -4px rgba(99, 102, 241, 0.09), 0 4px 12px rgba(30, 32, 46, 0.04);
+  --shadow-lg: 0 16px 40px -6px rgba(99, 102, 241, 0.15), 0 8px 20px rgba(30, 32, 46, 0.06);
 
   /* Legacy aliases keep existing page markup readable during the staged migration. */
   --brand: var(--color-primary);
   --brand-deep: var(--color-primary-pressed);
-  --brand-soft: #dfe1f9;
+  --brand-soft: #e0e4ff;
   --ios-blue: var(--color-primary);
   --ios-green: var(--color-success);
   --ios-orange: var(--color-warning);
   --ios-red: var(--color-danger);
   --label-primary: var(--color-text);
   --label-secondary: var(--color-text-muted);
-  --label-tertiary: #878a95;
-  --label-quaternary: #aaadb8;
+  --label-tertiary: #8f93a8;
+  --label-quaternary: #b3b7c8;
   --label-on-primary: #ffffff;
   --separator: var(--color-border);
-  --bg-gradient: var(--color-bg);
-  --glass-thin: var(--color-surface);
-  --glass-regular: var(--color-surface);
-  --glass-thick: var(--color-surface);
-  --glass-border: var(--color-border);
-  --glass-border-strong: var(--color-border);
-  --glass-highlight: none;
-  --glass-highlight-strong: none;
-  --glass-blur: 0px;
-  --glass-blur-heavy: 0px;
+  --bg-gradient: var(--color-bg-mesh);
+  --glass-thin: rgba(255, 255, 255, 0.7);
+  --glass-regular: rgba(255, 255, 255, 0.84);
+  --glass-thick: rgba(255, 255, 255, 0.94);
+  --glass-border: var(--color-border-glass);
+  --glass-border-strong: rgba(255, 255, 255, 0.95);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --glass-highlight-strong: inset 0 1px 1px rgba(255, 255, 255, 1);
+  --glass-blur: 16px;
+  --glass-blur-heavy: 24px;
   --glass-saturate: 100%;
   --scrim: rgb(28 30 38 / 36%);
   --tone-ok-fg: #17603f;

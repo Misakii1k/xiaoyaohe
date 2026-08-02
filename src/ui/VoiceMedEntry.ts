@@ -1,6 +1,6 @@
 // 口述录药：像聊天一样说出在吃的药，AI 整理成清单，再走批量建档向导逐项确认。
 // 配好腾讯云语音识别就用它（国产浏览器/WebView 也能听）；否则退回浏览器自带识别；都没有就直接打字。
-import { el, banner } from './components';
+import { el, banner, makeAppInert, restoreAppAfterLastDialog, trapFocusIn } from './components';
 import { navigate, registerRouteTransitionCleanup } from '../router';
 import { createButton } from './primitives/Button';
 import { parseMedicationSpeech, IdentifyError } from '../ai/identify';
@@ -11,7 +11,6 @@ import { createProxyAsrRecognizer, isAsrConfigured, type SpeechRecognitionLike }
 const EXAMPLE_TEXT = '比如说：「阿司匹林每天早饭后吃一片，二甲双胍早晚各一片，睡前还有一粒钙片。」';
 const MIC_IDLE_LABEL = '点一下，开始说';
 const MIC_LISTENING_LABEL = '正在听…说完点一下';
-const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 const activeVoiceEntries = new Set<() => void>();
 registerRouteTransitionCleanup(() => {
@@ -103,6 +102,9 @@ export function openVoiceMedEntry(): VoiceMedEntryHandle {
   sheet.append(grabber, head, card, actions);
   overlay.append(sheet);
   document.body.append(overlay);
+  makeAppInert();
+
+  let removeTrap: (() => void) | null = null;
 
   const dispose = () => {
     if (disposed) return;
@@ -110,35 +112,13 @@ export function openVoiceMedEntry(): VoiceMedEntryHandle {
     activeVoiceEntries.delete(dispose);
     parseAbort?.abort();
     stopListening();
-    document.removeEventListener('keydown', onKeyDown);
+    removeTrap?.();
     overlay.remove();
+    restoreAppAfterLastDialog();
     previouslyFocused?.focus({ preventScroll: true });
   };
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      dispose();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = Array.from(sheet.querySelectorAll<HTMLElement>(focusableSelector))
-      .filter((element) => !element.hasAttribute('disabled') && !element.hidden);
-    if (focusable.length === 0) {
-      event.preventDefault();
-      sheet.focus();
-      return;
-    }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
+  removeTrap = trapFocusIn(sheet, dispose);
 
   function setListening(on: boolean): void {
     listening = on;
@@ -277,7 +257,6 @@ export function openVoiceMedEntry(): VoiceMedEntryHandle {
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) dispose();
   });
-  document.addEventListener('keydown', onKeyDown);
   activeVoiceEntries.add(dispose);
   sheet.focus({ preventScroll: true });
   return { close: dispose };

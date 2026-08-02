@@ -728,8 +728,10 @@ async function applyMedication(
       ...payload.identity,
       photoHashes: [...(current?.identity?.photoHashes ?? [])],
     },
-    // Inventory remains device-local (not part of LAN medication payload).
+    // Inventory and pre-deduction state remain device-local (not part of LAN medication payload).
     ...(current?.inventory ? { inventory: structuredClone(current.inventory) } : {}),
+    ...(current?.preDeduction ? { preDeduction: structuredClone(current.preDeduction) } : {}),
+    ...(current?.lastPreDeductedAt !== undefined ? { lastPreDeductedAt: current.lastPreDeductedAt } : {}),
     updatedAt: appliedAt,
   };
   await store.put(next);

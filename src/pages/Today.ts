@@ -40,6 +40,7 @@ import {
 } from '../ui/components';
 import { closeNotificationsByTag } from '../features/notifier';
 import { getMedPhotoUrls } from '../features/medPhotos';
+import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import {
   areDoseUnitsCompatible,
   getConfirmedDose,
@@ -68,6 +69,10 @@ interface SlotGroup {
 }
 
 const WEEKDAY_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+// 今日页照片在本会话内基本不变：打卡后整页重渲染时按 medId 集合复用，避免每次重新查库建 URL
+let todayPhotoKey = '';
+let todayPhotoUrls: ReadonlyMap<string, string> = new Map();
 
 export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
   const now = new Date();
@@ -101,7 +106,16 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   if (signal?.aborted) return;
 
   // 今日清单每行带药盒照片缩略图，长辈按图找药
-  const photoUrls = await getMedPhotoUrls([...new Set(items.map((item) => item.med.id))]);
+  const photoMedIds = [...new Set(items.map((item) => item.med.id))].sort();
+  const photoKey = photoMedIds.join('\u0000');
+  let photoUrls: ReadonlyMap<string, string>;
+  if (photoKey !== todayPhotoKey) {
+    photoUrls = await getMedPhotoUrls(photoMedIds);
+    todayPhotoKey = photoKey;
+    todayPhotoUrls = photoUrls;
+  } else {
+    photoUrls = todayPhotoUrls;
+  }
   if (signal?.aborted) return;
 
   const content = el('div', { class: 'page today-page' });
@@ -369,16 +383,12 @@ function renderSlotSection(
     });
     if (item.occurrence) line.dataset.occurrenceId = item.occurrence.id;
     line.append(el('span', { class: 'today-medication-marker', 'aria-hidden': 'true' } as any));
-    // 药盒照片缩略图：认盒不认字，没照片时用淡紫药丸占位
-    const photoUrl = photoUrls.get(item.med.id);
-    const thumb = el('span', { class: 'today-medication-thumb' + (photoUrl ? '' : ' is-placeholder'), 'aria-hidden': 'true' } as any);
-    if (photoUrl) {
-      const img = el('img', { alt: '', loading: 'lazy', decoding: 'async' } as any) as HTMLImageElement;
-      img.src = photoUrl;
-      thumb.append(img);
-    } else {
-      thumb.append(icon('pill'));
-    }
+    // 药盒照片/3D AI 生图缩略图
+    const photoUrl = photoUrls.get(item.med.id) || getOrCreateMed3DImage(item.med.id, item.med.name, item.med.amountPerDose);
+    const thumb = el('span', { class: 'today-medication-thumb', 'aria-hidden': 'true' } as any);
+    const img = el('img', { alt: '', loading: 'lazy', decoding: 'async' } as any) as HTMLImageElement;
+    img.src = photoUrl;
+    thumb.append(img);
     line.append(thumb);
     const copy = el('div', { class: 'today-medication-copy' });
     copy.append(el('div', { class: 'today-medication-name', text: item.med.name }));
@@ -412,8 +422,8 @@ function renderSlotSection(
   } else if (allDone) {
     const undo = createButton({ label: '撤销本时段', variant: 'text', icon: 'undo' });
     undo.onclick = () => void (async () => {
-      await applyActions(activeItems, undefined);
-      toast('已撤销');
+      const result = await applyActions(activeItems, undefined);
+      toast(result.failed > 0 ? applyResultMessage(result) : '已撤销');
       refresh();
     })();
     actions.append(undo);
@@ -434,13 +444,10 @@ function renderSlotSection(
       if (insufficient.length > 0) {
         await infoDialog(buildInsufficientWarning(insufficient));
       }
-      try {
-        await applyActions(takeableItems, 'taken');
-        toast(`${takeableItems.length} 项服药已记录`);
-        refresh();
-      } catch (error) {
-        toast(intakeErrorMessage(error));
-      }
+      const result = await applyActions(takeableItems, 'taken');
+      if (result.failed > 0) toast(applyResultMessage(result));
+      else toast(`${result.ok} 项服药已记录`);
+      refresh();
     })();
 
     const skipBtn = createButton({
@@ -451,8 +458,8 @@ function renderSlotSection(
     });
     skipBtn.onclick = () => void (async () => {
       if (eligiblePending.length === 0) return;
-      await applyActions(eligiblePending, 'skipped');
-      toast('已记录为跳过');
+      const result = await applyActions(eligiblePending, 'skipped');
+      toast(result.failed > 0 ? applyResultMessage(result) : '已记录为跳过');
       refresh();
     })();
     actions.append(takeBtn, skipBtn);
@@ -461,8 +468,18 @@ function renderSlotSection(
   return card;
 }
 
-function preflightInventoryActions(items: readonly TodayItem[]): boolean {
-  const requiredByMed = new Map<string, { med: Medication; quantity: number; unit: string }>();
+interface DoseRequirement {
+  med: Medication;
+  quantity: number;
+  unit: string;
+}
+
+/** 汇总今日项按药合并的剂量需求；单位不兼容时回调，返回 false 提前终止 */
+function collectDoseRequirements(
+  items: readonly TodayItem[],
+  onIncompatible?: (med: Medication, reason: 'inventory' | 'cross') => boolean,
+): Map<string, DoseRequirement> {
+  const requiredByMed = new Map<string, DoseRequirement>();
   for (const item of items) {
     if (!item.occurrence || !item.med.inventory || isOccurrencePreDeducted(item.med, item.occurrence)) continue;
     const dose = item.occurrence.doseQuantity && item.occurrence.doseUnit
@@ -472,13 +489,13 @@ function preflightInventoryActions(items: readonly TodayItem[]): boolean {
     if (!dose) continue;
     const inventoryUnit = item.med.inventory.unit?.trim();
     if (inventoryUnit && !areDoseUnitsCompatible(inventoryUnit, dose.unit)) {
-      toast(`${item.med.name} 每次用量的单位和剩余药量的单位对不上，这次先不帮你扣药量`);
-      return false;
+      if (onIncompatible?.(item.med, 'inventory') === false) return requiredByMed;
+      continue;
     }
     const current = requiredByMed.get(item.med.id);
     if (current && !areDoseUnitsCompatible(current.unit, dose.unit)) {
-      toast(`${item.med.name} 今天的计划剂量单位不一致，请先到药品编辑页复核`);
-      return false;
+      if (onIncompatible?.(item.med, 'cross') === false) return requiredByMed;
+      continue;
     }
     requiredByMed.set(item.med.id, {
       med: item.med,
@@ -486,8 +503,19 @@ function preflightInventoryActions(items: readonly TodayItem[]): boolean {
       unit: current?.unit ?? dose.unit,
     });
   }
-  // 库存数量不足不再阻塞，由 collectInsufficientMeds 收集后弹窗告知。
-  return true;
+  return requiredByMed;
+}
+
+function preflightInventoryActions(items: readonly TodayItem[]): boolean {
+  let valid = true;
+  collectDoseRequirements(items, (med, reason) => {
+    valid = false;
+    toast(reason === 'inventory'
+      ? `${med.name} 每次用量的单位和剩余药量的单位对不上，这次先不帮你扣药量`
+      : `${med.name} 今天的计划剂量单位不一致，请先到药品编辑页复核`);
+    return false;
+  });
+  return valid;
 }
 
 interface InsufficientMedInfo {
@@ -498,25 +526,8 @@ interface InsufficientMedInfo {
 }
 
 function collectInsufficientMeds(items: readonly TodayItem[]): InsufficientMedInfo[] {
-  const requiredByMed = new Map<string, { med: Medication; quantity: number; unit: string }>();
-  for (const item of items) {
-    if (!item.occurrence || !item.med.inventory || isOccurrencePreDeducted(item.med, item.occurrence)) continue;
-    const dose = item.occurrence.doseQuantity && item.occurrence.doseUnit
-      ? { quantity: item.occurrence.doseQuantity, unit: item.occurrence.doseUnit }
-      : getConfirmedDose(item.med);
-    if (!dose) continue;
-    const inventoryUnit = item.med.inventory.unit?.trim();
-    if (inventoryUnit && !areDoseUnitsCompatible(inventoryUnit, dose.unit)) continue;
-    const current = requiredByMed.get(item.med.id);
-    if (current && !areDoseUnitsCompatible(current.unit, dose.unit)) continue;
-    requiredByMed.set(item.med.id, {
-      med: item.med,
-      quantity: (current?.quantity ?? 0) + dose.quantity,
-      unit: current?.unit ?? dose.unit,
-    });
-  }
   const result: InsufficientMedInfo[] = [];
-  for (const { med, quantity, unit } of requiredByMed.values()) {
+  for (const { med, quantity, unit } of collectDoseRequirements(items).values()) {
     if (med.inventory!.remaining < quantity) {
       result.push({
         med,
@@ -534,22 +545,46 @@ function buildInsufficientWarning(insufficient: readonly InsufficientMedInfo[]):
   return `以下药品库存不足，仍会记录服药并扣至 0：\n\n${lines.join('\n')}\n\n记得补药。`;
 }
 
+interface ApplyActionResult {
+  ok: number;
+  failed: number;
+  failures: Array<{ name: string; reason: string }>;
+}
+
 async function applyActions(
   items: readonly TodayItem[],
   action: IntakeAction | undefined,
-): Promise<void> {
+): Promise<ApplyActionResult> {
+  const failures: ApplyActionResult['failures'] = [];
+  let ok = 0;
   for (const item of items) {
     if (!item.occurrence) continue;
-    const result = await setOccurrenceAction(item.occurrence, action);
-    item.med = result.med;
-    item.log = result.log;
-    if (result.lowStock && result.lowStockMessage) {
-      toast(result.lowStockMessage);
-      await sendLowStockReminderIfDue(result.med, result.lowStockMessage);
+    try {
+      const result = await setOccurrenceAction(item.occurrence, action);
+      item.med = result.med;
+      item.log = result.log;
+      if (result.lowStock && result.lowStockMessage) {
+        toast(result.lowStockMessage);
+        await sendLowStockReminderIfDue(result.med, result.lowStockMessage).catch(() => undefined);
+      }
+      void closeNotificationsByTag(item.occurrence.id);
+      void closeNotificationsByTag(item.occurrence.legacyLogId);
+      ok += 1;
+    } catch (error) {
+      failures.push({
+        name: item.med.name || '未命名药品',
+        reason: error instanceof MedicationIntakeError ? error.message : '',
+      });
     }
-    void closeNotificationsByTag(item.occurrence.id);
-    void closeNotificationsByTag(item.occurrence.legacyLogId);
   }
+  return { ok, failed: failures.length, failures };
+}
+
+function applyResultMessage(result: ApplyActionResult): string {
+  const total = result.ok + result.failed;
+  const names = result.failures.map((f) => f.name).join('、');
+  const reasons = [...new Set(result.failures.map((f) => f.reason).filter(Boolean))].join('；');
+  return `已记录 ${result.ok}/${total} 项，失败项：${names}${reasons ? `（${reasons}）` : ''}`;
 }
 
 function pendingItems(items: readonly TodayItem[]): TodayItem[] {
@@ -558,11 +593,6 @@ function pendingItems(items: readonly TodayItem[]): TodayItem[] {
 
 function isHandled(log: IntakeLog | undefined): boolean {
   return log?.status === 'taken' || log?.status === 'skipped';
-}
-
-function intakeErrorMessage(error: unknown): string {
-  if (error instanceof MedicationIntakeError) return error.message;
-  return '记录失败，请稍后重试';
 }
 
 function formatClock(ms: number): string {

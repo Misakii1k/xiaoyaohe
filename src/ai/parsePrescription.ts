@@ -84,23 +84,31 @@ export async function parsePrescription(text: string): Promise<PrescriptionDraft
   const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
   await requireAiConsent('prescription', baseUrl);
 
-  const resp = await fetch(baseUrl + '/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer ' + cfg.apiKey,
-    },
-    body: JSON.stringify({
-      model: cfg.model,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: desc },
-      ],
-    }),
-    signal: AbortSignal.timeout(45_000),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(baseUrl + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + cfg.apiKey,
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: desc },
+        ],
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      throw new ParsePrescriptionError('请求超时，请检查网络后重试');
+    }
+    throw new ParsePrescriptionError('连不上 AI 服务，请检查网络或设置里的服务地址');
+  }
 
   if (!resp.ok) {
     const data = (await resp.json().catch(() => ({}))) as { error?: { message?: string } | string };

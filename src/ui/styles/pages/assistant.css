@@ -178,6 +178,11 @@
   align-self: flex-start;
 }
 
+/* 卡片渲染模块按需加载期间的占位。display:none 才不会在 flex gap 里留下空档 */
+.ai-card-slot {
+  display: none;
+}
+
 .ai-bubble {
   display: inline-flex;
   flex-direction: column;

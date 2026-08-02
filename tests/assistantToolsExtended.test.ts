@@ -108,9 +108,9 @@ describe('Phase F assistant tools registration', () => {
     'update_app_settings',
   ] as const;
 
-  it('registers all 8 new tools alongside the original 8', () => {
-    // 8 original + 8 new = 16 total
-    expect(assistantTools).toHaveLength(16);
+  it('registers all 8 new tools alongside the original 8 and 3 inventory tools', () => {
+    // 8 original + 8 phase F + 3 inventory tools = 19 total
+    expect(assistantTools).toHaveLength(19);
     for (const name of NEW_TOOL_NAMES) {
       const tool = findAssistantTool(name);
       expect(tool, `expected ${name} to be registered`).toBeDefined();

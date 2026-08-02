@@ -1,11 +1,12 @@
-import { listMeds, listRules, putMed } from '../db/local';
-import type { Medication, MedicationInventory, ReminderRule } from '../db/schema';
+import { listMeds, listRules, putMed, listRecentInventoryOperations, undoInventoryOperation, batchDeductInventory } from '../db/local';
+import { INVENTORY_SOURCE_LABEL, type Medication, type MedicationInventory, type ReminderRule } from '../db/schema';
 import {
   classifyInventoryStatus,
   estimateDaysLeft,
   getLowStockThreshold,
   isLowStock,
   roundStock,
+  calculateBatchDeductionPreview,
   type InventoryStatus,
 } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
@@ -45,11 +46,6 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
 
   const content = el('div', { class: 'page inventory-page' });
 
-  const shareBtn = topbarPill({ icon: 'share', label: '分享', onClick: () => openShareSheet(sorted, rulesByMedId) });
-  const smartBtn = topbarPill({ icon: 'sparkles', label: '智能录入', variant: 'primary', onClick: () => openInventorySmartSheet(root, sorted, rulesByMedId, signal) });
-  const topRight = el('div', { class: 'topbar-actions' });
-  topRight.append(smartBtn, shareBtn);
-
   if (meds.length === 0) {
     const addBtn = createButton({ label: '去添加药品', icon: 'plus', onClick: () => navigate('/meds/new') });
     const scanBtn = createButton({ label: '扫码添加', icon: 'scan', variant: 'secondary', onClick: () => navigate('/scan') });
@@ -61,9 +57,46 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
         [addBtn, scanBtn],
       ),
     );
-    renderPage({ root, title: '库存', activeTab: 'inventory', topRight, content });
+    renderPage({ root, title: '库存', activeTab: 'inventory', content });
     return;
   }
+
+  const moreBtn = createIconButton({
+    icon: 'dots',
+    label: '更多操作',
+    onClick: () => {
+      let sheet: BottomSheetHandle | undefined;
+      const title = el('h2', { class: 'inventory-sheet-title', text: '库存操作' });
+      const actions = el('div', { class: 'inventory-sheet-actions' });
+
+      const historyBtn = createButton({
+        label: '历史操作',
+        icon: 'clock',
+        variant: 'secondary',
+        onClick: () => { sheet?.close(); openInventoryHistorySheet(root, signal); },
+      });
+      const batchBtn = createButton({
+        label: '批量预扣',
+        icon: 'box',
+        variant: 'secondary',
+        onClick: () => { sheet?.close(); openBatchDeductSheet(root, meds, rules, signal); },
+      });
+      const shareBtn = createButton({
+        label: '分享库存',
+        icon: 'share',
+        variant: 'secondary',
+        onClick: () => { sheet?.close(); openShareSheet(sorted, rulesByMedId); },
+      });
+
+      actions.append(historyBtn, batchBtn, shareBtn);
+      sheet = openBottomSheet({ label: '库存操作', content: [title, actions] });
+    },
+  });
+
+  const smartBtn = topbarPill({ icon: 'sparkles', label: '智能录入', variant: 'primary', onClick: () => openInventorySmartSheet(root, sorted, rulesByMedId, signal) });
+
+  const topRight = el('div', { class: 'topbar-actions' });
+  topRight.append(moreBtn, smartBtn);
 
   const activeRules = rules.filter((rule) => rule.enabled && !rule.deleted);
   const rulesByMedId = groupRulesByMedId(activeRules);
@@ -707,4 +740,157 @@ function mergeInventory(current: MedicationInventory | undefined, identified: Me
     lastReminderAt: current?.lastReminderAt,
     dailyConsumption: current?.dailyConsumption,
   };
+}
+
+async function openInventoryHistorySheet(root: HTMLElement, signal?: AbortSignal): Promise<void> {
+  const logs = await listRecentInventoryOperations(3);
+  let sheetHandle: BottomSheetHandle | undefined;
+
+  const content = el('div', { class: 'inventory-history-sheet-content' });
+  const title = el('h3', { text: '近三天历史操作记录', class: 'sheet-title' });
+  const subtitle = el('p', { text: '显示近 3 天的所有库存变动与服药扣减，每项标注明确的操作来源。', class: 'sheet-subtitle' });
+
+  content.append(title, subtitle);
+
+  if (logs.length === 0) {
+    content.append(emptyState('clock', '暂无操作历史', '近三天内没有发生任何库存调整或扣减记录。'));
+  } else {
+    const listEl = el('div', { class: 'inventory-history-list' });
+    for (const logItem of logs) {
+      const sourceLabel = INVENTORY_SOURCE_LABEL[logItem.source] || logItem.source;
+      const deltaStr = logItem.delta > 0 ? `+${logItem.delta}` : `${logItem.delta}`;
+      const timeStr = new Date(logItem.timestamp).toLocaleString('zh-CN', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const sourceBadge = el('span', {
+        class: `inventory-source-badge source-${logItem.source}`,
+        text: sourceLabel,
+      });
+
+      const itemEl = el('div', { class: 'inventory-history-item' }, [
+        el('div', { class: 'history-item-header' }, [
+          el('strong', { text: logItem.medName, class: 'history-med-name' }),
+          sourceBadge,
+        ]),
+        el('div', { class: 'history-item-body' }, [
+          el('span', { text: `变动: ${deltaStr}${logItem.unit} (现余: ${logItem.newRemaining}${logItem.unit})`, class: 'history-delta' }),
+          el('span', { text: timeStr, class: 'history-time' }),
+        ]),
+        logItem.sourceNote ? el('div', { text: logItem.sourceNote, class: 'history-note' }) : null,
+      ].filter(Boolean) as HTMLElement[]);
+
+      if (logItem.canUndo) {
+        const undoBtn = createButton({
+          label: '撤回',
+          variant: 'secondary',
+          onClick: async () => {
+            sheetHandle?.close();
+            const res = await undoInventoryOperation(logItem.id);
+            if (res.ok) {
+              toast(res.message);
+              await renderMedInventoryPage(root, signal);
+            } else {
+              toast(res.message);
+            }
+          },
+        });
+        undoBtn.classList.add('history-undo-btn');
+        itemEl.append(undoBtn);
+      }
+
+      listEl.append(itemEl);
+    }
+    content.append(listEl);
+  }
+
+  sheetHandle = openBottomSheet({ label: '历史操作（近3天）', content: [content] });
+}
+
+async function openBatchDeductSheet(root: HTMLElement, meds: Medication[], rules: ReminderRule[], signal?: AbortSignal): Promise<void> {
+  let days = 7;
+  let sheetHandle: BottomSheetHandle | undefined;
+
+  const content = el('div', { class: 'batch-deduct-sheet-content' });
+  const title = el('h3', { text: '一次性预扣库存与变动对比', class: 'sheet-title' });
+  const subtitle = el('p', { text: '在确认扣减前，查看本次预扣与当前库存的具体变动区别。', class: 'sheet-subtitle' });
+
+  const daysRow = el('div', { class: 'days-select-row' });
+  const daysOptions = [3, 7, 14, 30];
+  const optionButtons: HTMLButtonElement[] = [];
+
+  const previewContainer = el('div', { class: 'batch-preview-container' });
+
+  function renderPreview() {
+    previewContainer.replaceChildren();
+    const preview = calculateBatchDeductionPreview(meds, rules, days);
+    const summary = el('div', { class: 'preview-summary-badge', text: preview.summaryText });
+
+    const diffList = el('div', { class: 'preview-diff-list' });
+    for (const item of preview.items) {
+      const diffItem = el('div', { class: `preview-diff-item ${item.willBeEmpty ? 'is-empty' : item.willBeLow ? 'is-low' : ''}` }, [
+        el('div', { class: 'diff-med-header' }, [
+          el('strong', { text: item.medName }),
+          item.willBeEmpty
+            ? el('span', { class: 'diff-tag tag-empty', text: '扣后用完' })
+            : item.willBeLow
+              ? el('span', { class: 'diff-tag tag-low', text: '扣后偏低' })
+              : el('span', { class: 'diff-tag tag-ok', text: '库存充足' }),
+        ]),
+        el('div', { class: 'diff-values-grid' }, [
+          el('div', {}, [el('span', { text: '当前剩余: ' }), el('strong', { text: `${item.currentStock}${item.unit}` })]),
+          el('div', {}, [el('span', { text: '本次需扣: ' }), el('strong', { text: `-${item.deductQuantity}${item.unit}` })]),
+          el('div', {}, [el('span', { text: '预计剩余: ' }), el('strong', { text: `${item.expectedRemaining}${item.unit}`, class: 'highlight-remaining' })]),
+        ]),
+      ]);
+      diffList.append(diffItem);
+    }
+    previewContainer.append(summary, diffList);
+  }
+
+  for (const d of daysOptions) {
+    const btn = createButton({
+      label: `${d} 天${d === 7 ? ' (一周)' : ''}`,
+      variant: d === days ? 'primary' : 'secondary',
+      onClick: () => {
+        days = d;
+        for (const b of optionButtons) b.classList.remove('is-active');
+        btn.classList.add('is-active');
+        renderPreview();
+      },
+    });
+    optionButtons.push(btn as HTMLButtonElement);
+    daysRow.append(btn);
+  }
+
+  renderPreview();
+
+  const confirmBtn = createButton({
+    label: '确认扣减',
+    variant: 'primary',
+    onClick: async () => {
+      sheetHandle?.close();
+      const preview = calculateBatchDeductionPreview(meds, rules, days);
+      const deductItems = preview.items
+        .filter((i) => i.deductQuantity > 0)
+        .map((i) => ({ medId: i.medId, quantity: i.deductQuantity }));
+
+      if (deductItems.length === 0) {
+        toast('没有需要扣减的药品');
+        return;
+      }
+
+      const res = await batchDeductInventory(deductItems, 'batch', `手动一次性扣除 ${days} 天库存`);
+      if (res.ok) {
+        toast(`已完成 ${res.results.length} 种药品的批量扣减`);
+        await renderMedInventoryPage(root, signal);
+      }
+    },
+  });
+
+  content.append(title, subtitle, daysRow, previewContainer, confirmBtn);
+  sheetHandle = openBottomSheet({ label: '批量处理预扣', content: [content] });
 }

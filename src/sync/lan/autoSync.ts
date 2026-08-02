@@ -26,6 +26,7 @@ const AUTO_SILENT_KEY = 'medbox.lan-sync.auto-silent.v1';
 const POLL_INTERVAL_MS = 30 * 60 * 1000;
 const PEER_CONNECT_TIMEOUT_MS = 12_000;
 const HOST_RESTART_DELAY_MS = 2_000;
+const HOST_RESTART_DELAY_MAX_MS = 30_000;
 /** 当 allowRemoteOverwrite=false 且 host 想做 overwrite-local 时，session.ts 抛出的文案片段。 */
 const OVERWRITE_REFUSED_MARKER = '未开启「允许被覆盖」';
 
@@ -216,6 +217,7 @@ async function ensurePersistentHost(): Promise<void> {
   if (hostLoopActive) return;
   if (!isAutoSyncEnabled() || !isLanSyncAvailable()) return;
   hostLoopActive = true;
+  let retryDelayMs = HOST_RESTART_DELAY_MS;
   while (hostLoopActive && isAutoSyncEnabled()) {
     try {
       const identity = getOrCreateLocalAutoIdentity();
@@ -236,11 +238,13 @@ async function ensurePersistentHost(): Promise<void> {
       void startServingInstalledApk().catch(() => undefined);
       await session.completion.catch(() => undefined);
       hostClose = null;
-    } catch {
-      /* 端口占用/无 Wi-Fi：稍后重试 */
+      retryDelayMs = HOST_RESTART_DELAY_MS;
+    } catch (error) {
+      console.warn('LAN 常驻 host 启动失败，稍后重试：', error);
     }
     if (!hostLoopActive || !isAutoSyncEnabled()) break;
-    await sleep(HOST_RESTART_DELAY_MS);
+    await sleep(retryDelayMs);
+    retryDelayMs = Math.min(retryDelayMs * 2, HOST_RESTART_DELAY_MAX_MS);
   }
   hostLoopActive = false;
 }

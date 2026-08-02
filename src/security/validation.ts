@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isLocalDate } from '../domain/medicationSchedule';
 
 const MAX_BACKUP_BYTES = 5 * 1024 * 1024;
 const MAX_TOTAL_NODES = 50_000;
@@ -10,7 +11,7 @@ const shortText = z.string().max(MAX_STRING_LENGTH);
 const id = z.string().min(1).max(256);
 const finiteNumber = z.number().finite();
 const nonNegativeNumber = finiteNumber.nonnegative();
-const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isLocalDate, 'Expected a real local calendar date (YYYY-MM-DD).');
 const timeLocal = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 const slot = z.enum(['morning', 'noon', 'evening', 'bedtime']);
 const mealRel = z.enum(['before', 'with', 'after']);

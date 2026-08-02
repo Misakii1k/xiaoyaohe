@@ -107,6 +107,9 @@ export interface AssistantTurnEvents {
 const MAX_TOOL_ROUNDS = 6;
 const MAX_HISTORY = 12;
 const REQUEST_TIMEOUT_MS = 45_000;
+const TURN_DEADLINE_MS = 240_000;
+const MAX_WIRE_MESSAGES = 20;
+const MAX_WIRE_CHARS = 30_000;
 
 const SYSTEM_PROMPT = [
   '你是「小药盒」应用里的贴身小助手，帮用户照看吃药提醒、药品和库存。',
@@ -126,6 +129,8 @@ const SYSTEM_PROMPT = [
   '13. 用户想立刻同步所有设备时调用 trigger_lan_sync；想知道有没有新版本时调用 check_app_update；要下载并安装新版本调用 download_and_install_update，但安装器启动后应用可能重启，请先提醒用户保存当前对话。',
   '14. update_app_settings 可以批量改应用设置（开关类）。能用工具改的项只限白名单：appNotificationsEnabled / lanAutoSyncEnabled / lanAutoSyncSilent / lanAllowRemoteOverwrite。其他敏感项（API 密钥、AI 授权、原生权限）请引导用户去设置页改。',
   '15. 一次问句里要改多项数据（库存、药品、设置）时，尽量并行调用多个工具，用户一次确认就能全部完成。',
+  '16. 你可以帮助用户记录和管理今天以及今天以前的历史服药记录（mark_medication 支持 date 参数，如 "2026-07-30"、"昨天"、"前天"）。',
+  '17. 用户想要查看库存修改记录或近 3 天历史操作时调用 get_inventory_logs（支持显示操作来源）；要撤回库存修改时调用 undo_inventory_operation；要一次性预扣或批量扣减多天（如一周）库存时调用 batch_deduct_inventory（扣减前会自动展示当前库存、本次扣减、预计剩余等全方位差异对比）。',
 ].join('\n');
 
 interface WireToolCall {
@@ -187,7 +192,12 @@ export async function runAssistantTurn(
     });
   }
 
+  const turnDeadline = Date.now() + TURN_DEADLINE_MS;
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
+    if (Date.now() >= turnDeadline) {
+      throw new AssistantError('service', '这次对话耗时太久，已自动停止。换个更具体的问法试试。');
+    }
+    truncateMessages(messages);
     let reply: WireReply;
     try {
       reply = await requestChat(
@@ -247,6 +257,40 @@ export async function runAssistantTurn(
     }
   }
   throw new AssistantError('service', '这个问题查了太多轮还没查完，换个更具体的问法试试。');
+}
+
+/**
+ * 每轮请求前压缩 messages：保留 system 提示，从尾部保留最近的对话，
+ * 工具轮（assistant tool_calls + 其后连续的 tool 消息）整体成组裁剪，避免破坏配对。
+ */
+function truncateMessages(messages: WireMessage[], maxItems = MAX_WIRE_MESSAGES, maxChars = MAX_WIRE_CHARS): void {
+  const systemEnd = messages.findIndex((m) => m.role !== 'system');
+  const head = messages.slice(0, systemEnd === -1 ? messages.length : systemEnd);
+  const rest = messages.slice(systemEnd === -1 ? messages.length : systemEnd);
+
+  const groups: WireMessage[][] = [];
+  let index = 0;
+  while (index < rest.length) {
+    const current = rest[index];
+    if (current.role === 'assistant' && current.tool_calls?.length) {
+      let end = index + 1;
+      while (end < rest.length && rest[end].role === 'tool') end += 1;
+      groups.push(rest.slice(index, end));
+      index = end;
+    } else {
+      groups.push([current]);
+      index += 1;
+    }
+  }
+
+  const kept = groups.slice(-maxItems);
+  let chars = kept.reduce((total, group) => total + group.reduce((sum, m) => sum + JSON.stringify(m).length, 0), 0);
+  while (chars > maxChars && kept.length > 1) {
+    const dropped = kept.shift();
+    if (dropped) chars -= dropped.reduce((sum, m) => sum + JSON.stringify(m).length, 0);
+  }
+  messages.length = 0;
+  messages.push(...head, ...kept.flat());
 }
 
 /** Recognize an explicit search command so MCP works even when the model omits tool_calls. */

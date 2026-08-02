@@ -14,6 +14,7 @@ import {
   formatMealRelsBySlot,
   formatMealRelsForSlot,
   type Medication,
+  type MedicationOccurrence,
   type ReminderRule,
   type IntakeLog,
   type Slot,
@@ -33,6 +34,7 @@ import {
 import { navigate } from '../router';
 import { estimateDaysLeft } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
+import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import { checkInteractions, type DrugInteraction } from '../data/drugInteractions';
 import { isRestDay, rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { openBottomSheet } from '../ui/primitives/BottomSheet';
@@ -151,15 +153,17 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
   }
   if (signal?.aborted) return;
   const weekOccurrences = generateOccurrences(revisions, weekStart, today);
+  const occurrencesByMedId = new Map<string, MedicationOccurrence[]>();
+  for (const occurrence of weekOccurrences) {
+    const list = occurrencesByMedId.get(occurrence.medId);
+    if (list) list.push(occurrence);
+    else occurrencesByMedId.set(occurrence.medId, [occurrence]);
+  }
   const adherenceByMedId = new Map<string, AdherenceSummary>();
   for (const med of meds) {
     adherenceByMedId.set(
       med.id,
-      calculateAdherence(
-        weekOccurrences.filter((occurrence) => occurrence.medId === med.id),
-        weekLogs,
-        nowMs,
-      ),
+      calculateAdherence(occurrencesByMedId.get(med.id) ?? [], weekLogs, nowMs),
     );
   }
 
@@ -303,15 +307,12 @@ function renderMedCard(
   const card = el('article', { class: 'medication-list-row', role: 'listitem' } as any);
 
   const head = el('div', { class: 'medication-list-row-header' });
-  // 药盒照片缩略图：有照片显示实拍图，没有则用淡紫药丸图标占位
-  const thumb = el('div', { class: 'medication-list-thumb' + (photoUrl ? '' : ' is-placeholder') });
-  if (photoUrl) {
-    const img = el('img', { alt: '', loading: 'lazy', decoding: 'async' } as any) as HTMLImageElement;
-    img.src = photoUrl;
-    thumb.append(img);
-  } else {
-    thumb.append(icon('pill'));
-  }
+  // 药盒照片或 3D AI 生图立绘
+  const finalPhotoUrl = photoUrl || getOrCreateMed3DImage(m.id, m.name, m.amountPerDose);
+  const thumb = el('div', { class: 'medication-list-thumb' });
+  const img = el('img', { alt: '', loading: 'lazy', decoding: 'async' } as any) as HTMLImageElement;
+  img.src = finalPhotoUrl;
+  thumb.append(img);
   head.append(thumb);
   const titleWrap = el('div', { class: 'medication-list-copy' });
   titleWrap.append(el('div', { class: 'medication-list-name', text: m.name || '未命名' }));
@@ -641,6 +642,8 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
       if (signal?.aborted) return;
       toast(`已删除 ${count} 种药品`);
       await renderMedListPage(root, signal);
+    } catch {
+      toast('删除失败，请稍后重试');
     } finally {
       deleteButton.disabled = false;
     }

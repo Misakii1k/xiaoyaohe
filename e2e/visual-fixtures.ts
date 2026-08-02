@@ -29,7 +29,7 @@ export async function seedVisualFixtures(page: Page): Promise<void> {
     localStorage.removeItem('medbox.llmHealth.v1');
     sessionStorage.clear();
 
-    const medsDb = await open('medbox', 7, (database) => {
+    const medsDb = await open('medbox', 8, (database) => {
       if (!database.objectStoreNames.contains('meds')) database.createObjectStore('meds', { keyPath: 'id' });
       if (!database.objectStoreNames.contains('rules')) {
         const rules = database.createObjectStore('rules', { keyPath: 'id' });
@@ -52,8 +52,12 @@ export async function seedVisualFixtures(page: Page): Promise<void> {
       if (!database.objectStoreNames.contains('syncLanMetadata')) {
         database.createObjectStore('syncLanMetadata', { keyPath: 'key' });
       }
+      if (!database.objectStoreNames.contains('inventoryLogs')) {
+        const invLogs = database.createObjectStore('inventoryLogs', { keyPath: 'id' });
+        invLogs.createIndex('byMed', 'medId');
+      }
     });
-    const medStores = ['meds', 'rules', 'scheduleRevisions', 'logs', 'photos', 'pushStates', 'syncLanMetadata'];
+    const medStores = ['meds', 'rules', 'scheduleRevisions', 'logs', 'photos', 'pushStates', 'syncLanMetadata', 'inventoryLogs'];
     const medTransaction = medsDb.transaction(medStores, 'readwrite');
     for (const store of medStores) medTransaction.objectStore(store).clear();
 

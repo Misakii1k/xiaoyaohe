@@ -1,6 +1,6 @@
 // 全局小助手入口：右下角悬浮按钮 + 底部聊天面板。
 // 挂在 document.body 上，路由切换不销毁，不挡各页面自己的操作。
-import { el, icon, confirmDialog, toast } from './components';
+import { el, icon, confirmDialog, toast, makeAppInert, restoreAppAfterLastDialog, trapFocusIn } from './components';
 import { navigate } from '../router';
 import {
   AssistantError,
@@ -17,7 +17,47 @@ import {
 } from '../ai/asr';
 import { createButton } from './primitives/Button';
 import { compressBoxPhoto } from '../features/medPhotos';
-import { renderAssistantBlock, renderAssistantMarkdown } from './assistantContent';
+
+/**
+ * Markdown 渲染（marked + DOMPurify + 代码高亮）按需加载。
+ *
+ * 这三个库加起来是主包里最大的一块，而小助手是低频功能：静态 import 会让每个
+ * 只想看「今天吃什么药」的用户都先下载一遍 Markdown 渲染器。改为首次打开助手
+ * 时再拉。
+ */
+type AssistantContentModule = typeof import('./assistantContent');
+let contentModule: AssistantContentModule | null = null;
+let contentLoading: Promise<AssistantContentModule> | null = null;
+
+function loadAssistantContent(): Promise<AssistantContentModule> {
+  contentLoading ??= import('./assistantContent')
+    .then((module) => {
+      contentModule = module;
+      return module;
+    })
+    .catch((error: unknown) => {
+      // 失败后清掉句柄，下次调用可以重试（弱网下第一次拉不到很常见）。
+      contentLoading = null;
+      throw error;
+    });
+  return contentLoading;
+}
+
+/**
+ * 同步渲染 Markdown。模块还没到时先按纯文本显示，到了再原地换成正式渲染。
+ * 宁可样式朴素，也不能让用户面对一片空白等着。
+ */
+function renderMarkdown(text: string): HTMLElement {
+  if (contentModule) return contentModule.renderAssistantMarkdown(text);
+  const holder = el('div', { class: 'ai-markdown' }, [el('p', { class: 'ai-md-p', text })]);
+  void loadAssistantContent()
+    .then((module) => {
+      if (holder.isConnected) holder.replaceWith(module.renderAssistantMarkdown(text));
+    })
+    .catch(() => undefined);
+  return holder;
+}
+
 
 const GREETING = '你好呀，我是小助手。想知道今天吃什么药、最近是否按时，或者查看药品库存，直接说就行。也能拍照、发文件、按住说话。';
 const QUICK_PROMPTS = [
@@ -116,7 +156,6 @@ export function mountGlobalAssistant(): void {
 
   const log = el('div', { class: 'ai-chat-log' });
   log.setAttribute('aria-live', 'polite');
-
   const quick = el('div', { class: 'ai-quick' }, QUICK_PROMPTS.map((prompt) => {
     const chip = el('button', { class: 'ai-quick-chip', type: 'button', text: prompt });
     chip.onclick = () => { void send(prompt); };
@@ -156,10 +195,12 @@ export function mountGlobalAssistant(): void {
   attachMenu.setAttribute('aria-label', '添加附件');
 
   // 面板内紧凑录音反馈区，聊天内容保持可见。
+  // 计时器每秒变化不适合朗读，只对状态提示（开始/取消/停止）播报。
   const voiceOverlay = el('div', { class: 'ai-voice-overlay', hidden: true } as any);
-  voiceOverlay.setAttribute('aria-live', 'assertive');
   const voiceHint = el('div', { class: 'ai-voice-hint', text: '松开发送，上滑取消' });
+  voiceHint.setAttribute('aria-live', 'polite');
   const voiceTimer = el('div', { class: 'ai-voice-timer', text: '0″' });
+  voiceTimer.setAttribute('aria-hidden', 'true');
   // 弧形进度环：中央话筒 + 外圈 SVG 圆环随录音时长 0→60s 填满。
   const voiceRingSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   voiceRingSvg.setAttribute('class', 'ai-voice-progress');
@@ -331,7 +372,9 @@ export function mountGlobalAssistant(): void {
       applyPos(snapToEdge(currentPos()));
     });
   });
-  positionObserver.observe(document.body, { childList: true, subtree: true });
+  // 只观察页面内容容器：#app 的布局变化才会影响按钮的可视范围
+  const appRoot = document.getElementById('app');
+  if (appRoot) positionObserver.observe(appRoot, { childList: true, subtree: true });
 
   const savedPos = loadPos();
   if (savedPos) applyPos(snapToEdge(savedPos));
@@ -341,6 +384,9 @@ export function mountGlobalAssistant(): void {
 
   function openPanel(): void {
     root.classList.add('is-open');
+    // 打开面板就开始拉 Markdown 渲染模块：用户还在打字的这几秒足够加载完，
+    // 等到回复到达时通常已经就绪，不会看到纯文本闪一下。
+    void loadAssistantContent().catch(() => undefined);
     if (log.childElementCount === 0) {
       addMsg('bot', GREETING);
       const cfg = getLlmConfig();
@@ -409,9 +455,19 @@ export function mountGlobalAssistant(): void {
     target.click();
   }
 
+  let attachMenuTrap: (() => void) | null = null;
+  let attachMenuFocusedFrom: HTMLElement | null = null;
+
   function closeAttachMenu(): void {
+    if (attachMenu.hidden && !attachMenuTrap) return;
     attachMenu.hidden = true;
     attachMenu.replaceChildren();
+    attachMenuTrap?.();
+    attachMenuTrap = null;
+    restoreAppAfterLastDialog();
+    const backTo = attachMenuFocusedFrom;
+    attachMenuFocusedFrom = null;
+    backTo?.focus({ preventScroll: true });
   }
 
   function openAttachMenu(): void {
@@ -419,6 +475,7 @@ export function mountGlobalAssistant(): void {
       closeAttachMenu();
       return;
     }
+    attachMenuFocusedFrom = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const camera = createButton({
       label: '拍照',
       icon: 'camera',
@@ -446,6 +503,8 @@ export function mountGlobalAssistant(): void {
     scrim.onclick = () => closeAttachMenu();
     attachMenu.replaceChildren(scrim, sheet);
     attachMenu.hidden = false;
+    makeAppInert();
+    attachMenuTrap = trapFocusIn(attachMenu, closeAttachMenu);
     camera.focus();
   }
 
@@ -606,7 +665,7 @@ export function mountGlobalAssistant(): void {
     } else if (attachment) {
       bubble.append(el('div', { class: 'ai-bubble-file', text: `附件：${attachment.name}` }));
     }
-    if (text) bubble.append(role === 'bot' ? renderAssistantMarkdown(text) : el('span', { text }));
+    if (text) bubble.append(role === 'bot' ? renderMarkdown(text) : el('span', { text }));
     const msg = el('div', { class: `ai-msg is-${role}` }, [bubble]);
     log.append(msg);
     log.scrollTop = log.scrollHeight;
@@ -616,15 +675,24 @@ export function mountGlobalAssistant(): void {
   function addAssistantReply(reply: AssistantTurnResult): HTMLElement {
     const msg = el('div', { class: 'ai-msg is-bot' });
     if (reply.markdown) {
-      msg.append(el('div', { class: 'ai-bubble' }, [renderAssistantMarkdown(reply.markdown)]));
+      msg.append(el('div', { class: 'ai-bubble' }, [renderMarkdown(reply.markdown)]));
     }
     if (reply.blocks.length) {
       const cards = el('div', { class: 'ai-cards' });
+      const onNavigate = (path: string): void => {
+        closePanel();
+        navigate(path);
+      };
+      // 卡片是结构化 DOM，没有纯文本降级形态，只能等模块到位再插入；
+      // 位置用占位节点占住，保证多张卡片的先后顺序不乱。
       for (const block of reply.blocks) {
-        cards.append(renderAssistantBlock(block, (path) => {
-          closePanel();
-          navigate(path);
-        }));
+        const slot = el('div', { class: 'ai-card-slot' });
+        cards.append(slot);
+        void loadAssistantContent()
+          .then((module) => {
+            if (slot.isConnected) slot.replaceWith(module.renderAssistantBlock(block, onNavigate));
+          })
+          .catch(() => slot.remove());
       }
       msg.append(cards);
     }
@@ -680,7 +748,29 @@ export function mountGlobalAssistant(): void {
     setBusy(true);
     let streamedMessage: HTMLElement | null = null;
     let streamedText = '';
+    let streamPlain: HTMLElement | null = null;
+    let streamRenderTimer = 0;
+
+    function renderStreamedMarkdown(): void {
+      if (!streamedMessage) return;
+      const bubble = streamedMessage.querySelector<HTMLElement>('.ai-bubble');
+      if (!bubble) return;
+      bubble.replaceChildren(renderMarkdown(streamedText));
+      bubble.append(el('span', { class: 'ai-caret', 'aria-hidden': 'true' } as any));
+      streamPlain = null;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function scheduleStreamRender(): void {
+      if (streamRenderTimer) return;
+      streamRenderTimer = window.setTimeout(() => {
+        streamRenderTimer = 0;
+        renderStreamedMarkdown();
+      }, 250);
+    }
+
     try {
+      log.setAttribute('aria-live', 'off');
       const reply = await runAssistantTurn(history, {
         signal: busy.signal,
         attachment,
@@ -696,8 +786,12 @@ export function mountGlobalAssistant(): void {
           }
           const bubble = streamedMessage.querySelector<HTMLElement>('.ai-bubble');
           if (bubble) {
-            bubble.replaceChildren(renderAssistantMarkdown(streamedText));
-            bubble.append(el('span', { class: 'ai-caret', 'aria-hidden': 'true' } as any));
+            if (!streamPlain || !streamPlain.isConnected) {
+              streamPlain = el('span', { class: 'ai-stream-plain' });
+              bubble.replaceChildren(streamPlain);
+            }
+            streamPlain.append(document.createTextNode(delta));
+            scheduleStreamRender();
           }
           log.scrollTop = log.scrollHeight;
         },
@@ -720,6 +814,12 @@ export function mountGlobalAssistant(): void {
         addMsg('bot', `出了点小状况：${e instanceof Error ? e.message : String(e)}`);
       }
     } finally {
+      if (streamRenderTimer) {
+        window.clearTimeout(streamRenderTimer);
+        streamRenderTimer = 0;
+      }
+      streamPlain = null;
+      log.setAttribute('aria-live', 'polite');
       busy = null;
       setBusy(false);
     }

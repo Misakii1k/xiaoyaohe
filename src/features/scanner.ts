@@ -113,12 +113,15 @@ async function scanImageWithNativeDetector(blob: Blob): Promise<ScanResult | nul
   if (!BarcodeDetector || formats.length === 0) return null;
   try {
     const bitmap = await createImageBitmap(blob);
-    const detector = new BarcodeDetector({ formats });
-    const codes = await detector.detect(bitmap);
-    bitmap.close?.();
-    const first = codes?.[0];
-    const raw = String(first?.rawValue ?? '').trim();
-    return raw ? { raw, format: first.format || 'unknown' } : null;
+    try {
+      const detector = new BarcodeDetector({ formats });
+      const codes = await detector.detect(bitmap);
+      const first = codes?.[0];
+      const raw = String(first?.rawValue ?? '').trim();
+      return raw ? { raw, format: first.format || 'unknown' } : null;
+    } finally {
+      bitmap.close?.();
+    }
   } catch {
     return null;
   }
@@ -193,7 +196,8 @@ async function startNative(opts: {
   const gate = createResultGate(opts.onScan);
   let frameId = 0;
   let detecting = false;
-  const shouldContinue = () => gate.state !== 'stopped';
+  // 只有 running 状态才维持 rAF 循环；paused 由 resume 显式重启，避免空转耗电
+  const shouldContinue = () => gate.state === 'running';
 
   const tick = async () => {
     if (!shouldContinue()) return;
@@ -220,9 +224,12 @@ async function startNative(opts: {
     },
     async pause() {
       gate.pause();
+      cancelAnimationFrame(frameId);
     },
     async resume() {
+      if (gate.state !== 'paused') return;
       gate.resume();
+      frameId = requestAnimationFrame(tick);
     },
     async stop() {
       if (gate.state === 'stopped') return;

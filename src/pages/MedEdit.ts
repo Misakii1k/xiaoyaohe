@@ -89,7 +89,7 @@ export async function renderMedEditPage(
     createdAt: Date.now(),
   };
 
-  const existingRules = editing ? await listRulesByMed(med.id) : [];
+  let existingRules: ReminderRule[] = editing ? await listRulesByMed(med.id) : [];
   if (!isActive()) return cleanup;
   const ruleTimeBySlot = new Map<Slot, string>();
   for (const r of existingRules) ruleTimeBySlot.set(r.slot, r.timeLocal);
@@ -341,11 +341,12 @@ export async function renderMedEditPage(
   content.append(form);
 
   // 监听库存/用量输入变化，实时刷新可用天数
-  for (const inp of [remainingInput, amountInput, doseQuantityInput, doseUnitInput, unitInput]) {
+  for (const inp of [remainingInput, doseQuantityInput, doseUnitInput, unitInput]) {
     inp.addEventListener('input', refreshDaysLeft);
   }
   amountInput.addEventListener('input', () => {
     syncExplicitDoseFromText();
+    refreshDaysLeft();
     renderDoseReview();
   });
   doseQuantityInput.addEventListener('input', renderDoseReview);
@@ -419,8 +420,10 @@ export async function renderMedEditPage(
     }
 
     saveBtn.setAttribute('disabled', 'true');
+    let medSaved = false;
     try {
       await putMed(med);
+      medSaved = true;
       await syncRules(med.id, selectedSlots, timeInputs, existingRules, cycle, cycleStartDate);
       await rescheduleMedicationReminders().catch(() => undefined);
 
@@ -441,7 +444,21 @@ export async function renderMedEditPage(
     } catch (error) {
       if (!isActive()) return;
       const msg = error instanceof Error ? error.message : String(error);
-      toast('保存失败：' + msg);
+      if (medSaved) {
+        // 药已落库，仅提醒同步失败：重拉规则刷新表单状态，重试基于最新数据
+        try {
+          const fresh = await listRulesByMed(med.id);
+          existingRules.splice(0, existingRules.length, ...fresh);
+          ruleTimeBySlot.clear();
+          for (const r of fresh) ruleTimeBySlot.set(r.slot, r.timeLocal);
+          renderScheduleControls();
+        } catch {
+          /* 刷新失败不影响提示 */
+        }
+        toast('药品已保存但提醒未同步，请重试保存' + (msg ? `：${msg}` : ''));
+      } else {
+        toast('保存失败：' + msg);
+      }
     } finally {
       if (isActive()) saveBtn.removeAttribute('disabled');
     }
@@ -1046,7 +1063,6 @@ export async function renderMedEditPage(
     if (!parsed) return;
     doseQuantityInput.value = String(parsed.quantity);
     doseUnitInput.value = parsed.unit;
-    refreshDaysLeft();
   }
 }
 

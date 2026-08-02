@@ -139,6 +139,35 @@ export interface MedicationInventory {
   dailyConsumption?: number;
 }
 
+export type InventorySource = 'manual' | 'ai' | 'intake' | 'wizard' | 'batch' | 'undo';
+
+export const INVENTORY_SOURCE_LABEL: Record<InventorySource, string> = {
+  manual: '手动修改',
+  ai: 'AI小助手',
+  intake: '服药扣减',
+  wizard: '分药向导',
+  batch: '批量扣减',
+  undo: '撤回操作',
+};
+
+export type InventoryActionType = 'set' | 'add' | 'deduct' | 'mark_empty' | 'batch_deduct' | 'undo';
+
+export interface InventoryOperationLog {
+  id: string;
+  medId: string;
+  medName: string;
+  action: InventoryActionType;
+  previousRemaining: number;
+  newRemaining: number;
+  delta: number;
+  unit: string;
+  source: InventorySource;
+  sourceNote?: string;
+  timestamp: number;
+  canUndo?: boolean;
+  undoneLogId?: string;
+}
+
 export type MedicationReminderMode = 'strong' | 'fullscreen-short' | 'fullscreen-persistent';
 
 export const MEDICATION_REMINDER_MODE_LABEL: Record<MedicationReminderMode, string> = {

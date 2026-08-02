@@ -1,4 +1,5 @@
 import { registerRouteTransitionCleanup } from '../../router';
+import { makeAppInert, restoreAppAfterLastDialog, trapFocusIn } from '../components';
 
 export interface BottomSheetOptions {
   label: string;
@@ -12,7 +13,6 @@ export interface BottomSheetHandle {
   close: () => void;
 }
 
-const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 const activeBottomSheets = new Set<() => void>();
 
 /** Close every open sheet before its triggering page is replaced. */
@@ -37,50 +37,29 @@ export function openBottomSheet(options: BottomSheetOptions): BottomSheetHandle 
   sheet.append(...content);
   overlay.append(sheet);
   document.body.append(overlay);
+  makeAppInert();
 
   let closed = false;
+  let removeTrap: (() => void) | null = null;
   const close = () => {
     if (closed) return;
     closed = true;
-    document.removeEventListener('keydown', onKeyDown);
+    removeTrap?.();
     activeBottomSheets.delete(close);
     overlay.remove();
+    restoreAppAfterLastDialog();
     previouslyFocused?.focus({ preventScroll: true });
     options.onClose?.();
   };
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      close();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = Array.from(sheet.querySelectorAll<HTMLElement>(focusableSelector))
-      .filter((element) => !element.hasAttribute('disabled'));
-    if (focusable.length === 0) {
-      event.preventDefault();
-      sheet.focus();
-      return;
-    }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
+  removeTrap = trapFocusIn(sheet, close);
 
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) close();
   });
-  document.addEventListener('keydown', onKeyDown);
   activeBottomSheets.add(close);
   sheet.tabIndex = -1;
-  (options.initialFocus ?? sheet.querySelector<HTMLElement>(focusableSelector) ?? sheet)
+  (options.initialFocus ?? sheet.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ?? sheet)
     .focus({ preventScroll: true });
   return { overlay, close };
 }

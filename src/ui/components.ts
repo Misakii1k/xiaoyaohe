@@ -66,12 +66,6 @@ export const SLOT_ICON: Record<Slot, IconName> = {
   bedtime: 'moon',
 };
 
-/** Liquid Glass 不需要 ripple —— 按压反馈由 CSS :active { transform: scale(0.97) } 提供。
- * 保留导出避免破坏调用方。 */
-export function installRipple(): void {
-  /* no-op under Liquid Glass design */
-}
-
 /** ---------- Top App Bar ---------- */
 export function topbar(title: string, right?: HTMLElement, left?: HTMLElement): HTMLElement {
   const bar = el('div', { class: 'topbar' });
@@ -98,9 +92,12 @@ export function topbarPill(options: {
 }
 
 /** ---------- Snackbar ---------- */
-let toastTimer: number | undefined;
-let toastHideTimer: number | undefined;
+const toastTimers = new Map<HTMLElement, number[]>();
 export function toast(msg: string, ms = 2200): void {
+  for (const timers of toastTimers.values()) {
+    for (const timer of timers) clearTimeout(timer);
+  }
+  toastTimers.clear();
   document.querySelectorAll('.toast').forEach((t) => t.remove());
   const t = el('div', { class: 'toast', text: msg });
   t.setAttribute('role', 'status');
@@ -108,16 +105,51 @@ export function toast(msg: string, ms = 2200): void {
   t.setAttribute('aria-atomic', 'true');
   document.body.append(t);
   requestAnimationFrame(() => t.classList.add('show'));
-  clearTimeout(toastTimer);
-  clearTimeout(toastHideTimer);
-  toastTimer = window.setTimeout(() => {
+  const showTimer = window.setTimeout(() => {
     t.classList.remove('show');
     t.classList.add('hide');
-    toastHideTimer = window.setTimeout(() => t.remove(), 260);
+    const hideTimer = window.setTimeout(() => {
+      toastTimers.delete(t);
+      t.remove();
+    }, 260);
+    const current = toastTimers.get(t) ?? [];
+    toastTimers.set(t, [...current, hideTimer]);
   }, ms);
+  toastTimers.set(t, [showTimer]);
 }
 
 /** ---------- Modal Dialog (a11y: focus trap + Escape + focus restore) ---------- */
+
+const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * 在容器内建立焦点陷阱：Tab 首尾循环 + Escape 触发 onEscape。
+ * 返回清理函数；容器内没有可聚焦元素时 Tab 不拦截（与 openDialog 行为一致）。
+ */
+export function trapFocusIn(container: HTMLElement, onEscape?: () => void): () => void {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onEscape?.();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  document.addEventListener('keydown', onKeyDown);
+  return () => document.removeEventListener('keydown', onKeyDown);
+}
+
 export interface OpenDialogOptions {
   /** id of the element that labels the dialog (sets aria-labelledby) */
   labelId?: string;
@@ -140,23 +172,28 @@ interface DialogAppState {
 }
 
 let dialogAppState: DialogAppState | null = null;
+/** 同时打开的弹层数量（openDialog / BottomSheet / VoiceMedEntry 共用） */
+let appInertOwners = 0;
 
-function makeAppInert(): void {
+/** 让 #app 进入 inert：有弹层打开时页面其余部分不可交互。可嵌套调用。 */
+export function makeAppInert(): void {
+  appInertOwners += 1;
+  if (appInertOwners > 1) return;
   const root = document.getElementById('app') as (HTMLElement & { inert: boolean }) | null;
   if (!root) return;
-  if (!dialogAppState) {
-    dialogAppState = {
-      root,
-      inert: root.inert ?? false,
-      ariaHidden: root.getAttribute('aria-hidden'),
-    };
-  }
+  dialogAppState = {
+    root,
+    inert: root.inert ?? false,
+    ariaHidden: root.getAttribute('aria-hidden'),
+  };
   root.inert = true;
   root.setAttribute('aria-hidden', 'true');
 }
 
-function restoreAppAfterLastDialog(): void {
-  if (activeDialogs.size > 0 || !dialogAppState) return;
+/** 弹层关闭后调用；最后一个弹层关闭时恢复 #app 的 inert/aria-hidden。 */
+export function restoreAppAfterLastDialog(): void {
+  if (appInertOwners > 0) appInertOwners -= 1;
+  if (appInertOwners > 0 || !dialogAppState) return;
   const { root, inert, ariaHidden } = dialogAppState;
   dialogAppState = null;
   root.inert = inert;
@@ -178,7 +215,6 @@ export function closeAllDialogs(): void {
       console.error('Dialog cleanup failed', error);
     }
   }
-  restoreAppAfterLastDialog();
 }
 
 registerRouteTransitionCleanup(closeAllDialogs);
@@ -211,52 +247,28 @@ export function openDialog(
   const previouslyFocused = opts.returnFocusTo ?? (document.activeElement as HTMLElement | null);
   activeDialogs.add(overlay);
   makeAppInert();
-  const focusables = () =>
-    overlay.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
 
   const focusFirst = () => {
-    const f = focusables();
+    const f = overlay.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
     const target = opts.initialFocus ?? f[0];
     target?.focus();
   };
 
-  const trapKeydown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      close();
-      return;
-    }
-    if (e.key !== 'Tab') return;
-    const f = focusables();
-    if (f.length === 0) return;
-    const first = f[0];
-    const last = f[f.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
-
   let closed = false;
+  let removeTrap: (() => void) | null = null;
   const close = () => {
     if (closed) return;
     closed = true;
     dialogClosers.delete(overlay);
     activeDialogs.delete(overlay);
-    overlay.removeEventListener('keydown', trapKeydown);
+    removeTrap?.();
     overlay.remove();
     restoreAppAfterLastDialog();
     opts.onClose?.();
     previouslyFocused?.focus();
   };
   dialogClosers.set(overlay, close);
-
-  overlay.addEventListener('keydown', trapKeydown);
+  removeTrap = trapFocusIn(overlay, close);
   // Click on overlay (not on card) closes
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
@@ -272,69 +284,60 @@ export function openDialog(
 
 /** ---------- Dialog ---------- */
 let dialogSeq = 0;
-export function confirmDialog(message: string, okText = '确定', danger = false): Promise<boolean> {
+
+interface DialogSharedOptions {
+  okText: string;
+  danger: boolean;
+  /** true = 确认对话框（确定/取消），false = 单按钮告知对话框 */
+  cancellable: boolean;
+}
+
+function showDialog(message: string, options: DialogSharedOptions): Promise<boolean | undefined> {
   const titleId = `dialog-title-${++dialogSeq}`;
-  const ok = el('button', { class: `btn ${danger ? 'danger' : ''}`, html: okText });
-  const cancel = el('button', { class: 'btn text', html: '取消' });
+  const ok = el('button', { class: `btn ${options.danger ? 'danger' : ''}`, html: options.okText });
   const title = el('div', { class: 'big', html: message, id: titleId, style: 'margin-bottom:24px' } as any);
   title.style.whiteSpace = 'pre-line';
+  const buttons: HTMLElement[] = [];
+  let cancel: HTMLElement | null = null;
+  if (options.cancellable) {
+    cancel = el('button', { class: 'btn text', html: '取消' });
+    buttons.push(cancel);
+  }
+  buttons.push(ok);
   const actions = el(
     'div',
     { style: 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap' } as any,
-    [cancel, ok]
+    buttons,
   );
   const box = el('div', { class: 'card' }, [title, actions]);
   let overlay: HTMLElement | null = null;
-  return new Promise<boolean>((resolve) => {
+  return new Promise<boolean | undefined>((resolve) => {
     let settled = false;
-    const close = (v: boolean, dismissedByDialog = false) => {
+    const close = (value: boolean | undefined, dismissedByDialog = false) => {
       if (settled) return;
       settled = true;
       if (overlay && !dismissedByDialog) closeDialog(overlay);
-      resolve(v);
+      resolve(value);
     };
-    ok.onclick = () => close(true);
-    cancel.onclick = () => close(false);
+    ok.onclick = () => close(options.cancellable ? true : undefined);
+    if (cancel) cancel.onclick = () => close(false);
     overlay = openDialog(box, {
       labelId: titleId,
-      onClose: () => close(false, true),
-      initialFocus: danger ? cancel : ok,
+      onClose: () => close(options.cancellable ? false : undefined, true),
+      initialFocus: options.cancellable && options.danger ? cancel ?? ok : ok,
     });
     overlay.classList.add('confirm-dialog-overlay');
     overlay.addEventListener('contextmenu', (event) => event.preventDefault(), { capture: true });
   });
 }
 
+export function confirmDialog(message: string, okText = '确定', danger = false): Promise<boolean> {
+  return showDialog(message, { okText, danger, cancellable: true }) as Promise<boolean>;
+}
+
 /** 单按钮信息弹窗，仅用于告知，不询问。点击按钮 / ESC / 遮罩关闭即 resolve。 */
 export function infoDialog(message: string, okText = '知道了'): Promise<void> {
-  const titleId = `dialog-title-${++dialogSeq}`;
-  const ok = el('button', { class: 'btn', html: okText });
-  const title = el('div', { class: 'big', html: message, id: titleId, style: 'margin-bottom:24px' } as any);
-  title.style.whiteSpace = 'pre-line';
-  const actions = el(
-    'div',
-    { style: 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap' } as any,
-    [ok],
-  );
-  const box = el('div', { class: 'card' }, [title, actions]);
-  let overlay: HTMLElement | null = null;
-  return new Promise<void>((resolve) => {
-    let settled = false;
-    const close = (dismissedByDialog = false) => {
-      if (settled) return;
-      settled = true;
-      if (overlay && !dismissedByDialog) closeDialog(overlay);
-      resolve();
-    };
-    ok.onclick = () => close();
-    overlay = openDialog(box, {
-      labelId: titleId,
-      onClose: () => close(true),
-      initialFocus: ok,
-    });
-    overlay.classList.add('confirm-dialog-overlay');
-    overlay.addEventListener('contextmenu', (event) => event.preventDefault(), { capture: true });
-  });
+  return showDialog(message, { okText, danger: false, cancellable: false }).then(() => undefined);
 }
 
 /** ---------- slot 标签（M3 assist chip 色版） ---------- */
@@ -402,6 +405,28 @@ export function progressRing(value: number, total: number): HTMLElement {
   svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('viewBox', '0 0 100 100');
 
+  const defs = document.createElementNS(ns, 'defs');
+  const gradientId = `ring_grad_${Math.random().toString(36).substring(2, 8)}`;
+  const linearGrad = document.createElementNS(ns, 'linearGradient');
+  linearGrad.setAttribute('id', gradientId);
+  linearGrad.setAttribute('x1', '0%');
+  linearGrad.setAttribute('y1', '0%');
+  linearGrad.setAttribute('x2', '100%');
+  linearGrad.setAttribute('y2', '100%');
+
+  const stop1 = document.createElementNS(ns, 'stop');
+  stop1.setAttribute('offset', '0%');
+  stop1.setAttribute('stop-color', '#818cf8');
+  const stop2 = document.createElementNS(ns, 'stop');
+  stop2.setAttribute('offset', '50%');
+  stop2.setAttribute('stop-color', '#c084fc');
+  const stop3 = document.createElementNS(ns, 'stop');
+  stop3.setAttribute('offset', '100%');
+  stop3.setAttribute('stop-color', '#38bdf8');
+  linearGrad.append(stop1, stop2, stop3);
+  defs.append(linearGrad);
+  svg.append(defs);
+
   const track = document.createElementNS(ns, 'circle');
   track.setAttribute('class', 'ring-bg');
   track.setAttribute('cx', '50');
@@ -416,7 +441,8 @@ export function progressRing(value: number, total: number): HTMLElement {
   fg.setAttribute('cy', '50');
   fg.setAttribute('r', '40');
   fg.setAttribute('pathLength', '100');
-  // pathLength=100 → dasharray "progress 100"; CSS rotate(-90deg) starts at 12 o'clock.
+  fg.setAttribute('stroke', `url(#${gradientId})`);
+  fg.setAttribute('stroke-linecap', 'round');
   fg.setAttribute('stroke-dasharray', `${percent} 100`);
   fg.setAttribute('stroke-dashoffset', '0');
   svg.append(fg);
@@ -506,7 +532,6 @@ export function renderPage(opts: {
   actionDock?: HTMLElement;
   showTabbar?: boolean;
 }): void {
-  installRipple();
   opts.root.replaceChildren();
   document.title = `${opts.title} · 小药盒`;
   const left = opts.topLeft;
