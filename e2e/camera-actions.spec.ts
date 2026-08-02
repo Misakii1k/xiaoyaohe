@@ -31,6 +31,16 @@ test('keeps camera actions aligned with the app button hierarchy', async ({ page
     const actions = rect('.camera-actions');
     const preview = rect('.camera-preview');
     const style = (button: HTMLButtonElement) => getComputedStyle(button);
+    const colorProbe = document.createElement('span');
+    colorProbe.style.color = 'var(--color-primary-pressed)';
+    colorProbe.style.backgroundColor = 'var(--color-primary-soft)';
+    document.body.append(colorProbe);
+    const tokenStyle = getComputedStyle(colorProbe);
+    const tokens = {
+      primaryPressed: tokenStyle.color,
+      primarySoft: tokenStyle.backgroundColor,
+    };
+    colorProbe.remove();
     return {
       bodyWidth: document.body.scrollWidth,
       viewportWidth: window.innerWidth,
@@ -44,6 +54,7 @@ test('keeps camera actions aligned with the app button hierarchy', async ({ page
       albumBackground: style(albumButton).backgroundColor,
       backBackground: style(backButton).backgroundColor,
       assistantVisibility: getComputedStyle(document.querySelector<HTMLElement>('.ai-launcher')!).visibility,
+      tokens,
     };
   });
 
@@ -54,8 +65,8 @@ test('keeps camera actions aligned with the app button hierarchy', async ({ page
   expect(layout.buttons[1].width).toBeCloseTo(layout.buttons[2].width, 0);
   expect(layout.buttons.every((button) => button.height >= 44)).toBe(true);
   expect(layout.buttons.every((button) => button.right <= layout.viewportWidth)).toBe(true);
-  expect(layout.captureBackground).toBe('rgb(81, 87, 189)');
-  expect(layout.albumBackground).toBe('rgb(237, 238, 252)');
+  expect(layout.captureBackground).toBe(layout.tokens.primaryPressed);
+  expect(layout.albumBackground).toBe(layout.tokens.primarySoft);
   expect(layout.backBackground).toBe('rgba(0, 0, 0, 0)');
   expect(layout.assistantVisibility).toBe('hidden');
 
@@ -65,5 +76,5 @@ test('keeps camera actions aligned with the app button hierarchy', async ({ page
     const style = getComputedStyle(button);
     return { outlineColor: style.outlineColor, outlineWidth: style.outlineWidth };
   });
-  expect(focusStyle).toEqual({ outlineColor: 'rgb(81, 87, 189)', outlineWidth: '3px' });
+  expect(focusStyle).toEqual({ outlineColor: layout.tokens.primaryPressed, outlineWidth: '3px' });
 });

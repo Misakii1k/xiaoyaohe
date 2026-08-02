@@ -43,6 +43,7 @@ const ALL_STORES = [
   'photos',
   'pushStates',
   'syncLanMetadata',
+  'inventoryLogs',
 ] as const;
 
 beforeEach(async () => {
@@ -257,6 +258,41 @@ describe('LAN sync snapshot store', () => {
     const afterApply = await createLanSnapshot('device_local', SESSION_A);
     const repeated = await applyLanMergedSnapshot(incoming, afterApply);
     expect(repeated).toMatchObject({ applied: 0, unchanged: 2, reminderRescheduleRequired: false });
+  });
+
+  it('preserves pre-deduction state and inventory while applying a remote medication', async () => {
+    const database = await openMedboxDatabase();
+    const local = medication('med_prededuct', 'Local medicine', 1);
+    local.inventory = { remaining: 5, unit: 'tablet' };
+    local.lastPreDeductedAt = 1_768_521_660_000;
+    local.preDeduction = {
+      localDate: '2026-07-17',
+      occurrenceIds: ['occ_prededuct_1'],
+      totalDose: 2,
+      doseUnit: 'tablet',
+      updatedAt: 1_768_521_660_000,
+    };
+    await database.put('meds', local);
+
+    const remoteMedication = selectLanMedicationPayload(medication(local.id, 'Family medicine', 2));
+    const incoming = await snapshot([
+      await upsert('medication', remoteMedication, 3, 'device_family'),
+    ]);
+    const expectedLocal = await createLanSnapshot('device_local', SESSION_A);
+    await applyLanMergedSnapshot(incoming, expectedLocal);
+
+    expect(await database.get('meds', local.id)).toMatchObject({
+      name: 'Family medicine',
+      inventory: { remaining: 5, unit: 'tablet' },
+      lastPreDeductedAt: 1_768_521_660_000,
+      preDeduction: {
+        localDate: '2026-07-17',
+        occurrenceIds: ['occ_prededuct_1'],
+        totalDose: 2,
+        doseUnit: 'tablet',
+        updatedAt: 1_768_521_660_000,
+      },
+    });
   });
 
   it('aborts atomically when local data changes after its snapshot was created', async () => {

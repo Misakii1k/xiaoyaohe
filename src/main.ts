@@ -2,6 +2,7 @@
 import './ui/styles.css';
 import { route, setNotFound, startRouter, navigate } from './router';
 import { appModuleRoutes } from './app/moduleRegistry';
+import { compatibilityRedirects } from './app/routeCompatibility';
 import { installGlobalErrorBoundary } from './app/globalErrorBoundary';
 import { startReminderScheduler } from './features/reminderScheduler';
 import { initializeNotifier } from './features/notifier';
@@ -19,6 +20,7 @@ import { migrateOversizedMedPhotos } from './features/medPhotos';
 import { cleanupRetiredCloudSyncStorage } from './sync/retiredCloudStorage';
 import { cleanupRetiredWorkStorage } from './sync/retiredWorkStorage';
 import { startAutoSync } from './sync/lan/autoSync';
+import { reportSilentFailure } from './app/diagnostics';
 
 // 网页端：先把 Service Worker 注册上，下面 initializeNotifier 要靠它收发通知。
 // 必须在同一个 tick 内发起，否则 navigator.serviceWorker.ready 会等到超时。
@@ -33,7 +35,7 @@ void initializeNotifier((action) => {
   if (action.actionId !== 'tap') {
     void handleMedicationReminderAction(action).then((handled) => {
       if (handled) navigate('/today');
-    }).catch(() => undefined);
+    }).catch((error) => reportSilentFailure('reminder.action', error));
     return;
   }
   const occurrenceId = action.data.occurrenceId ?? action.data.logId;
@@ -41,27 +43,31 @@ void initializeNotifier((action) => {
     sessionStorage.setItem('medbox.notification-target-occurrence', occurrenceId);
   }
   navigate('/today');
-}).catch(() => {
+}).catch((error) => {
+  reportSilentFailure('reminder.initialize', error);
   /* Permission/plugin failures must not block app startup. */
 });
 void replayPendingMedicationReminderActions().then((handled) => {
   if (handled > 0) navigate('/today');
-}).catch(() => undefined);
+}).catch((error) => reportSilentFailure('reminder.replay', error));
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) void replayPendingMedicationReminderActions().catch(() => undefined);
+  if (!document.hidden) void replayPendingMedicationReminderActions()
+    .catch((error) => reportSilentFailure('reminder.replay-visible', error));
 });
 
 // Android pre-schedules native alarms and keeps the local reminder state reconciled.
 try {
   startReminderScheduler();
-} catch {
+} catch (error) {
+  reportSilentFailure('reminder.scheduler-start', error);
   /* 提醒调度失败不挡首屏 */
 }
 
 // 家庭同步：若用户开了「每 30 分钟自动同步」，启动轮询 + 常驻 host（依赖保活）
 try {
   startAutoSync();
-} catch {
+} catch (error) {
+  reportSilentFailure('lan.auto-start', error);
   /* 自动同步启动失败不挡首屏 */
 }
 
@@ -72,7 +78,9 @@ if (!root) {
   // 兜底要在路由启动前装好，否则首屏就崩的那一类错误正好漏在窗口外。
   installGlobalErrorBoundary(root);
 
-  route('/tools', () => navigate('/today'));
+  for (const [legacyPath, currentPath] of Object.entries(compatibilityRedirects)) {
+    route(legacyPath, () => navigate(currentPath));
+  }
   for (const moduleRoute of appModuleRoutes) route(moduleRoute.path, moduleRoute.handler);
 
   setNotFound(() => navigate('/today'));
@@ -112,5 +120,5 @@ const scheduleIdle =
     : (cb: () => void) => window.setTimeout(cb, 1500);
 
 scheduleIdle(() => {
-  void migrateOversizedMedPhotos(16).catch(() => undefined);
+  void migrateOversizedMedPhotos(16).catch((error) => reportSilentFailure('photo.migration-idle', error));
 });

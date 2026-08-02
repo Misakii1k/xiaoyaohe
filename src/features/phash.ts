@@ -14,9 +14,9 @@ export async function aHash(blob: Blob): Promise<string> {
   const lum = new Array<number>(64);
   let sum = 0;
   for (let i = 0; i < 64; i++) {
-    const r = data[i * 4];
-    const g = data[i * 4 + 1];
-    const b = data[i * 4 + 2];
+    const r = data[i * 4] ?? 0;
+    const g = data[i * 4 + 1] ?? 0;
+    const b = data[i * 4 + 2] ?? 0;
     // ITU-R BT.601
     const y = 0.299 * r + 0.587 * g + 0.114 * b;
     lum[i] = y;
@@ -26,10 +26,10 @@ export async function aHash(blob: Blob): Promise<string> {
   let hex = '';
   for (let i = 0; i < 64; i += 4) {
     const v =
-      (lum[i] > avg ? 8 : 0) +
-      (lum[i + 1] > avg ? 4 : 0) +
-      (lum[i + 2] > avg ? 2 : 0) +
-      (lum[i + 3] > avg ? 1 : 0);
+      ((lum[i] ?? 0) > avg ? 8 : 0) +
+      ((lum[i + 1] ?? 0) > avg ? 4 : 0) +
+      ((lum[i + 2] ?? 0) > avg ? 2 : 0) +
+      ((lum[i + 3] ?? 0) > avg ? 1 : 0);
     hex += v.toString(16);
   }
   return hex;
@@ -39,7 +39,9 @@ export function hamming(a: string, b: string): number {
   if (a.length !== b.length) return Number.MAX_SAFE_INTEGER;
   let d = 0;
   for (let i = 0; i < a.length; i++) {
-    let x = parseInt(a[i], 16) ^ parseInt(b[i], 16);
+    const left = a.charAt(i);
+    const right = b.charAt(i);
+    let x = parseInt(left, 16) ^ parseInt(right, 16);
     while (x) {
       d += x & 1;
       x >>= 1;

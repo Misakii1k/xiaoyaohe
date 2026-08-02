@@ -1,9 +1,8 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from 'vitest';
 import { marked } from 'marked';
 import { highlightCode } from '../src/ui/assistantHighlight';
-// 导入 assistantContent 触发其顶层的 marked.use({ renderer }) 副作用，注册自定义 renderer。
-// 该模块顶层不碰 document，仅在调用渲染函数时才用 DOM，故无 DOM 环境也可安全导入。
-import '../src/ui/assistantContent';
+import { renderAssistantBlock, renderAssistantMarkdown } from '../src/ui/assistantContent';
 
 describe('assistant markdown renderer hooks (marked.parse output)', () => {
   it('adds ai-code class + language label + highlighted spans to fenced code', () => {
@@ -58,11 +57,44 @@ describe('assistant markdown renderer hooks (marked.parse output)', () => {
 });
 
 describe('isAllowedHref / anchor hardening (renderAssistantMarkdown string output)', () => {
-  // renderAssistantMarkdown 用 document.createElement，无法在无 DOM 环境直接调。
-  // 这里只验 marked 输出 link 仍保留 href，hardening 由 DOMPurify 后处理保证。
   it('marked keeps href on http links', () => {
     const html = marked.parse('[ok](https://example.com)', { async: false }) as string;
     expect(html).toContain('href="https://example.com"');
+  });
+
+  it('sanitizes unsafe HTML and hardens allowed external links', () => {
+    const content = renderAssistantMarkdown([
+      '<script>alert(1)</script>',
+      '[safe](https://example.com)',
+      '[unsafe](javascript:alert(1))',
+    ].join('\n\n'));
+
+    expect(content.querySelector('script')).toBeNull();
+    const links = content.querySelectorAll('a');
+    expect(links[0]?.getAttribute('href')).toBe('https://example.com');
+    expect(links[0]?.target).toBe('_blank');
+    expect(links[0]?.rel).toBe('noopener noreferrer');
+    expect(links[1]?.hasAttribute('href')).toBe(false);
+  });
+});
+
+describe('assistant structured content', () => {
+  it('renders navigation cards with unchanged navigation behavior', () => {
+    const onNavigate = vi.fn();
+    const card = renderAssistantBlock({
+      type: 'navigation',
+      title: '药品库存',
+      description: '查看剩余药量',
+      actionLabel: '打开',
+      path: '/meds/inventory',
+    }, onNavigate) as HTMLButtonElement;
+
+    expect(card.className).toBe('ai-navigation-card');
+    expect(card.textContent).toContain('药品库存');
+    expect(card.getAttribute('aria-label')).toBe('打开：药品库存');
+    card.click();
+    expect(onNavigate).toHaveBeenCalledOnce();
+    expect(onNavigate).toHaveBeenCalledWith('/meds/inventory');
   });
 });
 

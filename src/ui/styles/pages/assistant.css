@@ -101,6 +101,14 @@
   border-radius: 0;
 }
 
+.ai-panel.is-fullscreen .ai-panel-header {
+  padding:
+    calc(var(--safe-top) + var(--space-4))
+    max(var(--space-4), var(--safe-right))
+    var(--space-3)
+    max(var(--space-4), var(--safe-left));
+}
+
 .ai-panel-header {
   display: flex;
   gap: var(--space-3);

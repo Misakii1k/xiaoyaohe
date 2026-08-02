@@ -1,5 +1,7 @@
 // 分药页：主流程是「按顺序分药」——弹卡一盒一盒带着放；
 // 扫码/拍药盒是认不出时的备选，拍药单/口述负责首轮把药录进来。
+import '../ui/styles/pages/scanner.css';
+import '../ui/styles/pages/med-wizard.css';
 import { startScan, scanCodeFromImage, type Scanner } from '../features/scanner';
 import {
   identifyByCode,

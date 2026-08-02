@@ -1,7 +1,7 @@
 .today-page {
   display: grid;
   gap: var(--space-5);
-  padding-block-end: var(--space-7);
+  padding-block-end: calc(var(--space-7) + var(--safe-bottom));
 }
 
 /* 图 4 Overview 卡：白色大圆角摘要卡 */
@@ -30,8 +30,8 @@
   display: grid;
   place-items: center;
   align-self: center;
-  inline-size: 96px;
-  block-size: 96px;
+  inline-size: 112px;
+  block-size: 112px;
   margin: 0;
   background: transparent;
   box-shadow: none;
@@ -40,9 +40,9 @@
 
 .today-summary-progress .progress-ring {
   position: relative;
-  inline-size: 96px;
-  block-size: 96px;
-  flex: 0 0 96px;
+  inline-size: 112px;
+  block-size: 112px;
+  flex: 0 0 112px;
   filter: none;
 }
 .today-summary-progress .progress-ring svg {
@@ -342,6 +342,35 @@
 .today-adherence-link:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+[data-theme='dark'] .today-medication-row.is-expired {
+  background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
+}
+
+@media (max-width: 420px) {
+  .today-summary {
+    grid-template-columns: minmax(0, 1fr) 96px;
+    padding: var(--space-4);
+  }
+
+  .today-summary-progress,
+  .today-summary-progress .progress-ring {
+    inline-size: 96px;
+    block-size: 96px;
+  }
+
+  .today-summary-progress .progress-ring { flex-basis: 96px; }
+  .today-medication-row { grid-template-columns: 8px 40px minmax(0, 1fr); }
+  .today-medication-status { grid-column: 2 / -1; justify-content: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .today-summary-progress .ring-fg,
+  .today-adherence .adherence-bar,
+  .today-adherence-link {
+    transition: none;
+  }
 }
 
 @media (min-width: 768px) {

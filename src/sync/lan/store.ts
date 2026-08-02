@@ -380,6 +380,7 @@ export async function applyLanMergedSnapshot(
 
     for (let index = 0; index < snapshot.entries.length; index += 1) {
       const entry = snapshot.entries[index];
+      if (!entry) continue;
       const metadata = existingMetadata[index];
       if (metadata?.kind === 'entity') assertIncomingVersionIsApplicable(metadata, entry);
       await assertLocalStateMatchesSnapshot(
@@ -410,6 +411,7 @@ export async function applyLanMergedSnapshot(
 
     for (let index = 0; index < snapshot.entries.length; index += 1) {
       const entry = snapshot.entries[index];
+      if (!entry) continue;
       let entityChanged = true;
 
       if (entry.entityType === 'medication') {
@@ -728,8 +730,10 @@ async function applyMedication(
       ...payload.identity,
       photoHashes: [...(current?.identity?.photoHashes ?? [])],
     },
-    // Inventory remains device-local (not part of LAN medication payload).
+    // Inventory and pre-deduction state remain device-local (not part of LAN medication payload).
     ...(current?.inventory ? { inventory: structuredClone(current.inventory) } : {}),
+    ...(current?.preDeduction ? { preDeduction: structuredClone(current.preDeduction) } : {}),
+    ...(current?.lastPreDeductedAt !== undefined ? { lastPreDeductedAt: current.lastPreDeductedAt } : {}),
     updatedAt: appliedAt,
   };
   await store.put(next);

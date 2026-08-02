@@ -3,13 +3,13 @@ import {
   formatMealRels,
   type IntakeLog,
   type Medication,
+  type MedicationOccurrence,
   type MedicationScheduleRevision,
   type ReminderRule,
   type Slot,
 } from '../db/schema';
 import {
   addLocalDays,
-  findLogForOccurrence,
   generateOccurrences,
   isMedicationExpiredOn,
   toLocalDate,
@@ -18,7 +18,7 @@ import type { ScheduledReminderNotification } from './reminderTransport';
 
 // 真机 Android 闹钟上限约 500；预排窗口与重复次数必须压在安全范围内
 const DEFAULT_HORIZON_DAYS = 7;
-const MAX_REPEATS_PER_OCCURRENCE = 3;
+const MAX_REPEATS_PER_OCCURRENCE = 4;
 
 export interface MedicationReminderPlanInput {
   meds: readonly Medication[];
@@ -45,13 +45,25 @@ export function buildMedicationReminderPlan({
   const ruleById = new Map(rules.map((rule) => [rule.id, rule]));
   const revisionById = new Map(revisions.map((revision) => [revision.id, revision]));
   const notifications: ScheduledReminderNotification[] = [];
+  const logByOccurrenceId = new Map<string, IntakeLog>();
+  const logById = new Map<string, IntakeLog>();
+  for (const log of logs) {
+    if (log.id) {
+      const previous = logById.get(log.id);
+      if (!previous || log.updatedAt > previous.updatedAt) logById.set(log.id, log);
+    }
+    if (log.occurrenceId) {
+      const previous = logByOccurrenceId.get(log.occurrenceId);
+      if (!previous || log.updatedAt > previous.updatedAt) logByOccurrenceId.set(log.occurrenceId, log);
+    }
+  }
 
   for (const occurrence of generateOccurrences(revisions, startDate, endDate)) {
     const med = medById.get(occurrence.medId);
     const rule = ruleById.get(occurrence.sourceRuleId);
     const revision = revisionById.get(occurrence.scheduleRevisionId);
     if (!med || !rule || !revision || isMedicationExpiredOn(med, occurrence.localDate)) continue;
-    const log = findLogForOccurrence(occurrence, logs);
+    const log = findLogForOccurrenceCached(occurrence, logByOccurrenceId, logById);
     if (log?.status === 'taken' || log?.status === 'skipped') continue;
 
     const repeatEveryMin = Math.max(1, safeMinutes(rule.escalate.repeatEveryMin));
@@ -114,4 +126,21 @@ export function buildReminderBody(
 
 function safeMinutes(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
+/** 与 medicationSchedule.findLogForOccurrence 语义一致，但用预构建索引 O(1) 查表 */
+function findLogForOccurrenceCached(
+  occurrence: MedicationOccurrence,
+  byOccurrenceId: ReadonlyMap<string, IntakeLog>,
+  byId: ReadonlyMap<string, IntakeLog>,
+): IntakeLog | undefined {
+  const candidates: IntakeLog[] = [];
+  const byOccurrence = byOccurrenceId.get(occurrence.id);
+  const byIdMatch = byId.get(occurrence.id);
+  const legacy = byId.get(occurrence.legacyLogId);
+  if (byOccurrence) candidates.push(byOccurrence);
+  if (byIdMatch) candidates.push(byIdMatch);
+  if (legacy && !legacy.occurrenceId) candidates.push(legacy);
+  candidates.sort((left, right) => right.updatedAt - left.updatedAt);
+  return candidates[0];
 }

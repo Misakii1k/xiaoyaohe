@@ -53,7 +53,9 @@ function formatDate(year: number, month: number, day: number): string {
 
 function parseDateTimeLocal(value: string): { date: string; time: string } {
   const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(value.trim());
-  if (m) return { date: m[1], time: m[2] };
+  const date = m?.[1];
+  const time = m?.[2];
+  if (date && time) return { date, time };
   const now = new Date();
   return {
     date: formatDate(now.getFullYear(), now.getMonth() + 1, now.getDate()),

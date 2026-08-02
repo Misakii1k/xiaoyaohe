@@ -93,15 +93,17 @@ export function parseExplicitDose(value: string): StructuredDose | undefined {
   const match = /^(半|\d+(?:\.\d+)?|\d+\/\d+)(片|粒|袋|支|丸|滴|喷|mL|ml|毫升)$/u.exec(text);
   if (!match) return undefined;
   const quantityToken = match[1];
+  const unitToken = match[2];
+  if (!quantityToken || !unitToken) return undefined;
   let quantity: number;
   if (quantityToken === '半') quantity = 0.5;
   else if (quantityToken.includes('/')) {
     const [numerator, denominator] = quantityToken.split('/').map(Number);
-    if (!denominator) return undefined;
+    if (numerator === undefined || !denominator) return undefined;
     quantity = numerator / denominator;
   } else quantity = Number(quantityToken);
   if (!Number.isFinite(quantity) || quantity <= 0) return undefined;
-  return { quantity: round(quantity), unit: normalizeDoseUnit(match[2]) };
+  return { quantity: round(quantity), unit: normalizeDoseUnit(unitToken) };
 }
 
 export function applyExplicitDose(draft: MedicationCreateDraft): void {

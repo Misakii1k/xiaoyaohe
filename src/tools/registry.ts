@@ -144,7 +144,7 @@ export const tools: ToolDefinition[] = [
         path: '/meds/:id/edit',
         handler: (params, root, context) =>
           runLazyRoute(context.signal, () => import('../pages/MedEdit'), (page) =>
-            page.renderMedEditPage(root, params.id, context.signal)),
+            page.renderMedEditPage(root, params.id ?? null, context.signal)),
       },
       {
         path: '/scan',

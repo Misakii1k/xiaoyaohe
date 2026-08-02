@@ -1,3 +1,4 @@
+import '../ui/styles/pages/medication-editor.css';
 import { createIdentifySession, identifyMedicationBatchByBlob, type PrescriptionItemDraft } from '../ai/identify';
 import { takePendingMedicationBatch, takePendingMedicationPhotos } from '../ai/pendingMedicationBatch';
 import { createMedicationBatch, listMeds } from '../db/local';

@@ -147,8 +147,10 @@ export function openBoxPhotoCropSheet(
     function renderCorners(): void {
       polygon.setAttribute('points', corners.map((point) => `${point.x * 100},${point.y * 100}`).join(' '));
       handles.forEach((handle, index) => {
-        handle.style.left = `${corners[index].x * 100}%`;
-        handle.style.top = `${corners[index].y * 100}%`;
+        const corner = corners[index];
+        if (!corner) return;
+        handle.style.left = `${corner.x * 100}%`;
+        handle.style.top = `${corner.y * 100}%`;
       });
     }
 
@@ -184,9 +186,11 @@ export function openBoxPhotoCropSheet(
       if (!delta) return;
       event.preventDefault();
       const step = event.shiftKey ? 0.025 : 0.008;
+      const corner = corners[index];
+      if (!corner) return;
       updateCorner(index, {
-        x: clamp(corners[index].x + delta.x * step, 0.015, 0.985),
-        y: clamp(corners[index].y + delta.y * step, 0.015, 0.985),
+        x: clamp(corner.x + delta.x * step, 0.015, 0.985),
+        y: clamp(corner.y + delta.y * step, 0.015, 0.985),
       });
     }
 

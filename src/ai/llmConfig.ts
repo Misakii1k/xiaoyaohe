@@ -6,6 +6,8 @@ import { clearSessionSecret, getSessionSecret, initializeSecretStore, setSession
 
 const LS_KEY = 'medbox.llmConfig.v1';
 const LS_HEALTH_KEY = 'medbox.llmHealth.v1';
+const SILENT_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+let lastSilentCheckAt = 0;
 
 export interface LlmConfig {
   baseUrl: string;
@@ -144,8 +146,14 @@ export function setLlmHealth(h: LlmHealth): void {
   }
 }
 
-/** 启动时调一次，把结果存起来；不抛错，不阻塞渲染。 */
+/** 启动时调一次，把结果存起来；不抛错，不阻塞渲染。10 分钟内不重复检测。 */
 export async function silentHealthCheck(): Promise<LlmHealth> {
+  const now = Date.now();
+  if (now - lastSilentCheckAt < SILENT_CHECK_INTERVAL_MS) {
+    const cached = getLlmHealth();
+    if (cached.state !== 'unknown') return cached;
+  }
+  lastSilentCheckAt = now;
   const h = await pingLlm();
   setLlmHealth(h);
   // 让 UI 监听者知道

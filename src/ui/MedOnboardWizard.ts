@@ -120,10 +120,10 @@ export function openMedOnboardWizard(
     }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    if (event.shiftKey && first && last && document.activeElement === first) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (!event.shiftKey && first && last && document.activeElement === last) {
       event.preventDefault();
       first.focus();
     }
@@ -131,11 +131,13 @@ export function openMedOnboardWizard(
 
   function renderPhotoZone(zone: HTMLElement, index: number, animate: boolean): void {
     const url = photoUrls[index];
+    const item = items[index];
+    if (!item) return;
     zone.classList.toggle('has-photo', Boolean(url));
     zone.setAttribute('aria-label', url ? '重拍药盒照片' : '拍摄药盒照片');
     zone.replaceChildren();
     if (url) {
-      const img = el('img', { class: 'med-wizard-photo-img' + (animate ? ' is-pop' : ''), alt: `${items[index].name || '药品'} 药盒照片` } as any) as HTMLImageElement;
+      const img = el('img', { class: 'med-wizard-photo-img' + (animate ? ' is-pop' : ''), alt: `${item.name || '药品'} 药盒照片` });
       img.src = url;
       zone.append(img);
     } else {
@@ -147,6 +149,7 @@ export function openMedOnboardWizard(
 
   function buildCard(index: number): HTMLElement {
     const item = items[index];
+    if (!item) return el('div', { class: 'med-wizard-card' });
     const card = el('div', { class: 'med-wizard-card' });
 
     const photoZone = el('button', { class: 'med-wizard-photo', type: 'button' } as any);

@@ -1,7 +1,7 @@
 .medication-list-page {
   display: grid;
   gap: var(--space-3);
-  padding-block-end: var(--space-7);
+  padding-block-end: calc(var(--space-7) + var(--safe-bottom));
 }
 
 .medication-list-actions { display: flex; align-items: center; gap: var(--space-2); }
@@ -310,6 +310,29 @@
 .medication-batch-sheet-title { margin: 0; font-size: var(--fs-title3); }
 .medication-batch-sheet-hint { margin: var(--space-2) 0 var(--space-4); color: var(--color-text-muted); font-size: var(--fs-subheadline); line-height: 1.45; }
 .medication-batch-sheet-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+
+[data-theme='dark'] .topbar-pill-primary {
+  color: var(--label-on-primary);
+}
+
+[data-theme='dark'] .med-search-bar:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+
+@media (max-width: 420px) {
+  .medication-list-row-header { grid-template-columns: 48px minmax(0, 1fr) var(--tap); }
+  .medication-list-thumb { inline-size: 48px; block-size: 48px; }
+  .medication-slot-chip { white-space: normal; }
+  .medication-batch-sheet-options { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar-pill {
+    transition: none;
+  }
+
+  .topbar-pill:active { transform: none; }
+}
 
 @media (min-width: 768px) {
   .medication-list-page, .medication-batch-page { max-inline-size: 920px; margin-inline: auto; }

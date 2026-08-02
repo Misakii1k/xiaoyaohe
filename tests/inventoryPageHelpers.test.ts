@@ -72,4 +72,13 @@ describe('inventory page helpers', () => {
     expect(inventoryRoute).toBeGreaterThan(-1);
     expect(inventoryRoute).toBeLessThan(editRoute);
   });
+
+  it('includes its filter and search control styles when opened before the medication page', () => {
+    const inventoryStyles = readFileSync(join(root, 'src/ui/styles/pages/inventory.css'), 'utf8');
+    expect(inventoryStyles).toContain('.topbar-pill');
+    expect(inventoryStyles).toContain('.topbar-pill-primary');
+    expect(inventoryStyles).toContain('.inventory-search');
+    expect(inventoryStyles).toContain('.inventory-filter-button');
+    expect(inventoryStyles).toContain('.inventory-filter-button.is-selected');
+  });
 });

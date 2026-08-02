@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -53,12 +54,19 @@ export function createReleaseCommands({ skipInstall, variant }) {
   const gradle = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
   const gradleVariant = `${variant[0].toUpperCase()}${variant.slice(1)}`;
   const commands = [];
+  const installedChromium = process.platform === 'win32'
+    ? resolve(process.env.LOCALAPPDATA || '', 'ms-playwright', 'chromium-1228', 'chrome-win64', 'chrome.exe')
+    : '';
   if (!skipInstall) commands.push({ label: 'Install locked dependencies', command: npm, args: ['ci'] });
   commands.push(
     { label: 'Audit all dependencies', command: npm, args: ['audit', '--audit-level=low'] },
     { label: 'Type-check frontend', command: npm, args: ['run', 'typecheck'] },
     { label: 'Run Vitest suite', command: npm, args: ['test'] },
-    { label: 'Install Playwright Chromium', command: npx, args: ['playwright', 'install', 'chromium'] },
+  );
+  if (!existsSync(installedChromium)) {
+    commands.push({ label: 'Install Playwright Chromium', command: npx, args: ['playwright', 'install', 'chromium'] });
+  }
+  commands.push(
     { label: 'Run Playwright visual matrix', command: npx, args: ['playwright', 'test'] },
     { label: 'Build Android WebView assets', command: npm, args: ['run', 'build:web'] },
     { label: 'Sync Capacitor Android project', command: npx, args: ['cap', 'sync', 'android'] },

@@ -122,7 +122,8 @@ export async function identifyInventoryByBlob(blob: Blob, hint?: string, options
   return requestIdentify<InventoryIdentifyResult>(blob, 'inventory', hint, options);
 }
 
-/** Gets consent once and returns a reusable session for multi-image queues. */
+/** Gets consent once and returns a reusable session for multi-image queues.
+ * _mode 仅保留签名兼容调用方（MedBatchAdd 等），会话不绑定识别模式。 */
 export async function createIdentifySession(_mode: IdentifyMode, kind: AiDataKind = 'medicine-photo'): Promise<IdentifySession> {
   const cfg = getLlmConfig();
   if (!cfg.baseUrl || !cfg.apiKey) {
@@ -450,6 +451,12 @@ async function fetchWithTimeout(url: string, init: RequestInit, externalSignal?:
   const timeout = window.setTimeout(abort, 45_000);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (externalSignal?.aborted) throw error;
+    if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      throw new IdentifyError('请求超时，请检查网络后重试');
+    }
+    throw new IdentifyError('连不上 AI 服务，请检查网络或设置里的服务地址');
   } finally {
     window.clearTimeout(timeout);
     externalSignal?.removeEventListener('abort', abort);

@@ -20,6 +20,7 @@ let initialized = false;
 export type WebSecretPersistence = 'device' | 'session';
 
 const WEB_PERSISTENCE_KEY = 'medbox.web-secret-persistence.v1';
+let volatileWebPersistence: WebSecretPersistence | undefined;
 
 /**
  * 网页端密钥存储的风险提示文案。
@@ -40,15 +41,18 @@ export function isNativeSecretStore(): boolean {
 export function getWebSecretPersistence(): WebSecretPersistence {
   if (isNativeSecretStore()) return 'device';
   try {
-    return localStorage.getItem(WEB_PERSISTENCE_KEY) === 'session' ? 'session' : 'device';
+    const persisted = localStorage.getItem(WEB_PERSISTENCE_KEY);
+    if (persisted === 'session' || persisted === 'device') return persisted;
   } catch {
-    return 'device';
+    return volatileWebPersistence ?? 'device';
   }
+  return volatileWebPersistence ?? 'device';
 }
 
 /** 切换网页端密钥存放方式，并把已存的密钥就地搬到新位置（不必让用户重输）。 */
 export function setWebSecretPersistence(mode: WebSecretPersistence): void {
   if (isNativeSecretStore()) return;
+  volatileWebPersistence = mode;
   try {
     localStorage.setItem(WEB_PERSISTENCE_KEY, mode);
   } catch {

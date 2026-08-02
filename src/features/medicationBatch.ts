@@ -64,6 +64,7 @@ export async function recognizeMedicationImageBatch<T>(
       nextIndex += 1;
       if (index >= files.length) return;
       const file = files[index];
+      if (!file) return;
       try {
         const items = await recognize(file);
         if (items.length > 20) throw new MedicationImageBatchError(`${file.name} 返回的药品数量超过 20 条`);

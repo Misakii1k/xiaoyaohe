@@ -113,3 +113,82 @@ Add a medication history page (`/history`) that lets users review any 7/30/90-da
 - `clock` and `arrow-left` icons already existed in `iconRegistry.ts` — no new icons needed.
 - Action sheet is built on `openDialog` (existing primitive) rather than a new BottomSheet component, to match `confirmDialog` patterns and inherit focus trap / Escape / inert-app behavior for free.
 - `performHistoryAction` uses dependency injection for `setOccurrenceAction` / `toast` / `onRefresh` so unit tests don't need to mock modules.
+
+---
+
+# Update: 2026-08-01 — Task 9 Safe Cleanup Audit
+
+## Audit decisions
+
+- Retained `src/sync/retiredCloudStorage.ts`: app startup still invokes it, and the cloud-to-LAN migration began in `0.8.2`; no documented release-count, elapsed-time, or adoption threshold proves that all users have crossed the cleanup window.
+- Retained `src/sync/retiredWorkStorage.ts`: app startup still invokes it, the work module was removed in `0.8.3`, and the archive explicitly states that upgraded Xiaoyaohe installations delete the old `medbox-work` database. The migration window is not formally closed.
+- Retained `src/app/routeCompatibility.ts`: `/tools` was the former shell entry and remains a valid bookmarked or persisted hash. `src/main.ts` now registers redirects from this single compatibility map instead of duplicating the route literal.
+- Retained `archive/工时模块归档/`: commit `e9bf8fa` intentionally created it as source material for a future standalone worktime app. Vite/Vitest exclude `archive/**`, so it has no production or test-runtime coupling.
+
+## NULL directory finding
+
+- `NULL/` is not repository data. It contains 555 files totaling 315,991,832 bytes; every relative path exists under `C:\Windows`, and 553 files have the same current size. This proves it is a snapshot/copy of Windows system content rather than generated Medbox output.
+- The root directory was created at 2026-07-30 21:02:26. Its copied subdirectories were created continuously from 21:02:28 through 21:03:40, which proves a recursive copy ran during that interval; it does not identify the executable or command line.
+- A second audit searched Claude project JSONL/transcripts/history, TRAE persisted data and caches, PowerShell PSReadLine and event logs, repository scripts, packaged TRAE shell integrations, and files written from 20:30 through 21:30. No retained record contains the responsible command or tool call.
+- TRAE created PowerShell process snapshots at 20:51:34 (PID 20816) and 21:10:08 (PID 27684), bracketing the copy. These snapshots contain only environment setup and no command history. The nearby `web-app-development` plugin installation completed at 20:51:36 and contains no Windows-copy command, so temporal proximity is not attribution.
+- No repository or installed TRAE script contains a redirect to `NULL` or a command copying `C:\Windows` to it. Matches for `NULL` in generated application JavaScript are data comparisons, not shell redirections. Current files have different NTFS file IDs from their `C:\Windows` counterparts, confirming copies rather than links.
+- Because the exact producer and ownership remain unproven, Task 9 leaves `NULL/` untouched and adds no speculative workaround. No unknown user or system-derived files were removed, and SubTask 9.3 remains unresolved rather than being closed from content provenance alone.
+
+---
+
+# Update: 2026-08-01 — Task 12 Version And Release
+
+Branch: `workspace/trae-qoder`
+Status: ready for user review; intentionally uncommitted
+Latest commit: `9f976fd`（本轮按要求未创建提交）
+
+## Scope completed
+
+- 按现有 0.x 修订版策略，将产品从 `0.9.3` 升至 `0.9.4`，Android `versionCode` 从 22 递增到 23。
+- 统一 `package.json`、`package-lock.json`、Android `versionName`、`versionCode`、Android 配置测试和发布版本映射。
+- 新增 `docs/releases/<version>.md` 大白话发布说明机制；发布配置在构建前强制检查当前版本说明文件存在。
+- `0.9.4` 说明覆盖照片比例、APK 安全、网页能力、按需加载、诊断、深色模式和异形屏适配，并明确真机剩余项。
+- 调整 release 编排：本机已有对应 Playwright Chromium 时不再重复联网安装，未安装时仍保留安装门禁。
+
+## Files changed for Task 12
+
+- `package.json`
+- `package-lock.json`
+- `android/app/build.gradle`
+- `android/app/src/test/java/com/medbox/app/AppConfigurationTest.java`
+- `scripts/release.mjs`
+- `scripts/lib/release-utils.mjs`
+- `tests/release-utils.test.ts`
+- `docs/releases/README.md`
+- `docs/releases/0.9.4.md`
+- `docs/handoffs/trae-qoder.md`
+
+## Verification
+
+- `npm audit --audit-level=low`：0 个漏洞。
+- `npm run typecheck`：通过。
+- `npm test`：66 个测试文件、355 项通过。
+- `npm run test:release`：12 项通过，包含 0.9.4/versionCode 23 和缺少当前版本说明时阻止发布。
+- `npx playwright test`：四视口共 28 项通过。
+- `npm run build:web` 与 `npx cap sync android`：通过。
+- `gradlew testDebugUnitTest assembleDebug`：通过。
+- `gradlew testReleaseUnitTest assembleRelease`：通过，签名后的 release APK 成功生成。
+- APK 元数据：`com.medbox.app`、`versionName 0.9.4`、`versionCode 23`。
+- APK 内 Web 资源：49 个文件与当前 `dist` 一致，聚合哈希 `0f36edb560ccca2fe2ee22dbbb8972f6ed397f403932db0d02fe6d5f257792d1`。
+- APK 签名：APK Signature Scheme v2 验证通过，1 个签名者；证书 SHA-256 `a6b6d925609abff7c65f1688a34b91bd3fdb603921f43a8e9ede880edba75321`。
+- APK SHA-256：`5060fc1846334ab12374b1cce92d673e3e5a75443bf85bb47656b519ae2c7cb9`，与清单逐字匹配。
+- `git diff --check`：通过；未执行 commit、merge 或 push。
+- 最终复核首次并行全量 Vitest 时，真实 Vite 构建耗时 15.99 秒超过原 15 秒测试上限；将构建断言超时调整为 30 秒后，66 个文件、355 项复跑全部通过。
+
+## Local artifacts
+
+- `release/xiaoyaohe-0.9.4-android-release.apk`
+- `release/xiaoyaohe-0.9.4-SHA256SUMS.txt`
+- 以上产物及本地签名配置均被忽略，不进入版本控制。
+
+## Remaining external work and risks
+
+- `npm run release -- --skip-install --android-variant debug` 已执行全部前置门禁并成功组包，但最后的 `connectedDebugAndroidTest` 因当前没有连接 Android 设备而失败；没有把它伪报为通过，也没有把失败的 debug 流水线产物作为最终发布物。
+- 需要在真实 Android 手机上安装 `0.9.4` release APK，检查升级覆盖、系统提醒、旋转、刘海/手势区和局域网两机 APK 更新流程。
+- 工作树还包含 Task 1–11 的大量未提交改动；Task 12 保留这些改动且没有回滚或覆盖。交付审阅时应以完整工作树为单位检查。
+- 根规格 checklist 与 tasks 已完成最终逐项核对并同步勾选 Task 12；真机相关条目继续明确保留为 N/A 外部阻塞。

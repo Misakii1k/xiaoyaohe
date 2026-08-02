@@ -3,12 +3,4 @@
 @import './styles/reset.css';
 @import './styles/shell.css';
 @import './styles/primitives.css';
-@import './styles/pages/today.css';
-@import './styles/pages/med-history.css';
-@import './styles/pages/medications.css';
-@import './styles/pages/inventory.css';
-@import './styles/pages/medication-editor.css';
-@import './styles/pages/scanner.css';
-@import './styles/pages/med-wizard.css';
-@import './styles/pages/settings.css';
 @import './styles/pages/assistant.css';

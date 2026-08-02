@@ -293,10 +293,16 @@ function groupBySourceRule(
 }
 
 function calendarDaysBetween(start: LocalDate, end: LocalDate): number {
-  const [startYear, startMonth, startDay] = start.split('-').map(Number);
-  const [endYear, endMonth, endDay] = end.split('-').map(Number);
-  const startUtc = Date.UTC(startYear, startMonth - 1, startDay);
-  const endUtc = Date.UTC(endYear, endMonth - 1, endDay);
+  const startDate = parseLocalDate(start);
+  const endDate = parseLocalDate(end);
+  const startYear = startDate.getFullYear();
+  const startMonth = startDate.getMonth();
+  const startDay = startDate.getDate();
+  const endYear = endDate.getFullYear();
+  const endMonth = endDate.getMonth();
+  const endDay = endDate.getDate();
+  const startUtc = Date.UTC(startYear, startMonth, startDay);
+  const endUtc = Date.UTC(endYear, endMonth, endDay);
   return Math.round((endUtc - startUtc) / 86_400_000);
 }
 

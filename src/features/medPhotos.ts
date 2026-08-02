@@ -9,6 +9,7 @@ import {
   uid,
 } from '../db/local';
 import type { PhotoBlob } from '../db/schema';
+import { reportSilentFailure } from '../app/diagnostics';
 
 /** 展示图最长边；手机屏幕看图够用，再大只增加内存压力 */
 const MAX_EDGE = 720;
@@ -39,7 +40,8 @@ export async function getMedPhotoUrl(medId: string): Promise<string | null> {
           await writeReplacementPhoto(medId, next);
           latest = next;
         }
-      } catch {
+      } catch (error) {
+        reportSilentFailure('photo.recompress', error);
         /* 压不动就尽量用原图展示；单张失败不拖垮整页 */
       }
     }
@@ -50,7 +52,8 @@ export async function getMedPhotoUrl(medId: string): Promise<string | null> {
     const url = URL.createObjectURL(latest.blob);
     urlCache.set(medId, { at: latest.at, url });
     return url;
-  } catch {
+  } catch (error) {
+    reportSilentFailure('photo.read', error);
     return null;
   }
 }
@@ -134,12 +137,14 @@ export async function migrateOversizedMedPhotos(limit = 12): Promise<number> {
           });
           fixed += 1;
         }
-      } catch {
+      } catch (error) {
+        reportSilentFailure('photo.migration-item', error);
         /* 单药失败继续 */
       }
     }
     return fixed;
-  } catch {
+  } catch (error) {
+    reportSilentFailure('photo.migration', error);
     return 0;
   }
 }

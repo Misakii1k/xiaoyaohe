@@ -1,3 +1,5 @@
+import { reportSilentFailure } from './app/diagnostics';
+
 // hash 路由：每次导航都提供可取消上下文，页面可返回清理函数。
 export interface RouteContext {
   signal: AbortSignal;
@@ -93,7 +95,10 @@ async function dispatch(): Promise<void> {
     const m = path.match(r.pattern);
     if (m) {
       const params: Record<string, string> = {};
-      r.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1])));
+      r.keys.forEach((k, i) => {
+        const value = m[i + 1];
+        if (value !== undefined) params[k] = decodeURIComponent(value);
+      });
       window.scrollTo(0, 0);
       try {
         const cleanup = await r.handler(params, rootEl, { signal: controller.signal, path });
@@ -105,7 +110,7 @@ async function dispatch(): Promise<void> {
         announceNavigation();
       } catch (e) {
         if (controller.signal.aborted || navigationId !== navigationSeq) return;
-        renderRouteError(e);
+        renderRouteError(e, path);
       }
       return;
     }
@@ -122,13 +127,15 @@ function announceNavigation(): void {
   });
 }
 
-function renderRouteError(e: unknown): void {
+function renderRouteError(e: unknown, path: string): void {
   runRouteTransitionCleanups();
-  const message = e instanceof Error ? e.message : String(e);
+  activeController = null;
+  reportSilentFailure(`route.${diagnosticPath(path)}`, e);
+  console.error('[medbox] route render failed', { path, cause: e });
   const topbar = document.createElement('div');
   topbar.className = 'topbar';
   const heading = document.createElement('h1');
-  heading.textContent = '页面出错';
+  heading.textContent = '页面暂时打不开';
   topbar.append(heading);
   const page = document.createElement('main');
   page.className = 'page page-light';
@@ -139,15 +146,33 @@ function renderRouteError(e: unknown): void {
   card.setAttribute('aria-atomic', 'true');
   const title = document.createElement('div');
   title.className = 'big';
-  title.textContent = '页面加载失败';
+  title.textContent = '暂时无法打开这个页面';
   const detail = document.createElement('div');
   detail.className = 'muted';
   detail.style.cssText = 'margin-top:8px;word-break:break-word';
-  detail.textContent = message;
-  card.append(title, detail);
+  detail.textContent = '你的用药记录没有丢失。可以重试一次；如果仍然失败，可到设置里复制诊断记录。';
+  const actions = document.createElement('div');
+  actions.className = 'btn-row mt-3';
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'btn';
+  retry.textContent = '重试';
+  retry.onclick = () => dispatch();
+  actions.append(retry);
+  card.append(title, detail, actions);
   page.append(card);
   rootEl.replaceChildren(topbar, page);
   announceNavigation();
+}
+
+function diagnosticPath(path: string): string {
+  const [pathname = path] = path.split('?');
+  const normalized = pathname
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => (/^[a-z-]+$/i.test(segment) ? segment : ':value'))
+    .join('.');
+  return normalized || 'root';
 }
 
 export function startRouter(root: HTMLElement, initialPath = '/today'): void {

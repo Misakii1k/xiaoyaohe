@@ -107,11 +107,15 @@ export function isUsableQuad(corners: readonly CropPoint[]): boolean {
   const crossProducts = corners.map((point, index) => {
     const next = corners[(index + 1) % 4];
     const after = corners[(index + 2) % 4];
+    if (!next || !after) return 0;
     return cross(next, point, after);
   });
   const hasPositive = crossProducts.some((value) => value > 0.0001);
   const hasNegative = crossProducts.some((value) => value < -0.0001);
-  return !(hasPositive && hasNegative) && corners.every((point, index) => distance(point, corners[(index + 1) % 4]) > 0.05);
+  return !(hasPositive && hasNegative) && corners.every((point, index) => {
+    const next = corners[(index + 1) % 4];
+    return next !== undefined && distance(point, next) > 0.05;
+  });
 }
 
 export function detectCornersFromImageData(image: ImageData): CropCorners | null {
@@ -120,7 +124,7 @@ export function detectCornersFromImageData(image: ImageData): CropCorners | null
 
   const gray = new Float32Array(width * height);
   for (let i = 0, pixel = 0; pixel < gray.length; i += 4, pixel += 1) {
-    gray[pixel] = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    gray[pixel] = sample(data, i) * 0.299 + sample(data, i + 1) * 0.587 + sample(data, i + 2) * 0.114;
   }
   const blurred = boxBlur(gray, width, height);
   const magnitude = new Float32Array(width * height);
@@ -131,12 +135,12 @@ export function detectCornersFromImageData(image: ImageData): CropCorners | null
     for (let x = 1; x < width - 1; x += 1) {
       const index = y * width + x;
       const gx =
-        -blurred[index - width - 1] + blurred[index - width + 1]
-        - 2 * blurred[index - 1] + 2 * blurred[index + 1]
-        - blurred[index + width - 1] + blurred[index + width + 1];
+        -sample(blurred, index - width - 1) + sample(blurred, index - width + 1)
+        - 2 * sample(blurred, index - 1) + 2 * sample(blurred, index + 1)
+        - sample(blurred, index + width - 1) + sample(blurred, index + width + 1);
       const gy =
-        -blurred[index - width - 1] - 2 * blurred[index - width] - blurred[index - width + 1]
-        + blurred[index + width - 1] + 2 * blurred[index + width] + blurred[index + width + 1];
+        -sample(blurred, index - width - 1) - 2 * sample(blurred, index - width) - sample(blurred, index - width + 1)
+        + sample(blurred, index + width - 1) + 2 * sample(blurred, index + width) + sample(blurred, index + width + 1);
       const value = Math.hypot(gx, gy);
       magnitude[index] = value;
       if (value > 1) {
@@ -154,7 +158,7 @@ export function detectCornersFromImageData(image: ImageData): CropCorners | null
   for (let y = 2; y < height - 2; y += 1) {
     for (let x = 2; x < width - 2; x += 1) {
       const index = y * width + x;
-      if (magnitude[index] < threshold) continue;
+      if (sample(magnitude, index) < threshold) continue;
       for (let offsetY = -2; offsetY <= 2; offsetY += 1) {
         for (let offsetX = -2; offsetX <= 2; offsetX += 1) {
           edges[index + offsetY * width + offsetX] = 1;
@@ -223,11 +227,11 @@ function detectContrastBounds(gray: Float32Array, width: number, height: number)
   let borderSum = 0;
   let borderCount = 0;
   for (let x = 0; x < width; x += 1) {
-    borderSum += gray[x] + gray[(height - 1) * width + x];
+    borderSum += sample(gray, x) + sample(gray, (height - 1) * width + x);
     borderCount += 2;
   }
   for (let y = 1; y < height - 1; y += 1) {
-    borderSum += gray[y * width] + gray[y * width + width - 1];
+    borderSum += sample(gray, y * width) + sample(gray, y * width + width - 1);
     borderCount += 2;
   }
   const background = borderSum / Math.max(1, borderCount);
@@ -238,7 +242,7 @@ function detectContrastBounds(gray: Float32Array, width: number, height: number)
   let count = 0;
   for (let y = 1; y < height - 1; y += 1) {
     for (let x = 1; x < width - 1; x += 1) {
-      if (Math.abs(gray[y * width + x] - background) < 28) continue;
+      if (Math.abs(sample(gray, y * width + x) - background) < 28) continue;
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
@@ -265,9 +269,9 @@ function boxBlur(source: Float32Array, width: number, height: number): Float32Ar
     for (let x = 1; x < width - 1; x += 1) {
       const index = y * width + x;
       output[index] = (
-        source[index - width - 1] + source[index - width] + source[index - width + 1]
-        + source[index - 1] + source[index] + source[index + 1]
-        + source[index + width - 1] + source[index + width] + source[index + width + 1]
+        sample(source, index - width - 1) + sample(source, index - width) + sample(source, index - width + 1)
+        + sample(source, index - 1) + sample(source, index) + sample(source, index + 1)
+        + sample(source, index + width - 1) + sample(source, index + width) + sample(source, index + width + 1)
       ) / 9;
     }
   }
@@ -303,11 +307,16 @@ function sampleBilinear(source: ImageData, x: number, y: number, target: Uint8Cl
     (y1 * source.width + x1) * 4,
   ];
   for (let channel = 0; channel < 4; channel += 1) {
+    const topLeftOffset = offsets[0];
+    const topRightOffset = offsets[1];
+    const bottomLeftOffset = offsets[2];
+    const bottomRightOffset = offsets[3];
+    if (topLeftOffset === undefined || topRightOffset === undefined || bottomLeftOffset === undefined || bottomRightOffset === undefined) return;
     target[offset + channel] = bilinear(
-      source.data[offsets[0] + channel],
-      source.data[offsets[1] + channel],
-      source.data[offsets[3] + channel],
-      source.data[offsets[2] + channel],
+      sample(source.data, topLeftOffset + channel),
+      sample(source.data, topRightOffset + channel),
+      sample(source.data, bottomRightOffset + channel),
+      sample(source.data, bottomLeftOffset + channel),
       fx,
       fy,
     );
@@ -321,8 +330,13 @@ function bilinear(topLeft: number, topRight: number, bottomRight: number, bottom
 function polygonArea(points: readonly CropPoint[]): number {
   return points.reduce((area, point, index) => {
     const next = points[(index + 1) % points.length];
+    if (!next) return area;
     return area + point.x * next.y - next.x * point.y;
   }, 0) / 2;
+}
+
+function sample(values: ArrayLike<number>, index: number): number {
+  return values[index] ?? 0;
 }
 
 function cross(a: CropPoint, b: CropPoint, c: CropPoint): number {
