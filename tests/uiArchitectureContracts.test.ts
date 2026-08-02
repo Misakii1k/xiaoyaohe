@@ -13,12 +13,33 @@ describe('0.7.0 UI architecture contracts', () => {
     expect(tokens).toContain('--safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px))');
   });
 
-  it('loads styles from modular token, shell, primitive, and page layers', () => {
+  it('keeps only shared and always-mounted styles in the global entry', () => {
     const entry = source('src/ui/styles.css');
+    expect(entry).toContain("@import './styles/legacy.css'");
     expect(entry).toContain("@import './styles/tokens.css'");
+    expect(entry).toContain("@import './styles/reset.css'");
     expect(entry).toContain("@import './styles/shell.css'");
     expect(entry).toContain("@import './styles/primitives.css'");
-    expect(entry).toContain("@import './styles/pages/medications.css'");
+    expect(entry).toContain("@import './styles/pages/assistant.css'");
+    expect(entry).not.toMatch(/styles\/pages\/(?:today|med-history|medications|inventory|medication-editor|scanner|med-wizard|settings)\.css/);
+  });
+
+  it('loads route-owned styles from the corresponding lazy page modules', () => {
+    const pageStyles = [
+      ['src/pages/Today.ts', "import '../ui/styles/pages/today.css';"],
+      ['src/pages/MedHistory.ts', "import '../ui/styles/pages/med-history.css';"],
+      ['src/pages/MedList.ts', "import '../ui/styles/pages/medications.css';"],
+      ['src/pages/MedInventory.ts', "import '../ui/styles/pages/inventory.css';"],
+      ['src/pages/MedEdit.ts', "import '../ui/styles/pages/medication-editor.css';"],
+      ['src/pages/MedBatchAdd.ts', "import '../ui/styles/pages/medication-editor.css';"],
+      ['src/pages/ScanSort.ts', "import '../ui/styles/pages/scanner.css';"],
+      ['src/pages/ScanSort.ts', "import '../ui/styles/pages/med-wizard.css';"],
+      ['src/pages/Settings.ts', "import '../ui/styles/pages/settings.css';"],
+    ] as const;
+
+    for (const [page, styleImport] of pageStyles) {
+      expect(source(page).split(/\r?\n/).slice(0, 5)).toContain(styleImport);
+    }
   });
 
   it('uses the application shell instead of page-owned top and bottom bars', () => {
@@ -35,6 +56,13 @@ describe('0.7.0 UI architecture contracts', () => {
     expect(config).toContain("insetsHandling: 'css'");
     expect(config).toContain("style: 'LIGHT'");
     expect(source('android/app/src/main/res/values/styles.xml')).toContain('windowLightStatusBar');
+  });
+
+  it('keeps the full-screen assistant header inside system safe areas', () => {
+    const assistant = source('src/ui/styles/pages/assistant.css');
+    expect(assistant).toMatch(/\.ai-panel\.is-fullscreen \.ai-panel-header\s*\{[^}]*var\(--safe-top\)/s);
+    expect(assistant).toMatch(/\.ai-panel\.is-fullscreen \.ai-panel-header\s*\{[^}]*var\(--safe-left\)/s);
+    expect(assistant).toMatch(/\.ai-panel\.is-fullscreen \.ai-panel-header\s*\{[^}]*var\(--safe-right\)/s);
   });
 
   it('declares the five fixed primary navigation destinations in one module', () => {

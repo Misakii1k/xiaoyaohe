@@ -202,3 +202,54 @@ export function estimateDaysLeft(med: Medication, rules: ReminderRule[]): number
   if (remaining <= 0) return null;
   return Math.floor(remaining / daily);
 }
+
+export interface BatchDeductionItemPreview {
+  medId: string;
+  medName: string;
+  unit: string;
+  currentStock: number;
+  dailyConsumption: number;
+  deductQuantity: number;
+  expectedRemaining: number;
+  willBeEmpty: boolean;
+  willBeLow: boolean;
+}
+
+export interface BatchDeductionPreview {
+  days: number;
+  items: BatchDeductionItemPreview[];
+  summaryText: string;
+}
+
+export function calculateBatchDeductionPreview(
+  meds: Medication[],
+  rules: ReminderRule[],
+  days: number = 7,
+): BatchDeductionPreview {
+  const items: BatchDeductionItemPreview[] = [];
+  for (const med of meds) {
+    if (!med.inventory || med.deleted) continue;
+    const medRules = rules.filter((r) => r.medId === med.id && !r.deleted && r.enabled);
+    const daily = estimateDailyConsumption(med, medRules);
+    const unit = med.inventory.unit || '片';
+    const currentStock = med.inventory.remaining;
+    const deductQuantity = roundStock(daily * days);
+    const expectedRemaining = Math.max(0, roundStock(currentStock - deductQuantity));
+    const threshold = getLowStockThreshold(med);
+
+    items.push({
+      medId: med.id,
+      medName: med.name,
+      unit,
+      currentStock,
+      dailyConsumption: daily,
+      deductQuantity,
+      expectedRemaining,
+      willBeEmpty: expectedRemaining <= 0,
+      willBeLow: expectedRemaining > 0 && expectedRemaining <= threshold,
+    });
+  }
+
+  const summaryText = `一次性预扣除 ${days} 天服药库存，共 ${items.length} 种药品。`;
+  return { days, items, summaryText };
+}

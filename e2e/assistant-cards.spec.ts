@@ -33,3 +33,41 @@ test('renders assistant card variants without overflowing narrow panels', async 
     contentType: 'image/png',
   });
 });
+
+test('keeps the full-screen assistant inside injected system safe areas', async ({ page }) => {
+  await page.goto('/?assistant-preview=1#/settings');
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--safe-area-inset-top', '32px');
+    document.documentElement.style.setProperty('--safe-area-inset-right', '24px');
+    document.documentElement.style.setProperty('--safe-area-inset-left', '20px');
+  });
+  await page.getByRole('button', { name: '展开面板' }).click();
+
+  const panel = page.locator('.ai-panel');
+  const header = panel.locator('.ai-panel-header');
+  await expect(panel).toHaveClass(/is-fullscreen/);
+  await expect(page.getByRole('button', { name: '收起面板' })).toBeVisible();
+
+  const layout = await header.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      top: box.top,
+      left: box.left,
+      right: box.right,
+      paddingTop: Number.parseFloat(style.paddingTop),
+      paddingLeft: Number.parseFloat(style.paddingLeft),
+      paddingRight: Number.parseFloat(style.paddingRight),
+      viewportWidth: window.innerWidth,
+      bodyWidth: document.body.scrollWidth,
+    };
+  });
+
+  expect(layout.top).toBe(0);
+  expect(layout.paddingTop).toBeGreaterThanOrEqual(32);
+  expect(layout.paddingLeft).toBeGreaterThanOrEqual(20);
+  expect(layout.paddingRight).toBeGreaterThanOrEqual(24);
+  expect(layout.left).toBe(0);
+  expect(layout.right).toBe(layout.viewportWidth);
+  expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewportWidth);
+});

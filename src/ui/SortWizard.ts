@@ -141,10 +141,10 @@ export function openSortWizard(
     }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    if (event.shiftKey && first && last && document.activeElement === first) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (!event.shiftKey && first && last && document.activeElement === last) {
       event.preventDefault();
       first.focus();
     }
@@ -152,6 +152,7 @@ export function openSortWizard(
 
   function buildCard(index: number): HTMLElement {
     const item = items[index];
+    if (!item) return el('div', { class: 'med-wizard-card' });
     const card = el('div', { class: 'med-wizard-card' });
 
     // 药盒照片：认盒不认字；没照片时提示去补拍
@@ -298,6 +299,7 @@ export function openSortWizard(
       return;
     }
     const item = items[step];
+    if (!item) return;
     if (step > 0) {
       actions.append(createButton({ label: '上一盒', variant: 'secondary', icon: 'arrow-left', onClick: () => showStep(step - 1, -1) }));
     }

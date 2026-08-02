@@ -115,7 +115,11 @@ interface LanSyncDevice {
 interface LanSyncSessionDependencies {
   transport: LanSyncTransport;
   createSnapshot: typeof createLanSnapshot;
-  mergeSnapshots: typeof mergeLanSnapshots;
+  /**
+   * @deprecated 从未被消费（会话用 mergeLanSnapshotsWithPolicy 直接合并）。
+   * 仅保留类型定义以兼容既有测试注入，buildDependencies 不再实例化。
+   */
+  mergeSnapshots?: typeof mergeLanSnapshots;
   applySnapshot: typeof applyLanMergedSnapshot;
   parseSnapshot: typeof parseLanSyncSnapshot;
   reschedule: typeof rescheduleMedicationReminders;
@@ -468,15 +472,6 @@ async function runHostSession(
       onProgress?.({ stage: 'transferring', message: '请选择同步方式' });
       policy = await choosePolicy({ local: localSummary, remote: remoteSummary, recommended });
     }
-    if (
-      (policy === 'overwrite-remote' || policy === 'overwrite-local')
-      && !joinPayload.allowOverwrite
-      && policy === 'overwrite-local'
-    ) {
-      // Host overwriting joiner requires joiner allowOverwrite.
-      // overwrite-local means host's data wins for both devices → needs joiner consent.
-      throw new Error('对方未开启「允许被覆盖」。请对方在家庭同步中打开该开关后重试，或选择智能合并。');
-    }
     if (policy === 'overwrite-local' && !joinPayload.allowOverwrite) {
       throw new Error('对方未开启「允许被覆盖」。请对方打开该开关，或改用智能合并。');
     }
@@ -574,7 +569,6 @@ function buildDependencies(overrides: Partial<LanSyncSessionDependencies>): LanS
   return {
     transport: overrides.transport ?? new NativeLanSyncTransport(),
     createSnapshot: overrides.createSnapshot ?? createLanSnapshot,
-    mergeSnapshots: overrides.mergeSnapshots ?? mergeLanSnapshots,
     applySnapshot: overrides.applySnapshot ?? applyLanMergedSnapshot,
     parseSnapshot: overrides.parseSnapshot ?? parseLanSyncSnapshot,
     reschedule: overrides.reschedule ?? rescheduleMedicationReminders,
@@ -763,6 +757,7 @@ class LanSyncTransportInbox {
         (event.state === 'connected' || event.state === 'closed' || event.state === 'error'));
       if (index >= 0) {
         const [event] = this.states.splice(index, 1);
+        if (!event) continue;
         if (event.state === 'connected') return;
         throw new LanSyncNativeStateError(event.code);
       }
@@ -774,11 +769,15 @@ class LanSyncTransportInbox {
     const deadline = Date.now() + timeoutMs;
     while (true) {
       const frameIndex = this.frames.findIndex((event) => event.connectionId === connectionId);
-      if (frameIndex >= 0) return this.frames.splice(frameIndex, 1)[0];
+      if (frameIndex >= 0) {
+        const [event] = this.frames.splice(frameIndex, 1);
+        if (event) return event;
+      }
       const stateIndex = this.states.findIndex((event) => event.connectionId === connectionId &&
         (event.state === 'closed' || event.state === 'error'));
       if (stateIndex >= 0) {
         const [event] = this.states.splice(stateIndex, 1);
+        if (!event) continue;
         throw new LanSyncNativeStateError(event.code);
       }
       await this.waitForNotification(signal, deadline);

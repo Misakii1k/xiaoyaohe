@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Medication, ReminderRule } from '../src/db/schema';
+import type { IntakeLog, Medication, PushState, ReminderRule, Slot } from '../src/db/schema';
 import { defaultEscalate, emptyIdentity } from '../src/db/schema';
-import { createScheduleRevision, toLocalDate } from '../src/domain/medicationSchedule';
+import { createScheduleRevision, projectScheduleDate, toLocalDate } from '../src/domain/medicationSchedule';
 import type { ScheduledReminderNotification } from '../src/features/reminderTransport';
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +11,11 @@ const mocks = vi.hoisted(() => ({
   })),
   show: vi.fn(async () => true),
   getLog: vi.fn(async () => undefined),
+  getPushState: vi.fn(async () => undefined),
+  listPushStates: vi.fn(async (_ids: readonly string[]) => [] as PushState[]),
+  putPushState: vi.fn(async (_state: PushState) => undefined),
+  native: true,
+  logs: [] as IntakeLog[],
 }));
 
 const med: Medication = {
@@ -20,7 +25,7 @@ const med: Medication = {
   amountPerDose: '1片',
   doseQuantity: 1,
   doseUnit: '片',
-  slots: ['morning'],
+  slots: ['morning', 'noon', 'evening', 'bedtime'],
   mealRels: [],
   mealRelsBySlot: {},
   daysOfWeek: [],
@@ -28,34 +33,35 @@ const med: Medication = {
   createdAt: 1,
   updatedAt: 1,
 };
-const rule: ReminderRule = {
-  id: 'native-rule',
+const rules = (['morning', 'noon', 'evening', 'bedtime'] as Slot[]).map((slot): ReminderRule => ({
+  id: `rule-${slot}`,
   medId: med.id,
-  slot: 'morning',
+  slot,
   timeLocal: '00:00',
   enabled: true,
   escalate: defaultEscalate(),
   updatedAt: 1,
-};
-const revision = createScheduleRevision(med, rule, {
+}));
+const revisions = rules.map((rule) => createScheduleRevision(med, rule, {
   effectiveDate: toLocalDate(),
   createdAt: 1,
-});
+}));
 
 vi.mock('../src/db/local', () => ({
   listMeds: vi.fn(async () => [med]),
-  listLogs: vi.fn(async () => []),
-  listRules: vi.fn(async () => [rule]),
-  listScheduleRevisions: vi.fn(async () => [revision]),
+  listLogs: vi.fn(async () => mocks.logs),
+  listRules: vi.fn(async () => rules),
+  listScheduleRevisions: vi.fn(async () => revisions),
   getLogForOccurrence: mocks.getLog,
-  getPushState: vi.fn(async () => undefined),
-  putPushState: vi.fn(async () => undefined),
+  getPushState: mocks.getPushState,
+  listPushStates: mocks.listPushStates,
+  putPushState: mocks.putPushState,
 }));
 
 vi.mock('../src/features/notifier', () => ({
   REMINDER_CAPABILITY_CHANGE_EVENT: 'medbox:test-reminder-change',
   getPermission: vi.fn(() => 'granted'),
-  isNativeReminderPlatform: vi.fn(() => true),
+  isNativeReminderPlatform: vi.fn(() => mocks.native),
   notificationsSupported: vi.fn(() => true),
   reconcileScheduledNotifications: mocks.reconcile,
   refreshPermission: vi.fn(async () => 'granted'),
@@ -69,6 +75,12 @@ describe('native reminder scheduler', () => {
     mocks.reconcile.mockClear();
     mocks.show.mockClear();
     mocks.getLog.mockClear();
+    mocks.getPushState.mockClear();
+    mocks.listPushStates.mockReset();
+    mocks.listPushStates.mockResolvedValue([]);
+    mocks.putPushState.mockClear();
+    mocks.native = true;
+    mocks.logs = [];
   });
 
   it('stops after reconciling the native schedule instead of sending foreground duplicates', async () => {
@@ -80,5 +92,43 @@ describe('native reminder scheduler', () => {
     expect(notifications.every(({ tag, data }) => !tag.endsWith('_care') && data?.kind === 'reminder')).toBe(true);
     expect(mocks.getLog).not.toHaveBeenCalled();
     expect(mocks.show).not.toHaveBeenCalled();
+  });
+
+  it('批量读取多个到点 occurrence 的状态并保持提醒筛选与写回语义', async () => {
+    mocks.native = false;
+    const occurrences = projectScheduleDate(revisions, toLocalDate())
+      .flatMap(({ occurrence }) => occurrence ? [occurrence] : []);
+    const [initial, taken, repeat, exhausted] = occurrences;
+    mocks.logs = [{
+      id: taken.id,
+      occurrenceId: taken.id,
+      scheduleRevisionId: taken.scheduleRevisionId,
+      sourceRuleId: taken.sourceRuleId,
+      medId: taken.medId,
+      slot: taken.slot,
+      dueAt: taken.dueAt,
+      status: 'taken',
+      ackAt: Date.now(),
+      updatedAt: Date.now(),
+    }];
+    mocks.listPushStates.mockResolvedValue([
+      { id: repeat.id, count: 1, lastSentAt: 0 },
+      { id: exhausted.id, count: 4, lastSentAt: 0 },
+    ]);
+
+    await runOnce();
+
+    expect(mocks.listPushStates).toHaveBeenCalledOnce();
+    expect(new Set(mocks.listPushStates.mock.calls[0][0])).toEqual(new Set(occurrences.map(({ id }) => id)));
+    expect(mocks.getLog).not.toHaveBeenCalled();
+    expect(mocks.getPushState).not.toHaveBeenCalled();
+    expect(mocks.show.mock.calls.map(([, options]) => [options.tag, options.key])).toEqual([
+      [initial.id, 'dose'],
+      [repeat.id, 'repeat-2'],
+    ]);
+    expect(mocks.putPushState.mock.calls.map(([state]) => ({ id: state.id, count: state.count }))).toEqual([
+      { id: initial.id, count: 1 },
+      { id: repeat.id, count: 2 },
+    ]);
   });
 });

@@ -28,8 +28,6 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -436,15 +434,9 @@ public final class ApkDistributionPlugin extends Plugin {
         }
         Set<String> digests = new HashSet<>();
         if (signatures == null) return digests;
-        try {
-            MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
-            for (Signature signature : signatures) {
-                if (signature == null) continue;
-                digests.add(toHex(sha256.digest(signature.toByteArray())));
-            }
-        } catch (NoSuchAlgorithmException error) {
-            // SHA-256 是 Android 平台必备算法，走不到这里；真走到了就当作「验不了」处理。
-            return new HashSet<>();
+        for (Signature signature : signatures) {
+            if (signature == null) continue;
+            digests.add(ApkIntegrity.sha256Hex(signature.toByteArray()));
         }
         return digests;
     }
@@ -453,15 +445,6 @@ public final class ApkDistributionPlugin extends Plugin {
     private static long versionCodeOf(PackageInfo info) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return info.getLongVersionCode();
         return info.versionCode;
-    }
-
-    private static String toHex(byte[] bytes) {
-        StringBuilder out = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            out.append(Character.forDigit((b >> 4) & 0xF, 16));
-            out.append(Character.forDigit(b & 0xF, 16));
-        }
-        return out.toString();
     }
 
     private static byte[] readN(InputStream in, int n) throws IOException {

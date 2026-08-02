@@ -26,6 +26,13 @@ describe('today page compact fullscreen contracts', () => {
     expect(styles).toContain('scroll-margin-block');
   });
 
+  it('keeps the summary progress ring prominent across responsive layouts', () => {
+    const styles = source('src/ui/styles/pages/today.css');
+
+    expect(styles).toMatch(/\.today-summary-progress\s*\{[^}]*inline-size: 112px;[^}]*block-size: 112px;/s);
+    expect(styles).toMatch(/@media \(max-width: 420px\)[\s\S]*\.today-summary-progress,[\s\S]*inline-size: 96px;[\s\S]*block-size: 96px;/);
+  });
+
   it('cancels only local dose notification tags after recording an intake', () => {
     const page = source('src/pages/Today.ts');
 

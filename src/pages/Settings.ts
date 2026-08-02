@@ -1,5 +1,6 @@
 // Android 设置页：系统提醒、AI、局域网家庭同步、本地备份和应用信息。
 // 主要配置使用折叠面板，默认收起并在标题行显示当前状态。
+import '../ui/styles/pages/settings.css';
 import { listLogs, listMeds, listRules } from '../db/local';
 import { confirmDialog, el, renderPage, toast, icon, type IconName } from '../ui/components';
 import {
@@ -61,6 +62,11 @@ import {
   LOCAL_APP_VERSION_CODE,
 } from '../sync/lan/apkTransport';
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations, openAppSettings } from '../features/keepAlive';
+import {
+  clearDiagnosticLogs,
+  copyDiagnosticLogs,
+  listDiagnosticLogs,
+} from '../app/diagnostics';
 
 const settingsPageCleanupByRoot = new WeakMap<HTMLElement, () => void>();
 
@@ -99,6 +105,7 @@ export async function renderSettingsPage(
     logs: logs.length,
   });
   content.append(backupCard.element);
+  content.append(renderDiagnosticsPanel());
 
   const about = el('section', { class: 'settings-about' });
   about.append(el('h2', { text: '关于' }));
@@ -222,7 +229,7 @@ function renderBackupCard(
     html: '备份会完整包含以上数据。导入时按 id + 更新时间合并，不会清空本地数据。',
   }));
 
-  const exportBtn = el('button', { class: 'btn tonal mt-3', html: '导出数据（JSON）' } as any);
+  const exportBtn = el('button', { class: 'btn tonal mt-3', html: '导出数据（JSON）' });
   exportBtn.onclick = async () => {
     if (signal?.aborted) return;
     const data = await buildBackup();
@@ -230,12 +237,12 @@ function renderBackupCard(
     downloadJson(data, `xiaoyaohe-backup-${new Date().toISOString().slice(0, 10)}.json`);
   };
 
-  const importBtn = el('button', { class: 'btn mt-3', html: '导入备份' } as any);
+  const importBtn = el('button', { class: 'btn mt-3', html: '导入备份' });
   const fileInput = el('input', {
     type: 'file',
     accept: 'application/json,.json',
     style: 'display:none',
-  } as any) as HTMLInputElement;
+  });
   importBtn.onclick = () => {
     if (!signal?.aborted) fileInput.click();
   };
@@ -271,6 +278,71 @@ function downloadJson(data: unknown, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+export interface DiagnosticsPanelOperations {
+  notify: (message: string) => void;
+  confirm: (message: string, okText?: string, danger?: boolean) => Promise<boolean>;
+  copy: () => Promise<number>;
+}
+
+export function renderDiagnosticsPanel(
+  operations?: Partial<DiagnosticsPanelOperations>,
+): HTMLElement {
+  const ops: DiagnosticsPanelOperations = {
+    notify: operations?.notify ?? toast,
+    confirm: operations?.confirm ?? confirmDialog,
+    copy: operations?.copy ?? copyDiagnosticLogs,
+  };
+  let refreshContent = () => {};
+  const p = panel({
+    title: '诊断记录',
+    iconName: 'info',
+    chip: diagnosticsChip(),
+    renderBody: (body) => {
+      const description = el('div', {
+        class: 'muted',
+        text: '仅保留最近 50 条脱敏后的后台失败摘要，不包含密钥、令牌或完整药品正文。',
+      });
+      const output = el('pre', { class: 'diagnostics-log', tabIndex: 0 });
+      const copyButton = el('button', { class: 'btn tonal', type: 'button', text: '复制' });
+      const clearButton = el('button', { class: 'btn text', type: 'button', text: '清空' });
+      const actions = el('div', { class: 'btn-row diagnostics-actions' });
+      actions.append(copyButton, clearButton);
+
+      refreshContent = () => {
+        const entries = listDiagnosticLogs();
+        output.textContent = entries.length === 0
+          ? '暂无诊断记录'
+          : entries.map((entry) => `${new Date(entry.at).toLocaleString()}  [${entry.scope}]  ${entry.summary}`).join('\n');
+        copyButton.disabled = entries.length === 0;
+        clearButton.disabled = entries.length === 0;
+      };
+      copyButton.onclick = async () => {
+        try {
+          const count = await ops.copy();
+          ops.notify(`已复制 ${count} 条诊断记录`);
+        } catch {
+          ops.notify('复制失败，请检查剪贴板权限');
+        }
+      };
+      clearButton.onclick = async () => {
+        if (!await ops.confirm('清空全部诊断记录？此操作无法撤销。', '清空', true)) return;
+        clearDiagnosticLogs();
+        refreshContent();
+        setChip(p, diagnosticsChip());
+        ops.notify('诊断记录已清空');
+      };
+      body.append(description, output, actions);
+    },
+  });
+  refreshContent();
+  return p;
+}
+
+function diagnosticsChip(): PanelChip {
+  const count = listDiagnosticLogs().length;
+  return { text: `${count} 条`, tone: count > 0 ? 'info' : 'muted' };
+}
+
 /** ---------------- iOS 折叠面板基础 ---------------- */
 interface PanelChip {
   text: string;
@@ -288,29 +360,29 @@ let panelSeq = 0;
 function panel(opts: PanelOpts): HTMLElement {
   const wrap = el('div', {
     class: 'panel' + (opts.defaultOpen ? ' open' : ''),
-  } as any);
+  });
 
-  const head = el('button', { class: 'panel-head', type: 'button' } as any);
+  const head = el('button', { class: 'panel-head', type: 'button' });
   const bodyId = `settings-panel-${++panelSeq}`;
   head.setAttribute('aria-expanded', String(Boolean(opts.defaultOpen)));
   head.setAttribute('aria-controls', bodyId);
-  const lead = el('span', { class: 'panel-lead' } as any);
+  const lead = el('span', { class: 'panel-lead' });
   lead.append(icon(opts.iconName, 'panel-icon'));
-  lead.append(el('span', { class: 'panel-title', text: opts.title } as any));
+  lead.append(el('span', { class: 'panel-title', text: opts.title }));
   head.append(lead);
 
-  const right = el('span', { class: 'panel-right' } as any);
+  const right = el('span', { class: 'panel-right' });
   const chip = el('span', {
     class: 'panel-chip tone-' + opts.chip.tone,
     html: opts.chip.text,
-  } as any);
+  });
   right.append(chip);
-  const chevron = el('span', { class: 'panel-chevron' } as any);
+  const chevron = el('span', { class: 'panel-chevron' });
   chevron.append(icon('arrow-left'));
   right.append(chevron);
   head.append(right);
 
-  const body = el('div', { class: 'panel-body' } as any);
+  const body = el('div', { class: 'panel-body' });
   body.id = bodyId;
   body.hidden = !opts.defaultOpen;
   if (!opts.defaultOpen) body.setAttribute('inert', '');
@@ -364,7 +436,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   if (!notificationsSupported()) {
     // 手机 App 和浏览器「收不到提醒」的原因完全不同，给同一句话等于两边都没说清。
     body.append(
-      el('div', { class: 'banner warn' } as any, [
+      el('div', { class: 'banner warn' }, [
         el('span', {
           html: native
             ? '当前手机无法使用系统通知。请更新应用，并在系统设置中允许通知。'
@@ -378,20 +450,20 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   const appEnabled = isAppNotificationsEnabled();
   const toggleRow = el('label', {
     class: 'settings-toggle-row',
-  } as any);
-  const toggleCopy = el('div', { class: 'settings-toggle-copy' } as any);
+  });
+  const toggleCopy = el('div', { class: 'settings-toggle-copy' });
   toggleCopy.append(
-    el('div', { class: 'settings-toggle-title', text: '应用内用药提醒' } as any),
+    el('div', { class: 'settings-toggle-title', text: '应用内用药提醒' }),
     el('div', {
       class: 'settings-toggle-desc',
       text: appEnabled ? '开启后按计划发送系统通知与全屏提醒' : '已暂停：不再调度和弹出用药提醒',
-    } as any),
+    }),
   );
   const toggle = el('input', {
     type: 'checkbox',
     role: 'switch',
     'aria-label': '应用内用药提醒',
-  } as any) as HTMLInputElement;
+  });
   toggle.checked = appEnabled;
   toggle.onchange = async () => {
     setAppNotificationsEnabled(toggle.checked);
@@ -408,7 +480,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
 
   if (!appEnabled) {
     body.append(
-      el('div', { class: 'banner info' } as any, [
+      el('div', { class: 'banner info' }, [
         el('span', { html: '应用内提醒已关闭。系统通知权限可保留，但不会再发送用药提醒。' }),
       ]),
     );
@@ -425,14 +497,14 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       ? '通知被拒绝。请到系统设置中允许通知。'
       : '通知尚未开启，开启后才能按时收到提醒。';
   body.append(
-    el('div', { class: 'banner ' + cls } as any, [el('span', { html: text })])
+    el('div', { class: 'banner ' + cls }, [el('span', { html: text })])
   );
 
   // 诚实降级：网页端做不到手机 App 那种「到点必响」，这一点必须写在用户看得见的
   // 地方，而不是藏在文档里。把话说满，用户漏吃药才是真正的代价。
   if (perm === 'granted' && !native) {
     body.append(
-      el('div', { class: 'banner warn mt-3' } as any, [
+      el('div', { class: 'banner warn mt-3' }, [
         el('span', {
           html:
             '网页端的提醒没有手机 App 可靠：页面关掉之后，浏览器只会在它自己愿意醒来的时候补发提醒，可能晚几十分钟，手机清后台时也可能收不到。每天都要按时吃的药，请装手机 App。',
@@ -441,7 +513,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     );
   }
 
-  const row = el('div', { class: 'btn-row mt-3' } as any);
+  const row = el('div', { class: 'btn-row mt-3' });
   if (perm !== 'granted') {
     const grantBtn = el('button', { class: 'btn', html: '开启系统通知' });
     grantBtn.onclick = async () => {
@@ -498,12 +570,12 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
         ? '当前系统无法确认精确闹钟能力，提醒可能有数分钟延迟。'
         : '精确闹钟尚未允许；Android 仍会安排提醒，但可能延迟送达。';
       body.append(
-        el('div', { class: 'banner warn mt-3' } as any, [
+        el('div', { class: 'banner warn mt-3' }, [
           el('span', { html: message }),
         ]),
       );
       if (exactAlarm !== 'unavailable') {
-        const exactRow = el('div', { class: 'btn-row mt-3' } as any);
+        const exactRow = el('div', { class: 'btn-row mt-3' });
         const exactButton = el('button', { class: 'btn tonal', html: '允许精确闹钟' });
         exactButton.onclick = async () => {
           const capability = await requestExactAlarmCapability();
@@ -522,7 +594,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     const fullScreen = getFullScreenAlarmCapability();
     if (fullScreen !== 'granted') {
       body.append(
-        el('div', { class: 'banner warn mt-3' } as any, [
+        el('div', { class: 'banner warn mt-3' }, [
           el('span', {
             html: fullScreen === 'denied'
               ? '全屏提醒权限尚未开启；选择全屏模式的药物会自动降级为增强通知。'
@@ -531,7 +603,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
         ]),
       );
       if (fullScreen === 'denied') {
-        const fullScreenRow = el('div', { class: 'btn-row mt-3' } as any);
+        const fullScreenRow = el('div', { class: 'btn-row mt-3' });
         const fullScreenButton = el('button', { class: 'btn tonal', html: '允许全屏提醒' });
         fullScreenButton.onclick = async () => {
           await requestFullScreenAlarmCapability();
@@ -558,7 +630,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
           '· 手机息屏久了、或者你清了后台，补发会延迟，也可能直接丢失。\n' +
           '· 网页端没有锁屏全屏提醒，那是手机 App 才有的能力。\n' +
           '· 重新打开页面时会自动补查一次遗漏的任务。',
-    } as any)
+    })
   );
 }
 
@@ -622,13 +694,13 @@ function buildAppUpdateBody(
   body.replaceChildren();
 
   // 当前版本信息
-  const versionInfo = el('div', { class: 'settings-hint' } as any, [
+  const versionInfo = el('div', { class: 'settings-hint' }, [
     el('span', { html: `当前版本：<b>v${LOCAL_APP_VERSION}</b>（versionCode ${LOCAL_APP_VERSION_CODE}）` }),
   ]);
   body.append(versionInfo);
 
   if (!available) {
-    body.append(el('div', { class: 'banner info mt-3' } as any, [
+    body.append(el('div', { class: 'banner info mt-3' }, [
       el('span', { html: '应用更新仅在 Android App 中可用。其他设备同步时会发现可用更新。' }),
     ]));
     return;
@@ -636,20 +708,20 @@ function buildAppUpdateBody(
 
   const update = getAvailableUpdate();
   if (!update) {
-    body.append(el('div', { class: 'settings-hint mt-3' } as any, [
+    body.append(el('div', { class: 'settings-hint mt-3' }, [
       el('span', { html: '其他设备升级后，会在同步时自动通知本机更新。' }),
     ]));
     return;
   }
 
   // 发现可用更新：显示版本、来源、操作按钮
-  body.append(el('div', { class: 'banner info mt-3' } as any, [
+  body.append(el('div', { class: 'banner info mt-3' }, [
     el('span', { html: `发现新版本 <b>v${update.version}</b>（versionCode ${update.versionCode}）。` }),
     el('br'),
     el('span', { html: `来源：${update.peerHost}（局域网内已升级设备）。` }),
   ]));
 
-  const row = el('div', { class: 'btn-row mt-3' } as any);
+  const row = el('div', { class: 'btn-row mt-3' });
   const downloadBtn = el('button', { class: 'btn', html: '下载并安装' });
   const skipBtn = el('button', { class: 'btn tonal', html: '本次跳过' });
 
@@ -694,18 +766,18 @@ async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement): Promis
     ? { text: '已允许', tone: 'ok' }
     : { text: '需授权', tone: 'warn' });
   if (ignoring) {
-    body.append(el('div', { class: 'settings-hint', html: '已在电池优化白名单中，应用可在后台持续运行提醒与同步。' } as any));
-    const row = el('div', { class: 'btn-row mt-3' } as any);
+    body.append(el('div', { class: 'settings-hint', html: '已在电池优化白名单中，应用可在后台持续运行提醒与同步。' }));
+    const row = el('div', { class: 'btn-row mt-3' });
     const openBtn = el('button', { class: 'btn tonal', html: '打开应用设置' });
     openBtn.onclick = () => void openAppSettings();
     row.append(openBtn);
     body.append(row);
     return;
   }
-  body.append(el('div', { class: 'banner warn' } as any, [
+  body.append(el('div', { class: 'banner warn' }, [
     el('span', { html: '允许小药盒在后台运行，提醒和自动同步才不会被系统关闭。点下方按钮，在弹窗里选「允许」。' }),
   ]));
-  const row = el('div', { class: 'btn-row mt-3' } as any);
+  const row = el('div', { class: 'btn-row mt-3' });
   const allowBtn = el('button', { class: 'btn', html: '允许后台运行' });
   allowBtn.onclick = async () => {
     const ok = await requestIgnoreBatteryOptimizations();
@@ -761,7 +833,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   const missingKey = isUsingDefaultKey();
   if (missingKey) {
     body.append(
-      el('div', { class: 'banner info mt-3' } as any, [
+      el('div', { class: 'banner info mt-3' }, [
         el('span', {
           html: isNativeSecretStore()
             ? '还没填 AI 密钥。手机 App 会把它存进系统安全存储替您保管。'
@@ -774,7 +846,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   // 网页端没有系统安全存储可用，密钥只能明文留在浏览器里。如实告知 + 给一个真正有效的选项。
   if (!isNativeSecretStore()) {
     body.append(
-      el('div', { class: 'banner warn mt-3' } as any, [
+      el('div', { class: 'banner warn mt-3' }, [
         el('span', { text: WEB_SECRET_STORAGE_NOTICE }),
       ])
     );
@@ -787,21 +859,21 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     value: cfg.baseUrl,
     placeholder: 'OpenAI 兼容地址，如 https://api.openai.com/v1',
     class: 'mt-3',
-  } as any) as HTMLInputElement;
+  });
   body.append(field('API 地址', urlIn));
 
-  const keyWrap = el('div', { style: 'position:relative' } as any);
+  const keyWrap = el('div', { style: 'position:relative' });
   const keyIn = el('input', {
     type: 'password',
     value: cfg.apiKey,
     placeholder: 'sk-...',
     style: 'padding-right:64px',
-  } as any) as HTMLInputElement;
+  });
   const toggleKey = el('button', {
     class: 'key-toggle',
     type: 'button',
     html: '显示',
-  } as any);
+  });
   let visible = false;
   toggleKey.onclick = () => {
     visible = !visible;
@@ -812,19 +884,19 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   body.append(field('API 密钥', keyWrap));
 
   // 模型：下拉 + 刷新；不通时回退为文本框
-  const modelRow = el('div', { class: 'model-row' } as any);
-  const modelSel = el('select', { class: 'model-select' } as any) as HTMLSelectElement;
+  const modelRow = el('div', { class: 'model-row' });
+  const modelSel = el('select', { class: 'model-select' });
   const modelIn = el('input', {
     type: 'text',
     value: cfg.model,
     placeholder: '模型名，如 gpt-4o-mini',
     style: 'display:none',
-  } as any) as HTMLInputElement;
+  });
   const refreshBtn = el('button', {
     class: 'btn tonal small',
     type: 'button',
     html: '刷新',
-  } as any);
+  });
 
   const modelControlSeq = ++settingsFieldSeq;
   modelSel.id = `settings-model-select-${modelControlSeq}`;
@@ -837,7 +909,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   body.append(modelField);
 
   // 状态横条
-  const statusBar = el('div', { class: 'llm-status' } as any);
+  const statusBar = el('div', { class: 'llm-status' });
   body.append(statusBar);
 
   // === 初始填充：用持久化的健康检查结果 ===
@@ -885,7 +957,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   };
 
   // ====== 操作行 ======
-  const row = el('div', { class: 'btn-row mt-3' } as any);
+  const row = el('div', { class: 'btn-row mt-3' });
   const save = el('button', { class: 'btn', html: '保存' });
   save.onclick = async () => {
     const baseUrl = urlIn.value.trim();
@@ -936,7 +1008,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     const reset = el('button', {
       class: 'btn text mt-2',
       html: '清空这些设置，恢复原样',
-    } as any);
+    });
     reset.onclick = async () => {
       await resetLlmConfig();
       toast('已恢复默认');
@@ -956,7 +1028,7 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
         (isNativeSecretStore()
           ? '· 密钥保存在这台手机的系统安全存储中。'
           : '· 网页版没有系统安全存储可用，密钥在浏览器里是明文保存的。'),
-    } as any)
+    })
   );
 }
 
@@ -969,22 +1041,22 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
  */
 function buildWebSecretPersistenceRow(): HTMLElement {
   const sessionOnly = getWebSecretPersistence() === 'session';
-  const row = el('div', { class: 'settings-toggle-row' } as any);
-  const copy = el('div', { class: 'settings-toggle-copy' } as any);
+  const row = el('div', { class: 'settings-toggle-row' });
+  const copy = el('div', { class: 'settings-toggle-copy' });
   copy.append(
-    el('div', { class: 'settings-toggle-title', text: '仅本次会话保存密钥' } as any),
+    el('div', { class: 'settings-toggle-title', text: '仅本次会话保存密钥' }),
     el('div', {
       class: 'settings-toggle-desc',
       text: sessionOnly
         ? '关掉这个标签页密钥就没了，下次要重新填。适合公用电脑。'
         : '密钥会留在这台电脑上，关掉浏览器再打开还在。',
-    } as any),
+    }),
   );
   const toggle = el('input', {
     type: 'checkbox',
     role: 'switch',
     'aria-label': '仅本次会话保存密钥',
-  } as any) as HTMLInputElement;
+  });
   toggle.checked = sessionOnly;
   toggle.onchange = () => {
     // 已填的密钥会被就地搬到新位置，用户不必重输
@@ -1031,7 +1103,7 @@ function renderAiConsentControls(onChanged: () => void): HTMLElement {
   const wrap = el('div', { class: 'ai-consent-controls' });
   const title = el('div', { class: 'section-title', html: '已授权的 AI 服务商' });
   const list = el('div', { class: 'ai-consent-list' });
-  const clear = el('button', { class: 'btn text small', type: 'button', text: '撤销全部授权' } as any);
+  const clear = el('button', { class: 'btn text small', type: 'button', text: '撤销全部授权' });
   const render = () => {
     list.replaceChildren();
     const records = getAiConsentRecords();
@@ -1050,7 +1122,7 @@ function renderAiConsentControls(onChanged: () => void): HTMLElement {
           ? '吃药相关（药盒、药单、用药信息）'
           : '小助手对话与联网搜索',
       }));
-      const revoke = el('button', { class: 'btn text small', type: 'button', text: '撤销' } as any);
+      const revoke = el('button', { class: 'btn text small', type: 'button', text: '撤销' });
       revoke.onclick = () => {
         revokeAiConsent(record.origin, record.category);
         render();
@@ -1095,11 +1167,11 @@ function populateModelControl(
   sel.replaceChildren();
   const has = list.includes(current);
   if (!has && current) {
-    const op = el('option', { value: current, html: current + '（自定义）' } as any);
+    const op = el('option', { value: current, html: current + '（自定义）' });
     sel.append(op);
   }
   for (const m of list) {
-    const op = el('option', { value: m, html: m } as any);
+    const op = el('option', { value: m, html: m });
     if (m === current) op.selected = true;
     sel.append(op);
   }
@@ -1179,10 +1251,10 @@ function renderAsrPanel(): HTMLElement {
   const idIn = el('input', {
     type: 'text',
     autocomplete: 'off',
-    spellcheck: 'false',
+    spellcheck: false,
     value: initialId ? maskSecret(initialId) : '',
     placeholder: 'AKIDxxxxxxxxxxxxxxxx',
-  } as any) as HTMLInputElement;
+  });
   idIn.readOnly = Boolean(initialId); // 有保存就展示 mask，避免误改
 
   const keyIn = el('input', {
@@ -1190,7 +1262,7 @@ function renderAsrPanel(): HTMLElement {
     autocomplete: 'off',
     value: initialKey ? maskSecret(initialKey) : '',
     placeholder: 'sk-xxxxxxxxxxxxxxxx',
-  } as any) as HTMLInputElement;
+  });
   keyIn.readOnly = Boolean(initialKey);
 
   const regionIn = el('input', {
@@ -1198,7 +1270,7 @@ function renderAsrPanel(): HTMLElement {
     autocomplete: 'off',
     value: initialRegion,
     placeholder: 'ap-guangzhou',
-  } as any) as HTMLInputElement;
+  });
 
   body.append(field('SecretId', idIn));
   body.append(field('SecretKey', keyIn));
@@ -1206,7 +1278,7 @@ function renderAsrPanel(): HTMLElement {
 
   const status = el('div', {
     class: `banner ${asrHealth.stage === 'success' || asrHealth.stage === 'ready' ? 'ok' : asrHealth.stage === 'error' ? 'warn' : 'info'} mt-3`,
-  } as any);
+  });
   const renderStatus = (): void => {
     const h = getAsrHealth();
     status.className = `banner ${h.stage === 'success' || h.stage === 'ready' ? 'ok' : h.stage === 'error' ? 'warn' : 'info'}`;
@@ -1225,12 +1297,12 @@ function renderAsrPanel(): HTMLElement {
   renderStatus();
   body.append(status);
 
-  const row = el('div', { class: 'btn-row mt-3' } as any);
+  const row = el('div', { class: 'btn-row mt-3' });
 
   // 已保存时：「修改」解锁两个输入框并切换为保存
-  const editBtn = el('button', { class: 'btn tonal', type: 'button', html: '修改密钥' } as any);
-  const saveBtn = el('button', { class: 'btn', type: 'button', html: '保存' } as any);
-  const clearBtn = el('button', { class: 'btn text', type: 'button', html: '清除' } as any);
+  const editBtn = el('button', { class: 'btn tonal', type: 'button', html: '修改密钥' });
+  const saveBtn = el('button', { class: 'btn', type: 'button', html: '保存' });
+  const clearBtn = el('button', { class: 'btn text', type: 'button', html: '清除' });
 
   const enterEditMode = (): void => {
     idIn.readOnly = false;

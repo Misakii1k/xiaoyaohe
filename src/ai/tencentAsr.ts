@@ -30,6 +30,8 @@ export class TencentAsrError extends Error {
   }
 }
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 /** 把 WAV 音频发给腾讯云一句话识别，返回转写文字。 */
 export async function recognizeWithTencentCloud(
   wav: ArrayBuffer,
@@ -66,7 +68,7 @@ export async function recognizeWithTencentCloud(
       Authorization: authorization,
     },
     body: payload,
-    signal: options.signal,
+    signal: combineSignals(options.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)),
   });
   const result = await response.json().catch(() => ({})) as {
     Response?: {
@@ -151,4 +153,17 @@ async function hmacHex(key: ArrayBuffer, value: string): Promise<string> {
 
 function bufferToHex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function combineSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
+  if (!a) return b;
+  const controller = new AbortController();
+  for (const s of [a, b]) {
+    if (s.aborted) {
+      controller.abort(s.reason);
+      break;
+    }
+    s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
+  }
+  return controller.signal;
 }

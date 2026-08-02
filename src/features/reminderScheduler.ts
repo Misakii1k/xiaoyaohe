@@ -5,8 +5,7 @@ import {
   listLogs,
   listRules,
   listScheduleRevisions,
-  getLogForOccurrence,
-  getPushState,
+  listPushStates,
   putPushState,
 } from '../db/local';
 import {
@@ -183,21 +182,30 @@ async function runTick(): Promise<void> {
   const now = new Date();
   const date = toLocalDate(now);
   const entries = projectScheduleDate(revisions, date);
+  const dueEntries = entries.filter((entry) => entry.occurrence && entry.occurrence.dueAt <= now.getTime());
+  const dueOccurrenceIds = dueEntries.flatMap((entry) => entry.occurrence ? [entry.occurrence.id] : []);
+  const pushStates = await listPushStates(dueOccurrenceIds);
+  const pushStateMap = new Map(pushStates.map((state) => [state.id, state]));
+  const logMap = new Map(logs.map((log) => [log.id, log]));
 
-  for (const entry of entries) {
+  for (const entry of dueEntries) {
     const occurrence = entry.occurrence;
     if (!occurrence) continue;
     const med = medMap.get(occurrence.medId);
     const rule = ruleMap.get(occurrence.sourceRuleId);
     if (!med || !rule) continue;
     const dueAt = occurrence.dueAt;
-    if (dueAt > now.getTime()) continue; // 还没到点
-
-    const log = await getLogForOccurrence(occurrence);
+    const currentLog = logMap.get(occurrence.id);
+    const legacyLog = logMap.get(occurrence.legacyLogId);
+    const log = !currentLog
+      ? legacyLog
+      : !legacyLog || currentLog.updatedAt >= legacyLog.updatedAt
+        ? currentLog
+        : legacyLog;
     if (log?.status === 'taken' || log?.status === 'skipped') continue;
 
     const logId = occurrence.id;
-    const ps = (await getPushState(logId)) ?? { id: logId, count: 0, lastSentAt: 0 };
+    const ps = pushStateMap.get(logId) ?? { id: logId, count: 0, lastSentAt: 0 };
     const minsLate = Math.floor((Date.now() - dueAt) / 60000);
     const minsSinceLast = (Date.now() - ps.lastSentAt) / 60000;
     const policy = rule.escalate;

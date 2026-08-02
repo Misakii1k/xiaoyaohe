@@ -203,7 +203,7 @@ describe('triggerManualJoinAll', () => {
     expect(summary).toEqual({ joined: 2, failed: 0, skipped: 0 });
     expect(state.joinCalls).toHaveLength(2);
     // silent=true → allowRemoteOverwrite 跟随 isLanAllowRemoteOverwrite() = true
-    expect(state.joinCalls[0].allowOverwrite).toBe(true);
+    expect(state.joinCalls[0]?.allowOverwrite).toBe(true);
   });
 
   it('marks peer as skipped when not silent and host refuses overwrite-local', async () => {
@@ -217,7 +217,7 @@ describe('triggerManualJoinAll', () => {
 
     expect(summary).toEqual({ joined: 0, failed: 0, skipped: 1 });
     // silent=false → allowRemoteOverwrite=false 强制关闭
-    expect(state.joinCalls[0].allowOverwrite).toBe(false);
+    expect(state.joinCalls[0]?.allowOverwrite).toBe(false);
   });
 
   it('does not catch unrelated errors when silent=false', async () => {

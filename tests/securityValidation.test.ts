@@ -44,6 +44,27 @@ describe('backup runtime validation', () => {
     })).not.toThrow();
   });
 
+  it('rejects impossible calendar dates like 2026-02-31', () => {
+    expect(() => parseSafeBackupPayload({
+      app: 'medbox',
+      meds: [{ ...validMedication(), expiryLocalDate: '2026-02-31' }],
+    })).toThrow(/expiryLocalDate/);
+    expect(() => parseSafeBackupPayload({
+      app: 'medbox',
+      meds: [validMedication()],
+      rules: [{
+        id: 'rule-1',
+        medId: 'med-1',
+        slot: 'morning',
+        timeLocal: '08:00',
+        enabled: true,
+        escalate: { repeatEveryMin: 10, maxRepeats: 3, notifyCaregiverAfterMin: 30 },
+        updatedAt: 1,
+        cycleStartDate: '2026-04-31',
+      }],
+    })).toThrow(/cycleStartDate/);
+  });
+
   it('keeps legacy work fields out of medication backup providers and counts', async () => {
     expect(backupProviders.map((provider) => provider.key)).toEqual(['meds']);
     await expect(countBackupPayload({

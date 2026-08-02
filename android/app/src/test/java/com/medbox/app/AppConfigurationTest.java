@@ -9,6 +9,6 @@ public class AppConfigurationTest {
     @Test
     public void buildUsesMedboxApplicationId() {
         assertEquals("com.medbox.app", BuildConfig.APPLICATION_ID);
-        assertEquals("0.9.2", BuildConfig.VERSION_NAME);
+        assertEquals("0.9.4", BuildConfig.VERSION_NAME);
     }
 }

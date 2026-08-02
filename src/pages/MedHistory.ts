@@ -1,4 +1,5 @@
 // 服药历史页面：回看任意区间的服药情况，并支持 90 天内补记 / 更正
+import '../ui/styles/pages/med-history.css';
 import {
   listLogsByRange,
   listMeds,
@@ -963,9 +964,9 @@ function isLocalDate(value: unknown): value is LocalDate {
 }
 
 function calendarDaysBetween(start: LocalDate, end: LocalDate): number {
-  const [sy, sm, sd] = start.split('-').map(Number);
-  const [ey, em, ed] = end.split('-').map(Number);
-  const sUtc = Date.UTC(sy, sm - 1, sd);
-  const eUtc = Date.UTC(ey, em - 1, ed);
+  const startDate = new Date(`${start}T00:00:00`);
+  const endDate = new Date(`${end}T00:00:00`);
+  const sUtc = Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const eUtc = Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
   return Math.round((eUtc - sUtc) / 86_400_000);
 }

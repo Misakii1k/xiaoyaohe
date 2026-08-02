@@ -11,6 +11,7 @@ import {
   reconcileNativeMedicationAlarms,
 } from './nativeMedicationAlarm';
 import { WebReminderTransport } from './webReminderTransport';
+import { reportSilentFailure } from '../app/diagnostics';
 
 const OWNER = 'medbox-medication-reminder-v1';
 const REGISTRY_KEY = 'medbox.reminder.notification-ids.v1';
@@ -249,7 +250,10 @@ export class AndroidReminderTransport implements ReminderTransport {
       // 清空后再挂；任一分片失败立刻停，绝不让异常冒泡
       const scheduled = await this.scheduleInChunksSafe([...desired.values()]);
       const nativeScheduled = await reconcileNativeMedicationAlarms(selected, notificationIdFor).catch(
-        () => 0,
+        (error) => {
+          reportSilentFailure('reminder.native-reconcile', error);
+          return 0;
+        },
       );
       if (useNativeAlarms) {
         const next: ReminderRegistry = {};
@@ -288,12 +292,14 @@ export class AndroidReminderTransport implements ReminderTransport {
         truncated,
         exactAlarm,
       };
-    } catch {
+    } catch (error) {
+      reportSilentFailure('reminder.reconcile', error);
       try {
         const all = (await this.plugin.getPending()).notifications;
         await this.cancelIds(all.map(({ id }) => id));
         this.writeRegistry({});
-      } catch {
+      } catch (cleanupError) {
+        reportSilentFailure('reminder.reconcile-cleanup', cleanupError);
         /* ignore */
       }
       const truncated = Math.max(0, future.length - selected.length);
@@ -360,7 +366,8 @@ private async scheduleInChunksSafe(
       try {
         await this.plugin.schedule({ notifications: chunk });
         for (const item of chunk) ids.add(item.id);
-      } catch {
+      } catch (error) {
+        reportSilentFailure('reminder.schedule-chunk', error);
         failed += 1;
         skipped += notifications.length - offset;
         break;

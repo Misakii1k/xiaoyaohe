@@ -2,7 +2,7 @@
 // 独立于 CRDT snapshot，作为 extras 字段附在 join/result 消息里。
 // 照片 per-medId last-write-wins；API 配置接收方直接覆盖。
 import { z } from 'zod';
-import { listAllPhotos, putPhoto, deletePhotosByMed, uid } from '../../db/local';
+import { deletePhotosByMed, getPhotosByMed, listMeds, putPhoto, uid } from '../../db/local';
 import { getLlmConfig, setLlmConfig } from '../../ai/llmConfig';
 
 // ---- 常量 ----
@@ -53,26 +53,26 @@ export interface LanSyncContentOptions {
 // ---- 照片收集 & 应用 ----
 
 /**
- * 从 IndexedDB 收集所有药品照片，转为 base64 条目。
- * 每种药只取最新一张；总数上限 SYNC_MAX_PHOTOS。
+ * 从 IndexedDB 收集药品照片，转为 base64 条目。
+ * 按药逐条查询、每种药只取最新一张；总数上限 SYNC_MAX_PHOTOS。
  */
 export async function collectSyncPhotos(): Promise<SyncPhotoEntry[]> {
-  const allPhotos = await listAllPhotos();
-  // 按 medId 分组，每组取最新
-  const byMed = new Map<string, { blob: Blob; at: number }>();
-  for (const photo of allPhotos) {
-    const existing = byMed.get(photo.medId);
-    if (!existing || photo.at > existing.at) {
-      byMed.set(photo.medId, { blob: photo.blob, at: photo.at });
-    }
+  const meds = await listMeds();
+  const candidates: Array<{ medId: string; blob: Blob; at: number }> = [];
+  for (const med of meds) {
+    const photos = await getPhotosByMed(med.id);
+    const first = photos[0];
+    if (!first) continue;
+    const latest = photos.reduce((best, photo) => (photo.at > best.at ? photo : best), first);
+    candidates.push({ medId: med.id, blob: latest.blob, at: latest.at });
   }
   // 按时间倒序取前 N 张
-  const entries = [...byMed.entries()]
-    .sort((a, b) => b[1].at - a[1].at)
+  const entries = candidates
+    .sort((a, b) => b.at - a.at)
     .slice(0, SYNC_MAX_PHOTOS);
 
   const result: SyncPhotoEntry[] = [];
-  for (const [medId, { blob, at }] of entries) {
+  for (const { medId, blob, at } of entries) {
     try {
       const base64 = await blobToBase64(blob);
       if (base64.length <= MAX_PHOTO_BASE64_LENGTH) {
@@ -126,9 +126,9 @@ export function collectSyncApiConfig(): SyncApiConfig {
     config.llm = { baseUrl: llm.baseUrl, apiKey: llm.apiKey, model: llm.model };
   }
 
-  // 内置 Agnes API（编译时环境变量）
-  const agnesKey = import.meta.env.VITE_AGNES_API_KEY || import.meta.env.AGNES_API_KEY || '';
-  const agnesBase = import.meta.env.VITE_AGNES_API_BASE || import.meta.env.AGNES_API_BASE || '';
+  // 内置 Agnes API（编译时环境变量；Vite 只暴露 VITE_ 前缀）
+  const agnesKey = import.meta.env.VITE_AGNES_API_KEY || '';
+  const agnesBase = import.meta.env.VITE_AGNES_API_BASE || '';
   if (agnesKey && agnesBase) {
     config.agnes = { apiKey: agnesKey, apiBase: agnesBase };
   }
@@ -138,13 +138,15 @@ export function collectSyncApiConfig(): SyncApiConfig {
 
 /**
  * 将收到的 API 配置写入本机。
- * LLM 配置完整覆盖；Agnes 配置存入 localStorage 供运行时读取。
+ * LLM 配置同步 baseUrl/model；密钥只在本地为空时才采用对端的，避免对端覆盖本机密钥。
+ * Agnes 配置存入 localStorage 供运行时读取。
  */
 export async function applySyncApiConfig(config: SyncApiConfig): Promise<void> {
   if (config.llm && config.llm.baseUrl && config.llm.apiKey) {
+    const local = getLlmConfig();
     await setLlmConfig({
       baseUrl: config.llm.baseUrl,
-      apiKey: config.llm.apiKey,
+      apiKey: local.apiKey || config.llm.apiKey,
       model: config.llm.model || 'gpt-4o-mini',
     });
   }

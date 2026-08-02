@@ -16,10 +16,11 @@
   min-block-size: 100dvh;
   max-inline-size: 840px;
   margin-inline: auto;
-  background: var(--color-bg);
+  background: var(--color-bg-mesh);
+  background-attachment: fixed;
 }
 
-/* 图 4：顶栏与页面同底色，大号左对齐粗标题，无分隔线 */
+/* 双参考图融和：顶栏保持大号粗标题，高透水凝玻璃面 */
 .topbar {
   position: relative;
   inset: auto;
@@ -27,7 +28,7 @@
   min-block-size: calc(60px + var(--safe-top));
   height: auto;
   padding: calc(var(--safe-top) + var(--space-2)) max(20px, var(--safe-right)) 0 max(20px, var(--safe-left));
-  background: var(--color-bg);
+  background: transparent;
   border-block-end: 0;
   box-shadow: none;
   backdrop-filter: none;
@@ -42,6 +43,7 @@
   font-size: var(--fs-title1);
   font-weight: 700;
   letter-spacing: -0.4px;
+  color: var(--color-text);
 }
 
 .topbar .icon-btn {
@@ -49,8 +51,17 @@
   block-size: var(--tap);
   border: 0;
   border-radius: var(--radius-md);
-  background: transparent;
-  box-shadow: none;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.topbar .icon-btn:active {
+  transform: scale(0.94);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .app-main {
@@ -60,12 +71,7 @@
   scroll-padding-block: var(--space-4);
 }
 
-/* Existing pages are column flex layouts. Their sections must overflow the
- * shell's scroll region instead of shrinking until their text is clipped. */
 .app-main > * { flex: 0 0 auto; }
-
-/* 图 4 改版把部分页面改成 grid 布局；滚动容器高度固定时，
- * overflow:hidden 的卡片会被 auto 行压扁，强制行高按内容计算。 */
 .app-main { grid-auto-rows: max-content; }
 
 .page {
@@ -80,13 +86,15 @@
   align-items: center;
   min-inline-size: 0;
   padding: var(--space-2) max(var(--space-3), var(--safe-right)) var(--space-2) max(var(--space-3), var(--safe-left));
-  background: var(--color-surface);
-  border-block-start: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-block-start: 1px solid var(--color-border-glass);
 }
 
 .action-dock:empty { display: none; }
 
-/* 图 4：底栏与页面同底色，图标 + 文字标签 */
+/* 图 2 级别水凝玻璃底栏：软阴影 + 浮光悬浮按钮 */
 .tabbar.app-navigation {
   position: relative;
   inset: auto;
@@ -99,10 +107,11 @@
   padding: var(--space-1) max(var(--space-3), var(--safe-right)) calc(var(--space-1) + var(--safe-bottom)) max(var(--space-3), var(--safe-left));
   border: 0;
   border-radius: 0;
-  background: var(--color-bg);
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-block-start: 1px solid var(--color-border-glass);
+  box-shadow: 0 -4px 20px rgba(30, 32, 46, 0.04);
 }
 
 .tabbar.app-navigation::after { display: none; }
@@ -116,16 +125,17 @@
   min-inline-size: 0;
   min-block-size: 56px;
   padding: 4px 2px;
-  border-radius: var(--radius-sm);
-  color: #a9abb6;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
   font-size: var(--fs-caption);
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
+  transition: color 0.2s ease, transform 0.2s ease;
 }
 
 .tabbar.app-navigation a.active {
-  color: var(--color-text);
+  color: var(--color-primary);
   background: transparent;
 }
 
@@ -139,9 +149,9 @@
 }
 .tabbar.app-navigation a .ic svg { inline-size: 24px; block-size: 24px; }
 .tabbar.app-navigation a.active .ic { background: transparent; box-shadow: none; }
-.tabbar.app-navigation a.active .ic svg { stroke-width: 2.3; }
+.tabbar.app-navigation a.active .ic svg { stroke-width: 2.3; stroke: var(--color-primary); }
 
-/* 中央扫描项：白色圆钮上浮 + 文字在下方 */
+/* 中央扫描项：参考图 2 浮光微拟物圆形主按钮 */
 .tabbar.app-navigation a[href='#/scan'] {
   justify-content: flex-start;
 }
@@ -149,20 +159,26 @@
 .tabbar.app-navigation a[href='#/scan'] .ic {
   display: grid;
   place-items: center;
-  inline-size: 46px;
-  block-size: 46px;
-  margin-block-start: -16px;
+  inline-size: 48px;
+  block-size: 48px;
+  margin-block-start: -18px;
   border-radius: var(--radius-full);
-  background: var(--color-surface);
-  color: var(--color-text);
-  box-shadow: 0 6px 14px rgb(40 42 66 / 10%), 0 16px 32px rgb(40 42 66 / 12%);
+  background: var(--color-primary-gradient);
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35), 0 2px 6px rgba(99, 102, 241, 0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.tabbar.app-navigation a[href='#/scan'] .ic svg { inline-size: 24px; block-size: 24px; }
+.tabbar.app-navigation a[href='#/scan'] .ic svg { inline-size: 24px; block-size: 24px; stroke: #ffffff; }
+
+.tabbar.app-navigation a[href='#/scan']:active .ic {
+  transform: scale(0.92);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
 
 .tabbar.app-navigation a[href='#/scan'].active .ic {
-  background: var(--color-surface);
-  color: var(--color-primary);
+  background: var(--color-primary-gradient);
+  color: #ffffff;
 }
 
 .toast {

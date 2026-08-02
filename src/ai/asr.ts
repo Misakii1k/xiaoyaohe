@@ -130,7 +130,7 @@ export function downsampleToPcm16k(input: Float32Array, inputRate: number): Int1
 function floatToInt16(input: Float32Array): Int16Array {
   const output = new Int16Array(input.length);
   for (let index = 0; index < input.length; index += 1) {
-    const sample = Math.max(-1, Math.min(1, input[index]));
+    const sample = Math.max(-1, Math.min(1, input[index] ?? 0));
     output[index] = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
   }
   return output;
@@ -212,7 +212,8 @@ export async function recognizeSentenceWav(
         throw new AsrSentenceError(error.message, kind);
       }
       if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-        throw new AsrSentenceError('已取消', 'cancelled');
+        if (options.signal?.aborted) throw new AsrSentenceError('已取消', 'cancelled');
+        throw new AsrSentenceError('语音识别超时，请检查网络后重试', 'network');
       }
       const message = error instanceof Error ? error.message : '语音服务连接失败';
       setAsrHealth({ stage: 'error', message, code: 'NETWORK', at: Date.now() });

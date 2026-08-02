@@ -5,6 +5,7 @@ import gearSvg from '@tabler/icons/icons/outline/settings.svg?raw';
 import arrowLeftSvg from '@tabler/icons/icons/outline/arrow-left.svg?raw';
 import plusSvg from '@tabler/icons/icons/outline/plus.svg?raw';
 import checkSvg from '@tabler/icons/icons/outline/check.svg?raw';
+import dotsSvg from '@tabler/icons/icons/outline/dots.svg?raw';
 import undoSvg from '@tabler/icons/icons/outline/arrow-back-up.svg?raw';
 import infoSvg from '@tabler/icons/icons/outline/info-circle.svg?raw';
 import warnSvg from '@tabler/icons/icons/outline/alert-triangle.svg?raw';
@@ -85,7 +86,8 @@ export type AppIconName =
   | 'share'
   | 'close'
   | 'expand'
-  | 'contract';
+  | 'contract'
+  | 'dots';
 
 export const iconRegistry: Readonly<Record<AppIconName, string>> = {
   pill: pillSvg,
@@ -131,4 +133,5 @@ export const iconRegistry: Readonly<Record<AppIconName, string>> = {
   close: closeSvg,
   expand: expandSvg,
   contract: contractSvg,
+  dots: dotsSvg,
 };

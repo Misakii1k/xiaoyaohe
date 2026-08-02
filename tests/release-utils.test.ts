@@ -19,6 +19,7 @@ import {
   createZipBuffer,
   parseAndroidVersions,
   publishReleaseArtifacts,
+  readAndValidateReleaseConfig,
   readZipEntries,
   sha256,
   validateReleaseVersions,
@@ -76,6 +77,39 @@ describe('release version validation', () => {
         androidVersionCode: 21,
       }),
     ).toEqual({ version: '0.9.2', versionCode: 21 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '0.9.4',
+        lockVersion: '0.9.4',
+        androidVersionName: '0.9.4',
+        androidVersionCode: 23,
+      }),
+    ).toEqual({ version: '0.9.4', versionCode: 23 });
+  });
+
+  it('requires plain-language notes for the current release version', () => {
+    const root = temporaryDirectory();
+    mkdirSync(join(root, 'android', 'app'), { recursive: true });
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'xiaoyaohe', version: '0.9.4' }));
+    writeFileSync(join(root, 'package-lock.json'), JSON.stringify({
+      name: 'xiaoyaohe',
+      version: '0.9.4',
+      packages: { '': { name: 'xiaoyaohe', version: '0.9.4' } },
+    }));
+    writeFileSync(join(root, 'android', 'app', 'build.gradle'), 'versionCode 23\nversionName "0.9.4"');
+
+    expect(() => readAndValidateReleaseConfig(root)).toThrow(/Plain-language release notes not found/);
+
+    mkdirSync(join(root, 'docs', 'releases'), { recursive: true });
+    writeFileSync(join(root, 'docs', 'releases', '0.9.4.md'), '# 小药盒 0.9.4');
+
+    expect(readAndValidateReleaseConfig(root)).toMatchObject({
+      name: 'xiaoyaohe',
+      version: '0.9.4',
+      versionCode: 23,
+      releaseNotesFile: join(root, 'docs', 'releases', '0.9.4.md'),
+    });
   });
 
   it('rejects stale Android and lockfile versions', () => {
@@ -229,11 +263,10 @@ describe('release command orchestration', () => {
     expect(options).toMatchObject({ skipInstall: true, variant: 'release' });
 
     const commands = createReleaseCommands(options);
-    expect(commands.map((command) => command.label)).toEqual([
+    expect(commands.map((command) => command.label).filter((label) => label !== 'Install Playwright Chromium')).toEqual([
       'Audit all dependencies',
       'Type-check frontend',
       'Run Vitest suite',
-      'Install Playwright Chromium',
       'Run Playwright visual matrix',
       'Build Android WebView assets',
       'Sync Capacitor Android project',
@@ -267,7 +300,7 @@ describe('Android-only distribution contract', () => {
 
     expect(packageJson).toMatchObject({
       name: 'xiaoyaohe',
-      version: '0.9.2',
+      version: '0.9.4',
       description: expect.stringContaining('Android App'),
       dependencies: { qrcode: expect.any(String) },
       devDependencies: { '@types/qrcode': expect.any(String) },

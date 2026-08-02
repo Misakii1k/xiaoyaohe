@@ -68,6 +68,7 @@ function highlightRaw(text: string, lang: string): string {
     return esc(text);
   }
   const kws = KEYWORDS[cls];
+  if (!kws) return esc(text);
   // 关键字与数字用一条线性正则按位置上色，避免嵌套。
   const tokenRe = /([A-Za-z_$][\w$]*)|(\b\d+(?:\.\d+)?\b)|([{}()[\];,])/g;
   return text.replace(tokenRe, (whole, word, num, punct) => {

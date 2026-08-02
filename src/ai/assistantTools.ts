@@ -829,7 +829,8 @@ const addMedication: AssistantTool = {
     try {
       const result = await createMedicationBatch([draft]);
       try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
-      const created = await getMed(result.medIds[0]);
+      const createdId = result.medIds[0];
+      const created = createdId ? await getMed(createdId) : undefined;
       const summary = created ? describeMedForConfirm(created) : name;
       const ui: AssistantCardBlock = {
         type: 'card',

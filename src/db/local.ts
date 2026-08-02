@@ -30,6 +30,9 @@ import {
   type PhotoBlob,
   type PushState,
   type Slot,
+  type InventoryOperationLog,
+  type InventorySource,
+  type InventoryActionType,
 } from './schema';
 import {
   validateMedicationDraft,
@@ -84,6 +87,7 @@ export interface MedboxDB extends DBSchema {
   photos: { key: string; value: PhotoBlob; indexes: { byMed: string } };
   pushStates: { key: string; value: PushState };
   syncLanMetadata: { key: string; value: SyncLanMetadata };
+  inventoryLogs: { key: string; value: InventoryOperationLog; indexes: { byMed: string; byTimestamp: number } };
 }
 
 let dbp: Promise<IDBPDatabase<MedboxDB>> | null = null;
@@ -118,16 +122,21 @@ export function upgradeMedboxDatabase(d: IDBPDatabase<MedboxDB>, oldVersion: num
       d.createObjectStore('syncLanMetadata', { keyPath: 'key' });
     }
   }
-  // v7: 标记 schema 扩展——Medication 新增分药预扣状态，IntakeLog 新增 preDeducted。
-  // 字段均为可选，无需新建 store 或索引，旧数据可正常读。
   if (oldVersion < 7) {
     // no-op; 字段为可选，旧记录读取时为 undefined
+  }
+  if (oldVersion < 8) {
+    if (!d.objectStoreNames.contains('inventoryLogs')) {
+      const invLogs = d.createObjectStore('inventoryLogs', { keyPath: 'id' });
+      invLogs.createIndex('byMed', 'medId');
+      invLogs.createIndex('byTimestamp', 'timestamp');
+    }
   }
 }
 
 export function openMedboxDatabase(): Promise<IDBPDatabase<MedboxDB>> {
   if (!dbp) {
-    dbp = openDB<MedboxDB>('medbox', 7, {
+    dbp = openDB<MedboxDB>('medbox', 8, {
       upgrade: upgradeMedboxDatabase,
       blocked() {
         console.warn('IndexedDB 升级被旧页面阻塞，请关闭其他已打开的 medbox 页面后刷新。');
@@ -158,11 +167,11 @@ export async function getMed(id: string): Promise<Medication | undefined> {
 }
 
 export async function putMed(med: Medication): Promise<void> {
-  normalizeMedication(med);
-  med.updatedAt = Date.now();
+  const next: Medication & { mealRel?: unknown } = normalizeMedication({ ...med });
+  next.updatedAt = Date.now();
   // 清理旧字段，避免 IndexedDB 里残留
-  delete (med as any).mealRel;
-  await (await db()).put('meds', med);
+  delete next.mealRel;
+  await (await db()).put('meds', next);
 }
 
 export class MedicationBatchValidationError extends Error {
@@ -288,22 +297,23 @@ export async function putRule(rule: ReminderRule): Promise<void> {
   const d = await db();
   const now = Date.now();
   const existingRule = await d.get('rules', rule.id);
-  if (!rule.cycle) {
-    delete rule.cycleStartDate;
-    delete rule.cycleStartNeedsReview;
-  } else if (!isLocalDate(rule.cycleStartDate) && !existingRule?.cycle) {
+  const next: ReminderRule = { ...rule };
+  if (!next.cycle) {
+    delete next.cycleStartDate;
+    delete next.cycleStartNeedsReview;
+  } else if (!isLocalDate(next.cycleStartDate) && !existingRule?.cycle) {
     // Enabling a cycle is an explicit action, so its first local calendar day
     // is today. Legacy rules that already had a cycle retain review semantics.
-    rule.cycleStartDate = toLocalDate(now);
-    delete rule.cycleStartNeedsReview;
+    next.cycleStartDate = toLocalDate(now);
+    delete next.cycleStartNeedsReview;
   }
-  rule.updatedAt = now;
-  const med = await d.get('meds', rule.medId);
-  const tx = d.transaction(['rules', 'scheduleRevisions'], 'readwrite');
-  await tx.objectStore('rules').put(rule);
+  next.updatedAt = now;
+  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions'], 'readwrite');
+  const med = await tx.objectStore('meds').get(next.medId);
+  await tx.objectStore('rules').put(next);
   if (med) {
     await tx.objectStore('scheduleRevisions').put(
-      createScheduleRevision(normalizeMedication(med), rule, {
+      createScheduleRevision(normalizeMedication(med), next, {
         effectiveDate: toLocalDate(now),
         createdAt: now,
       }),
@@ -388,15 +398,34 @@ export async function listScheduleRevisions(): Promise<MedicationScheduleRevisio
 
 export async function batchUpdateRules(updates: { id: string; enabled?: boolean }[]): Promise<void> {
   const d = await db();
-  await Promise.all(
-    updates.map(async (u) => {
-      const existing = await d.get('rules', u.id);
-      if (!existing || existing.deleted) return;
-      const merged: ReminderRule = { ...existing };
-      if (u.enabled !== undefined) merged.enabled = u.enabled;
-      await putRule(merged);
-    }),
-  );
+  const now = Date.now();
+  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions'], 'readwrite');
+  const ruleStore = tx.objectStore('rules');
+  const medStore = tx.objectStore('meds');
+  const revisionStore = tx.objectStore('scheduleRevisions');
+  for (const u of updates) {
+    const existing = await ruleStore.get(u.id);
+    if (!existing || existing.deleted) continue;
+    const merged: ReminderRule = { ...existing };
+    if (u.enabled !== undefined) merged.enabled = u.enabled;
+    if (!merged.cycle) {
+      delete merged.cycleStartDate;
+      delete merged.cycleStartNeedsReview;
+    } else if (!isLocalDate(merged.cycleStartDate) && !existing.cycle) {
+      merged.cycleStartDate = toLocalDate(now);
+      delete merged.cycleStartNeedsReview;
+    }
+    merged.updatedAt = now;
+    await ruleStore.put(merged);
+    const med = await medStore.get(merged.medId);
+    if (med) {
+      await revisionStore.put(createScheduleRevision(normalizeMedication(med), merged, {
+        effectiveDate: toLocalDate(now),
+        createdAt: now,
+      }));
+    }
+  }
+  await tx.done;
 }
 
 // ---- 服药记录 ----
@@ -474,12 +503,13 @@ export interface IntakeMutationResult {
 export async function setOccurrenceAction(
   occurrence: MedicationOccurrence,
   action: IntakeAction | undefined,
-  options: { ackAt?: number; confirmedDose?: StructuredDose } = {},
+  options: { ackAt?: number; confirmedDose?: StructuredDose; source?: InventorySource } = {},
 ): Promise<IntakeMutationResult> {
   const d = await db();
-  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'logs'], 'readwrite');
+  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'logs', 'inventoryLogs'], 'readwrite');
   const medStore = tx.objectStore('meds');
   const logStore = tx.objectStore('logs');
+  const inventoryLogStore = tx.objectStore('inventoryLogs');
   const medRaw = await medStore.get(occurrence.medId);
   if (!medRaw) {
     tx.abort();
@@ -564,8 +594,26 @@ export async function setOccurrenceAction(
   }
 
   if (inventoryChanged || options.confirmedDose) {
+    const prevStock = (med.inventory?.remaining ?? 0) + (action === 'taken' ? (inventoryDelta ?? 0) : -(previous?.inventoryDelta ?? 0));
     med.updatedAt = now;
     await medStore.put(med);
+    if (inventoryChanged && med.inventory) {
+      const deltaVal = action === 'taken' ? -(inventoryDelta ?? 0) : (previous?.inventoryDelta ?? 0);
+      await inventoryLogStore.put({
+        id: uid(),
+        medId: med.id,
+        medName: med.name,
+        action: 'deduct',
+        previousRemaining: roundStock(prevStock),
+        newRemaining: med.inventory.remaining,
+        delta: roundStock(deltaVal),
+        unit: med.inventory.unit || '片',
+        source: options.source ?? 'intake',
+        sourceNote: action === 'taken' ? `服药打卡减掉 (${occurrence.localDate} ${occurrence.timeLocal})` : `取消服药打卡恢复库存`,
+        timestamp: now,
+        canUndo: true,
+      });
+    }
     if (options.confirmedDose) {
       const rules = await tx.objectStore('rules').index('byMed').getAll(med.id);
       for (const rule of rules) {
@@ -708,7 +756,9 @@ export async function recordPreDeduction(
 
   const totalDose = roundStock(pending.reduce((sum, entry) => sum + entry.quantity, 0));
   const skippedOccurrences = entries.length - pending.length;
-  const doseUnit = latest.inventory.unit?.trim() || pending[0].unit.trim();
+  const firstPending = pending[0];
+  if (!firstPending) return skippedResult(latest);
+  const doseUnit = latest.inventory.unit?.trim() || firstPending.unit.trim();
   if (latest.inventory.remaining < totalDose) {
     tx.abort();
     void tx.done.catch(() => undefined);
@@ -878,12 +928,28 @@ export async function getPushState(id: string): Promise<PushState | undefined> {
   return (await db()).get('pushStates', id);
 }
 
+export async function listPushStates(ids: readonly string[]): Promise<PushState[]> {
+  if (ids.length === 0) return [];
+  const requestedIds = new Set(ids);
+  const states = await (await db()).getAll('pushStates');
+  return states.filter((state) => requestedIds.has(state.id));
+}
+
 export async function putPushState(s: PushState): Promise<void> {
   await (await db()).put('pushStates', s);
 }
 
-export async function deletePushState(id: string): Promise<void> {
-  await (await db()).delete('pushStates', id);
+/** 清理超过指定天数的旧推送状态，避免 pushStates 无限增长。返回删除条数。 */
+export async function prunePushStates(olderThanDays: number): Promise<number> {
+  const d = await db();
+  const cutoff = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
+  const all = await d.getAll('pushStates');
+  const stale = all.filter((state) => state.lastSentAt < cutoff);
+  if (stale.length === 0) return 0;
+  const tx = d.transaction('pushStates', 'readwrite');
+  await Promise.all(stale.map((state) => tx.store.delete(state.id)));
+  await tx.done;
+  return stale.length;
 }
 
 function normalizeMedication(med: Medication): Medication {
@@ -931,4 +997,170 @@ function normalizeMedication(med: Medication): Medication {
     inflated.doseReviewRequired = !!inflated.amountPerDose.trim();
   }
   return inflated;
+}
+
+// ---- 药物库存修改日志与撤回操作 ----
+export async function logInventoryOperation(params: {
+  medId: string;
+  medName: string;
+  action: InventoryActionType;
+  previousRemaining: number;
+  newRemaining: number;
+  delta: number;
+  unit: string;
+  source: InventorySource;
+  sourceNote?: string;
+  canUndo?: boolean;
+  undoneLogId?: string;
+  timestamp?: number;
+}): Promise<InventoryOperationLog> {
+  const log: InventoryOperationLog = {
+    id: uid(),
+    medId: params.medId,
+    medName: params.medName,
+    action: params.action,
+    previousRemaining: roundStock(params.previousRemaining),
+    newRemaining: roundStock(params.newRemaining),
+    delta: roundStock(params.delta),
+    unit: params.unit || '片',
+    source: params.source,
+    sourceNote: params.sourceNote,
+    timestamp: params.timestamp ?? Date.now(),
+    canUndo: params.canUndo ?? true,
+    undoneLogId: params.undoneLogId,
+  };
+  const d = await db();
+  await d.put('inventoryLogs', log);
+  return log;
+}
+
+export async function listInventoryLogs(medId?: string, limit = 100): Promise<InventoryOperationLog[]> {
+  const d = await db();
+  let logs: InventoryOperationLog[];
+  if (medId) {
+    logs = await d.getAllFromIndex('inventoryLogs', 'byMed', medId);
+  } else {
+    logs = await d.getAll('inventoryLogs');
+  }
+  return logs
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, limit);
+}
+
+export async function listRecentInventoryOperations(days = 3): Promise<InventoryOperationLog[]> {
+  const d = await db();
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const all = await d.getAll('inventoryLogs');
+  return all
+    .filter((l) => l.timestamp >= cutoff)
+    .sort((a, b) => b.timestamp - a.timestamp);
+}
+
+export async function undoInventoryOperation(logId: string): Promise<{ ok: boolean; message: string; log?: InventoryOperationLog }> {
+  const d = await db();
+  const tx = d.transaction(['meds', 'inventoryLogs'], 'readwrite');
+  const targetLog = await tx.objectStore('inventoryLogs').get(logId);
+  if (!targetLog) {
+    tx.abort();
+    return { ok: false, message: '找不到对应的修改日志' };
+  }
+  if (!targetLog.canUndo) {
+    tx.abort();
+    return { ok: false, message: '该操作已被撤回或不可撤回' };
+  }
+  const med = await tx.objectStore('meds').get(targetLog.medId);
+  if (!med || !med.inventory) {
+    tx.abort();
+    return { ok: false, message: `找不到药品「${targetLog.medName}」或未设置库存` };
+  }
+
+  const previousStock = med.inventory.remaining;
+  const restoredStock = roundStock(previousStock - targetLog.delta);
+  med.inventory.remaining = restoredStock >= 0 ? restoredStock : 0;
+  med.updatedAt = Date.now();
+  await tx.objectStore('meds').put(med);
+
+  targetLog.canUndo = false;
+  await tx.objectStore('inventoryLogs').put(targetLog);
+
+  const undoLog: InventoryOperationLog = {
+    id: uid(),
+    medId: med.id,
+    medName: med.name,
+    action: 'undo',
+    previousRemaining: previousStock,
+    newRemaining: med.inventory.remaining,
+    delta: roundStock(med.inventory.remaining - previousStock),
+    unit: med.inventory.unit || targetLog.unit,
+    source: 'undo',
+    sourceNote: `撤回操作：还原「${targetLog.medName}」之前的变动 (${targetLog.delta > 0 ? '+' : ''}${targetLog.delta}${targetLog.unit})`,
+    timestamp: Date.now(),
+    canUndo: false,
+    undoneLogId: targetLog.id,
+  };
+  await tx.objectStore('inventoryLogs').put(undoLog);
+  await tx.done;
+
+  try {
+    const { rescheduleMedicationReminders } = await import('../features/reminderScheduler');
+    await rescheduleMedicationReminders();
+  } catch { /* ignore */ }
+  return {
+    ok: true,
+    message: `已成功撤回「${targetLog.medName}」的库存变动，恢复为 ${med.inventory.remaining}${med.inventory.unit || ''}`,
+    log: undoLog,
+  };
+}
+
+export async function batchDeductInventory(
+  items: Array<{ medId: string; quantity: number }>,
+  source: InventorySource = 'batch',
+  sourceNote = '批量库存扣减',
+): Promise<{ ok: boolean; results: Array<{ medName: string; previous: number; deducted: number; remaining: number; unit: string }> }> {
+  const d = await db();
+  const tx = d.transaction(['meds', 'inventoryLogs'], 'readwrite');
+  const medStore = tx.objectStore('meds');
+  const logStore = tx.objectStore('inventoryLogs');
+  const now = Date.now();
+  const results: Array<{ medName: string; previous: number; deducted: number; remaining: number; unit: string }> = [];
+
+  for (const item of items) {
+    if (item.quantity <= 0) continue;
+    const medRaw = await medStore.get(item.medId);
+    if (!medRaw || !medRaw.inventory) continue;
+    const med = normalizeMedication(medRaw);
+    if (!med.inventory) continue;
+    const prev = med.inventory.remaining;
+    const actualDeduct = Math.min(prev, item.quantity);
+    const next = roundStock(prev - actualDeduct);
+    const unit = med.inventory.unit || '片';
+
+    med.inventory.remaining = next;
+    med.updatedAt = now;
+    await medStore.put(med);
+
+    const log: InventoryOperationLog = {
+      id: uid(),
+      medId: med.id,
+      medName: med.name,
+      action: 'batch_deduct',
+      previousRemaining: prev,
+      newRemaining: next,
+      delta: -actualDeduct,
+      unit,
+      source,
+      sourceNote,
+      timestamp: now,
+      canUndo: true,
+    };
+    await logStore.put(log);
+    results.push({ medName: med.name, previous: prev, deducted: actualDeduct, remaining: next, unit });
+  }
+
+  await tx.done;
+  try {
+    const { rescheduleMedicationReminders } = await import('../features/reminderScheduler');
+    await rescheduleMedicationReminders();
+  } catch { /* ignore */ }
+  return { ok: true, results };
 }

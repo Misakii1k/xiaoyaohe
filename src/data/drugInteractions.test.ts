@@ -35,10 +35,13 @@ describe('interaction acknowledgment dedup', () => {
   });
 
   it('acknowledge 后同组不再出现', () => {
-    localStorage.setItem('medbox.interactions.acknowledged.v1', JSON.stringify([interactionKey(HITS[0])]));
+    const acknowledged = HITS[0];
+    expect(acknowledged).toBeDefined();
+    if (!acknowledged) return;
+    localStorage.setItem('medbox.interactions.acknowledged.v1', JSON.stringify([interactionKey(acknowledged)]));
     const fresh = filterNewInteractions(HITS);
     expect(fresh).toHaveLength(1);
-    expect(fresh[0].drugs).toEqual(['布洛芬', '酒精']);
+    expect(fresh[0]?.drugs).toEqual(['布洛芬', '酒精']);
   });
 
   it('acknowledgeInteractions 写入后 filter 清空', () => {

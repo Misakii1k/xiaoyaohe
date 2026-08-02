@@ -17,24 +17,32 @@ const NOTICE_COOLDOWN_MS = 10_000;
 
 let installed = false;
 let lastNoticeAt = 0;
+let errorListener: ((event: ErrorEvent) => void) | undefined;
+let rejectionListener: ((event: PromiseRejectionEvent) => void) | undefined;
 
 export function installGlobalErrorBoundary(root: HTMLElement): void {
   if (installed) return;
   installed = true;
 
-  window.addEventListener('error', (event) => {
+  errorListener = (event) => {
     // 资源加载失败（图片 404 等）不会冒泡到这里，能进来的都是脚本异常。
     handle(root, event.error ?? event.message);
-  });
-  window.addEventListener('unhandledrejection', (event) => {
+  };
+  rejectionListener = (event) => {
     handle(root, event.reason);
-  });
+  };
+  window.addEventListener('error', errorListener);
+  window.addEventListener('unhandledrejection', rejectionListener);
 }
 
 /** 仅供测试重置模块级状态。 */
 export function resetGlobalErrorBoundaryForTesting(): void {
+  if (errorListener) window.removeEventListener('error', errorListener);
+  if (rejectionListener) window.removeEventListener('unhandledrejection', rejectionListener);
   installed = false;
   lastNoticeAt = 0;
+  errorListener = undefined;
+  rejectionListener = undefined;
 }
 
 function handle(root: HTMLElement, cause: unknown): void {

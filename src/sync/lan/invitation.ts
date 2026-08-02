@@ -92,6 +92,7 @@ export function isPrivateLanIpv4(host: string): boolean {
   const numbers = parts.map(Number);
   if (numbers.some((part) => part < 0 || part > 255)) return false;
   const [a, b] = numbers;
+  if (a === undefined || b === undefined) return false;
   return a === 10 ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||

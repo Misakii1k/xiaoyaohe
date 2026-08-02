@@ -32,6 +32,8 @@ export const VERSION_CODE_BY_VERSION = Object.freeze({
   '0.9.0': 19,
   '0.9.1': 20,
   '0.9.2': 21,
+  '0.9.3': 22,
+  '0.9.4': 23,
 });
 
 /**
@@ -130,8 +132,13 @@ export function readAndValidateReleaseConfig(root) {
     androidVersionName: android.versionName,
     androidVersionCode: android.versionCode,
   });
+  const releaseNotesFile = join(root, 'docs', 'releases', `${version.version}.md`);
+  invariant(
+    existsSync(releaseNotesFile),
+    `Plain-language release notes not found for ${version.version}: ${releaseNotesFile}`,
+  );
 
-  return { name: packageJson.name, ...version };
+  return { name: packageJson.name, ...version, releaseNotesFile };
 }
 
 function normalizeArchivePath(path) {
