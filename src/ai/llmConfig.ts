@@ -1,13 +1,20 @@
 // LLM 配置（OpenAI 兼容 endpoint）
 // 用于"自然语言填表"功能：用户描述 → 结构化处方
 //
-// 地址和模型可持久化；密钥由 Android SecretStore 保管。
-import { clearSessionSecret, getSessionSecret, initializeSecretStore, setSessionSecret } from './secretStore';
+// 地址、模型和密钥作为一条记录提交，避免保存失败时把旧密钥发给新地址。
+import {
+  clearSessionSecret,
+  getSessionSecret,
+  initializeSecretStore,
+  LLM_CONFIG_SECRET_KEY,
+  setSessionSecret,
+} from './secretStore';
 
-const LS_KEY = 'medbox.llmConfig.v1';
+const LEGACY_LS_KEY = 'medbox.llmConfig.v1';
 const LS_HEALTH_KEY = 'medbox.llmHealth.v1';
 const SILENT_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 let lastSilentCheckAt = 0;
+let configMutation: Promise<void> = Promise.resolve();
 
 export interface LlmConfig {
   baseUrl: string;
@@ -30,50 +37,64 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
   model: 'gpt-4o-mini',
 };
 
-export async function initializeLlmSecretStore(): Promise<void> {
-  await initializeSecretStore();
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
-    // Remove the legacy plaintext before touching native storage. If secure
-    // storage is unavailable, losing the cached key is safer than retaining it.
-    localStorage.removeItem(LS_KEY);
-    localStorage.setItem(LS_KEY, JSON.stringify({ baseUrl: parsed.baseUrl, model: parsed.model }));
-    if (parsed.apiKey && !getSessionSecret()) await setSessionSecret(parsed.apiKey);
-  } catch {
-    // A damaged legacy config is handled by getLlmConfig defaults.
-  }
+export function initializeLlmSecretStore(): Promise<void> {
+  return serializeConfigMutation(async () => {
+    await initializeSecretStore();
+    if (getSessionSecret(LLM_CONFIG_SECRET_KEY)) {
+      cleanupLegacyLlmConfig();
+      await cleanupLegacyLlmSecret();
+      return;
+    }
+
+    const legacy = readLegacyLlmConfig();
+    const migrated: LlmConfig = {
+      baseUrl: normalizeLegacyBaseUrl(legacy.baseUrl),
+      apiKey: getSessionSecret() || legacy.apiKey?.trim() || '',
+      model: legacy.model?.trim() || DEFAULT_LLM_CONFIG.model,
+    };
+    await setSessionSecret(JSON.stringify(migrated), LLM_CONFIG_SECRET_KEY);
+    cleanupLegacyLlmConfig();
+    await cleanupLegacyLlmSecret();
+  });
 }
 
 export function getLlmConfig(): LlmConfig {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return { ...DEFAULT_LLM_CONFIG, apiKey: getSessionSecret() };
-    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
-    return {
-      baseUrl: parsed.baseUrl?.trim() || DEFAULT_LLM_CONFIG.baseUrl,
-      apiKey: getSessionSecret(),
-      model: parsed.model?.trim() || DEFAULT_LLM_CONFIG.model,
-    };
-  } catch {
-    return { ...DEFAULT_LLM_CONFIG, apiKey: getSessionSecret() };
-  }
+  const stored = getSessionSecret(LLM_CONFIG_SECRET_KEY);
+  if (stored) return parseStoredLlmConfig(stored);
+
+  // 启动迁移完成前短暂兼容旧版；新版一旦写入组合记录便永远以它为准。
+  const legacy = readLegacyLlmConfig();
+  return {
+    baseUrl: normalizeLegacyBaseUrl(legacy.baseUrl),
+    apiKey: getSessionSecret() || legacy.apiKey?.trim() || '',
+    model: legacy.model?.trim() || DEFAULT_LLM_CONFIG.model,
+  };
 }
 
-export async function setLlmConfig(cfg: LlmConfig): Promise<void> {
-  const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
-  localStorage.setItem(LS_KEY, JSON.stringify({ baseUrl, model: cfg.model.trim() }));
-  await setSessionSecret(cfg.apiKey);
+export function setLlmConfig(cfg: LlmConfig): Promise<void> {
+  const next: LlmConfig = {
+    baseUrl: normalizeAndValidateBaseUrl(cfg.baseUrl),
+    apiKey: cfg.apiKey.trim(),
+    model: cfg.model.trim() || DEFAULT_LLM_CONFIG.model,
+  };
+  return serializeConfigMutation(async () => {
+    await setSessionSecret(JSON.stringify(next), LLM_CONFIG_SECRET_KEY);
+    cleanupLegacyLlmConfig();
+    await cleanupLegacyLlmSecret();
+  });
 }
 
 export function isUsingDefaultKey(): boolean {
   return !getLlmConfig().apiKey;
 }
 
-export async function resetLlmConfig(): Promise<void> {
-  localStorage.removeItem(LS_KEY);
-  await clearSessionSecret();
+export function resetLlmConfig(): Promise<void> {
+  return serializeConfigMutation(async () => {
+    // 写入一个权威的空配置，而不是先删元数据再删密钥；失败时旧组合完整保留。
+    await setSessionSecret(JSON.stringify(DEFAULT_LLM_CONFIG), LLM_CONFIG_SECRET_KEY);
+    cleanupLegacyLlmConfig();
+    await cleanupLegacyLlmSecret();
+  });
 }
 
 export function normalizeAndValidateBaseUrl(value: string): string {
@@ -159,4 +180,55 @@ export async function silentHealthCheck(): Promise<LlmHealth> {
   // 让 UI 监听者知道
   window.dispatchEvent(new CustomEvent('medbox:llm-health', { detail: h }));
   return h;
+}
+
+function serializeConfigMutation(operation: () => Promise<void>): Promise<void> {
+  const result = configMutation.then(operation, operation);
+  configMutation = result.catch(() => undefined);
+  return result;
+}
+
+function parseStoredLlmConfig(raw: string): LlmConfig {
+  try {
+    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
+    return {
+      baseUrl: normalizeLegacyBaseUrl(parsed.baseUrl),
+      apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
+      model: parsed.model?.trim() || DEFAULT_LLM_CONFIG.model,
+    };
+  } catch {
+    // 权威记录损坏时失败关闭，不回退到可能残留的旧密钥。
+    return { ...DEFAULT_LLM_CONFIG };
+  }
+}
+
+function readLegacyLlmConfig(): Partial<LlmConfig> {
+  try {
+    const raw = localStorage.getItem(LEGACY_LS_KEY);
+    return raw ? JSON.parse(raw) as Partial<LlmConfig> : {};
+  } catch {
+    return {};
+  }
+}
+
+function cleanupLegacyLlmConfig(): void {
+  try { localStorage.removeItem(LEGACY_LS_KEY); } catch { /* authoritative record is already committed */ }
+}
+
+async function cleanupLegacyLlmSecret(): Promise<void> {
+  if (!getSessionSecret()) return;
+  try {
+    await clearSessionSecret();
+  } catch {
+    // 组合记录已成为唯一权威值；下次启动会继续清理迁移残留。
+  }
+}
+
+function normalizeLegacyBaseUrl(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) return DEFAULT_LLM_CONFIG.baseUrl;
+  try {
+    return normalizeAndValidateBaseUrl(value);
+  } catch {
+    return DEFAULT_LLM_CONFIG.baseUrl;
+  }
 }

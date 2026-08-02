@@ -38,6 +38,7 @@ let defaultPath = '/today';
 let activeController: AbortController | null = null;
 let activeCleanup: RouteCleanup | null = null;
 let navigationSeq = 0;
+let hashChangeListener: (() => void) | null = null;
 
 /** 注册路由，path 形如 "/meds/:id" */
 export function route(path: string, handler: RouteHandler): void {
@@ -64,58 +65,103 @@ export function registerRouteTransitionCleanup(cleanup: RouteCleanup): RouteClea
 }
 
 function runRouteTransitionCleanups(): void {
-  for (const cleanup of routeTransitionCleanups) {
-    try {
-      cleanup();
-    } catch (error) {
-      console.error('Route transition cleanup failed', error);
-    }
-  }
+  for (const cleanup of routeTransitionCleanups) runCleanupSafely(cleanup);
 }
 
 export function navigate(to: string): void {
   if (location.hash !== `#${to}`) location.hash = to;
-  else dispatch();
+  else void dispatch();
 }
 
 async function dispatch(): Promise<void> {
-  const path = location.hash.replace(/^#/, '') || defaultPath;
   const navigationId = ++navigationSeq;
   activeController?.abort();
-  const cleanup = activeCleanup;
+  activeController = null;
+  const previousCleanup = activeCleanup;
   activeCleanup = null;
   try {
-    cleanup?.();
+    runCleanupSafely(previousCleanup);
   } finally {
+    // This cleanup phase belongs to this navigation and must not be repeated by
+    // the recovery renderer if decoding or rendering later fails.
     runRouteTransitionCleanups();
   }
+
   const controller = new AbortController();
   activeController = controller;
-  for (const r of routes) {
-    const m = path.match(r.pattern);
-    if (m) {
-      const params: Record<string, string> = {};
-      r.keys.forEach((k, i) => {
-        const value = m[i + 1];
-        if (value !== undefined) params[k] = decodeURIComponent(value);
-      });
+  let routeCleanup: RouteCleanup | null = null;
+
+  try {
+    const path = location.hash.replace(/^#/, '') || defaultPath;
+    const matched = findRoute(path);
+    if (!matched) {
+      if (!notFound) return;
+      routeCleanup = asOnceCleanup(await notFound({}, rootEl, { signal: controller.signal, path }));
+    } else {
+      const params = decodeParams(matched.route, matched.match);
       window.scrollTo(0, 0);
-      try {
-        const cleanup = await r.handler(params, rootEl, { signal: controller.signal, path });
-        if (controller.signal.aborted || navigationId !== navigationSeq) {
-          if (typeof cleanup === 'function') cleanup();
-          return;
-        }
-        activeCleanup = typeof cleanup === 'function' ? cleanup : null;
-        announceNavigation();
-      } catch (e) {
-        if (controller.signal.aborted || navigationId !== navigationSeq) return;
-        renderRouteError(e, path);
-      }
+      routeCleanup = asOnceCleanup(
+        await matched.route.handler(params, rootEl, { signal: controller.signal, path }),
+      );
+    }
+
+    if (controller.signal.aborted || navigationId !== navigationSeq) {
+      runCleanupSafely(routeCleanup);
       return;
     }
+    activeCleanup = routeCleanup;
+    routeCleanup = null;
+    announceNavigation();
+  } catch (cause) {
+    if (controller.signal.aborted || navigationId !== navigationSeq) {
+      runCleanupSafely(routeCleanup);
+      return;
+    }
+    // Abort first so route-owned async work and signal listeners stop before
+    // the recovery page replaces any partially rendered content.
+    controller.abort();
+    if (activeController === controller) activeController = null;
+    if (activeCleanup === routeCleanup) activeCleanup = null;
+    runCleanupSafely(routeCleanup);
+    renderRouteError(cause);
   }
-  if (notFound) await notFound({}, rootEl, { signal: controller.signal, path });
+}
+
+function findRoute(path: string): { route: Route; match: RegExpMatchArray } | null {
+  for (const candidate of routes) {
+    const match = path.match(candidate.pattern);
+    if (match) return { route: candidate, match };
+  }
+  return null;
+}
+
+function decodeParams(routeEntry: Route, match: RegExpMatchArray): Record<string, string> {
+  const params: Record<string, string> = {};
+  routeEntry.keys.forEach((key, index) => {
+    const value = match[index + 1];
+    if (value !== undefined) params[key] = decodeURIComponent(value);
+  });
+  return params;
+}
+
+function asOnceCleanup(value: void | RouteCleanup): RouteCleanup | null {
+  if (typeof value !== 'function') return null;
+  let called = false;
+  return () => {
+    if (called) return;
+    called = true;
+    value();
+  };
+}
+
+function runCleanupSafely(cleanup: RouteCleanup | null): void {
+  if (!cleanup) return;
+  try {
+    cleanup();
+  } catch (cause) {
+    const diagnosticId = reportSilentFailure('route.cleanup', cause);
+    console.error('[medbox] 路由清理失败，诊断编号', diagnosticId);
+  }
 }
 
 function announceNavigation(): void {
@@ -127,11 +173,9 @@ function announceNavigation(): void {
   });
 }
 
-function renderRouteError(e: unknown, path: string): void {
-  runRouteTransitionCleanups();
-  activeController = null;
-  reportSilentFailure(`route.${diagnosticPath(path)}`, e);
-  console.error('[medbox] route render failed', { path, cause: e });
+function renderRouteError(cause: unknown): void {
+  const diagnosticId = reportSilentFailure('route.render', cause);
+  console.error('[medbox] 页面加载失败，诊断编号', diagnosticId);
   const topbar = document.createElement('div');
   topbar.className = 'topbar';
   const heading = document.createElement('h1');
@@ -150,14 +194,14 @@ function renderRouteError(e: unknown, path: string): void {
   const detail = document.createElement('div');
   detail.className = 'muted';
   detail.style.cssText = 'margin-top:8px;word-break:break-word';
-  detail.textContent = '你的用药记录没有丢失。可以重试一次；如果仍然失败，可到设置里复制诊断记录。';
+  detail.textContent = '此错误页不会修改本机用药记录。可以重试一次；如果仍然失败，可到设置里复制诊断记录。';
   const actions = document.createElement('div');
   actions.className = 'btn-row mt-3';
   const retry = document.createElement('button');
   retry.type = 'button';
   retry.className = 'btn';
   retry.textContent = '重试';
-  retry.onclick = () => dispatch();
+  retry.onclick = () => void dispatch();
   actions.append(retry);
   card.append(title, detail, actions);
   page.append(card);
@@ -165,20 +209,26 @@ function renderRouteError(e: unknown, path: string): void {
   announceNavigation();
 }
 
-function diagnosticPath(path: string): string {
-  const [pathname = path] = path.split('?');
-  const normalized = pathname
-    .split('/')
-    .filter(Boolean)
-    .map((segment) => (/^[a-z-]+$/i.test(segment) ? segment : ':value'))
-    .join('.');
-  return normalized || 'root';
-}
-
 export function startRouter(root: HTMLElement, initialPath = '/today'): void {
   rootEl = root;
   defaultPath = initialPath;
-  window.addEventListener('hashchange', dispatch);
+  hashChangeListener ??= () => void dispatch();
+  window.addEventListener('hashchange', hashChangeListener);
   if (!location.hash) location.hash = defaultPath;
-  else dispatch();
+  else void dispatch();
+}
+
+/** Only for isolating router lifecycle tests. */
+export function resetRouterForTesting(): void {
+  activeController?.abort();
+  activeController = null;
+  runCleanupSafely(activeCleanup);
+  activeCleanup = null;
+  if (hashChangeListener) window.removeEventListener('hashchange', hashChangeListener);
+  hashChangeListener = null;
+  routes.length = 0;
+  routeTransitionCleanups.clear();
+  notFound = null;
+  defaultPath = '/today';
+  navigationSeq = 0;
 }

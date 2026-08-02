@@ -10,7 +10,7 @@ const bottomSheet = readFileSync(join(root, 'src', 'ui', 'primitives', 'BottomSh
 describe('dialog and route lifecycle', () => {
   it('keeps route transitions decoupled from concrete dialog implementations', () => {
     expect(router).toContain('export function registerRouteTransitionCleanup');
-    expect(router).toMatch(/finally \{\s*runRouteTransitionCleanups\(\);\s*\}/);
+    expect(router).toMatch(/finally \{[\s\S]*?runRouteTransitionCleanups\(\);\s*\}/);
     expect(components).toContain('registerRouteTransitionCleanup(closeAllDialogs);');
     expect(router).not.toMatch(/from ['"].*ui\/components['"]/);
   });

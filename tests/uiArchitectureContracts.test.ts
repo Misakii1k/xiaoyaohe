@@ -91,19 +91,33 @@ describe('0.7.0 UI architecture contracts', () => {
     expect(source('src/ui/components.ts')).toContain("from './icons/Icon'");
   });
 
+  it('installs the global error boundary before loading the rest of the application', () => {
+    const main = source('src/main.ts');
+    const boundaryInstall = main.indexOf('installGlobalErrorBoundary(root);');
+    const bootstrapStart = main.indexOf('bootstrapApplication(root)');
+    const firstApplicationImport = main.indexOf("await import('./ui/styles.css')");
+
+    expect(boundaryInstall).toBeGreaterThan(-1);
+    expect(bootstrapStart).toBeGreaterThan(boundaryInstall);
+    expect(firstApplicationImport).toBeGreaterThan(bootstrapStart);
+    expect(main.slice(0, boundaryInstall)).not.toMatch(/from ['"]\.\/(router|features|pages|ui|sync|ai)\//);
+  });
+
   it('renders the initial route before asynchronous secure-storage initialization', () => {
     const main = source('src/main.ts');
-    const routerStart = main.indexOf("startRouter(root, '/today');");
-    const retiredStorageCleanup = main.indexOf('void Promise.all([');
-    const secretInitialization = main.indexOf('.then(() => initializeLlmSecretStore())');
+    const routerStart = main.indexOf("startRouter(appRoot, '/today');");
+    const retiredStorageCleanup = main.indexOf('void Promise.all([', routerStart);
+    const secretInitialization = main.indexOf('initializeLlmSecretStore()', retiredStorageCleanup);
+    const asrSecretInitialization = main.indexOf('initializeAsrSecretStore()', retiredStorageCleanup);
 
     expect(routerStart).toBeGreaterThan(-1);
     expect(retiredStorageCleanup).toBeGreaterThan(routerStart);
     expect(secretInitialization).toBeGreaterThan(retiredStorageCleanup);
+    expect(asrSecretInitialization).toBeGreaterThan(retiredStorageCleanup);
     expect(main).toContain('cleanupRetiredCloudSyncStorage()');
     expect(main).toContain('cleanupRetiredWorkStorage()');
-    expect(main).not.toMatch(/await initializeLlmSecretStore\(\)/);
     expect(main).toContain('.catch(() => undefined)');
+    expect(main).toContain('.then(() => Promise.all([');
     expect(main).toContain('.then(() => silentHealthCheck())');
   });
 

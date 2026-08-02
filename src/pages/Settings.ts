@@ -30,6 +30,7 @@ import {
 import { runOnce as runReminderOnce, rescheduleMedicationReminders } from '../features/reminderScheduler';
 import {
   getLlmConfig,
+  initializeLlmSecretStore,
   setLlmConfig,
   resetLlmConfig,
   isUsingDefaultKey,
@@ -42,7 +43,13 @@ import {
   type LlmHealth,
 } from '../ai/llmConfig';
 import { getAsrHealth, isNativeSpeechFallbackAvailable } from '../ai/asr';
-import { clearAsrConfig, getAsrConfig, isAsrCredentialsConfigured, setAsrConfig } from '../ai/asrConfig';
+import {
+  clearAsrConfig,
+  getAsrConfig,
+  initializeAsrSecretStore,
+  isAsrCredentialsConfigured,
+  setAsrConfig,
+} from '../ai/asrConfig';
 import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
 import {
   getWebSecretPersistence,
@@ -83,6 +90,8 @@ export async function renderSettingsPage(
     listMeds(),
     listRules(),
     listLogs(),
+    initializeLlmSecretStore(),
+    initializeAsrSecretStore(),
   ]);
   if (signal?.aborted) return;
 

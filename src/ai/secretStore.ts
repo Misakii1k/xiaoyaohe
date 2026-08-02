@@ -2,15 +2,44 @@ import { Capacitor } from '@capacitor/core';
 import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage';
 
 const SECRET_KEY = 'ai-api-key';
-/** 腾讯云 ASR SecretId / SecretKey：存在本机安全存储，不进 APK、不上传备份。 */
+/** 新版把地址、模型和密钥放在同一条安全存储记录中，避免新旧配置交叉。 */
+export const LLM_CONFIG_SECRET_KEY = 'ai-llm-config-v1';
+/** 新版把腾讯云凭据作为一对提交，避免只写入 SecretId 或 SecretKey。 */
+export const ASR_CREDENTIALS_SECRET_KEY = 'ai-asr-credentials-v1';
+/** 腾讯云 ASR 旧版 SecretId / SecretKey，仅用于迁移。 */
 export const ASR_SECRET_ID_KEY = 'ai-asr-secret-id';
 export const ASR_SECRET_KEY_KEY = 'ai-asr-secret-key';
-const KNOWN_KEYS = [SECRET_KEY, ASR_SECRET_ID_KEY, ASR_SECRET_KEY_KEY] as const;
+const KNOWN_KEYS = [
+  SECRET_KEY,
+  LLM_CONFIG_SECRET_KEY,
+  ASR_CREDENTIALS_SECRET_KEY,
+  ASR_SECRET_ID_KEY,
+  ASR_SECRET_KEY_KEY,
+] as const;
 const RETIRED_IMAGE_SECRET_KEY = 'ai-image-api-key';
 const RETIRED_IMAGE_CONFIG_KEY = 'medbox.imageGenConfig.v1';
 const RETIRED_ASR_CONFIG_KEY = 'medbox.asrConfig.v1';
 const sessionSecrets = new Map<string, string>();
 let initializationPromise: Promise<void> | undefined;
+let webStorageMutation: Promise<void> = Promise.resolve();
+
+export type SecretStoreErrorCode =
+  | 'initialization-failed'
+  | 'write-failed'
+  | 'remove-failed'
+  | 'migration-failed'
+  | 'state-unknown';
+
+export class SecretStoreError extends Error {
+  constructor(
+    readonly code: SecretStoreErrorCode,
+    message: string,
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'SecretStoreError';
+  }
+}
 
 /**
  * 网页端密钥的存放方式（原生端一律走系统安全存储，与此设置无关）。
@@ -20,6 +49,7 @@ let initializationPromise: Promise<void> | undefined;
 export type WebSecretPersistence = 'device' | 'session';
 
 const WEB_PERSISTENCE_KEY = 'medbox.web-secret-persistence.v1';
+/** 仅在浏览器拒绝持久化偏好时使用；成功持久化后不遮蔽跨标签页更新。 */
 let volatileWebPersistence: WebSecretPersistence | undefined;
 
 /**
@@ -41,6 +71,14 @@ export function isNativeSecretStore(): boolean {
 export function getWebSecretPersistence(): WebSecretPersistence {
   if (isNativeSecretStore()) return 'device';
   if (volatileWebPersistence) return volatileWebPersistence;
+  // sessionStorage 只在 localStorage 偏好无法更新时写入，因此它代表当前标签页
+  // 更新、更保守的选择；成功持久化到 localStorage 时会立即清掉这份回退值。
+  try {
+    const sessionChoice = sessionStorage.getItem(WEB_PERSISTENCE_KEY);
+    if (sessionChoice === 'session' || sessionChoice === 'device') return sessionChoice;
+  } catch {
+    /* fall through to the persisted preference */
+  }
   try {
     const persisted = localStorage.getItem(WEB_PERSISTENCE_KEY);
     if (persisted === 'session' || persisted === 'device') return persisted;
@@ -50,27 +88,22 @@ export function getWebSecretPersistence(): WebSecretPersistence {
   return 'device';
 }
 
-/** 切换网页端密钥存放方式，并把已存的密钥就地搬到新位置（不必让用户重输）。 */
-export async function setWebSecretPersistence(mode: WebSecretPersistence): Promise<void> {
-  if (isNativeSecretStore()) return;
-  await initializeSecretStore();
-  volatileWebPersistence = mode;
-  try {
-    localStorage.setItem(WEB_PERSISTENCE_KEY, mode);
-  } catch {
-    /* 无痕模式下写不进去，此时只影响本次会话的选择 */
-  }
-  for (const key of KNOWN_KEYS) {
-    writeWebSecret(key, sessionSecrets.get(key) ?? '');
-  }
+/** 切换网页端密钥存放方式；写入目标、验证和清理源存储作为一次串行迁移。 */
+export function setWebSecretPersistence(mode: WebSecretPersistence): Promise<void> {
+  if (isNativeSecretStore()) return Promise.resolve();
+  return serializeWebStorageMutation(async () => {
+    await initializeSecretStore();
+    await migrateWebSecrets(mode);
+  });
 }
 
 export function initializeSecretStore(): Promise<void> {
   if (!initializationPromise) {
-    initializationPromise = initializeSecretStoreOnce().catch((error) => {
-      initializationPromise = undefined;
-      throw error;
+    const pending = initializeSecretStoreOnce().catch((cause) => {
+      if (initializationPromise === pending) initializationPromise = undefined;
+      throw asSecretStoreError('initialization-failed', '本机安全存储暂时不可用，请重试', cause);
     });
+    initializationPromise = pending;
   }
   return initializationPromise;
 }
@@ -82,16 +115,15 @@ async function initializeSecretStoreOnce(): Promise<void> {
   } catch {
     /* localStorage may be unavailable in private browsing or native startup */
   }
-  // 网页端兜底：Capacitor SecureStorage 不可用，密钥只能落在浏览器存储里（明文）。
-  // 按用户选择放 sessionStorage 或 localStorage，风险提示见 WEB_SECRET_STORAGE_NOTICE。
-  // 生产 Capacitor Android 仍走 SecureStorage。
+
+  // 网页端没有系统安全存储，按用户选择落到浏览器存储；风险提示见上方常量。
   if (!isNativeSecretStore()) {
-    for (const key of KNOWN_KEYS) {
-      const value = readWebSecret(key);
-      if (value) sessionSecrets.set(key, value);
-    }
+    const restored = new Map<string, string>();
+    for (const key of KNOWN_KEYS) restored.set(key, readWebSecret(key));
+    replaceSessionSecrets(restored);
     return;
   }
+
   await SecureStorage.setKeyPrefix('medbox_');
   await SecureStorage.setDefaultKeychainAccess(KeychainAccess.whenUnlockedThisDeviceOnly);
   await SecureStorage.remove(RETIRED_IMAGE_SECRET_KEY).catch(() => false);
@@ -100,70 +132,201 @@ async function initializeSecretStoreOnce(): Promise<void> {
     const value = await SecureStorage.get(key, false);
     restored.set(key, typeof value === 'string' ? value : '');
   }
-  for (const [key, value] of restored) sessionSecrets.set(key, value);
+  replaceSessionSecrets(restored);
 }
 
 export function getSessionSecret(key: string = SECRET_KEY): string {
   return sessionSecrets.get(key) ?? '';
 }
 
-export async function setSessionSecret(secret: string, key: string = SECRET_KEY): Promise<boolean> {
+export async function setSessionSecret(secret: string, key: string = SECRET_KEY): Promise<void> {
   await initializeSecretStore();
   const trimmed = secret.trim();
   if (!isNativeSecretStore()) {
-    sessionSecrets.set(key, trimmed);
-    // 网页端：按用户选的存放方式落盘，刷新后仍能读到（'session' 则关标签页即失效）。
-    writeWebSecret(key, trimmed);
-    return true;
+    return serializeWebStorageMutation(async () => {
+      try {
+        persistWebSecret(key, trimmed);
+      } catch (cause) {
+        throw asSecretStoreError('write-failed', '浏览器无法保存密钥，请检查存储权限', cause);
+      }
+      sessionSecrets.set(key, trimmed);
+    });
   }
-  await SecureStorage.set(key, trimmed, false, false, KeychainAccess.whenUnlockedThisDeviceOnly);
+
+  try {
+    await SecureStorage.set(key, trimmed, false, false, KeychainAccess.whenUnlockedThisDeviceOnly);
+  } catch (cause) {
+    throw asSecretStoreError('write-failed', '系统安全存储写入失败，请重试', cause);
+  }
   sessionSecrets.set(key, trimmed);
-  // 原生路径：写入成功后清掉任何 web storage 残留（迁移兼容）。
-  writeWebSecret(key, '');
-  return true;
+  clearWebSecretCopies(key);
 }
 
 export async function clearSessionSecret(key: string = SECRET_KEY): Promise<void> {
   await initializeSecretStore();
-  if (isNativeSecretStore()) await SecureStorage.remove(key);
+  if (!isNativeSecretStore()) {
+    return serializeWebStorageMutation(async () => {
+      try {
+        persistWebSecret(key, '');
+      } catch (cause) {
+        throw asSecretStoreError('remove-failed', '浏览器无法清除密钥，请检查存储权限', cause);
+      }
+      sessionSecrets.set(key, '');
+    });
+  }
+
+  try {
+    await SecureStorage.remove(key);
+  } catch (cause) {
+    throw asSecretStoreError('remove-failed', '系统安全存储清除失败，请重试', cause);
+  }
   sessionSecrets.set(key, '');
-  writeWebSecret(key, ''); // 两个浏览器存储都清，避免切换过存放方式后留下残留
+  clearWebSecretCopies(key);
 }
 
-/** 写入当前选定的浏览器存储，并顺手清掉另一个，避免两处残留不一致。 */
-function writeWebSecret(key: string, value: string): void {
+function replaceSessionSecrets(values: ReadonlyMap<string, string>): void {
+  sessionSecrets.clear();
+  for (const [key, value] of values) sessionSecrets.set(key, value);
+}
+
+function serializeWebStorageMutation(operation: () => Promise<void>): Promise<void> {
+  const result = webStorageMutation.then(operation, operation);
+  webStorageMutation = result.catch(() => undefined);
+  return result;
+}
+
+async function migrateWebSecrets(mode: WebSecretPersistence): Promise<void> {
+  const previousMode = getWebSecretPersistence();
+  if (mode === previousMode) return;
+  const source = storageForMode(previousMode);
+  const target = storageForMode(mode);
+  const snapshots = new Map<string, { source: string | null; target: string | null }>();
+  let localPreference: string | null = null;
+  let sessionPreference: string | null = null;
+  let preferencesReadable = true;
+  try {
+    localPreference = localStorage.getItem(WEB_PERSISTENCE_KEY);
+    sessionPreference = sessionStorage.getItem(WEB_PERSISTENCE_KEY);
+  } catch {
+    preferencesReadable = false;
+  }
+
+  try {
+    for (const key of KNOWN_KEYS) {
+      const storageKey = webSecretKey(key);
+      snapshots.set(key, {
+        source: source.getItem(storageKey),
+        target: target.getItem(storageKey),
+      });
+      setStorageValue(target, storageKey, sessionSecrets.get(key) ?? '');
+    }
+    try {
+      setStorageValue(localStorage, WEB_PERSISTENCE_KEY, mode);
+      setStorageValue(sessionStorage, WEB_PERSISTENCE_KEY, '');
+      volatileWebPersistence = undefined;
+    } catch {
+      // localStorage 被禁用时，把偏好和 session-only 密钥一起保留到标签页生命周期。
+      setStorageValue(sessionStorage, WEB_PERSISTENCE_KEY, mode);
+      volatileWebPersistence = mode;
+    }
+    for (const key of KNOWN_KEYS) setStorageValue(source, webSecretKey(key), '');
+  } catch (cause) {
+    let rollbackFailed = false;
+    for (const [key, snapshot] of snapshots) {
+      const storageKey = webSecretKey(key);
+      try {
+        restoreStorageValue(source, storageKey, snapshot.source);
+        restoreStorageValue(target, storageKey, snapshot.target);
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+    if (preferencesReadable) {
+      try {
+        restoreStorageValue(localStorage, WEB_PERSISTENCE_KEY, localPreference);
+        restoreStorageValue(sessionStorage, WEB_PERSISTENCE_KEY, sessionPreference);
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+    volatileWebPersistence = preferencesReadable ? undefined : previousMode;
+    throw asSecretStoreError(
+      rollbackFailed ? 'state-unknown' : 'migration-failed',
+      rollbackFailed ? '密钥存储状态无法确认，请重新填写密钥' : '密钥存放方式切换失败，原设置已保留',
+      cause,
+    );
+  }
+}
+
+/** 单个密钥也采用写入验证 + 双存储回滚，避免目标失败后删除唯一副本。 */
+function persistWebSecret(key: string, value: string): void {
+  const active = storageForMode(getWebSecretPersistence());
+  const inactive = active === sessionStorage ? localStorage : sessionStorage;
   const storageKey = webSecretKey(key);
-  const useSession = getWebSecretPersistence() === 'session';
+  const activeBefore = active.getItem(storageKey);
+  const inactiveBefore = inactive.getItem(storageKey);
   try {
-    const active = useSession ? sessionStorage : localStorage;
-    if (value) active.setItem(storageKey, value);
-    else active.removeItem(storageKey);
-  } catch {
-    /* 无痕模式/存储被禁用时降级为「只留在内存里」 */
-  }
-  try {
-    (useSession ? localStorage : sessionStorage).removeItem(storageKey);
-  } catch {
-    /* ignore */
+    setStorageValue(active, storageKey, value);
+    setStorageValue(inactive, storageKey, '');
+  } catch (cause) {
+    let rollbackFailed = false;
+    try { restoreStorageValue(active, storageKey, activeBefore); } catch { rollbackFailed = true; }
+    try { restoreStorageValue(inactive, storageKey, inactiveBefore); } catch { rollbackFailed = true; }
+    if (rollbackFailed) {
+      throw new SecretStoreError('state-unknown', '密钥存储状态无法确认，请重新填写密钥', cause);
+    }
+    throw cause;
   }
 }
 
-/** 两个存储都读：用户可能刚切换过存放方式，也可能是老版本留下的 localStorage 值。 */
+function setStorageValue(storage: Storage, key: string, value: string): void {
+  if (value) storage.setItem(key, value);
+  else storage.removeItem(key);
+  const actual = storage.getItem(key);
+  if (actual !== (value || null)) throw new Error('Storage verification failed');
+}
+
+function restoreStorageValue(storage: Storage, key: string, value: string | null): void {
+  if (value == null) storage.removeItem(key);
+  else storage.setItem(key, value);
+}
+
+function storageForMode(mode: WebSecretPersistence): Storage {
+  return mode === 'session' ? sessionStorage : localStorage;
+}
+
+/** 当前模式优先，另一处只用于读取旧版或上次未完成迁移留下的值。 */
 function readWebSecret(key: string): string {
+  const primary = storageForMode(getWebSecretPersistence());
+  const secondary = primary === sessionStorage ? localStorage : sessionStorage;
   const storageKey = webSecretKey(key);
   try {
-    const fromSession = sessionStorage.getItem(storageKey);
-    if (fromSession) return fromSession;
+    const value = primary.getItem(storageKey);
+    if (value) return value;
   } catch {
-    /* ignore */
+    /* fall back to the other browser store */
   }
   try {
-    return localStorage.getItem(storageKey) ?? '';
+    return secondary.getItem(storageKey) ?? '';
   } catch {
     return '';
   }
 }
 
+function clearWebSecretCopies(key: string): void {
+  const storageKey = webSecretKey(key);
+  try { localStorage.removeItem(storageKey); } catch { /* ignore migration residue */ }
+  try { sessionStorage.removeItem(storageKey); } catch { /* ignore migration residue */ }
+}
+
 function webSecretKey(key: string): string {
   return `medbox_web_secret::${key}`;
+}
+
+function asSecretStoreError(
+  code: SecretStoreErrorCode,
+  message: string,
+  cause: unknown,
+): SecretStoreError {
+  return cause instanceof SecretStoreError ? cause : new SecretStoreError(code, message, cause);
 }

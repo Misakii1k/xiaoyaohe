@@ -1,15 +1,13 @@
-import { toast } from '../ui/components';
+import { reportSilentFailure, type DiagnosticScope } from './diagnostics';
 
 /**
  * 全局兜底：未捕获异常与未处理的 Promise rejection。
  *
  * 反应分两档，取决于出错时页面是不是空的：
- * - 页面上还有内容 → 只弹一条轻提示。后台某个异步任务炸了，不该把用户正在看的
- *   页面整个换掉，那是二次伤害。
- * - 页面已经空了（真白屏）→ 接管整屏，给出「出错了 + 重新加载」，让用户有路可走。
+ * - 页面上还有内容 → 只弹一条轻提示，不替换用户正在看的页面。
+ * - 页面已经空了（真白屏）→ 接管整屏，给出「出错了 + 重新加载」。
  *
- * 降级 UI 沿用 `src/router.ts` renderRouteError 的结构与类名，保持观感一致。
- * 原始报错只进 console，不糊到用户脸上——用户看到堆栈信息帮不上任何忙。
+ * 原始报错不会写入持久诊断，也不会传给 console。诊断只保留受控类别和安全 id。
  */
 
 /** 一次故障常连着抛好几条，冷却期内只提示一次，避免刷屏。 */
@@ -25,11 +23,12 @@ export function installGlobalErrorBoundary(root: HTMLElement): void {
   installed = true;
 
   errorListener = (event) => {
-    // 资源加载失败（图片 404 等）不会冒泡到这里，能进来的都是脚本异常。
-    handle(root, event.error ?? event.message);
+    event.preventDefault();
+    captureGlobalFailure(root, event.error ?? event.message, 'global.error');
   };
   rejectionListener = (event) => {
-    handle(root, event.reason);
+    event.preventDefault();
+    captureGlobalFailure(root, event.reason, 'global.rejection');
   };
   window.addEventListener('error', errorListener);
   window.addEventListener('unhandledrejection', rejectionListener);
@@ -45,8 +44,13 @@ export function resetGlobalErrorBoundaryForTesting(): void {
   rejectionListener = undefined;
 }
 
-function handle(root: HTMLElement, cause: unknown): void {
-  console.error('[medbox] 未捕获错误', cause);
+export function captureGlobalFailure(
+  root: HTMLElement,
+  cause: unknown,
+  scope: DiagnosticScope = 'global.error',
+): void {
+  const diagnosticId = reportSilentFailure(scope, cause);
+  console.error('[medbox] 未捕获错误，诊断编号', diagnosticId);
   if (root.childElementCount > 0) {
     notifyQuietly();
     return;
@@ -58,11 +62,9 @@ function notifyQuietly(): void {
   const now = Date.now();
   if (now - lastNoticeAt < NOTICE_COOLDOWN_MS) return;
   lastNoticeAt = now;
-  try {
-    toast('刚才有个操作没成功，可以再试一次');
-  } catch {
-    // toast 依赖 document.body；连它都没有的时候也没别的办法了。
-  }
+  void import('../ui/components')
+    .then(({ toast }) => toast('刚才有个操作没成功，可以再试一次'))
+    .catch(() => undefined);
 }
 
 function renderBlankScreenFallback(root: HTMLElement): void {
@@ -86,7 +88,7 @@ function renderBlankScreenFallback(root: HTMLElement): void {
   const detail = document.createElement('div');
   detail.className = 'muted';
   detail.style.cssText = 'margin-top:8px;word-break:break-word';
-  detail.textContent = '你的用药记录都还在本机，没有丢。重新加载一次通常就好了。';
+  detail.textContent = '此错误页不会修改本机用药记录。重新加载一次通常就能继续使用。';
 
   const actions = document.createElement('div');
   actions.className = 'btn-row mt-3';

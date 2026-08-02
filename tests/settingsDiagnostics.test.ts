@@ -19,6 +19,8 @@ describe('settings diagnostics panel', () => {
 
     expect(panel.textContent).toContain('诊断记录');
     expect(panel.textContent).toContain('photo.read');
+    expect(panel.textContent).toContain('操作执行失败');
+    expect(panel.textContent).not.toContain('private detail');
     expect(panel.textContent).toContain('1 条');
 
     const clear = [...panel.querySelectorAll('button')].find((button) => button.textContent === '清空');

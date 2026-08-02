@@ -3,13 +3,14 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { listDiagnosticLogs } from '../src/app/diagnostics';
-import { route, startRouter } from '../src/router';
+import { resetRouterForTesting, route, startRouter } from '../src/router';
 
 const rootDirectory = resolve(import.meta.dirname, '..');
 const source = (path: string) => readFileSync(join(rootDirectory, path), 'utf8');
 
 describe('Task10 route recovery', () => {
   beforeEach(() => {
+    resetRouterForTesting();
     document.body.replaceChildren();
     localStorage.clear();
     location.hash = '';
@@ -18,6 +19,7 @@ describe('Task10 route recovery', () => {
   });
 
   afterEach(() => {
+    resetRouterForTesting();
     vi.restoreAllMocks();
   });
 
@@ -37,7 +39,7 @@ describe('Task10 route recovery', () => {
     await vi.waitFor(() => expect(root.textContent).toContain('暂时无法打开这个页面'));
 
     expect(root.getAttribute('aria-busy')).toBeNull();
-    expect(root.textContent).toContain('你的用药记录没有丢失');
+    expect(root.textContent).toContain('此错误页不会修改本机用药记录');
     expect(root.textContent).not.toContain('private.example');
     expect(root.textContent).not.toContain('token=private');
     expect(listDiagnosticLogs()).toHaveLength(1);

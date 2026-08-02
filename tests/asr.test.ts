@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/ui/components', () => ({ confirmDialog: vi.fn(async () => true) }));
@@ -141,8 +142,9 @@ describe('App-embedded Tencent ASR', () => {
   it('persists web credentials across simulated page reload', async () => {
     // 首次保存
     await setAsrConfig({ secretId: 'AKID-web', secretKey: 'sk-web-secret' });
-    expect(localStorage.getItem('medbox_web_secret::ai-asr-secret-id')).toBe('AKID-web');
-    expect(localStorage.getItem('medbox_web_secret::ai-asr-secret-key')).toBe('sk-web-secret');
+    expect(localStorage.getItem('medbox_web_secret::ai-asr-credentials-v1')).toBe(
+      JSON.stringify({ secretId: 'AKID-web', secretKey: 'sk-web-secret' }),
+    );
     // 模拟页面刷新：模块重置 + 清空 secureStorage（native 路径不命中，验证 web 路径）
     vi.resetModules();
     vi.doMock('@aparajita/capacitor-secure-storage', () => ({

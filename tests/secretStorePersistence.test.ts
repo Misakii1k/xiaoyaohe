@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const platform = vi.hoisted(() => ({ native: false }));
 const secureStorage = vi.hoisted(() => ({
-  setKeyPrefix: vi.fn(async () => undefined),
-  setDefaultKeychainAccess: vi.fn(async () => undefined),
-  get: vi.fn(async () => ''),
-  set: vi.fn(async () => true),
-  remove: vi.fn(async () => true),
+  setKeyPrefix: vi.fn<() => Promise<void>>(),
+  setDefaultKeychainAccess: vi.fn<() => Promise<void>>(),
+  get: vi.fn<(key: string) => Promise<string | null>>(),
+  set: vi.fn<() => Promise<void>>(),
+  remove: vi.fn<() => Promise<boolean>>(),
 }));
 
 vi.mock('@capacitor/core', () => ({
@@ -16,7 +16,7 @@ vi.mock('@capacitor/core', () => ({
 
 vi.mock('@aparajita/capacitor-secure-storage', () => ({
   SecureStorage: secureStorage,
-  KeychainAccess: { whenUnlockedThisDeviceOnly: 'when-unlocked-this-device-only' },
+  KeychainAccess: { whenUnlockedThisDeviceOnly: 1 },
 }));
 
 describe('secretStore persistence', () => {
@@ -26,9 +26,10 @@ describe('secretStore persistence', () => {
     sessionStorage.clear();
     secureStorage.setKeyPrefix.mockReset().mockResolvedValue(undefined);
     secureStorage.setDefaultKeychainAccess.mockReset().mockResolvedValue(undefined);
-    secureStorage.get.mockReset().mockResolvedValue('');
-    secureStorage.set.mockReset().mockResolvedValue(true);
+    secureStorage.get.mockReset().mockResolvedValue(null);
+    secureStorage.set.mockReset().mockResolvedValue(undefined);
     secureStorage.remove.mockReset().mockResolvedValue(true);
+    vi.restoreAllMocks();
     vi.resetModules();
   });
 
@@ -53,23 +54,48 @@ describe('secretStore persistence', () => {
     expect(localStorage.getItem('medbox_web_secret::ai-api-key')).toBe('llm-key');
   });
 
-  it('honors a session choice when localStorage cannot persist the preference', async () => {
+  it('keeps the source copy and mode when the migration target rejects a key', async () => {
+    const store = await import('../src/ai/secretStore');
+    await store.setSessionSecret('persisted-key');
+    const originalSetItem = sessionStorage.setItem.bind(sessionStorage);
+    const setItem = vi.spyOn(sessionStorage, 'setItem').mockImplementation((key, value) => {
+      if (key === 'medbox_web_secret::ai-api-key') throw new DOMException('blocked');
+      originalSetItem(key, value);
+    });
+
+    await expect(store.setWebSecretPersistence('session')).rejects.toMatchObject({
+      name: 'SecretStoreError',
+      code: 'migration-failed',
+    });
+
+    expect(store.getWebSecretPersistence()).toBe('device');
+    expect(localStorage.getItem('medbox_web_secret::ai-api-key')).toBe('persisted-key');
+    expect(sessionStorage.getItem('medbox_web_secret::ai-api-key')).toBeNull();
+    setItem.mockRestore();
+  });
+
+  it('uses an in-memory preference only when localStorage cannot persist it', async () => {
+    localStorage.setItem('medbox.web-secret-persistence.v1', 'device');
     const store = await import('../src/ai/secretStore');
     await store.setSessionSecret('temporary-key');
-    const originalSetItem = Storage.prototype.setItem;
-    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
-      if (this === localStorage && key === 'medbox.web-secret-persistence.v1') {
-        throw new DOMException('blocked');
-      }
-      return Reflect.apply(originalSetItem, this, [key, value]);
+    const originalSetItem = localStorage.setItem.bind(localStorage);
+    vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key === 'medbox.web-secret-persistence.v1') throw new DOMException('blocked');
+      originalSetItem(key, value);
     });
 
     await store.setWebSecretPersistence('session');
 
     expect(store.getWebSecretPersistence()).toBe('session');
+    expect(sessionStorage.getItem('medbox.web-secret-persistence.v1')).toBe('session');
     expect(sessionStorage.getItem('medbox_web_secret::ai-api-key')).toBe('temporary-key');
     expect(localStorage.getItem('medbox_web_secret::ai-api-key')).toBeNull();
-    setItem.mockRestore();
+
+    vi.resetModules();
+    const reloaded = await import('../src/ai/secretStore');
+    await reloaded.initializeSecretStore();
+    expect(reloaded.getWebSecretPersistence()).toBe('session');
+    expect(reloaded.getSessionSecret()).toBe('temporary-key');
   });
 
   it('shares one initialization promise across concurrent native callers', async () => {
@@ -90,7 +116,7 @@ describe('secretStore persistence', () => {
     finishPrefix();
     await Promise.all([first, second]);
     expect(secureStorage.setDefaultKeychainAccess).toHaveBeenCalledTimes(1);
-    expect(secureStorage.get).toHaveBeenCalledTimes(3);
+    expect(secureStorage.get).toHaveBeenCalledTimes(5);
   });
 
   it('retries native initialization after secure storage temporarily fails', async () => {
@@ -99,14 +125,34 @@ describe('secretStore persistence', () => {
     secureStorage.setKeyPrefix.mockRejectedValueOnce(failure).mockResolvedValue(undefined);
     const store = await import('../src/ai/secretStore');
 
-    await expect(store.initializeSecretStore()).rejects.toBe(failure);
+    await expect(store.initializeSecretStore()).rejects.toMatchObject({
+      code: 'initialization-failed',
+      cause: failure,
+    });
     await expect(store.initializeSecretStore()).resolves.toBeUndefined();
 
     expect(secureStorage.setKeyPrefix).toHaveBeenCalledTimes(2);
-    expect(secureStorage.get).toHaveBeenCalledTimes(3);
+    expect(secureStorage.get).toHaveBeenCalledTimes(5);
   });
 
-  it('does not expose the raw native write error through console output', async () => {
+  it('does not commit a partial native read when one key fails', async () => {
+    platform.native = true;
+    const failure = new Error('keychain temporarily locked');
+    secureStorage.get
+      .mockResolvedValueOnce('legacy-key')
+      .mockRejectedValueOnce(failure);
+    const store = await import('../src/ai/secretStore');
+
+    await expect(store.initializeSecretStore()).rejects.toMatchObject({
+      code: 'initialization-failed',
+      cause: failure,
+    });
+
+    expect(store.getSessionSecret()).toBe('');
+    expect(store.getSessionSecret(store.LLM_CONFIG_SECRET_KEY)).toBe('');
+  });
+
+  it('wraps native write errors without logging or exposing raw messages', async () => {
     platform.native = true;
     const store = await import('../src/ai/secretStore');
     await store.initializeSecretStore();
@@ -114,81 +160,116 @@ describe('secretStore persistence', () => {
     secureStorage.set.mockRejectedValue(failure);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    await expect(store.setSessionSecret('new-key')).rejects.toBe(failure);
-
-    expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
-  });
-
-  it('loads existing keys before switching when the preference write fails', async () => {
-    localStorage.setItem('medbox_web_secret::ai-api-key', 'persisted-key');
-    localStorage.setItem('medbox.web-secret-persistence.v1', 'device');
-    const store = await import('../src/ai/secretStore');
-    const originalSetItem = Storage.prototype.setItem;
-    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
-      if (this === localStorage && key === 'medbox.web-secret-persistence.v1') {
-        throw new DOMException('blocked');
-      }
-      return Reflect.apply(originalSetItem, this, [key, value]);
+    await expect(store.setSessionSecret('new-key')).rejects.toMatchObject({
+      code: 'write-failed',
+      message: '系统安全存储写入失败，请重试',
+      cause: failure,
     });
 
-    await store.setWebSecretPersistence('session');
-
-    expect(store.getWebSecretPersistence()).toBe('session');
-    expect(store.getSessionSecret()).toBe('persisted-key');
-    expect(sessionStorage.getItem('medbox_web_secret::ai-api-key')).toBe('persisted-key');
-    expect(localStorage.getItem('medbox_web_secret::ai-api-key')).toBeNull();
-    setItem.mockRestore();
+    expect(store.getSessionSecret()).toBe('');
+    expect(warn).not.toHaveBeenCalled();
   });
 
-  it('propagates native secure storage write failures through config setters', async () => {
+  it('keeps the old LLM endpoint and key together when a save or reset fails', async () => {
+    platform.native = true;
+    const previous = JSON.stringify({
+      baseUrl: 'https://old.example.com/v1',
+      apiKey: 'old-key',
+      model: 'old-model',
+    });
+    const store = await import('../src/ai/secretStore');
+    secureStorage.get.mockImplementation(async (key) => key === store.LLM_CONFIG_SECRET_KEY ? previous : null);
+    await store.initializeSecretStore();
+    const llm = await import('../src/ai/llmConfig');
+    secureStorage.set.mockRejectedValue(new Error('write blocked'));
+
+    await expect(llm.setLlmConfig({
+      baseUrl: 'https://new.example.com/v1',
+      apiKey: 'new-key',
+      model: 'new-model',
+    })).rejects.toMatchObject({ code: 'write-failed' });
+    expect(llm.getLlmConfig()).toEqual({
+      baseUrl: 'https://old.example.com/v1',
+      apiKey: 'old-key',
+      model: 'old-model',
+    });
+
+    await expect(llm.resetLlmConfig()).rejects.toMatchObject({ code: 'write-failed' });
+    expect(llm.getLlmConfig().apiKey).toBe('old-key');
+    expect(llm.getLlmConfig().baseUrl).toBe('https://old.example.com/v1');
+  });
+
+  it('stores and clears ASR credentials as one authoritative record', async () => {
     platform.native = true;
     const store = await import('../src/ai/secretStore');
+    const previous = JSON.stringify({ secretId: 'old-id', secretKey: 'old-key' });
+    secureStorage.get.mockImplementation(async (key) => key === store.ASR_CREDENTIALS_SECRET_KEY ? previous : null);
     await store.initializeSecretStore();
-    const failure = new Error('secure storage unavailable');
-    secureStorage.set.mockRejectedValue(failure);
-    const { setLlmConfig } = await import('../src/ai/llmConfig');
-    const { setAsrConfig } = await import('../src/ai/asrConfig');
+    const asr = await import('../src/ai/asrConfig');
 
-    await expect(setLlmConfig({
-      baseUrl: 'https://example.com/v1',
-      apiKey: 'llm-key',
-      model: 'test-model',
-    })).rejects.toBe(failure);
-    await expect(setAsrConfig({ secretId: 'asr-id' })).rejects.toBe(failure);
-    expect(store.getSessionSecret()).toBe('');
-    expect(store.getSessionSecret(store.ASR_SECRET_ID_KEY)).toBe('');
+    await asr.setAsrConfig({ secretId: 'new-id', secretKey: 'new-key' });
+    expect(secureStorage.set).toHaveBeenLastCalledWith(
+      store.ASR_CREDENTIALS_SECRET_KEY,
+      JSON.stringify({ secretId: 'new-id', secretKey: 'new-key' }),
+      false,
+      false,
+      1,
+    );
+    expect(asr.getAsrConfig()).toMatchObject({ secretId: 'new-id', secretKey: 'new-key' });
+
+    await asr.clearAsrConfig();
+    expect(asr.getAsrConfig()).toMatchObject({ secretId: '', secretKey: '' });
   });
 
-  it('propagates native secure storage removal failures without clearing memory', async () => {
+  it('keeps the old ASR pair when the combined record cannot be replaced', async () => {
     platform.native = true;
-    secureStorage.get.mockImplementation(async (key: string) => key === 'ai-api-key' ? 'native-key' : '');
+    const store = await import('../src/ai/secretStore');
+    const previous = JSON.stringify({ secretId: 'old-id', secretKey: 'old-key' });
+    secureStorage.get.mockImplementation(async (key) => key === store.ASR_CREDENTIALS_SECRET_KEY ? previous : null);
+    await store.initializeSecretStore();
+    const asr = await import('../src/ai/asrConfig');
+    secureStorage.set.mockRejectedValue(new Error('write blocked'));
+
+    await expect(asr.setAsrConfig({ secretId: 'new-id', secretKey: 'new-key' }))
+      .rejects.toMatchObject({ code: 'write-failed' });
+    expect(asr.getAsrConfig()).toMatchObject({ secretId: 'old-id', secretKey: 'old-key' });
+
+    await expect(asr.clearAsrConfig()).rejects.toMatchObject({ code: 'write-failed' });
+    expect(asr.getAsrConfig()).toMatchObject({ secretId: 'old-id', secretKey: 'old-key' });
+  });
+
+  it('propagates native removal failures without clearing memory', async () => {
+    platform.native = true;
+    secureStorage.get.mockImplementation(async (key) => key === 'ai-api-key' ? 'native-key' : null);
     const store = await import('../src/ai/secretStore');
     await store.initializeSecretStore();
     const failure = new Error('secure storage removal failed');
     secureStorage.remove.mockRejectedValue(failure);
 
-    await expect(store.clearSessionSecret()).rejects.toBe(failure);
+    await expect(store.clearSessionSecret()).rejects.toMatchObject({
+      code: 'remove-failed',
+      cause: failure,
+    });
     expect(store.getSessionSecret()).toBe('native-key');
   });
 
   it('uses device-only secure storage on native platforms without web persistence', async () => {
     platform.native = true;
-    secureStorage.get.mockImplementation(async (key: string) => key === 'ai-api-key' ? 'native-key' : '');
+    secureStorage.get.mockImplementation(async (key) => key === 'ai-api-key' ? 'native-key' : null);
     const store = await import('../src/ai/secretStore');
 
     await store.initializeSecretStore();
     expect(store.getSessionSecret()).toBe('native-key');
     expect(secureStorage.setKeyPrefix).toHaveBeenCalledWith('medbox_');
-    expect(secureStorage.setDefaultKeychainAccess).toHaveBeenCalledWith('when-unlocked-this-device-only');
+    expect(secureStorage.setDefaultKeychainAccess).toHaveBeenCalledWith(1);
 
-    await expect(store.setSessionSecret('new-native-key')).resolves.toBe(true);
+    await expect(store.setSessionSecret('new-native-key')).resolves.toBeUndefined();
     expect(secureStorage.set).toHaveBeenCalledWith(
       'ai-api-key',
       'new-native-key',
       false,
       false,
-      'when-unlocked-this-device-only',
+      1,
     );
     expect(localStorage.getItem('medbox_web_secret::ai-api-key')).toBeNull();
     expect(sessionStorage.getItem('medbox_web_secret::ai-api-key')).toBeNull();
