@@ -10,7 +10,7 @@ const RETIRED_IMAGE_SECRET_KEY = 'ai-image-api-key';
 const RETIRED_IMAGE_CONFIG_KEY = 'medbox.imageGenConfig.v1';
 const RETIRED_ASR_CONFIG_KEY = 'medbox.asrConfig.v1';
 const sessionSecrets = new Map<string, string>();
-let initialized = false;
+let initializationPromise: Promise<void> | undefined;
 
 /**
  * 网页端密钥的存放方式（原生端一律走系统安全存储，与此设置无关）。
@@ -40,18 +40,20 @@ export function isNativeSecretStore(): boolean {
 /** 当前网页端密钥的存放方式；原生端恒为 'device'（实际走 SecureStorage）。 */
 export function getWebSecretPersistence(): WebSecretPersistence {
   if (isNativeSecretStore()) return 'device';
+  if (volatileWebPersistence) return volatileWebPersistence;
   try {
     const persisted = localStorage.getItem(WEB_PERSISTENCE_KEY);
     if (persisted === 'session' || persisted === 'device') return persisted;
   } catch {
-    return volatileWebPersistence ?? 'device';
+    /* fall through to the default */
   }
-  return volatileWebPersistence ?? 'device';
+  return 'device';
 }
 
 /** 切换网页端密钥存放方式，并把已存的密钥就地搬到新位置（不必让用户重输）。 */
-export function setWebSecretPersistence(mode: WebSecretPersistence): void {
+export async function setWebSecretPersistence(mode: WebSecretPersistence): Promise<void> {
   if (isNativeSecretStore()) return;
+  await initializeSecretStore();
   volatileWebPersistence = mode;
   try {
     localStorage.setItem(WEB_PERSISTENCE_KEY, mode);
@@ -63,9 +65,17 @@ export function setWebSecretPersistence(mode: WebSecretPersistence): void {
   }
 }
 
-export async function initializeSecretStore(): Promise<void> {
-  if (initialized) return;
-  initialized = true;
+export function initializeSecretStore(): Promise<void> {
+  if (!initializationPromise) {
+    initializationPromise = initializeSecretStoreOnce().catch((error) => {
+      initializationPromise = undefined;
+      throw error;
+    });
+  }
+  return initializationPromise;
+}
+
+async function initializeSecretStoreOnce(): Promise<void> {
   try {
     localStorage.removeItem(RETIRED_IMAGE_CONFIG_KEY);
     localStorage.removeItem(RETIRED_ASR_CONFIG_KEY);
@@ -75,25 +85,22 @@ export async function initializeSecretStore(): Promise<void> {
   // 网页端兜底：Capacitor SecureStorage 不可用，密钥只能落在浏览器存储里（明文）。
   // 按用户选择放 sessionStorage 或 localStorage，风险提示见 WEB_SECRET_STORAGE_NOTICE。
   // 生产 Capacitor Android 仍走 SecureStorage。
-  const webKeys: readonly string[] = !isNativeSecretStore()
-    ? Array.from(new Set<string>([...KNOWN_KEYS]))
-    : [];
-  for (const key of webKeys) {
-    const value = readWebSecret(key);
-    if (value) sessionSecrets.set(key, value);
-  }
-  if (!isNativeSecretStore()) return;
-  try {
-    await SecureStorage.setKeyPrefix('medbox_');
-    await SecureStorage.setDefaultKeychainAccess(KeychainAccess.whenUnlockedThisDeviceOnly);
-    await SecureStorage.remove(RETIRED_IMAGE_SECRET_KEY).catch(() => false);
+  if (!isNativeSecretStore()) {
     for (const key of KNOWN_KEYS) {
-      const value = await SecureStorage.get(key, false).catch(() => '');
-      sessionSecrets.set(key, typeof value === 'string' ? value : '');
+      const value = readWebSecret(key);
+      if (value) sessionSecrets.set(key, value);
     }
-  } catch {
-    sessionSecrets.clear();
+    return;
   }
+  await SecureStorage.setKeyPrefix('medbox_');
+  await SecureStorage.setDefaultKeychainAccess(KeychainAccess.whenUnlockedThisDeviceOnly);
+  await SecureStorage.remove(RETIRED_IMAGE_SECRET_KEY).catch(() => false);
+  const restored = new Map<string, string>();
+  for (const key of KNOWN_KEYS) {
+    const value = await SecureStorage.get(key, false);
+    restored.set(key, typeof value === 'string' ? value : '');
+  }
+  for (const [key, value] of restored) sessionSecrets.set(key, value);
 }
 
 export function getSessionSecret(key: string = SECRET_KEY): string {
@@ -101,29 +108,26 @@ export function getSessionSecret(key: string = SECRET_KEY): string {
 }
 
 export async function setSessionSecret(secret: string, key: string = SECRET_KEY): Promise<boolean> {
+  await initializeSecretStore();
   const trimmed = secret.trim();
-  sessionSecrets.set(key, trimmed);
   if (!isNativeSecretStore()) {
+    sessionSecrets.set(key, trimmed);
     // 网页端：按用户选的存放方式落盘，刷新后仍能读到（'session' 则关标签页即失效）。
     writeWebSecret(key, trimmed);
     return true;
   }
-  // 原生路径：清掉任何 web localStorage 残留（迁移兼容），再写到 SecureStorage。
-  try { localStorage.removeItem(webSecretKey(key)); } catch { /* ignore */ }
-  try {
-    await SecureStorage.set(key, trimmed, false, false, KeychainAccess.whenUnlockedThisDeviceOnly);
-    return true;
-  } catch (error) {
-    console.warn('密钥写入安全存储失败', error);
-    return false;
-  }
+  await SecureStorage.set(key, trimmed, false, false, KeychainAccess.whenUnlockedThisDeviceOnly);
+  sessionSecrets.set(key, trimmed);
+  // 原生路径：写入成功后清掉任何 web storage 残留（迁移兼容）。
+  writeWebSecret(key, '');
+  return true;
 }
 
 export async function clearSessionSecret(key: string = SECRET_KEY): Promise<void> {
+  await initializeSecretStore();
+  if (isNativeSecretStore()) await SecureStorage.remove(key);
   sessionSecrets.set(key, '');
   writeWebSecret(key, ''); // 两个浏览器存储都清，避免切换过存放方式后留下残留
-  if (!isNativeSecretStore()) return;
-  await SecureStorage.remove(key).catch(() => false);
 }
 
 /** 写入当前选定的浏览器存储，并顺手清掉另一个，避免两处残留不一致。 */

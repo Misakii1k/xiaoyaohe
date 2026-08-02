@@ -1010,7 +1010,11 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
       html: '清空这些设置，恢复原样',
     });
     reset.onclick = async () => {
-      await resetLlmConfig();
+      try {
+        await resetLlmConfig();
+      } catch (error) {
+        return toast('清除失败：' + (error instanceof Error ? error.message : String(error)));
+      }
       toast('已恢复默认');
       // 重建 body
       body.replaceChildren();
@@ -1058,15 +1062,24 @@ function buildWebSecretPersistenceRow(): HTMLElement {
     'aria-label': '仅本次会话保存密钥',
   });
   toggle.checked = sessionOnly;
-  toggle.onchange = () => {
-    // 已填的密钥会被就地搬到新位置，用户不必重输
-    setWebSecretPersistence(toggle.checked ? 'session' : 'device');
-    toast(toggle.checked ? '密钥改为仅本次会话保存' : '密钥将保留在这台电脑上');
-    const desc = copy.querySelector<HTMLElement>('.settings-toggle-desc');
-    if (desc) {
-      desc.textContent = toggle.checked
-        ? '关掉这个标签页密钥就没了，下次要重新填。适合公用电脑。'
-        : '密钥会留在这台电脑上，关掉浏览器再打开还在。';
+  toggle.onchange = async () => {
+    const requestedMode = toggle.checked ? 'session' : 'device';
+    toggle.disabled = true;
+    try {
+      // 已填的密钥会被就地搬到新位置，用户不必重输
+      await setWebSecretPersistence(requestedMode);
+      toast(requestedMode === 'session' ? '密钥改为仅本次会话保存' : '密钥将保留在这台电脑上');
+      const desc = copy.querySelector<HTMLElement>('.settings-toggle-desc');
+      if (desc) {
+        desc.textContent = requestedMode === 'session'
+          ? '关掉这个标签页密钥就没了，下次要重新填。适合公用电脑。'
+          : '密钥会留在这台电脑上，关掉浏览器再打开还在。';
+      }
+    } catch {
+      toggle.checked = getWebSecretPersistence() === 'session';
+      toast('密钥存放方式切换失败，请重试');
+    } finally {
+      toggle.disabled = false;
     }
   };
   row.append(copy, toggle);
@@ -1342,7 +1355,11 @@ function renderAsrPanel(): HTMLElement {
   };
   clearBtn.onclick = async () => {
     if (!(await confirmDialog('清除本机腾讯云语音密钥？', '清除'))) return;
-    await clearAsrConfig();
+    try {
+      await clearAsrConfig();
+    } catch (error) {
+      return toast('清除失败：' + (error instanceof Error ? error.message : String(error)));
+    }
     idIn.value = '';
     keyIn.value = '';
     idIn.readOnly = false;
