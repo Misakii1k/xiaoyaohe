@@ -33,6 +33,29 @@ vi.mock('../src/db/local', () => ({
     inventoryChanged: false,
     lowStock: false,
   })),
+  listRecentInventoryOperations: vi.fn(async () => []),
+  undoInventoryOperation: vi.fn(async () => ({ ok: false, message: '暂无日志' })),
+  batchDeductInventory: vi.fn(async () => ({ ok: true, items: [] })),
+  updateMedicationInventory: vi.fn(async (id: string, inventory: { remaining: number; unit: string }) => {
+    const med = savedMeds.get(id) ?? { id, name: id };
+    const updated = { ...med, inventory };
+    savedMeds.set(id, updated);
+    return {
+      med: updated,
+      log: {
+        id: `log-${id}`,
+        medId: id,
+        medName: updated.name,
+        action: 'set',
+        previousRemaining: 0,
+        newRemaining: inventory.remaining,
+        delta: inventory.remaining,
+        unit: inventory.unit,
+        source: 'ai',
+        timestamp: 1,
+      },
+    };
+  }),
   MedicationBatchValidationError: class MedicationBatchValidationError extends Error {},
 }));
 

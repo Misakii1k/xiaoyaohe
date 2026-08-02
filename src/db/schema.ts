@@ -166,6 +166,8 @@ export interface InventoryOperationLog {
   timestamp: number;
   canUndo?: boolean;
   undoneLogId?: string;
+  /** Device-local intake whose stock effect this operation represents. */
+  intakeLogId?: string;
 }
 
 export type MedicationReminderMode = 'strong' | 'fullscreen-short' | 'fullscreen-persistent';
@@ -285,6 +287,8 @@ export interface IntakeLog {
   ackAt?: number;
   /** 本次打卡扣减的库存数量；用于撤销时恢复，老记录为空表示无法自动恢复 */
   inventoryDelta?: number;
+  /** Device-local inventory operation created for this intake deduction. */
+  inventoryOperationLogId?: string;
   /**
    * 标记此条服药记录的库存已在分药向导完成时预扣。
    * - taken 记录：true 表示库存已扣，setOccurrenceAction 跳过 deductInventory，

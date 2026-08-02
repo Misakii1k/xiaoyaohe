@@ -16,7 +16,7 @@ import {
   listRecentInventoryOperations,
   undoInventoryOperation,
   batchDeductInventory,
-  logInventoryOperation,
+  updateMedicationInventory,
 } from '../db/local';
 import {
   SLOT_LABEL,
@@ -675,57 +675,42 @@ const editInventory: AssistantTool = {
     const { med } = await findMedByName(name);
     if (!med) return { ok: false, 提示: `没找到叫「${name}」的药，先用 list_my_medications 看看都登记了什么药` };
 
-    let nextRemaining: number;
-    let unit = str(args.unit) || med.inventory?.unit || '';
+    const unit = str(args.unit) || med.inventory?.unit || '';
     const note = str(args.note);
-
-    if (action === 'mark_empty') {
-      nextRemaining = 0;
-    } else if (action === 'set') {
-      nextRemaining = roundStock(requestedQty ?? 0);
-    } else {
-      // add
-      const base = med.inventory?.remaining ?? 0;
-      if (med.inventory?.unit && unit && med.inventory.unit !== unit) {
-        // 单位不一致：保守起见，按"对端库存单位"显示但记下不一致警告
-        return { ok: false, 提示: `补货单位 ${unit} 与库存单位 ${med.inventory.unit} 不一致，请先在库存页统一单位` };
-      }
-      if (!unit && med.inventory?.unit) unit = med.inventory.unit;
-      nextRemaining = roundStock(base + (requestedQty ?? 0));
+    if (!unit) {
+      return { ok: false, 提示: '该药还没有库存单位，请通过 update_medication 或库存页设置初始单位' };
     }
-
-    // 在 med 上写入新库存
-    const prevStock = med.inventory?.remaining ?? 0;
-    if (!med.inventory) {
-      if (!unit && nextRemaining > 0) {
-        return { ok: false, 提示: '该药还没有库存记录，请通过 update_medication 或库存页设置初始单位' };
-      }
-      med.inventory = {
-        remaining: nextRemaining,
-        unit: unit || '片',
-      };
-    } else {
-      med.inventory.remaining = nextRemaining;
-      if (unit) med.inventory.unit = unit;
-    }
-    if (note) med.inventory.sourceNote = note.slice(0, 80);
-    med.inventory.lastReminderAt = undefined; // 重置低库存提醒节流，便于下次重判
-    await putMed(med);
-
-    const unitDisplay = med.inventory.unit || unit || '片';
-    const delta = roundStock(nextRemaining - prevStock);
-    await logInventoryOperation({
-      medId: med.id,
-      medName: med.name,
-      action: action === 'add' ? 'add' : action === 'mark_empty' ? 'mark_empty' : 'set',
-      previousRemaining: prevStock,
-      newRemaining: nextRemaining,
-      delta,
-      unit: unitDisplay,
-      source: 'ai',
-      sourceNote: note || (action === 'add' ? `AI小助手补货 +${requestedQty ?? 0}` : action === 'mark_empty' ? 'AI小助手标记用完' : `AI小助手修改库存为 ${nextRemaining}`),
-      canUndo: true,
-    });
+    const { remaining: expectedRemaining, unit: expectedUnit, ...currentDetails } = med.inventory ?? {
+      remaining: undefined,
+      unit: undefined,
+    };
+    const metadata = note
+      ? {
+          expected: currentDetails,
+          value: {
+            ...currentDetails,
+            sourceNote: note.slice(0, 80),
+          },
+        }
+      : undefined;
+    const committed = await updateMedicationInventory(
+      med.id,
+      action === 'add'
+        ? { action, quantity: requestedQty ?? 0, unit, metadata }
+        : action === 'mark_empty'
+          ? { action, unit, expectedRemaining, expectedUnit, metadata }
+          : { action, remaining: roundStock(requestedQty ?? 0), unit, expectedRemaining, expectedUnit, metadata },
+      {
+        source: 'ai',
+        sourceNote: note || (action === 'add'
+          ? `AI小助手补货 +${requestedQty ?? 0}`
+          : action === 'mark_empty'
+            ? 'AI小助手标记用完'
+            : `AI小助手修改库存为 ${requestedQty ?? 0}`),
+      },
+    );
+    const committedInventory = committed.med.inventory!;
+    const unitDisplay = committedInventory.unit || unit || '片';
     try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
 
     const ui: AssistantCardBlock = {
@@ -733,20 +718,20 @@ const editInventory: AssistantTool = {
       variant: 'inventory',
       icon: 'box',
       eyebrow: '库存已更新',
-      title: med.name,
-      badge: `${med.inventory.remaining}${unitDisplay}`,
-      tone: med.inventory.remaining <= 0 ? 'warning' : 'success',
+      title: committed.med.name,
+      badge: `${committedInventory.remaining}${unitDisplay}`,
+      tone: committedInventory.remaining <= 0 ? 'warning' : 'success',
       body: note ? `备注：${note}` : undefined,
       facts: [
-        { label: '当前剩余', value: `${med.inventory.remaining}${unitDisplay}` },
+        { label: '当前剩余', value: `${committedInventory.remaining}${unitDisplay}` },
         { label: '操作', value: action === 'set' ? '设为' : action === 'add' ? '补货' : '标记用完' },
       ],
     };
     return {
       ok: true,
-      已更新: `「${med.name}」库存 → ${med.inventory.remaining}${unitDisplay}`,
-      药名: med.name,
-      剩余: med.inventory.remaining,
+      已更新: `「${committed.med.name}」库存 → ${committedInventory.remaining}${unitDisplay}`,
+      药名: committed.med.name,
+      剩余: committedInventory.remaining,
       单位: unitDisplay,
       ui,
     };
@@ -1379,12 +1364,12 @@ const batchDeductInventoryTool: AssistantTool = {
 
     const res = await batchDeductInventory(deductItems, 'batch', `一次性扣除 ${days} 天库存`);
 
-    const items: AssistantCardItem[] = preview.items.map((i) => ({
-      title: i.medName,
-      subtitle: `前剩余 ${i.currentStock}${i.unit} ➔ 本次扣除 ${i.deductQuantity}${i.unit}`,
-      meta: `预计剩 ${i.expectedRemaining}${i.unit}`,
-      status: i.willBeEmpty ? 'warning' : i.willBeLow ? 'warning' : 'success',
-      statusLabel: i.willBeEmpty ? '将用完' : i.willBeLow ? '将偏低' : '正常',
+    const items: AssistantCardItem[] = res.items.map((item) => ({
+      title: item.medName,
+      subtitle: `前剩余 ${item.previous}${item.unit} ➔ 实际扣除 ${item.deducted}${item.unit}`,
+      meta: `实际剩余 ${item.remaining}${item.unit}`,
+      status: item.remaining <= 0 ? 'warning' : 'success',
+      statusLabel: item.remaining <= 0 ? '已用完' : '已提交',
       icon: 'box',
     }));
 
@@ -1395,23 +1380,23 @@ const batchDeductInventoryTool: AssistantTool = {
       eyebrow: `批量扣减对比预览 (${days} 天用量)`,
       title: `已批量扣除 ${days} 天库存`,
       tone: 'success',
-      body: `本次处理了 ${res.results.length} 种药品的库存扣减。右侧展示改动前后的具体对比。`,
+      body: `本次处理了 ${res.items.length} 种药品的库存扣减。右侧展示实际提交结果。`,
       items,
       facts: [
         { label: '扣除天数', value: `${days} 天` },
-        { label: '处理药品数', value: `${res.results.length} 种` },
+        { label: '处理药品数', value: `${res.items.length} 种` },
       ],
     };
 
     return {
       ok: true,
       扣除天数: days,
-      对比明细: preview.items.map((i) => ({
-        药名: i.medName,
-        扣除前剩余: `${i.currentStock}${i.unit}`,
-        本次扣除: `${i.deductQuantity}${i.unit}`,
-        扣除后剩余: `${i.expectedRemaining}${i.unit}`,
-        状态变化: i.willBeEmpty ? '变为用完' : i.willBeLow ? '变为低库存' : '正常',
+      对比明细: res.items.map((item) => ({
+        药名: item.medName,
+        扣除前剩余: `${item.previous}${item.unit}`,
+        本次实际扣除: `${item.deducted}${item.unit}`,
+        扣除后实际剩余: `${item.remaining}${item.unit}`,
+        状态变化: item.remaining <= 0 ? '变为用完' : '已提交',
       })),
       ui,
     };

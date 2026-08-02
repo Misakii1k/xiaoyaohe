@@ -2,7 +2,7 @@
 import '../ui/styles/pages/medication-editor.css';
 import {
   getMed,
-  putMed,
+  saveMedicationProfile,
   softDeleteMed,
   listRulesByMed,
   putRule,
@@ -75,6 +75,9 @@ export async function renderMedEditPage(
     return cleanup;
   }
 
+  let expectedInventory = existing?.inventory ? structuredClone(existing.inventory) : undefined;
+  let expectedProfile = existing ? structuredClone(existing) : undefined;
+  let medicationExists = editing;
   const med: Medication = existing ?? {
     id: uid(),
     name: '',
@@ -423,7 +426,18 @@ export async function renderMedEditPage(
     saveBtn.setAttribute('disabled', 'true');
     let medSaved = false;
     try {
-      await putMed(med);
+      const committed = await saveMedicationProfile(
+        med,
+        medicationExists
+          ? { isNew: false, expectedInventory, expectedProfile: expectedProfile! }
+          : { isNew: true },
+      );
+      Object.assign(med, committed.med);
+      medicationExists = true;
+      expectedInventory = committed.med.inventory
+        ? structuredClone(committed.med.inventory)
+        : undefined;
+      expectedProfile = structuredClone(committed.med);
       medSaved = true;
       await syncRules(med.id, selectedSlots, timeInputs, existingRules, cycle, cycleStartDate);
       await rescheduleMedicationReminders().catch(() => undefined);

@@ -63,15 +63,21 @@ interface BackupPayload {
   scheduleRevisions?: MedicationScheduleRevision[];
 }
 
+export function stripDeviceLocalIntakeInventoryLink(log: IntakeLog): IntakeLog {
+  const portable = structuredClone(log);
+  delete portable.inventoryOperationLogId;
+  return portable;
+}
+
 export const backupProviders: BackupProvider[] = [
   {
     key: 'meds',
-    version: 2,
+    version: 3,
     label: '吃药工具',
     export: async () => ({
       meds: await listMeds(true),
       rules: await listRules(true),
-      logs: await listLogs(),
+      logs: (await listLogs()).map(stripDeviceLocalIntakeInventoryLink),
       scheduleRevisions: await listScheduleRevisions(),
     }),
     import: async (data) => {
@@ -179,7 +185,7 @@ export const tools: ToolDefinition[] = [
 
 export async function buildBackup(): Promise<Record<string, unknown>> {
   const data: Record<string, unknown> = {
-    version: 4,
+    version: 5,
     app: 'medbox',
     at: Date.now(),
     providers: backupProviders.map((p) => ({ key: p.key, version: p.version })),

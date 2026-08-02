@@ -1,5 +1,5 @@
 import '../ui/styles/pages/inventory.css';
-import { listMeds, listRules, putMed, listRecentInventoryOperations, undoInventoryOperation, batchDeductInventory } from '../db/local';
+import { listMeds, listRules, listRecentInventoryOperations, undoInventoryOperation, batchDeductInventory, updateMedicationInventory } from '../db/local';
 import { INVENTORY_SOURCE_LABEL, type Medication, type MedicationInventory, type ReminderRule } from '../db/schema';
 import {
   classifyInventoryStatus,
@@ -320,16 +320,31 @@ function openInventoryActions(root: HTMLElement, med: Medication, signal?: Abort
     return;
   }
 
-  const save = async (nextRemaining: number, successMessage: string): Promise<void> => {
+  const save = async (
+    quantity: number,
+    action: 'set' | 'add' | 'mark_empty' = 'set',
+  ): Promise<void> => {
     sheet?.close();
-    med.inventory!.remaining = roundStock(Math.max(0, nextRemaining));
     try {
-      await putMed(med);
+      const { remaining: expectedRemaining, unit } = med.inventory!;
+      const committed = await updateMedicationInventory(
+        med.id,
+        action === 'add'
+          ? { action, quantity, unit }
+          : action === 'mark_empty'
+            ? { action, unit, expectedRemaining, expectedUnit: unit }
+            : { action, remaining: roundStock(Math.max(0, quantity)), unit, expectedRemaining, expectedUnit: unit },
+        {
+          source: 'manual',
+          sourceNote: action === 'add' ? `手动补货 +${quantity}${unit}` : action === 'mark_empty' ? '手动标记用完' : `手动设置库存为 ${quantity}${unit}`,
+        },
+      );
       if (signal?.aborted) return;
-      toast(successMessage);
+      const inventory = committed.med.inventory!;
+      toast(`库存已更新，剩余 ${formatQuantity(inventory.remaining)}${inventory.unit}`);
       await renderMedInventoryPage(root, signal);
-    } catch {
-      toast('库存保存失败，请稍后重试');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : '库存保存失败，请稍后重试');
     }
   };
 
@@ -344,14 +359,14 @@ function openInventoryActions(root: HTMLElement, med: Medication, signal?: Abort
         navigate(`/meds/${med.id}/edit`);
         return;
       }
-      void save(med.inventory!.remaining + packageQuantity, `已补一盒，剩余 ${formatQuantity(med.inventory!.remaining + packageQuantity)}${med.inventory!.unit}`);
+      void save(packageQuantity, 'add');
     },
   }));
   if (med.inventory.packageQuantity) {
     actions.append(createButton({
       label: '设为整盒',
       variant: 'secondary',
-      onClick: () => void save(med.inventory!.packageQuantity!, `已设为整盒 ${formatQuantity(med.inventory!.packageQuantity!)}${med.inventory!.unit}`),
+      onClick: () => void save(med.inventory!.packageQuantity!),
     }));
   }
 
@@ -376,14 +391,14 @@ function openInventoryActions(root: HTMLElement, med: Medication, signal?: Abort
         numberInput.focus();
         return;
       }
-      void save(next, `剩余数量已改为 ${formatQuantity(next)}${med.inventory!.unit}`);
+      void save(next);
     },
   }));
   if (med.inventory.remaining > 0) {
     actions.append(createButton({
       label: '标记用完',
       variant: 'danger',
-      onClick: () => void save(0, '已标记为用完'),
+      onClick: () => void save(0, 'mark_empty'),
     }));
   }
   actions.append(createButton({ label: '编辑库存详情', variant: 'text', icon: 'edit', onClick: editInventory }));
@@ -696,10 +711,26 @@ function confirmUpdateInventory(
       sheet?.close();
       sheet = undefined;
       try {
-        med.inventory = inv;
-        await putMed(med);
+        const { remaining, unit, ...metadata } = inv;
+        const {
+          remaining: expectedRemaining,
+          unit: expectedUnit,
+          ...expectedMetadata
+        } = med.inventory ?? { remaining: undefined, unit: undefined };
+        const committed = await updateMedicationInventory(med.id, {
+          action: 'set',
+          remaining,
+          unit,
+          expectedRemaining,
+          expectedUnit,
+          metadata: { expected: expectedMetadata, value: metadata },
+        }, {
+          source: 'manual',
+          sourceNote: `智能录入库存为 ${formatQuantity(remaining)}${unit}`,
+        });
         if (signal?.aborted) return;
-        toast(`已更新「${med.name}」剩余 ${formatQuantity(inv.remaining)}${inv.unit}`);
+        const inventory = committed.med.inventory!;
+        toast(`已更新「${committed.med.name}」剩余 ${formatQuantity(inventory.remaining)}${inventory.unit}`);
         await renderMedInventoryPage(root, signal);
       } catch {
         toast('库存保存失败，请稍后重试');
@@ -886,7 +917,7 @@ async function openBatchDeductSheet(root: HTMLElement, meds: Medication[], rules
 
       const res = await batchDeductInventory(deductItems, 'batch', `手动一次性扣除 ${days} 天库存`);
       if (res.ok) {
-        toast(`已完成 ${res.results.length} 种药品的批量扣减`);
+        toast(`已完成 ${res.items.length} 种药品的批量扣减`);
         await renderMedInventoryPage(root, signal);
       }
     },

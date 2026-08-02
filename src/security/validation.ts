@@ -101,8 +101,9 @@ const intakeLogSchema = z.object({
   status: z.enum(['taken', 'skipped', 'pending']),
   ackAt: nonNegativeNumber.optional(),
   inventoryDelta: finiteNumber.positive().optional(),
+  inventoryOperationLogId: id.optional(),
   updatedAt: nonNegativeNumber,
-}).passthrough();
+}).passthrough().transform(({ inventoryOperationLogId: _deviceLocalLink, ...portable }) => portable);
 
 const scheduleRevisionSchema = z.object({
   id,

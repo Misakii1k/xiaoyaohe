@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   openMedboxDatabase,
   softDeleteMed,
+  undoInventoryOperation,
   upgradeMedboxDatabase,
   type MedboxDB,
 } from '../../db/local';
@@ -319,7 +320,7 @@ describe('LAN sync snapshot store', () => {
     });
   });
 
-  it('does not import inventory deltas and preserves a deduction made on this phone', async () => {
+  it('does not import inventory deltas and detaches an unverifiable legacy local effect', async () => {
     const database = await openMedboxDatabase();
     const med = medication('med_local_inventory', 'Local inventory', 1);
     med.inventory = { remaining: 9, unit: 'tablet' };
@@ -342,14 +343,14 @@ describe('LAN sync snapshot store', () => {
     ]);
     const merged = await mergeLanSnapshots(expectedLocal, remote);
     await applyLanMergedSnapshot(merged.snapshot!, expectedLocal);
-    expect(await database.get('logs', localIntake.id)).toMatchObject({
-      status: 'taken',
-      inventoryDelta: 1,
-    });
+    const stored = await database.get('logs', localIntake.id);
+    expect(stored).toMatchObject({ status: 'taken' });
+    expect(stored).not.toHaveProperty('inventoryDelta');
+    expect(stored).not.toHaveProperty('inventoryOperationLogId');
     expect((await database.get('meds', med.id))?.inventory?.remaining).toBe(9);
   });
 
-  it('restores only this phone inventory when a newer intake is skipped or deleted', async () => {
+  it('applies LAN intake state but conservatively does not restore unlinked legacy deltas', async () => {
     const database = await openMedboxDatabase();
     const skippedMed = medication('med_restore_skipped', 'Restore skipped', 1);
     skippedMed.inventory = { remaining: 9, unit: 'tablet' };
@@ -381,12 +382,54 @@ describe('LAN sync snapshot store', () => {
 
     await applyLanMergedSnapshot(merged.snapshot!, expectedLocal);
 
-    expect((await database.get('meds', skippedMed.id))?.inventory?.remaining).toBe(10);
-    expect((await database.get('meds', deletedMed.id))?.inventory?.remaining).toBe(10);
+    expect((await database.get('meds', skippedMed.id))?.inventory?.remaining).toBe(9);
+    expect((await database.get('meds', deletedMed.id))?.inventory?.remaining).toBe(8);
     const storedSkipped = await database.get('logs', skippedIntake.id);
     expect(storedSkipped).toMatchObject({ status: 'skipped' });
     expect(storedSkipped).not.toHaveProperty('inventoryDelta');
     expect(await database.get('logs', deletedIntake.id)).toBeUndefined();
+  });
+
+  it('does not restore a LAN-cleared intake again after its linked inventory operation was undone', async () => {
+    const database = await openMedboxDatabase();
+    const med = medication('med_lan_undo_once', 'LAN undo once', 1);
+    med.inventory = { remaining: 9, unit: 'tablet' };
+    const intake = {
+      ...intakeLog('intake_lan_undo_once', med.id, undefined, undefined, 1),
+      inventoryDelta: 1,
+      inventoryOperationLogId: 'inventory_lan_undo_once',
+    };
+    await database.put('meds', med);
+    await database.put('logs', intake);
+    await database.put('inventoryLogs', {
+      id: intake.inventoryOperationLogId,
+      medId: med.id,
+      medName: med.name,
+      action: 'deduct',
+      previousRemaining: 10,
+      newRemaining: 9,
+      delta: -1,
+      unit: 'tablet',
+      source: 'intake',
+      timestamp: 10,
+      canUndo: true,
+      intakeLogId: intake.id,
+    });
+
+    const undone = await undoInventoryOperation(intake.inventoryOperationLogId);
+    expect(undone.ok).toBe(true);
+    expect((await database.get('meds', med.id))?.inventory?.remaining).toBe(10);
+    const intakeAfterUndo = await database.get('logs', intake.id);
+    expect(intakeAfterUndo).not.toHaveProperty('inventoryDelta');
+    expect(intakeAfterUndo).not.toHaveProperty('inventoryOperationLogId');
+
+    const expectedLocal = await createLanSnapshot('device_local', SESSION_A);
+    const remote = await snapshot([await tombstone('intake', intake.id, 50, 'device_remote')]);
+    const merged = await mergeLanSnapshots(expectedLocal, remote);
+    await applyLanMergedSnapshot(merged.snapshot!, expectedLocal);
+
+    expect((await database.get('meds', med.id))?.inventory?.remaining).toBe(10);
+    expect(await database.get('logs', intake.id)).toBeUndefined();
   });
 
   it('keeps intake history when its medication was soft-deleted before syncing', async () => {

@@ -5,6 +5,7 @@ import {
   listRules,
   listScheduleRevisions,
   openMedboxDatabase,
+  revertLinkedIntakeInventoryEffect,
   type MedboxDB,
   type SyncLanEntityMetadata,
   type SyncLanEntityType,
@@ -15,7 +16,6 @@ import type {
   MedicationScheduleRevision,
   ReminderRule,
 } from '../../db/schema';
-import { restoreInventory } from '../../features/inventory';
 import {
   LAN_SYNC_SCHEMA_VERSION,
   canonicalLanJson,
@@ -39,7 +39,7 @@ export { parseLanSyncSnapshot } from './entities';
 export type { LanSyncSnapshot } from './entities';
 
 const COUNTER_KEY = 'counter' as const;
-const LAN_STORES = ['meds', 'rules', 'scheduleRevisions', 'logs', 'syncLanMetadata'] as const;
+const LAN_STORES = ['meds', 'rules', 'scheduleRevisions', 'logs', 'syncLanMetadata', 'inventoryLogs'] as const;
 type LanStoreNames = typeof LAN_STORES;
 type LanTransaction = IDBPTransaction<MedboxDB, LanStoreNames, 'readwrite'>;
 
@@ -318,7 +318,7 @@ export async function applyLanMergedSnapshot(
   );
   const database = await openMedboxDatabase();
   const transaction = database.transaction(
-    ['meds', 'rules', 'scheduleRevisions', 'logs', 'syncLanMetadata'],
+    ['meds', 'rules', 'scheduleRevisions', 'logs', 'syncLanMetadata', 'inventoryLogs'],
     'readwrite',
   );
   const medicationStore = transaction.objectStore('meds');
@@ -763,19 +763,30 @@ async function applyIntake(
     entry.payload.status === 'taken' &&
     current?.status === 'taken' &&
     current.medId === entry.payload.medId;
-  if (current?.status === 'taken' && current.inventoryDelta && !keepsLocalDeduction) {
-    const medicationStore = transaction.objectStore('meds');
-    const medication = await medicationStore.get(current.medId);
-    if (medication && restoreInventory(medication, current.inventoryDelta)) {
-      await medicationStore.put(medication);
-    }
+  if (
+    current?.status === 'taken'
+    && (current.inventoryDelta != null || current.inventoryOperationLogId)
+    && !keepsLocalDeduction
+  ) {
+    await revertLinkedIntakeInventoryEffect(current, {
+      getMedication: (medId) => transaction.objectStore('meds').get(medId),
+      putMedication: (medication) => transaction.objectStore('meds').put(medication),
+      getInventoryLog: (logId) => transaction.objectStore('inventoryLogs').get(logId),
+      listMedicationInventoryLogs: (medId) => transaction.objectStore('inventoryLogs').index('byMed').getAll(medId),
+      putInventoryLog: (log) => transaction.objectStore('inventoryLogs').put(log),
+    }, { conflict: 'detach' });
   }
   if (entry.tombstone) await store.delete(entry.entityId);
   else {
     const next = structuredClone(entry.payload) as IntakeLog;
-    // Inventory is device-local. Preserve only a deduction this phone actually made.
-    if (keepsLocalDeduction && current.inventoryDelta) {
+    // Inventory is device-local. Preserve only a still-linked deduction this phone actually made.
+    if (
+      keepsLocalDeduction
+      && current?.inventoryDelta != null
+      && current.inventoryOperationLogId
+    ) {
       next.inventoryDelta = current.inventoryDelta;
+      next.inventoryOperationLogId = current.inventoryOperationLogId;
     }
     await store.put(next);
   }
