@@ -2,8 +2,9 @@
 // 用户：「阿司匹林肠溶片 100mg，每天早晚各一片，饭后吃，30天，注意监测出血」
 // 输出：{ name, dosageText, amountPerDose, slots, slotTimes, mealRelsBySlot, daysOfWeek, notes }
 
-import { getLlmConfig, normalizeAndValidateBaseUrl } from './llmConfig';
-import { requireAiConsent } from './consent';
+import { getLlmRouteCandidates, normalizeAndValidateBaseUrl } from './llmConfig';
+import { hasAiConsent, requireAiConsent } from './consent';
+import { isLlmAttemptError } from './llmRouting';
 import {
   SLOT_DEFAULT_TIME,
   mealRelsFromBySlot,
@@ -74,66 +75,85 @@ export async function parsePrescription(text: string): Promise<PrescriptionDraft
   if (!desc) {
     throw new ParsePrescriptionError('请先描述这种药');
   }
-  const cfg = getLlmConfig();
-  if (!cfg.baseUrl || !cfg.apiKey) {
+  const routeCandidates = getLlmRouteCandidates();
+  if (routeCandidates.length === 0) {
     throw new ParsePrescriptionError(
       '请先在「设置 → AI 大模型」配置 API 地址和密钥',
       'unconfigured',
     );
   }
-  const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
+  const baseUrl = normalizeAndValidateBaseUrl(routeCandidates[0]!.baseUrl);
   await requireAiConsent('prescription', baseUrl);
+  const candidates = routeCandidates.filter((provider, index) =>
+    index === 0 || hasAiConsent('prescription', provider.baseUrl),
+  );
 
-  let resp: Response;
-  try {
-    resp = await fetch(baseUrl + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: 'Bearer ' + cfg.apiKey,
-      },
-      body: JSON.stringify({
-        model: cfg.model,
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: desc },
-        ],
-      }),
-      signal: AbortSignal.timeout(45_000),
-    });
-  } catch (error) {
-    if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-      throw new ParsePrescriptionError('请求超时，请检查网络后重试');
+  let lastError: unknown;
+  for (const provider of candidates) {
+    try {
+      let resp: Response;
+      try {
+        resp = await fetch(provider.baseUrl + '/chat/completions', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer ' + provider.apiKey,
+          },
+          body: JSON.stringify({
+            model: provider.model,
+            temperature: 0.2,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: desc },
+            ],
+          }),
+          signal: AbortSignal.timeout(45_000),
+        });
+      } catch (error) {
+        if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+          throw { retryable: true, message: '请求超时，请检查网络后重试' } as const;
+        }
+        throw { retryable: true, message: '连不上 AI 服务，请检查网络或设置里的服务地址' } as const;
+      }
+
+      if (!resp.ok) {
+        const data = (await resp.json().catch(() => ({}))) as { error?: { message?: string } | string };
+        const msg = typeof data.error === 'string'
+          ? data.error
+          : data.error?.message || `AI 服务出错（${resp.status}）`;
+        const retryable = resp.status === 401 || resp.status === 403
+          || resp.status === 404 || resp.status === 429 || resp.status >= 500;
+        throw { retryable, message: msg } as const;
+      }
+
+      const payload = (await resp.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      const content = payload.choices?.[0]?.message?.content;
+      if (!content) throw new ParsePrescriptionError('AI 返回为空');
+
+      let raw: any;
+      try {
+        raw = JSON.parse(content);
+      } catch {
+        // 兜底：尝试从代码块抽 JSON
+        const m = content.match(/\{[\s\S]*\}/);
+        if (!m) throw new ParsePrescriptionError('AI 返回的不是 JSON');
+        raw = JSON.parse(m[0]);
+      }
+      return normalize(raw);
+    } catch (error) {
+      // 解析类错误是终局失败；只有可顺延的请求错误才试下一家。
+      if (!isLlmAttemptError(error) || !error.retryable) throw error;
+      lastError = error;
     }
-    throw new ParsePrescriptionError('连不上 AI 服务，请检查网络或设置里的服务地址');
   }
-
-  if (!resp.ok) {
-    const data = (await resp.json().catch(() => ({}))) as { error?: { message?: string } | string };
-    const msg = typeof data.error === 'string'
-      ? data.error
-      : data.error?.message || `AI 服务出错（${resp.status}）`;
-    throw new ParsePrescriptionError(msg);
+  // 所有候选都失败时，把最后一次顺延错误转成用户能读懂的文案。
+  if (isLlmAttemptError(lastError)) {
+    throw new ParsePrescriptionError(String(lastError.message));
   }
-
-  const payload = (await resp.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const content = payload.choices?.[0]?.message?.content;
-  if (!content) throw new ParsePrescriptionError('AI 返回为空');
-
-  let raw: any;
-  try {
-    raw = JSON.parse(content);
-  } catch {
-    // 兜底：尝试从代码块抽 JSON
-    const m = content.match(/\{[\s\S]*\}/);
-    if (!m) throw new ParsePrescriptionError('AI 返回的不是 JSON');
-    raw = JSON.parse(m[0]);
-  }
-  return normalize(raw);
+  throw new ParsePrescriptionError('AI 服务暂时不可用，请稍后重试');
 }
 
 function normalize(raw: any): PrescriptionDraft {

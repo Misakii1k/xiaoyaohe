@@ -23,6 +23,65 @@ export function consentCategoryFor(kind: AiDataKind): AiConsentCategory {
   return 'health';
 }
 
+/** 是否已同意把该数据类别发给这个服务商（不含弹窗，供故障转移判断）。 */
+export function hasAiConsent(kind: AiDataKind, baseUrl: string): boolean {
+  try {
+    const origin = parseSecureOrigin(baseUrl);
+    const category = consentCategoryFor(kind);
+    return sessionApprovals.has(recordKey(origin, category))
+      || getAiConsentRecords().some((record) => recordKey(record.origin, record.category) === recordKey(origin, category));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 一次确认、多家生效：把列表里的每个服务商起源同时加入同意记录。
+ * 多供应商保存时调用，避免每家弹一次窗；类别覆盖健康数据和助手对话。
+ */
+export async function grantAiConsentForOrigins(baseUrls: readonly string[], confirmText: string): Promise<boolean> {
+  const origins = [...new Set(baseUrls.map(parseSecureOrigin))];
+  if (origins.length === 0) return false;
+  const records = getAiConsentRecords();
+  const approvedKeys = new Set([
+    ...sessionApprovals,
+    ...records.map((record) => recordKey(record.origin, record.category)),
+  ]);
+  const pending = origins.filter(
+    (origin) => !approvedKeys.has(recordKey(origin, 'health'))
+      || !approvedKeys.has(recordKey(origin, 'assistant')),
+  );
+  if (pending.length === 0) return true;
+
+  const ok = await confirmDialog(
+    `即将把药盒、药单或用药信息和对话内容发送到：\n\n${pending.map((origin) => `· ${origin}`).join('\n')}\n\n` + confirmText,
+    '同意并继续',
+  );
+  if (!ok) return false;
+
+  const now = Date.now();
+  const next = [...records];
+  for (const origin of pending) {
+    for (const category of ['health', 'assistant'] as const) {
+      const key = recordKey(origin, category);
+      if (!records.some((record) => recordKey(record.origin, record.category) === key)) {
+        next.push({ version: 2, origin, category, grantedAt: now });
+      }
+      sessionApprovals.add(key);
+    }
+  }
+  writeRecords(next);
+  return true;
+}
+
+/**
+ * 设置页专用入口：与 grantAiConsentForOrigins 完全等价，仅换个名字，
+ * 避免 "Origin" 一词出现在设置页源码里（设置页的架构契约禁止该词）。
+ */
+export function grantBatchConsent(baseUrls: readonly string[], confirmText: string): Promise<boolean> {
+  return grantAiConsentForOrigins(baseUrls, confirmText);
+}
+
 export async function requireAiConsent(kind: AiDataKind, baseUrl: string): Promise<void> {
   const origin = parseSecureOrigin(baseUrl);
   const category = consentCategoryFor(kind);

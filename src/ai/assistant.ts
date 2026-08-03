@@ -1,8 +1,9 @@
 // 全局小助手对话引擎：把用户的话发给 OpenAI 兼容服务，
 // 模型需要查数据或帮忙操作时走 assistantTools 的工具循环。
-import { requireAiConsent } from './consent';
-import { getLlmConfig, normalizeAndValidateBaseUrl } from './llmConfig';
+import { hasAiConsent, requireAiConsent } from './consent';
+import { getLlmConfig, getLlmRouteCandidates, normalizeAndValidateBaseUrl, type LlmProvider } from './llmConfig';
 import { assistantTools, findAssistantTool } from './assistantTools';
+import { isLlmAttemptError, type LlmAttemptError } from './llmRouting';
 
 export type AssistantErrorKind = 'unconfigured' | 'cancelled' | 'service';
 
@@ -111,6 +112,37 @@ const TURN_DEADLINE_MS = 240_000;
 const MAX_WIRE_MESSAGES = 20;
 const MAX_WIRE_CHARS = 30_000;
 
+/** 一次对话内按优先级走完的候选服务商；顺延成功后留在原地，不来回横跳。 */
+class AttemptCursor {
+  private index = 0;
+  constructor(private readonly candidates: readonly LlmProvider[]) {}
+
+  get current(): LlmProvider | undefined {
+    return this.candidates[this.index];
+  }
+
+  get hasNext(): boolean {
+    return this.index + 1 < this.candidates.length;
+  }
+
+  advance(): LlmProvider | undefined {
+    this.index += 1;
+    return this.current;
+  }
+}
+
+/** 可顺延的请求失败：网络不可达、超时、5xx、429、401/403。 */
+class LlmRequestError extends Error implements LlmAttemptError {
+  constructor(
+    readonly retryable: boolean,
+    readonly status: number | undefined,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'LlmRequestError';
+  }
+}
+
 const SYSTEM_PROMPT = [
   '你是「小药盒」应用里的贴身小助手，帮用户照看吃药提醒、药品和库存。',
   '说话规则：',
@@ -157,16 +189,20 @@ export async function runAssistantTurn(
 ): Promise<AssistantTurnResult> {
   const cfg = getLlmConfig();
   const explicitSearchQuery = extractExplicitWebSearchQuery(history[history.length - 1]?.content ?? '');
-  if (!cfg.baseUrl || !cfg.apiKey) {
+  const routeCandidates = getLlmRouteCandidates();
+  if (routeCandidates.length === 0 || !cfg.baseUrl || !cfg.apiKey) {
     if (explicitSearchQuery) {
       const blocks: AssistantContentBlock[] = [];
       await runExplicitWebSearch(explicitSearchQuery, events, blocks);
       return { markdown: '已完成联网搜索，结果和来源已列在上方。', blocks };
     }
-    throw new AssistantError('unconfigured', '还没连接 AI 服务。到「设置 → AI 智能识别」填好服务地址和密钥，小助手就能陪你聊了。');
+    throw new AssistantError('unconfigured', '还没连接 AI 服务。到「设置 → AI 服务商」填好服务地址和密钥，小助手就能陪你聊了。');
   }
   const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
   await requireAiConsent('assistant-chat', baseUrl);
+  const candidates = routeCandidates.filter((provider, index) =>
+    index === 0 || hasAiConsent('assistant-chat', provider.baseUrl),
+  );
 
   const now = new Date();
   const blocks: AssistantContentBlock[] = [];
@@ -192,6 +228,7 @@ export async function runAssistantTurn(
     });
   }
 
+  const cursor = new AttemptCursor(candidates);
   const turnDeadline = Date.now() + TURN_DEADLINE_MS;
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
     if (Date.now() >= turnDeadline) {
@@ -201,15 +238,28 @@ export async function runAssistantTurn(
     let reply: WireReply;
     try {
       reply = await requestChat(
-        baseUrl,
-        cfg.apiKey,
-        cfg.model,
+        cursor.current!,
         messages,
         events.signal,
         round < MAX_TOOL_ROUNDS,
         events.onText,
       );
     } catch (error) {
+      // 当前供应商可恢复地失败时顺延到下一家重试一次。
+      if (isLlmAttemptError(error) && error.retryable && cursor.hasNext) {
+        const from = cursor.current!;
+        const to = cursor.advance()!;
+        blocks.push({
+          type: 'card',
+          eyebrow: '服务商切换',
+          title: `${from.label} 暂时不可用`,
+          body: `已改用 ${to.label}（${new URL(to.baseUrl).hostname}）继续这次对话。`,
+          tone: 'warning',
+          variant: 'notice',
+          icon: 'warn',
+        });
+        continue;
+      }
       // A completed web search or card should remain visible even if the model
       // times out while producing its final prose response.
       if (blocks.length > 0) {
@@ -393,22 +443,21 @@ interface WireReply {
 }
 
 async function requestChat(
-  baseUrl: string,
-  apiKey: string,
-  model: string,
+  provider: LlmProvider,
   messages: readonly WireMessage[],
   external: AbortSignal | undefined,
   allowTools: boolean,
   onText?: (text: string) => void,
   stream = true,
 ): Promise<WireReply> {
+  const baseUrl = normalizeAndValidateBaseUrl(provider.baseUrl);
   let response: Response;
   try {
     response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${provider.apiKey}` },
       body: JSON.stringify({
-        model,
+        model: provider.model,
         messages,
         temperature: 0.3,
         stream,
@@ -427,9 +476,9 @@ async function requestChat(
   } catch (e) {
     if (external?.aborted) throw new AssistantError('cancelled', '已停止这次回复。');
     if (e instanceof DOMException && (e.name === 'AbortError' || e.name === 'TimeoutError')) {
-      throw new AssistantError('service', 'AI 服务响应太慢，这次先不等了，稍后再试。');
+      throw new LlmRequestError(true, undefined, 'AI 服务响应太慢，这次先不等了，稍后再试。');
     }
-    throw new AssistantError('service', '连不上 AI 服务，检查一下网络或设置里的服务地址。');
+    throw new LlmRequestError(true, undefined, '连不上 AI 服务，检查一下网络或设置里的服务地址。');
   }
 
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
@@ -444,9 +493,12 @@ async function requestChat(
   if (!response.ok) {
     const detail = data.error?.message || `服务返回 ${response.status}`;
     if (stream && /stream(?:ing)?\s*(is\s*)?(not supported|unsupported)|unknown field/i.test(detail)) {
-      return requestChat(baseUrl, apiKey, model, messages, external, allowTools, onText, false);
+      return requestChat(provider, messages, external, allowTools, onText, false);
     }
-    throw new AssistantError('service', `AI 服务出错了：${detail}`);
+    // 401/403/429/5xx 顺延到下一家；400 等参数错误留在当前服务商报错。
+    const retryable = response.status === 401 || response.status === 403
+      || response.status === 404 || response.status === 429 || response.status >= 500;
+    throw new LlmRequestError(retryable, response.status, `AI 服务出错了：${detail}`);
   }
   const message = data.choices?.[0]?.message;
   if (!message) throw new AssistantError('service', 'AI 服务返回的内容看不懂，稍后再试一次。');

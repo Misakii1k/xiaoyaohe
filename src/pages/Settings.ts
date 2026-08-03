@@ -3,6 +3,7 @@
 import '../ui/styles/pages/settings.css';
 import { listLogs, listMeds, listRules } from '../db/local';
 import { confirmDialog, el, renderPage, toast, icon, type IconName } from '../ui/components';
+import { openLlmProviderEditor } from '../ui/llmProviderEditor';
 import {
   backupProviders,
   buildBackup,
@@ -29,18 +30,15 @@ import {
 } from '../features/notificationPreference';
 import { runOnce as runReminderOnce, rescheduleMedicationReminders } from '../features/reminderScheduler';
 import {
-  getLlmConfig,
+  getLlmProviderSet,
+  setLlmProviderSet,
   initializeLlmSecretStore,
-  setLlmConfig,
-  resetLlmConfig,
   isUsingDefaultKey,
-  listModels,
-  pingLlm,
   getLlmHealth,
-  setLlmHealth,
   DEFAULT_LLM_CONFIG,
-  normalizeAndValidateBaseUrl,
+  MAX_LLM_PROVIDERS,
   type LlmHealth,
+  type LlmProvider,
 } from '../ai/llmConfig';
 import { getAsrHealth, isNativeSpeechFallbackAvailable } from '../ai/asr';
 import {
@@ -845,11 +843,10 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
   body.append(
     el('div', {
       class: 'muted',
-      html: '在「编辑药品」里用一句话描述，AI 自动填写药名、规格、用量、时段、提醒时间。',
+      html: '在「编辑药品」里用一句话描述，AI 自动填写药名、规格、用量、时段、提醒时间。可以保存多家服务商，当前一家连不上时按列表顺序自动换下一家。',
     })
   );
 
-  const cfg = getLlmConfig();
   const missingKey = isUsingDefaultKey();
   if (missingKey) {
     body.append(
@@ -873,187 +870,170 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     body.append(buildWebSecretPersistenceRow());
   }
 
-  // ====== 表单 ======
-  const urlIn = el('input', {
-    type: 'url',
-    value: cfg.baseUrl,
-    placeholder: 'OpenAI 兼容地址，如 https://api.openai.com/v1',
-    class: 'mt-3',
-  });
-  body.append(field('API 地址', urlIn));
+  const listWrap = el('div', { class: 'llm-provider-list mt-3' });
+  const failoverRow = el('div', { class: 'settings-toggle-row mt-3' });
+  body.append(listWrap, failoverRow);
 
-  const keyWrap = el('div', { style: 'position:relative' });
-  const keyIn = el('input', {
-    type: 'password',
-    value: cfg.apiKey,
-    placeholder: 'sk-...',
-    style: 'padding-right:64px',
-  });
-  const toggleKey = el('button', {
-    class: 'key-toggle',
-    type: 'button',
-    html: '显示',
-  });
-  let visible = false;
-  toggleKey.onclick = () => {
-    visible = !visible;
-    keyIn.type = visible ? 'text' : 'password';
-    toggleKey.textContent = visible ? '隐藏' : '显示';
+  const persistAndRender = async (
+    providers: LlmProvider[],
+    activeId: string,
+    failover: boolean,
+  ): Promise<void> => {
+    await persistProviderSet(providers, activeId, failover, onHealthChange);
+    renderList();
   };
-  keyWrap.append(keyIn, toggleKey);
-  body.append(field('API 密钥', keyWrap));
-
-  // 模型：下拉 + 刷新；不通时回退为文本框
-  const modelRow = el('div', { class: 'model-row' });
-  const modelSel = el('select', { class: 'model-select' });
-  const modelIn = el('input', {
-    type: 'text',
-    value: cfg.model,
-    placeholder: '模型名，如 gpt-4o-mini',
-    style: 'display:none',
-  });
-  const refreshBtn = el('button', {
-    class: 'btn tonal small',
-    type: 'button',
-    html: '刷新',
-  });
-
-  const modelControlSeq = ++settingsFieldSeq;
-  modelSel.id = `settings-model-select-${modelControlSeq}`;
-  modelSel.name = modelSel.id;
-  modelIn.id = `settings-model-input-${modelControlSeq}`;
-  modelIn.name = modelIn.id;
-  modelRow.append(modelSel, modelIn, refreshBtn);
-  const modelField = field('模型', modelRow);
-  const modelLabel = modelField.querySelector<HTMLLabelElement>('label')!;
-  body.append(modelField);
-
-  // 状态横条
-  const statusBar = el('div', { class: 'llm-status' });
-  body.append(statusBar);
-
-  // === 初始填充：用持久化的健康检查结果 ===
-  const persisted = getLlmHealth();
-  populateModelControl(modelSel, modelIn, modelLabel, persisted.models, cfg.model);
-  applyHealthBar(statusBar, persisted);
-
-  refreshBtn.onclick = async () => {
-    refreshBtn.setAttribute('disabled', 'true');
-    refreshBtn.textContent = '检测中…';
-    const tmpCfg = {
-      baseUrl: urlIn.value.trim() || cfg.baseUrl,
-      apiKey: keyIn.value.trim() || cfg.apiKey,
-      model: getCurrentModel(modelSel, modelIn) || cfg.model,
-    };
+  const runProviderMutation = async (mutation: () => Promise<void>): Promise<void> => {
     try {
-      const models = await listModels(tmpCfg);
-      populateModelControl(modelSel, modelIn, modelLabel, models, tmpCfg.model);
-      const h: LlmHealth = {
-        state: 'ok',
-        message: `已连接 · ${models.length} 个模型`,
-        at: Date.now(),
-        models,
-      };
-      setLlmHealth(h);
-      applyHealthBar(statusBar, h);
-      onHealthChange(h);
-      toast('已拉到 ' + models.length + ' 个模型');
-    } catch (e) {
-      const h: LlmHealth = {
-        state: 'error',
-        message: e instanceof Error ? e.message : String(e),
-        at: Date.now(),
-      };
-      setLlmHealth(h);
-      applyHealthBar(statusBar, h);
-      onHealthChange(h);
-      // 拉不到列表，让用户手动填
-      populateModelControl(modelSel, modelIn, modelLabel, [], tmpCfg.model);
-      toast('拉模型失败：' + h.message);
-    } finally {
-      refreshBtn.removeAttribute('disabled');
-      refreshBtn.textContent = '刷新';
+      await mutation();
+    } catch (error) {
+      toast('保存失败：' + (error instanceof Error ? error.message : String(error)));
     }
   };
 
-  // ====== 操作行 ======
-  const row = el('div', { class: 'btn-row mt-3' });
-  const save = el('button', { class: 'btn', html: '保存' });
-  save.onclick = async () => {
-    const baseUrl = urlIn.value.trim();
-    const apiKey = keyIn.value.trim();
-    const model = getCurrentModel(modelSel, modelIn);
-    try {
-      normalizeAndValidateBaseUrl(baseUrl);
-    } catch (e) {
-      return toast(e instanceof Error ? e.message : '请填写正确的 HTTPS API 地址');
-    }
-    if (!apiKey) return toast('请填写 API 密钥');
-    if (!model) return toast('请填写或选择模型');
-    try {
-      await setLlmConfig({ baseUrl, apiKey, model });
-    } catch (e) {
-      return toast('保存失败：' + (e instanceof Error ? e.message : String(e)));
-    }
-    toast('已保存 ✓');
-    // 保存后顺手体检一次
-    const h = await pingLlm({ baseUrl, apiKey, model });
-    setLlmHealth(h);
-    applyHealthBar(statusBar, h);
-    onHealthChange(h);
-  };
-  const test = el('button', { class: 'btn tonal', html: '测试连接' });
-  test.onclick = async () => {
-    test.setAttribute('disabled', 'true');
-    test.textContent = '测试中…';
-    try {
-      const h = await pingLlm({
-        baseUrl: urlIn.value.trim() || cfg.baseUrl,
-        apiKey: keyIn.value.trim() || cfg.apiKey,
-        model: getCurrentModel(modelSel, modelIn) || cfg.model,
-      });
-      setLlmHealth(h);
-      applyHealthBar(statusBar, h);
-      onHealthChange(h);
-      toast(h.state === 'ok' ? '连接成功 ✓' : '失败：' + h.message);
-    } finally {
-      test.removeAttribute('disabled');
-      test.textContent = '测试连接';
-    }
-  };
-  row.append(save, test);
-  body.append(row);
+  const renderList = () => {
+    const set = getLlmProviderSet();
+    listWrap.replaceChildren();
 
-  if (!missingKey) {
-    const reset = el('button', {
-      class: 'btn text mt-2',
-      html: '清空这些设置，恢复原样',
-    });
-    reset.onclick = async () => {
-      try {
-        await resetLlmConfig();
-      } catch (error) {
-        return toast('清除失败：' + (error instanceof Error ? error.message : String(error)));
+    set.providers.forEach((provider, index) => {
+      const row = el('div', { class: 'llm-provider-row' });
+      const head = el('div', { class: 'llm-provider-head' });
+      const title = el('div', { class: 'llm-provider-title' });
+      title.append(
+        el('span', { class: 'llm-provider-name', text: provider.label }),
+        provider.id === set.activeId
+          ? el('span', { class: 'llm-provider-badge', text: '当前' })
+          : el('span', {}),
+      );
+      head.append(title);
+
+      const actions = el('div', { class: 'llm-provider-actions' });
+      if (index > 0) {
+        const up = el('button', { class: 'btn text small', type: 'button', html: '↑' });
+        up.title = '优先级上移';
+        up.onclick = () => void runProviderMutation(async () => {
+          const latest = getLlmProviderSet();
+          const currentIndex = latest.providers.findIndex((item) => item.id === provider.id);
+          if (currentIndex <= 0) return;
+          const next = [...latest.providers];
+          const upper = next[currentIndex - 1]!;
+          const lower = next[currentIndex]!;
+          next[currentIndex - 1] = lower;
+          next[currentIndex] = upper;
+          await persistAndRender(next, latest.activeId, latest.failover);
+        });
+        actions.append(up);
       }
-      toast('已恢复默认');
-      // 重建 body
-      body.replaceChildren();
-      buildLlmBody(body, onHealthChange);
-    };
-    body.append(reset);
-  }
+      const edit = el('button', { class: 'btn text small', type: 'button', html: '编辑' });
+      edit.onclick = () => void openLlmProviderEditor(provider, async (draft) => {
+        const latest = getLlmProviderSet();
+        const next = latest.providers.map((item) => (item.id === draft.id ? draft : item));
+        await persistAndRender(next, latest.activeId, latest.failover);
+      });
+      actions.append(edit);
+      if (provider.id !== set.activeId) {
+        const activate = el('button', { class: 'btn text small', type: 'button', html: '设为当前' });
+        activate.onclick = () => void runProviderMutation(async () => {
+          const latest = getLlmProviderSet();
+          await persistAndRender(latest.providers, provider.id, latest.failover);
+        });
+        actions.append(activate);
+      }
+      if (set.providers.length > 1) {
+        const remove = el('button', { class: 'btn text small danger-text', type: 'button', html: '删除' });
+        remove.onclick = async () => {
+          const ok = await confirmDialog(`删除服务商「${provider.label}」？删除后密钥一并清除。`, '删除', true);
+          if (!ok) return;
+          await runProviderMutation(async () => {
+            const latest = getLlmProviderSet();
+            const next = latest.providers.filter((item) => item.id !== provider.id);
+            await persistAndRender(next, latest.activeId === provider.id ? next[0]!.id : latest.activeId, latest.failover);
+          });
+        };
+        actions.append(remove);
+      }
+      head.append(actions);
+      row.append(head);
+
+      const host = hostOf(provider.baseUrl);
+      const health = getLlmHealth(provider.id);
+      const status = provider.apiKey
+        ? health.state === 'ok' ? '已连接' : health.state === 'error' ? '不通' : '未检测'
+        : '未填密钥';
+      row.append(el('div', { class: 'llm-provider-meta' }, [
+        `${host} · ${provider.model}`,
+        el('span', { class: 'llm-provider-status', text: status }),
+      ]));
+      listWrap.append(row);
+    });
+
+    if (set.providers.length >= MAX_LLM_PROVIDERS) {
+      listWrap.append(el('div', { class: 'muted', text: `最多保存 ${MAX_LLM_PROVIDERS} 家服务商。` }));
+    } else {
+      const add = el('button', { class: 'btn tonal mt-3', type: 'button', html: '+ 添加服务商' });
+      add.onclick = () => void openLlmProviderEditor(undefined, async (draft) => {
+        const latest = getLlmProviderSet();
+        await persistAndRender([...latest.providers, draft], draft.id, latest.failover);
+      });
+      listWrap.append(add);
+    }
+  };
+
+  const failoverToggle = el('input', { type: 'checkbox', role: 'switch', 'aria-label': '自动切换服务商' });
+  failoverToggle.checked = getLlmProviderSet().failover;
+  failoverToggle.onchange = async () => {
+    const set = getLlmProviderSet();
+    try {
+      await persistProviderSet(set.providers, set.activeId, failoverToggle.checked, onHealthChange);
+      toast(failoverToggle.checked ? '已开启自动切换：当前服务商连不上时自动换下一家' : '已关闭自动切换：只使用当前选中的服务商');
+    } catch (error) {
+      failoverToggle.checked = set.failover;
+      toast('保存失败：' + (error instanceof Error ? error.message : String(error)));
+    }
+  };
+  failoverRow.append(
+    el('div', { class: 'settings-toggle-copy' }, [
+      el('div', { class: 'settings-toggle-title', text: '自动切换服务商' }),
+      el('div', {
+        class: 'settings-toggle-desc',
+        text: '当前服务商连不上（超时、服务端错误、限流）时，按列表顺序自动试下一家；切换会在界面提示。',
+      }),
+    ]),
+    failoverToggle,
+  );
+
+  renderList();
 
   body.append(
     el('div', {
       class: 'settings-hint',
       html:
         '· 接口需兼容 OpenAI /chat/completions 协议。\n' +
+        `· 最多 ${MAX_LLM_PROVIDERS} 家服务商，列表顺序就是自动切换的优先级。\n` +
         `· 默认模型 ${DEFAULT_LLM_CONFIG.model}，也可换成其他兼容模型。\n` +
         (isNativeSecretStore()
           ? '· 密钥保存在这台手机的系统安全存储中。'
           : '· 网页版没有系统安全存储可用，密钥在浏览器里是明文保存的。'),
     })
   );
+}
+
+async function persistProviderSet(
+  providers: LlmProvider[],
+  activeId: string,
+  failover: boolean,
+  onHealthChange: (h: LlmHealth) => void,
+): Promise<void> {
+  await setLlmProviderSet({ providers, activeId, failover });
+  // 换到新服务商后，把它的体检结果刷到面板标题和状态栏。
+  onHealthChange(getLlmHealth(activeId));
+}
+
+function hostOf(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return baseUrl;
+  }
 }
 
 /**
@@ -1177,58 +1157,6 @@ function renderAiConsentControls(onChanged: () => void): HTMLElement {
   return wrap;
 }
 
-/** 把模型列表填到 select；列表为空时回退到 input。 */
-function populateModelControl(
-  sel: HTMLSelectElement,
-  input: HTMLInputElement,
-  label: HTMLLabelElement,
-  models: string[] | undefined,
-  current: string,
-): void {
-  const list = models || [];
-  if (list.length === 0) {
-    // 回退手填
-    sel.style.display = 'none';
-    input.style.display = '';
-    label.htmlFor = input.id;
-    if (current) input.value = current;
-    return;
-  }
-  sel.style.display = '';
-  input.style.display = 'none';
-  label.htmlFor = sel.id;
-  sel.replaceChildren();
-  const has = list.includes(current);
-  if (!has && current) {
-    const op = el('option', { value: current, html: current + '（自定义）' });
-    sel.append(op);
-  }
-  for (const m of list) {
-    const op = el('option', { value: m, html: m });
-    if (m === current) op.selected = true;
-    sel.append(op);
-  }
-  if (!has && current) sel.value = current;
-}
-
-function getCurrentModel(sel: HTMLSelectElement, input: HTMLInputElement): string {
-  if (sel.style.display !== 'none') return sel.value.trim();
-  return input.value.trim();
-}
-
-function applyHealthBar(bar: HTMLElement, h: LlmHealth): void {
-  const cls = h.state === 'ok' ? 'ok' : h.state === 'error' ? 'warn' : 'info';
-  const t = h.at ? new Date(h.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
-  const text = h.state === 'ok'
-    ? `${h.message}${t ? '（' + t + '）' : ''}`
-    : h.state === 'error'
-      ? `连接失败：${h.message}${t ? '（' + t + '）' : ''}`
-      : '尚未检测连接，点「测试连接」或「刷新」';
-  bar.className = 'llm-status banner ' + cls;
-  bar.replaceChildren();
-  bar.append(el('span', { html: text }));
-}
-
 let settingsFieldSeq = 0;
 function field(label: string, input: HTMLElement): HTMLElement {
   const f = el('div', { class: 'field' });
@@ -1291,8 +1219,12 @@ function renderAsrPanel(): HTMLElement {
   idIn.readOnly = Boolean(initialId); // 有保存就展示 mask，避免误改
 
   const keyIn = el('input', {
-    type: 'password',
+    class: 'secret-input',
+    type: 'text',
     autocomplete: 'off',
+    autocapitalize: 'none',
+    autocorrect: false,
+    spellcheck: false,
     value: initialKey ? maskSecret(initialKey) : '',
     placeholder: 'sk-xxxxxxxxxxxxxxxx',
   });
@@ -1343,7 +1275,7 @@ function renderAsrPanel(): HTMLElement {
     idIn.value = '';
     keyIn.value = '';
     idIn.type = 'text';
-    keyIn.type = 'text';
+    keyIn.classList.add('is-visible');
     editBtn.replaceWith(saveBtn);
     idIn.focus();
   };
@@ -1367,7 +1299,7 @@ function renderAsrPanel(): HTMLElement {
     keyIn.value = maskSecret(nextKey);
     idIn.readOnly = true;
     keyIn.readOnly = true;
-    keyIn.type = 'password';
+    keyIn.classList.remove('is-visible');
     if (saveBtn.parentNode) saveBtn.replaceWith(editBtn);
     renderStatus();
     setChip(panelEl, isAsrCredentialsConfigured() ? { text: '已配置', tone: 'ok' } : initialChip);
@@ -1384,7 +1316,7 @@ function renderAsrPanel(): HTMLElement {
     keyIn.value = '';
     idIn.readOnly = false;
     keyIn.readOnly = false;
-    keyIn.type = 'password';
+    keyIn.classList.remove('is-visible');
     regionIn.value = 'ap-guangzhou';
     if (editBtn.parentNode) editBtn.replaceWith(saveBtn);
     renderStatus();

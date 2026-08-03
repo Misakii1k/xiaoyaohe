@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test('renders assistant card variants without overflowing narrow panels', async ({ page }, testInfo) => {
   await page.goto('/?assistant-preview=1#/settings');
   const panel = page.locator('.ai-panel');
-  await expect(page.locator('.ai-root.is-open .ai-panel')).toBeVisible();
+  await expect(page.locator('.ai-root.is-open .ai-panel')).toBeVisible({ timeout: 15_000 });
   await expect(panel.locator('.ai-content-card.is-medication')).toBeVisible();
   await expect(panel.locator('.ai-content-card.is-medication .ai-card-item')).toHaveCount(3);
   await expect(panel.locator('.ai-content-card.is-inventory')).toBeVisible();

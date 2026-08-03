@@ -73,6 +73,36 @@ describe('settings information architecture contracts', () => {
     expect(settings).toContain('可切换“仅本次会话”后重试');
   });
 
+  it('renders and refreshes the active AI provider from its stable id', () => {
+    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+
+    expect(settings).toContain('provider.id === set.activeId');
+    expect(settings).toContain("if (provider.id !== set.activeId)");
+    expect(settings).toContain('const latest = getLlmProviderSet();');
+    expect(settings).toContain('await persistProviderSet(providers, activeId, failover, onHealthChange);');
+    expect(settings).toContain('renderList();');
+    expect(settings).not.toContain('index === 0\n          ? el(\'span\', { class: \'llm-provider-badge\'');
+  });
+
+  it('uses the normal text keyboard for API secrets while keeping visual masking', () => {
+    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const providerEditor = readFileSync(join(root, 'src/ui/llmProviderEditor.ts'), 'utf8');
+    const styles = readFileSync(join(root, 'src/ui/styles/legacy.css'), 'utf8');
+
+    for (const source of [settings, providerEditor]) {
+      expect(source).not.toMatch(/type:\s*['"]password['"]/);
+      expect(source).toContain("class: 'secret-input'");
+      expect(source).toContain("type: 'text'");
+      expect(source).toContain("autocomplete: 'off'");
+      expect(source).toContain("autocapitalize: 'none'");
+      expect(source).toContain('autocorrect: false');
+      expect(source).toContain('spellcheck: false');
+    }
+    expect(providerEditor).not.toContain("keyIn.type = visible ? 'text' : 'password'");
+    expect(styles).toContain('.secret-input {\n  -webkit-text-security: disc;');
+    expect(styles).toContain('.secret-input.is-visible {\n  -webkit-text-security: none;');
+  });
+
   it('tells the truth about where API keys live on each platform', () => {
     const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
     const secretStore = readFileSync(join(root, 'src/ai/secretStore.ts'), 'utf8');

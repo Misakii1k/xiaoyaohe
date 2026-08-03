@@ -23,6 +23,14 @@ input,
 select,
 textarea { font: inherit; }
 
+input,
+textarea,
+[contenteditable='true'] {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
 button,
 a { touch-action: manipulation; }
 

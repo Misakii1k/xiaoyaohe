@@ -1,14 +1,22 @@
 // 拍照识药：使用用户自带的 OpenAI 兼容 LLM，与云同步解耦。
 import { normalizeMealRelsBySlot, mealRelsFromBySlot, type Slot, type MealRel, type MealRelsBySlot, type MedicationInventory } from '../db/schema';
-import { getLlmConfig, normalizeAndValidateBaseUrl } from './llmConfig';
-import { requireAiConsent, type AiDataKind } from './consent';
+import { getLlmRouteCandidates, type LlmProvider } from './llmConfig';
+import { hasAiConsent, requireAiConsent, type AiDataKind } from './consent';
 
 export type IdentifyMode = 'medicine_box' | 'prescription_sheet' | 'medication_batch' | 'inventory';
 
+/**
+ * 一次识别会话：按优先级携带全部候选服务商，单个请求失败时顺延到下一家。
+ * baseUrl/apiKey/model 保持为当前服务商，兼容旧调用方读字段的习惯。
+ */
 export interface IdentifySession {
   baseUrl: string;
   apiKey: string;
   model: string;
+  label: string;
+  providers: readonly LlmProvider[];
+  /** 下一家候选；没有则返回 false，表示顺延已用完。 */
+  advance(): boolean;
 }
 
 export interface IdentifyRequestOptions {
@@ -122,19 +130,44 @@ export async function identifyInventoryByBlob(blob: Blob, hint?: string, options
   return requestIdentify<InventoryIdentifyResult>(blob, 'inventory', hint, options);
 }
 
+/** 顺延用：可恢复的失败（网络/超时/5xx/429/401/403）带上 retryable 标记。 */
+export class IdentifyRetryableError extends IdentifyError {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+  }
+}
+
 /** Gets consent once and returns a reusable session for multi-image queues.
  * _mode 仅保留签名兼容调用方（MedBatchAdd 等），会话不绑定识别模式。 */
 export async function createIdentifySession(_mode: IdentifyMode, kind: AiDataKind = 'medicine-photo'): Promise<IdentifySession> {
-  const cfg = getLlmConfig();
-  if (!cfg.baseUrl || !cfg.apiKey) {
+  const candidates = getLlmRouteCandidates();
+  if (candidates.length === 0) {
     throw new IdentifyError(
       '请先在「设置 → AI 大模型」配置 API 地址和密钥。',
       'unconfigured',
     );
   }
-  const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
-  await requireAiConsent(kind, baseUrl);
-  return { baseUrl, apiKey: cfg.apiKey, model: cfg.model };
+  // 当前供应商是用户明确选择的：先确认一次同意；顺延候选未同意时直接跳过。
+  await requireAiConsent(kind, candidates[0]!.baseUrl);
+  const usable = candidates.filter((provider, index) =>
+    Boolean(provider.baseUrl && provider.apiKey)
+    && (index === 0 || hasAiConsent(kind, provider.baseUrl)),
+  );
+  if (usable.length === 0) throw new IdentifyError('所有 AI 服务商都还没有密钥或外发授权。', 'unconfigured');
+  let index = 0;
+  const current = (): LlmProvider => usable[Math.min(index, usable.length - 1)]!;
+  return {
+    get baseUrl() { return current().baseUrl; },
+    get apiKey() { return current().apiKey; },
+    get model() { return current().model; },
+    get label() { return current().label; },
+    providers: usable,
+    advance() {
+      if (index + 1 >= usable.length) return false;
+      index += 1;
+      return true;
+    },
+  };
 }
 
 // 口述录药：把老人随口说的一段话整理成与药单识别相同的 items 结构
@@ -153,34 +186,49 @@ export async function parseMedicationSpeech(
 ): Promise<PrescriptionSheetResult> {
   throwIfAborted(options.signal);
   const session = options.session ?? await createIdentifySession('prescription_sheet', 'prescription');
-  const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer ' + session.apiKey,
-    },
-    body: JSON.stringify({
-      model: session.model,
-      messages: [
-        { role: 'system', content: SPEECH_PROMPT },
-        { role: 'user', content: `请整理这段用药描述：${text}` },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-    }),
-  }, options.signal);
-  if (!resp.ok) {
-    const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
-    const msg = typeof data.error === 'string'
-      ? data.error
-      : data.error?.message || `AI 服务出错（${resp.status}）`;
-    throw new IdentifyError(msg);
+  let lastError: IdentifyError | undefined;
+  for (;;) {
+    try {
+      const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + session.apiKey,
+        },
+        body: JSON.stringify({
+          model: session.model,
+          messages: [
+            { role: 'system', content: SPEECH_PROMPT },
+            { role: 'user', content: `请整理这段用药描述：${text}` },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+        }),
+      }, options.signal);
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
+        const msg = typeof data.error === 'string'
+          ? data.error
+          : data.error?.message || `AI 服务出错（${resp.status}）`;
+        if (resp.status === 401 || resp.status === 403 || resp.status === 404
+          || resp.status === 429 || resp.status >= 500) {
+          throw new IdentifyRetryableError(msg, resp.status);
+        }
+        throw new IdentifyError(msg);
+      }
+      const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+      const raw = payload.choices?.[0]?.message?.content ?? '';
+      const parsed = tryParseJson(raw);
+      if (!parsed) throw new IdentifyError('AI 返回无法解析');
+      return normalizePrescriptionSheet(parsed);
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      const retryable = error instanceof IdentifyRetryableError
+        || (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'));
+      lastError = error instanceof IdentifyError ? error : new IdentifyError('AI 请求失败');
+      if (!retryable || !session.advance()) throw lastError;
+    }
   }
-  const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
-  const raw = payload.choices?.[0]?.message?.content ?? '';
-  const parsed = tryParseJson(raw);
-  if (!parsed) throw new IdentifyError('AI 返回无法解析');
-  return normalizePrescriptionSheet(parsed);
 }
 
 // 口述库存：把"阿司匹林还剩5片，二甲双胍刚买了一盒20片"整理成药名 + 库存字段
@@ -210,35 +258,50 @@ export async function parseInventorySpeech(
 ): Promise<InventorySpeechResult> {
   throwIfAborted(options.signal);
   const session = options.session ?? await createIdentifySession('inventory', 'prescription');
-  const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer ' + session.apiKey,
-    },
-    body: JSON.stringify({
-      model: session.model,
-      messages: [
-        { role: 'system', content: INVENTORY_SPEECH_PROMPT },
-        { role: 'user', content: `请整理这段库存描述：${text}` },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-    }),
-  }, options.signal);
-  if (!resp.ok) {
-    const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
-    const msg = typeof data.error === 'string'
-      ? data.error
-      : data.error?.message || `AI 服务出错（${resp.status}）`;
-    throw new IdentifyError(msg);
+  let lastError: IdentifyError | undefined;
+  for (;;) {
+    try {
+      const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + session.apiKey,
+        },
+        body: JSON.stringify({
+          model: session.model,
+          messages: [
+            { role: 'system', content: INVENTORY_SPEECH_PROMPT },
+            { role: 'user', content: `请整理这段库存描述：${text}` },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+        }),
+      }, options.signal);
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
+        const msg = typeof data.error === 'string'
+          ? data.error
+          : data.error?.message || `AI 服务出错（${resp.status}）`;
+        if (resp.status === 401 || resp.status === 403 || resp.status === 404
+          || resp.status === 429 || resp.status >= 500) {
+          throw new IdentifyRetryableError(msg, resp.status);
+        }
+        throw new IdentifyError(msg);
+      }
+      const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+      const raw = payload.choices?.[0]?.message?.content ?? '';
+      const parsed = tryParseJson(raw);
+      if (!parsed) throw new IdentifyError('AI 返回无法解析');
+      const items = normalizeInventorySpeech(parsed);
+      return { items, confidence: conf(parsed.confidence) };
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      const retryable = error instanceof IdentifyRetryableError
+        || (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'));
+      lastError = error instanceof IdentifyError ? error : new IdentifyError('AI 请求失败');
+      if (!retryable || !session.advance()) throw lastError;
+    }
   }
-  const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
-  const raw = payload.choices?.[0]?.message?.content ?? '';
-  const parsed = tryParseJson(raw);
-  if (!parsed) throw new IdentifyError('AI 返回无法解析');
-  const items = normalizeInventorySpeech(parsed);
-  return { items, confidence: conf(parsed.confidence) };
 }
 
 function normalizeInventorySpeech(raw: Record<string, unknown>): InventorySpeechItem[] {
@@ -264,40 +327,55 @@ async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint: stri
   const userText = hint
     ? `请按 ${mode} 模式识别这张图片。补充提示：${hint}`
     : `请按 ${mode} 模式识别这张图片。`;
-  const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer ' + session.apiKey,
-    },
-    body: JSON.stringify({
-      model: session.model,
-      messages: [
-        { role: 'system', content: PROMPTS[mode] },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: userText },
-            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } },
-          ],
+  let lastError: IdentifyError | undefined;
+  for (;;) {
+    try {
+      const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + session.apiKey,
         },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-    }),
-  }, signal);
-  if (!resp.ok) {
-    const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
-    const msg = typeof data.error === 'string'
-      ? data.error
-      : data.error?.message || `AI 服务出错（${resp.status}）`;
-    throw new IdentifyError(msg);
+        body: JSON.stringify({
+          model: session.model,
+          messages: [
+            { role: 'system', content: PROMPTS[mode] },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: userText },
+                { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } },
+              ],
+            },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+        }),
+      }, signal);
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
+        const msg = typeof data.error === 'string'
+          ? data.error
+          : data.error?.message || `AI 服务出错（${resp.status}）`;
+        if (resp.status === 401 || resp.status === 403 || resp.status === 404
+          || resp.status === 429 || resp.status >= 500) {
+          throw new IdentifyRetryableError(msg, resp.status);
+        }
+        throw new IdentifyError(msg);
+      }
+      const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
+      const raw = payload.choices?.[0]?.message?.content ?? '';
+      const parsed = tryParseJson(raw);
+      if (!parsed) throw new IdentifyError('AI 返回无法解析');
+      return normalizeResult(parsed, mode) as T;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      const retryable = error instanceof IdentifyRetryableError
+        || (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'));
+      lastError = error instanceof IdentifyError ? error : new IdentifyError('AI 请求失败');
+      if (!retryable || !session.advance()) throw lastError;
+    }
   }
-  const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
-  const raw = payload.choices?.[0]?.message?.content ?? '';
-  const parsed = tryParseJson(raw);
-  if (!parsed) throw new IdentifyError('AI 返回无法解析');
-  return normalizeResult(parsed, mode) as T;
 }
 
 function normalizeResult(raw: Record<string, unknown>, mode: IdentifyMode): IdentifyResult | PrescriptionSheetResult | InventoryIdentifyResult {
@@ -454,9 +532,9 @@ async function fetchWithTimeout(url: string, init: RequestInit, externalSignal?:
   } catch (error) {
     if (externalSignal?.aborted) throw error;
     if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-      throw new IdentifyError('请求超时，请检查网络后重试');
+      throw new IdentifyRetryableError('请求超时，请检查网络后重试');
     }
-    throw new IdentifyError('连不上 AI 服务，请检查网络或设置里的服务地址');
+    throw new IdentifyRetryableError('连不上 AI 服务，请检查网络或设置里的服务地址');
   } finally {
     window.clearTimeout(timeout);
     externalSignal?.removeEventListener('abort', abort);

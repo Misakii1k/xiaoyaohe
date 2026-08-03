@@ -195,13 +195,6 @@
   padding: max(20px, var(--safe-top)) max(16px, var(--safe-right)) max(20px, var(--safe-bottom)) max(16px, var(--safe-left));
 }
 
-.confirm-dialog-overlay,
-.confirm-dialog-overlay * {
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
-
 /* 只有同时具备足够宽度和高度时才切换侧栏；全面屏手机横屏继续使用底栏。 */
 @media (min-width: 768px) and (min-height: 600px) {
   .app-shell {

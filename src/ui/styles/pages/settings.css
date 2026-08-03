@@ -162,6 +162,58 @@
   line-height: 1.55;
 }
 
+/* 多供应商列表：每行显示名称、地址、模型与连接状态 */
+.llm-provider-list { display: grid; gap: var(--space-2); }
+.llm-provider-row {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+}
+.llm-provider-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.llm-provider-title { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; }
+.llm-provider-name {
+  color: var(--color-text);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.llm-provider-badge {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-on-accent, #fff);
+  font-size: var(--fs-caption);
+}
+.llm-provider-actions { display: flex; gap: var(--space-1); flex: 0 0 auto; }
+.llm-provider-actions .btn.small { padding: 4px 8px; font-size: var(--fs-footnote); }
+.danger-text { color: var(--color-danger, #c0392b); }
+.llm-provider-meta {
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.llm-provider-status { margin-inline-start: var(--space-2); color: var(--color-text); }
+
+.llm-provider-editor { max-inline-size: 480px; }
+.llm-provider-editor .field { margin-block-start: var(--space-3); }
+
+/* 服务商编辑器里的模型行：下拉 + 手填 + 刷新 */
+.model-row { display: flex; gap: var(--space-2); align-items: center; }
+.model-row .model-select,
+.model-row input { flex: 1 1 auto; min-inline-size: 0; }
+.llm-status.banner { margin-block-start: var(--space-3); }
+
 .lan-sync-note { margin: var(--space-3) 0; }
 
 .lan-sync-actions {

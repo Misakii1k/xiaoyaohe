@@ -6,6 +6,7 @@ vi.mock('../src/ui/components', () => ({ confirmDialog: consentDialog }));
 import {
   clearAiConsents,
   getAiConsentRecords,
+  grantAiConsentForOrigins,
   requireAiConsent,
   revokeAiConsent,
 } from '../src/ai/consent';
@@ -42,6 +43,19 @@ describe('AI provider consent persistence', () => {
     await requireAiConsent('prescription', 'https://api.example.com/v1');
 
     expect(consentDialog).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses persisted batch consent after an app reload instead of prompting again', async () => {
+    localStorage.setItem('medbox.ai-consent.v2', JSON.stringify([
+      { version: 2, origin: 'https://api.example.com', category: 'health', grantedAt: 1 },
+      { version: 2, origin: 'https://api.example.com', category: 'assistant', grantedAt: 1 },
+    ]));
+
+    await expect(grantAiConsentForOrigins(
+      ['https://api.example.com/v1'],
+      '已保存的授权应直接复用。',
+    )).resolves.toBe(true);
+    expect(consentDialog).not.toHaveBeenCalled();
   });
 
   it('rejects insecure provider origins before rendering a confirmation', async () => {

@@ -329,7 +329,6 @@ function showDialog(message: string, options: DialogSharedOptions): Promise<bool
       initialFocus: options.cancellable && options.danger ? cancel ?? ok : ok,
     });
     overlay.classList.add('confirm-dialog-overlay');
-    overlay.addEventListener('contextmenu', (event) => event.preventDefault(), { capture: true });
   });
 }
 

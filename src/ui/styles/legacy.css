@@ -2209,6 +2209,15 @@ textarea {
   flex-shrink: 0;
 }
 
+/* 密钥保持普通文本输入语义，避免唤起密码键盘；仅在视觉上遮罩。 */
+.secret-input {
+  -webkit-text-security: disc;
+}
+
+.secret-input.is-visible {
+  -webkit-text-security: none;
+}
+
 /* API 密钥的显示/隐藏 toggle */
 .key-toggle {
   position: absolute;
