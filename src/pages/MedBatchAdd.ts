@@ -133,6 +133,7 @@ function toDraft(item: PrescriptionItemDraft) {
       mealRels: item.mealRels,
       mealRelsBySlot: item.mealRelsBySlot,
       notes: item.notes,
+      inventory: item.inventory ? { ...item.inventory } : undefined,
       identity: { ...emptyIdentity(), ocrNames: item.name ? [item.name] : [] },
     },
     rules: item.slots.map((slot) => ({

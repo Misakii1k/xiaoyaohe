@@ -251,6 +251,132 @@ export function defaultEscalate(): EscalatePolicy {
   return { repeatEveryMin: 10, maxRepeats: 3, notifyCaregiverAfterMin: 30 };
 }
 
+/** 时段提醒设置状态：active = 时段内时间/方式一致；needs-review = 存在差异待用户确认 */
+export type ReminderPeriodState = 'active' | 'needs-review';
+
+/**
+ * 按时段聚合的整体提醒设置（设备本地，不入局域网同步）。
+ * 每个时段每天只发一条整体提醒，其触发时间、方式与升级策略由该设置决定；
+ * 时段内各药自身的精确时间仍保留，仅用于记录与库存归因。
+ */
+export interface ReminderPeriodSetting {
+  slot: Slot;
+  /** 整体提醒触发时间 "HH:mm"（本地） */
+  timeLocal: string;
+  mode: MedicationReminderMode;
+  escalate: EscalatePolicy;
+  state: ReminderPeriodState;
+  updatedAt: number;
+}
+
+/** deriveReminderPeriodSettings 的产物（尚无用户编辑时间戳） */
+export type DerivedReminderPeriodSetting = Omit<ReminderPeriodSetting, 'updatedAt'>;
+
+const REMINDER_MODE_RANK: Record<MedicationReminderMode, number> = {
+  strong: 0,
+  'fullscreen-short': 1,
+  'fullscreen-persistent': 2,
+};
+
+/** 提醒方式强度排序：持续全屏 > 短时全屏 > 增强通知 */
+export function reminderModeRank(mode: MedicationReminderMode): number {
+  return REMINDER_MODE_RANK[normalizeMedicationReminderMode(mode)];
+}
+
+/** 取最保守（提醒最勤）的升级策略：重推间隔更短、重推次数更多、照护者介入更早 */
+export function conservativeEscalate(policies: readonly Partial<EscalatePolicy>[]): EscalatePolicy {
+  const fallback = defaultEscalate();
+  let repeatEveryMin = Infinity;
+  let maxRepeats = -Infinity;
+  let notifyCaregiverAfterMin = Infinity;
+  for (const policy of policies) {
+    if (Number.isFinite(policy.repeatEveryMin)) {
+      repeatEveryMin = Math.min(repeatEveryMin, Math.max(0, policy.repeatEveryMin as number));
+    }
+    if (Number.isFinite(policy.maxRepeats)) {
+      maxRepeats = Math.max(maxRepeats, Math.max(0, Math.floor(policy.maxRepeats as number)));
+    }
+    if (Number.isFinite(policy.notifyCaregiverAfterMin)) {
+      notifyCaregiverAfterMin = Math.min(notifyCaregiverAfterMin, Math.max(0, policy.notifyCaregiverAfterMin as number));
+    }
+  }
+  return {
+    repeatEveryMin: repeatEveryMin === Infinity ? fallback.repeatEveryMin : Math.max(1, Math.floor(repeatEveryMin)),
+    maxRepeats: maxRepeats === -Infinity ? fallback.maxRepeats : Math.floor(maxRepeats),
+    notifyCaregiverAfterMin: notifyCaregiverAfterMin === Infinity ? fallback.notifyCaregiverAfterMin : Math.floor(notifyCaregiverAfterMin),
+  };
+}
+
+/**
+ * 从药品与提醒规则推导各时段的整体提醒设置（纯函数，无 IO）。
+ * - 时间 = 时段内出现最多的 timeLocal（并列取较早的时间）
+ * - 方式 = 最强档（持续全屏 > 短时全屏 > 增强通知）
+ * - 升级策略 = 最保守（提醒最勤）
+ * - 时段内存在不同时间或不同方式 → needs-review（不静默归一化）
+ * 空时段回退 SLOT_DEFAULT_TIME / strong / defaultEscalate，保证界面始终有 4 行可配置。
+ */
+export function deriveReminderPeriodSettings(
+  meds: readonly Medication[],
+  rules: readonly ReminderRule[],
+): DerivedReminderPeriodSetting[] {
+  const medById = new Map<string, Medication>();
+  for (const med of meds) {
+    if (!med.deleted) medById.set(med.id, med);
+  }
+  const timeCounts = new Map<Slot, Map<string, number>>();
+  const modesBySlot = new Map<Slot, Map<string, MedicationReminderMode>>();
+  const escalatesBySlot = new Map<Slot, EscalatePolicy[]>();
+  for (const slot of SLOTS) {
+    timeCounts.set(slot, new Map());
+    modesBySlot.set(slot, new Map());
+    escalatesBySlot.set(slot, []);
+  }
+  // 同一 (药品, 时段, 时间) 只计一次，避免同一药的重复规则加权
+  const seen = new Set<string>();
+  for (const rule of rules) {
+    if (rule.deleted) continue;
+    const med = medById.get(rule.medId);
+    if (!med) continue;
+    const key = `${med.id}:${rule.slot}:${rule.timeLocal}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const counts = timeCounts.get(rule.slot)!;
+    counts.set(rule.timeLocal, (counts.get(rule.timeLocal) ?? 0) + 1);
+    const modes = modesBySlot.get(rule.slot)!;
+    if (!modes.has(med.id)) modes.set(med.id, normalizeMedicationReminderMode(med.reminderMode));
+    escalatesBySlot.get(rule.slot)!.push(rule.escalate ?? defaultEscalate());
+  }
+  const results: DerivedReminderPeriodSetting[] = [];
+  for (const slot of SLOTS) {
+    const counts = timeCounts.get(slot)!;
+    let timeLocal = SLOT_DEFAULT_TIME[slot];
+    if (counts.size > 0) {
+      let bestTime = '';
+      let bestCount = -1;
+      for (const [time, count] of counts) {
+        if (count > bestCount || (count === bestCount && (bestTime === '' || time < bestTime))) {
+          bestCount = count;
+          bestTime = time;
+        }
+      }
+      timeLocal = bestTime;
+    }
+    const modes = [...modesBySlot.get(slot)!.values()];
+    let mode: MedicationReminderMode = 'strong';
+    if (modes.length > 0) {
+      mode = modes.reduce((strongest, current) =>
+        reminderModeRank(current) > reminderModeRank(strongest) ? current : strongest,
+      mode);
+    }
+    const escalates = escalatesBySlot.get(slot)!;
+    const escalate = escalates.length > 0 ? conservativeEscalate(escalates) : defaultEscalate();
+    const distinctModes = new Set(modes).size;
+    const state: ReminderPeriodState = counts.size > 1 || distinctModes > 1 ? 'needs-review' : 'active';
+    results.push({ slot, timeLocal, mode, escalate, state });
+  }
+  return results;
+}
+
 /** 提醒规则：某药 + 某时段 + 具体时间 */
 export interface ReminderRule {
   id: string;

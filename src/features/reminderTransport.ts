@@ -418,6 +418,8 @@ private async scheduleInChunksSafe(
       key,
       data: notification.data ?? {},
     };
+    // 组载荷（V2）用 data.mode，旧单药载荷用 data.reminderMode，两者都识别
+    const reminderMode = notification.data?.mode ?? notification.data?.reminderMode;
     const native: LocalNotificationSchema = {
       id,
       title: notification.title,
@@ -426,8 +428,7 @@ private async scheduleInChunksSafe(
       autoCancel: true,
       actionTypeId: ACTION_TYPE_ID,
       channelId:
-        notification.data?.reminderMode === 'fullscreen-short' ||
-        notification.data?.reminderMode === 'fullscreen-persistent'
+        reminderMode === 'fullscreen-short' || reminderMode === 'fullscreen-persistent'
           ? ALARM_CHANNEL_ID
           : STRONG_CHANNEL_ID,
       extra: { __medboxReminder: envelope },

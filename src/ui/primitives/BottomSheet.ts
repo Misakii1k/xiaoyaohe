@@ -4,6 +4,8 @@ import { makeAppInert, restoreAppAfterLastDialog, trapFocusIn } from '../compone
 export interface BottomSheetOptions {
   label: string;
   content: Node | readonly Node[];
+  /** Adds a component-owned class to the sheet without duplicating modal lifecycle code. */
+  className?: string;
   initialFocus?: HTMLElement;
   onClose?: () => void;
 }
@@ -29,7 +31,7 @@ export function openBottomSheet(options: BottomSheetOptions): BottomSheetHandle 
   overlay.setAttribute('role', 'presentation');
 
   const sheet = document.createElement('section');
-  sheet.className = 'bottom-sheet';
+  sheet.className = `bottom-sheet${options.className ? ` ${options.className}` : ''}`;
   sheet.setAttribute('role', 'dialog');
   sheet.setAttribute('aria-modal', 'true');
   sheet.setAttribute('aria-label', options.label);

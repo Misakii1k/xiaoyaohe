@@ -17,14 +17,21 @@ import {
   undoInventoryOperation,
   batchDeductInventory,
   updateMedicationInventory,
+  listReminderPeriodSettings,
+  updateReminderPeriodSetting,
+  recomputeReminderPeriodReviewState,
+  type ReminderPeriodSettingPatch,
 } from '../db/local';
 import {
   SLOT_LABEL,
   SLOT_DEFAULT_TIME,
   formatMealRels,
   INVENTORY_SOURCE_LABEL,
+  MEDICATION_REMINDER_MODE_LABEL,
+  type EscalatePolicy,
   type LocalDate,
   type Medication,
+  type MedicationReminderMode,
   type Slot,
 } from '../db/schema';
 import {
@@ -45,6 +52,7 @@ import {
   calculateBatchDeductionPreview,
 } from '../features/inventory';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
+import { checkFullScreenAlarmCapability } from '../features/nativeMedicationAlarm';
 import { createMedicationDraft, applyExplicitDose } from '../domain/medicationDraft';
 import {
   listAdjustableSettings,
@@ -191,10 +199,10 @@ const getTodayPlan: AssistantTool = {
 const listMyMedications: AssistantTool = {
   name: 'list_my_medications',
   label: '翻翻药品清单',
-  description: '查询登记过的所有药：名字、规格、每次吃多少、什么时段吃、大概还够吃几天、过期日。',
+  description: '查询登记过的所有药：名字、规格、每次吃多少、什么时段吃、大概还够吃几天、过期日，以及各时段整体提醒的设置。',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   async run() {
-    const [meds, rules] = await Promise.all([listMeds(), listRules()]);
+    const [meds, rules, periodSettings] = await Promise.all([listMeds(), listRules(), listReminderPeriodSettings()]);
     const medicationRows = meds.map((med): AssistantCardItem => {
       const medRules = rules.filter((r) => r.medId === med.id && !r.deleted && r.enabled);
       const daysLeft = estimateDaysLeft(med, medRules);
@@ -225,6 +233,7 @@ const listMyMedications: AssistantTool = {
     });
     const attentionCount = medicationRows.filter((row) => row.status === 'warning').length;
     const hiddenMedicationCount = Math.max(0, medicationRows.length - 8);
+    const needsReview = periodSettings.filter((s) => s.state === 'needs-review');
     const ui: AssistantCardBlock = {
       type: 'card',
       variant: 'inventory',
@@ -234,12 +243,13 @@ const listMyMedications: AssistantTool = {
       badge: attentionCount > 0 ? `${attentionCount} 项需补充` : '状态正常',
       tone: attentionCount > 0 ? 'warning' : 'neutral',
       body: medicationRows.length > 0
-        ? `每张药物条目显示规格、提醒时间和库存状态。${hiddenMedicationCount > 0 ? ` 还有 ${hiddenMedicationCount} 种药物未展开。` : ''}`
+        ? `每张药物条目显示规格、提醒时间和库存状态。${hiddenMedicationCount > 0 ? ` 还有 ${hiddenMedicationCount} 种药物未展开。` : ''}${needsReview.length > 0 ? ` 另有 ${needsReview.length} 个时段整体提醒待复核。` : ''}`
         : '可以先添加药物，再让小助手帮你整理服药安排。',
       items: medicationRows.slice(0, 8),
       facts: [
         { label: '药物数', value: `${medicationRows.length} 种` },
         { label: '需留意', value: `${attentionCount} 项` },
+        { label: '时段提醒', value: `${periodSettings.length} 个时段` },
       ],
     };
     const details = meds.map((med) => {
@@ -256,7 +266,19 @@ const listMyMedications: AssistantTool = {
         备注: med.notes || undefined,
       };
     });
-    return { ui, 药物: details };
+    return {
+      ui,
+      药物: details,
+      时段提醒设置: periodSettings.map((s) => ({
+        时段: SLOT_LABEL[s.slot],
+        整体时间: s.timeLocal,
+        提醒方式: MEDICATION_REMINDER_MODE_LABEL[s.mode],
+        状态: s.state === 'needs-review' ? '待复核' : '正常',
+        重复策略: s.escalate.repeatEveryMin > 0
+          ? `每 ${s.escalate.repeatEveryMin} 分钟重推（最多 ${s.escalate.maxRepeats} 次${s.escalate.notifyCaregiverAfterMin > 0 ? `；${s.escalate.notifyCaregiverAfterMin} 分钟后通知照护者` : ''}）`
+          : '不重推',
+      })),
+    };
   },
 };
 
@@ -390,7 +412,153 @@ const setReminderTime: AssistantTool = {
     rule.enabled = true;
     await putRule(rule);
     try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次打开会补 */ }
+    try { await recomputeReminderPeriodReviewState(); } catch { /* 复核标记下次打开设置页会刷新 */ }
     return { ok: true, 已修改: `「${med.name}」${SLOT_LABEL[slot]}提醒 → ${normalized}` };
+  },
+};
+
+const REMINDER_MODE_VALUES: MedicationReminderMode[] = ['strong', 'fullscreen-short', 'fullscreen-persistent'];
+const PERIOD_SCOPE_VALUES: Array<Slot | 'all'> = [...SLOT_VALUES, 'all'];
+
+/** 把未确认提醒的升级策略逐轴转成合法数值（非法输入保留原值语义：undefined = 不改）。 */
+function coerceEscalatePatch(value: unknown): Partial<EscalatePolicy> {
+  const patch: Partial<EscalatePolicy> = {};
+  if (!value || typeof value !== 'object') return patch;
+  const raw = value as Record<string, unknown>;
+  for (const key of ['repeatEveryMin', 'maxRepeats', 'notifyCaregiverAfterMin'] as const) {
+    const num = Number(raw[key]);
+    if (Number.isFinite(num)) patch[key] = key === 'repeatEveryMin' ? Math.max(1, Math.floor(num)) : Math.max(0, Math.floor(num));
+  }
+  return patch;
+}
+
+const setReminderPeriodSettings: AssistantTool = {
+  name: 'set_reminder_period_settings',
+  label: '设置时段整体提醒',
+  description: '设置某个时段（早上/中午/晚上/睡前）的整体提醒：时间（24 小时制 HH:mm）、方式与重复策略；slot=all 时对所有时段统一设置。现在提醒按时间段聚合，每天每个时段只发一条整体提醒，不再按每种药单独设置。',
+  parameters: {
+    type: 'object',
+    properties: {
+      slot: { type: 'string', enum: PERIOD_SCOPE_VALUES, description: '要设置的时段：morning/noon/evening/bedtime；all=全部时段统一设置' },
+      time: { type: 'string', description: '整体提醒时间，24 小时制 HH:mm，如 08:00' },
+      mode: { type: 'string', enum: REMINDER_MODE_VALUES, description: 'strong=增强通知；fullscreen-short=短时全屏；fullscreen-persistent=持续全屏' },
+      escalate: {
+        type: 'object',
+        properties: {
+          repeatEveryMin: { type: 'integer', minimum: 1, description: '未确认时每几分钟再提醒' },
+          maxRepeats: { type: 'integer', minimum: 0, description: '最多重推次数（不含首次）' },
+          notifyCaregiverAfterMin: { type: 'integer', minimum: 0, description: '超过几分钟通知照护者；0=不通知' },
+        },
+        additionalProperties: false,
+      },
+    },
+    required: ['slot'],
+    additionalProperties: false,
+  },
+  confirm(args) {
+    const slot = args.slot;
+    const who = slot === 'all' ? '全部时段' : `${SLOT_LABEL[asSlot(slot) ?? 'morning']}时段`;
+    const parts: string[] = [];
+    const time = str(args.time);
+    if (time) parts.push(`时间改为 ${time}`);
+    const mode = REMINDER_MODE_VALUES.includes(args.mode as MedicationReminderMode)
+      ? args.mode as MedicationReminderMode
+      : undefined;
+    if (mode) parts.push(`方式改为「${MEDICATION_REMINDER_MODE_LABEL[mode]}」`);
+    const escalate = coerceEscalatePatch(args.escalate);
+    if (escalate.repeatEveryMin != null) parts.push(`每 ${escalate.repeatEveryMin} 分钟重推`);
+    if (escalate.maxRepeats != null) parts.push(`最多重推 ${escalate.maxRepeats} 次`);
+    if (escalate.notifyCaregiverAfterMin != null) {
+      parts.push(escalate.notifyCaregiverAfterMin > 0
+        ? `${escalate.notifyCaregiverAfterMin} 分钟后通知照护者`
+        : '不通知照护者');
+    }
+    return `${who}的整体提醒：${parts.length > 0 ? parts.join('、') : '按当前设置'}？`;
+  },
+  async run(args) {
+    const slotArg = args.slot;
+    if (slotArg !== 'all' && !asSlot(slotArg)) return { ok: false, 提示: 'slot 要在 morning/noon/evening/bedtime/all 里选' };
+    const slots: Slot[] = slotArg === 'all' ? SLOT_VALUES : [asSlot(slotArg)!];
+    const time = str(args.time);
+    const mode = REMINDER_MODE_VALUES.includes(args.mode as MedicationReminderMode)
+      ? args.mode as MedicationReminderMode
+      : undefined;
+    if (time && !TIME_RE.test(time)) return { ok: false, 提示: '时间格式要是 HH:mm，比如 08:00 或 19:30' };
+    const escalate = coerceEscalatePatch(args.escalate);
+    if (!time && !mode && Object.keys(escalate).length === 0) {
+      return { ok: false, 提示: '至少要提供 time、mode、escalate 中的一项' };
+    }
+
+    const current = await listReminderPeriodSettings();
+    const changedSlots: Slot[] = [];
+    let saveWarning = false;
+    for (const slot of slots) {
+      const base = current.find((s) => s.slot === slot)?.escalate;
+      const patch: ReminderPeriodSettingPatch = {};
+      if (time) patch.timeLocal = time;
+      if (mode) patch.mode = mode;
+      if (Object.keys(escalate).length > 0) {
+        patch.escalate = {
+          repeatEveryMin: escalate.repeatEveryMin ?? base?.repeatEveryMin ?? 10,
+          maxRepeats: escalate.maxRepeats ?? base?.maxRepeats ?? 3,
+          notifyCaregiverAfterMin: escalate.notifyCaregiverAfterMin ?? base?.notifyCaregiverAfterMin ?? 30,
+        };
+      }
+      try {
+        await updateReminderPeriodSetting(slot, patch);
+        changedSlots.push(slot);
+      } catch {
+        saveWarning = true;
+      }
+    }
+    let scheduleWarning = false;
+    if (changedSlots.length > 0) {
+      try { await rescheduleMedicationReminders(); } catch { scheduleWarning = true; }
+    }
+    let permissionWarning = false;
+    if (mode && mode !== 'strong') {
+      try { permissionWarning = await checkFullScreenAlarmCapability() === 'denied'; } catch { /* 网页端或原生能力不可用 */ }
+    }
+    const label = slots.map((s) => SLOT_LABEL[s]).join('、');
+    const warnings = [
+      saveWarning ? '部分时段保存失败，请稍后重试。' : '',
+      scheduleWarning ? '提醒已保存，但系统闹钟重排暂未完成，应用会自动重试。' : '',
+      permissionWarning ? '系统尚未授予全屏提醒权限；到权限开放前，全屏提醒可能降级为增强通知。' : '',
+    ].filter(Boolean);
+    const changes: string[] = [];
+    if (time) changes.push(`整体时间 ${time}`);
+    if (mode) changes.push(`方式 ${MEDICATION_REMINDER_MODE_LABEL[mode]}`);
+    if (Object.keys(escalate).length > 0) {
+      if (escalate.repeatEveryMin != null) changes.push(`每 ${escalate.repeatEveryMin} 分钟重推`);
+      if (escalate.maxRepeats != null) changes.push(`最多重推 ${escalate.maxRepeats} 次`);
+      if (escalate.notifyCaregiverAfterMin != null) {
+        changes.push(escalate.notifyCaregiverAfterMin > 0
+          ? `${escalate.notifyCaregiverAfterMin} 分钟后通知照护者`
+          : '不通知照护者');
+      }
+    }
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'medication',
+      icon: mode === undefined || mode === 'strong' ? 'bell' : 'bell-ring',
+      eyebrow: `时段整体提醒 · ${label}`,
+      title: `已更新${label}整体提醒`,
+      badge: `${changedSlots.length} 个时段`,
+      tone: warnings.length > 0 ? 'warning' : 'success',
+      body: `${changes.join(' · ')}${warnings.length > 0 ? ` ${warnings.join(' ')}` : ''}`,
+      items: [],
+      facts: [
+        { label: '更新时段', value: `${changedSlots.length} 个` },
+        { label: '保存异常', value: `${slots.length - changedSlots.length} 个` },
+      ],
+    };
+    return {
+      ok: changedSlots.length > 0,
+      已更新时段: changedSlots.map((s) => SLOT_LABEL[s]),
+      失败时段: slots.filter((s) => !changedSlots.includes(s)).map((s) => SLOT_LABEL[s]),
+      提示: warnings.length > 0 ? warnings.join(' ') : undefined,
+      ui,
+    };
   },
 };
 
@@ -814,6 +982,7 @@ const addMedication: AssistantTool = {
     try {
       const result = await createMedicationBatch([draft]);
       try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
+      try { await recomputeReminderPeriodReviewState(); } catch { /* 复核标记下次打开设置页会刷新 */ }
       const createdId = result.medIds[0];
       const created = createdId ? await getMed(createdId) : undefined;
       const summary = created ? describeMedForConfirm(created) : name;
@@ -953,6 +1122,7 @@ const updateMedication: AssistantTool = {
     }
     await putMed(med);
     try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
+    try { await recomputeReminderPeriodReviewState(); } catch { /* 复核标记下次打开设置页会刷新 */ }
     const ui: AssistantCardBlock = {
       type: 'card',
       variant: 'medication',
@@ -990,6 +1160,7 @@ const deleteMedication: AssistantTool = {
     const medId = med.id;
     await softDeleteMed(medId);
     try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
+    try { await recomputeReminderPeriodReviewState(); } catch { /* 复核标记下次打开设置页会刷新 */ }
     const ui: AssistantCardBlock = {
       type: 'card',
       variant: 'medication',
@@ -1409,6 +1580,7 @@ export const assistantTools: readonly AssistantTool[] = [
   getAdherenceReport,
   markMedication,
   setReminderTime,
+  setReminderPeriodSettings,
   webSearchExa,
   presentCard,
   openPage,

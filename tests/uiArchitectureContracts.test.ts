@@ -42,6 +42,16 @@ describe('0.7.0 UI architecture contracts', () => {
     }
   });
 
+  it('keeps inventory voice entry on the shared bottom-sheet lifecycle', () => {
+    const page = source('src/pages/MedInventory.ts');
+    const styles = source('src/ui/styles/pages/inventory.css');
+
+    expect(page).toContain("className: 'inventory-voice-sheet'");
+    expect(page).not.toContain("class: 'med-wizard-overlay'");
+    expect(styles).toContain('.inventory-voice-sheet');
+    expect(styles).toContain('max-block-size: calc(100dvh - var(--safe-top))');
+  });
+
   it('uses the application shell instead of page-owned top and bottom bars', () => {
     expect(existsSync(join(root, 'src/app/AppShell.ts'))).toBe(true);
     const shell = source('src/app/AppShell.ts');

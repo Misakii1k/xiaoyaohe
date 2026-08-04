@@ -86,29 +86,38 @@ describe('release version validation', () => {
         androidVersionCode: 23,
       }),
     ).toEqual({ version: '0.9.4', versionCode: 23 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '0.9.5',
+        lockVersion: '0.9.5',
+        androidVersionName: '0.9.5',
+        androidVersionCode: 24,
+      }),
+    ).toEqual({ version: '0.9.5', versionCode: 24 });
   });
 
   it('requires plain-language notes for the current release version', () => {
     const root = temporaryDirectory();
     mkdirSync(join(root, 'android', 'app'), { recursive: true });
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'xiaoyaohe', version: '0.9.4' }));
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'xiaoyaohe', version: '0.9.5' }));
     writeFileSync(join(root, 'package-lock.json'), JSON.stringify({
       name: 'xiaoyaohe',
-      version: '0.9.4',
-      packages: { '': { name: 'xiaoyaohe', version: '0.9.4' } },
+      version: '0.9.5',
+      packages: { '': { name: 'xiaoyaohe', version: '0.9.5' } },
     }));
-    writeFileSync(join(root, 'android', 'app', 'build.gradle'), 'versionCode 23\nversionName "0.9.4"');
+    writeFileSync(join(root, 'android', 'app', 'build.gradle'), 'versionCode 24\nversionName "0.9.5"');
 
     expect(() => readAndValidateReleaseConfig(root)).toThrow(/Plain-language release notes not found/);
 
     mkdirSync(join(root, 'docs', 'releases'), { recursive: true });
-    writeFileSync(join(root, 'docs', 'releases', '0.9.4.md'), '# 小药盒 0.9.4');
+    writeFileSync(join(root, 'docs', 'releases', '0.9.5.md'), '# 小药盒 0.9.5');
 
     expect(readAndValidateReleaseConfig(root)).toMatchObject({
       name: 'xiaoyaohe',
-      version: '0.9.4',
-      versionCode: 23,
-      releaseNotesFile: join(root, 'docs', 'releases', '0.9.4.md'),
+      version: '0.9.5',
+      versionCode: 24,
+      releaseNotesFile: join(root, 'docs', 'releases', '0.9.5.md'),
     });
   });
 
@@ -300,7 +309,7 @@ describe('Android-only distribution contract', () => {
 
     expect(packageJson).toMatchObject({
       name: 'xiaoyaohe',
-      version: '0.9.4',
+      version: '0.9.6',
       description: expect.stringContaining('Android App'),
       dependencies: { qrcode: expect.any(String) },
       devDependencies: { '@types/qrcode': expect.any(String) },

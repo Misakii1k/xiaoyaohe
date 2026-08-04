@@ -34,5 +34,6 @@ function clonePrescriptionItemDraft(item: PrescriptionItemDraft): PrescriptionIt
     mealRelsBySlot: Object.fromEntries(
       Object.entries(item.mealRelsBySlot).map(([slot, rels]) => [slot, [...(rels ?? [])]]),
     ) as PrescriptionItemDraft['mealRelsBySlot'],
+    inventory: item.inventory ? { ...item.inventory } : undefined,
   };
 }

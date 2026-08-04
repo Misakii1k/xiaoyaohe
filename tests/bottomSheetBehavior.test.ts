@@ -45,6 +45,19 @@ describe('BottomSheet 行为契约', () => {
     close();
   });
 
+  it('给专用面板附加样式类而不改变通用生命周期', () => {
+    const { overlay, close } = openBottomSheet({
+      label: '语音录入',
+      className: 'inventory-voice-sheet',
+      content: paragraph(),
+    });
+
+    expect(overlay.querySelector('.bottom-sheet.inventory-voice-sheet')).not.toBeNull();
+    expect(appRoot().getAttribute('aria-hidden')).toBe('true');
+    close();
+    expect(appRoot().getAttribute('aria-hidden')).toBeNull();
+  });
+
   it('按 Escape 关闭，并把焦点还给触发它的元素', () => {
     const trigger = document.createElement('button');
     trigger.textContent = '打开';

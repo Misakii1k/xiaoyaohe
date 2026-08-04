@@ -7,6 +7,7 @@ import {
   listRulesByMed,
   putRule,
   deleteRule,
+  recomputeReminderPeriodReviewState,
 } from '../db/local';
 import { getLatestMedPhotoBlob, getMedPhotoUrl, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
 import { uid } from '../db/local';
@@ -28,8 +29,6 @@ import {
   type MealRelsBySlot,
   type MedicationInventory,
   type LocalDate,
-  type MedicationReminderMode,
-  MEDICATION_REMINDER_MODE_LABEL,
 } from '../db/schema';
 import { el, renderPage, toast, confirmDialog, icon } from '../ui/components';
 import { navigate } from '../router';
@@ -161,35 +160,14 @@ export async function renderMedEditPage(
   const slotChips = el('div', { class: 'chips' });
   const scheduleWrap = el('div', { class: 'meal-slot-list' });
   const dayChips = el('div', { class: 'chips' });
-  const reminderModeControl = el('div', {
-    class: 'medication-reminder-mode',
-    role: 'radiogroup',
-    'aria-label': '提醒方式',
-  } as any);
-  const reminderModeDescriptions: Record<MedicationReminderMode, string> = {
-    strong: '高优先级通知、铃声和振动',
-    'fullscreen-short': '全屏响铃 10 秒，然后保留通知',
-    'fullscreen-persistent': '持续提醒，操作或 60 秒后结束',
-  };
-  let selectedReminderMode: MedicationReminderMode = med.reminderMode;
-  for (const mode of Object.keys(MEDICATION_REMINDER_MODE_LABEL) as MedicationReminderMode[]) {
-    const option = el('button', {
-      class: 'medication-reminder-mode-option' + (mode === selectedReminderMode ? ' is-selected' : ''),
-      type: 'button',
-      role: 'radio',
-      'aria-checked': String(mode === selectedReminderMode),
-    } as any);
-    option.append(el('strong', { text: MEDICATION_REMINDER_MODE_LABEL[mode] }));
-    option.append(el('span', { text: reminderModeDescriptions[mode] }));
-    option.onclick = () => {
-      selectedReminderMode = mode;
-      for (const child of reminderModeControl.querySelectorAll<HTMLElement>('[role="radio"]')) {
-        const selected = child === option;
-        child.classList.toggle('is-selected', selected);
-        child.setAttribute('aria-checked', String(selected));
-      }
-    };
-    reminderModeControl.append(option);
+  // 提醒按时间段聚合：每天每个时段只发一条整体提醒，时间与方式在设置页统一管理。
+  // 这里仅保留时段选择与精确时间，用于临床展示、记录与库存归因。
+  const reminderHint = el('div', { class: 'muted helper-line period-reminder-hint', html: '' });
+  function refreshReminderHint(): void {
+    const slots = SLOTS.filter((s) => selectedSlots.has(s));
+    reminderHint.textContent = slots.length === 0
+      ? '该药所属时段的提醒时间与方式在「设置」页的「时段提醒设置」里按时间段统一管理。'
+      : `该药属于「${slots.map((s) => SLOT_LABEL[s]).join('、')}」时段，每天只发一条整体提醒；提醒时间与方式在「设置」页的「时段提醒设置」里统一管理。`;
   }
 
   // 库存可用天数显示（随库存输入实时刷新）
@@ -265,6 +243,7 @@ export async function renderMedEditPage(
   }
   form.append(field('服药时段（可多选）', slotChips));
   form.append(scheduleWrap);
+  form.append(reminderHint);
   renderScheduleControls();
 
   for (let d = 0; d < 7; d++) {
@@ -284,7 +263,6 @@ export async function renderMedEditPage(
     dayChips.append(chip);
   }
   form.append(field('服药星期（不选 = 每天）', dayChips));
-  form.append(field('提醒方式', reminderModeControl));
 
   // 周期用药配置（吃 N 天停 M 天）
   const existingCycleRule = existingRules.find((r) => r.cycle);
@@ -395,7 +373,6 @@ export async function renderMedEditPage(
     med.mealRelsBySlot = buildMealRelsBySlot();
     med.mealRels = mealRelsFromBySlot(med.mealRelsBySlot);
     med.daysOfWeek = [...selectedDays].sort();
-    med.reminderMode = selectedReminderMode;
     med.inventory = readInventory();
     med.notes = notesInput.value.trim();
     applyExpiryDate();
@@ -440,6 +417,8 @@ export async function renderMedEditPage(
       expectedProfile = structuredClone(committed.med);
       medSaved = true;
       await syncRules(med.id, selectedSlots, timeInputs, existingRules, cycle, cycleStartDate);
+      // 保存药品/规则后懒重算时段复核标记（时段内时间/方式差异 → needs-review）
+      await recomputeReminderPeriodReviewState().catch(() => undefined);
       await rescheduleMedicationReminders().catch(() => undefined);
 
       // 照片失败不能把整条药品保存打成「闪退」：先落药档，再尽力存图
@@ -487,6 +466,7 @@ export async function renderMedEditPage(
       if (await confirmDialog('确定删除这种药及其提醒吗？', '删除', true)) {
         if (!isActive()) return;
         await softDeleteMed(med.id);
+        await recomputeReminderPeriodReviewState().catch(() => undefined);
         await rescheduleMedicationReminders().catch(() => undefined);
         if (!isActive()) return;
         toast('已删除');
@@ -874,6 +854,7 @@ export async function renderMedEditPage(
     if (scheduleWrap.childElementCount === 0) {
       scheduleWrap.append(el('div', { class: 'muted helper-line', html: '选择服药时段后，可分别设置早餐前、午餐中、晚餐后。' }));
     }
+    refreshReminderHint();
   }
 
   function applyMedToForm(): void {

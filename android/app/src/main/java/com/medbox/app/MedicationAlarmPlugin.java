@@ -101,30 +101,31 @@ public final class MedicationAlarmPlugin extends Plugin {
     @PluginMethod
     public void getPendingActions(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("actions", MedicationAlarmContract.takeActions(getContext()));
+        result.put("actions", MedicationAlarmContract.getPendingActions(getContext()));
         call.resolve(result);
+    }
+
+    /** 非破坏性确认：只移除已处理成功的 action（防丢），未确认项保留待下次重放。 */
+    @PluginMethod
+    public void acknowledgeActions(PluginCall call) {
+        JSArray ids = call.getArray("ids", new JSArray());
+        MedicationAlarmContract.acknowledgeActions(getContext(), ids);
+        call.resolve();
     }
 
     @PluginMethod
     public void snooze(PluginCall call) {
         String tag = call.getString("tag");
-        JSObject data = call.getObject("data", new JSObject());
+        JSONObject data = call.getObject("data", new JSObject());
         Integer minutes = call.getInt("minutes", 10);
         if (tag == null) {
             call.reject("tag is required", "INVALID_ARGUMENT");
             return;
         }
         try {
-            JSONObject payload = new JSONObject();
-            int id = Math.abs((tag + ":snooze").hashCode()) | 1;
-            payload.put("id", id);
-            payload.put("at", System.currentTimeMillis() + Math.max(1, minutes) * 60_000L);
-            payload.put("title", "⏰ 该吃药了");
-            payload.put("body", data.getString("medicationName", "用药提醒") + " · 稍后提醒");
-            payload.put("tag", tag);
-            payload.put("key", "snooze");
-            payload.put("mode", data.getString("reminderMode", "strong"));
-            payload.put("data", data);
+            JSONObject payload = MedicationAlarmContract.buildSnoozePayload(
+                data, tag, System.currentTimeMillis() + Math.max(1, minutes) * 60_000L
+            );
             MedicationAlarmContract.schedule(getContext(), payload);
             call.resolve();
         } catch (JSONException error) {

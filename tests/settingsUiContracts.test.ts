@@ -99,8 +99,8 @@ describe('settings information architecture contracts', () => {
       expect(source).toContain('spellcheck: false');
     }
     expect(providerEditor).not.toContain("keyIn.type = visible ? 'text' : 'password'");
-    expect(styles).toContain('.secret-input {\n  -webkit-text-security: disc;');
-    expect(styles).toContain('.secret-input.is-visible {\n  -webkit-text-security: none;');
+    expect(styles).toMatch(/\.secret-input\s*\{\s*-webkit-text-security:\s*disc;/);
+    expect(styles).toMatch(/\.secret-input\.is-visible\s*\{\s*-webkit-text-security:\s*none;/);
   });
 
   it('tells the truth about where API keys live on each platform', () => {

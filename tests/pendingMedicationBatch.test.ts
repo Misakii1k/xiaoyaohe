@@ -41,6 +41,17 @@ describe('pending medication batch handoff', () => {
     expect(takePendingMedicationBatch()).toEqual([prescriptionDraft()]);
   });
 
+  it('deeply snapshots inventory carried from intelligent stock entry', () => {
+    const draft = prescriptionDraft();
+    draft.inventory = { remaining: 40, unit: '片', packageQuantity: 20 };
+    setPendingMedicationBatch([draft]);
+
+    draft.inventory.remaining = 1;
+    const pending = takePendingMedicationBatch();
+
+    expect(pending[0]?.inventory).toEqual({ remaining: 40, unit: '片', packageQuantity: 20 });
+  });
+
   it('consumes a pending batch only once', () => {
     setPendingMedicationBatch([prescriptionDraft()]);
 

@@ -82,7 +82,8 @@ describe('LAN sync snapshot store', () => {
   it('keeps retired cloud stores out of the v6 database', async () => {
     const database = await openMedboxDatabase();
     const storeNames = Array.from(database.objectStoreNames).sort();
-    expect(storeNames).toEqual([...ALL_STORES].sort());
+    // reminderPeriods 是设备本地 store（时段提醒设置，不入局域网同步），单独存在
+    expect(storeNames).toEqual([...ALL_STORES, 'reminderPeriods'].sort());
     expect(storeNames).not.toContain('outbox');
     expect(storeNames).not.toContain('syncV2Metadata');
   });

@@ -1,5 +1,5 @@
 // IndexedDB 封装（idb）：离线优先的本地存储 + 局域网同步元数据
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb';
 import {
   createScheduleRevision,
   freezeScheduleRevision,
@@ -24,14 +24,20 @@ import {
   type MedicationScheduleRevision,
   type ReminderRule,
   defaultEscalate,
+  deriveReminderPeriodSettings,
+  normalizeMedicationReminderMode,
+  SLOT_DEFAULT_TIME,
   type IntakeLog,
   type StructuredDose,
   type PhotoBlob,
   type PushState,
   type Slot,
+  type EscalatePolicy,
   type InventoryOperationLog,
   type InventorySource,
   type InventoryActionType,
+  type MedicationReminderMode,
+  type ReminderPeriodSetting,
 } from './schema';
 import {
   validateMedicationDraft,
@@ -87,6 +93,7 @@ export interface MedboxDB extends DBSchema {
   pushStates: { key: string; value: PushState };
   syncLanMetadata: { key: string; value: SyncLanMetadata };
   inventoryLogs: { key: string; value: InventoryOperationLog; indexes: { byMed: string; byTimestamp: number } };
+  reminderPeriods: { key: string; value: ReminderPeriodSetting };
 }
 
 let dbp: Promise<IDBPDatabase<MedboxDB>> | null = null;
@@ -131,11 +138,18 @@ export function upgradeMedboxDatabase(d: IDBPDatabase<MedboxDB>, oldVersion: num
       invLogs.createIndex('byTimestamp', 'timestamp');
     }
   }
+  if (oldVersion < 9) {
+    // 只同步建 store；初始设置由 rules/meds 派生，延后到打开完成后幂等补齐
+    // （idb 的 upgrade 回调是同步调用，返回值不会被 await，无法在其中异步派生）。
+    if (!d.objectStoreNames.contains('reminderPeriods')) {
+      d.createObjectStore('reminderPeriods', { keyPath: 'slot' });
+    }
+  }
 }
 
 export function openMedboxDatabase(): Promise<IDBPDatabase<MedboxDB>> {
   if (!dbp) {
-    dbp = openDB<MedboxDB>('medbox', 8, {
+    dbp = openDB<MedboxDB>('medbox', 9, {
       upgrade: upgradeMedboxDatabase,
       blocked() {
         console.warn('IndexedDB 升级被旧页面阻塞，请关闭其他已打开的 medbox 页面后刷新。');
@@ -143,6 +157,15 @@ export function openMedboxDatabase(): Promise<IDBPDatabase<MedboxDB>> {
       blocking() {
         console.warn('检测到新版数据库升级请求，当前页面将关闭旧连接。');
       },
+    }).then(async (database) => {
+      // idb 的 upgrade 回调不会 await 异步返回值，v9 的初始派生只能在打开后补齐；
+      // seed 幂等：仅当 store 为空且有贡献规则时按派生值建行。
+      try {
+        await seedReminderPeriodSettings(database);
+      } catch (error) {
+        console.warn('时段提醒设置初始化失败，界面将按派生值合成展示。', error);
+      }
+      return database;
     });
   }
   return dbp;
@@ -182,6 +205,202 @@ export async function putMed(med: Medication): Promise<void> {
   // 清理旧字段，避免 IndexedDB 里残留
   delete next.mealRel;
   await (await db()).put('meds', next);
+}
+
+export interface MedicationReminderModeUpdateResult {
+  medId: string;
+  medName: string;
+  previousMode: MedicationReminderMode;
+  mode: MedicationReminderMode;
+  changed: boolean;
+}
+
+/** 只覆盖提醒方式；任一目标不存在或已删除时整批事务回滚。 */
+export async function updateMedicationReminderModes(
+  medIds: readonly string[],
+  mode: MedicationReminderMode,
+): Promise<MedicationReminderModeUpdateResult[]> {
+  const uniqueIds = [...new Set(medIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return [];
+  const d = await db();
+  const tx = d.transaction('meds', 'readwrite');
+  const store = tx.objectStore('meds');
+  const results: MedicationReminderModeUpdateResult[] = [];
+  try {
+    const records = await Promise.all(uniqueIds.map((id) => store.get(id)));
+    const missingIndex = records.findIndex((record) => !record || record.deleted);
+    if (missingIndex >= 0) {
+      throw new Error(`找不到要修改的药品（${uniqueIds[missingIndex]}），本次未更改任何提醒方式`);
+    }
+    const now = Date.now();
+    for (const record of records) {
+      const med = normalizeMedication(record!);
+      const previousMode = med.reminderMode;
+      const changed = previousMode !== mode;
+      if (changed) {
+        med.reminderMode = mode;
+        med.updatedAt = now;
+        await store.put(med);
+      }
+      results.push({ medId: med.id, medName: med.name, previousMode, mode, changed });
+    }
+    await tx.done;
+    return results;
+  } catch (error) {
+    try { tx.abort(); } catch { /* Transaction may already be closed. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+}
+
+// ---- 时段提醒设置（设备本地，不入局域网同步） ----
+
+const REMINDER_PERIOD_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export type ReminderPeriodSettingPatch = Partial<Pick<ReminderPeriodSetting, 'timeLocal' | 'mode' | 'escalate'>>;
+
+/** 幂等 seed：仅当 store 为空且有贡献规则时，按派生值建行（recompute 语义等价）。 */
+async function seedReminderPeriodSettings(d: IDBPDatabase<MedboxDB>): Promise<void> {
+  const existing = await d.getAll('reminderPeriods');
+  if (existing.length > 0) return;
+  await recomputeReminderPeriodReviewStateInDb(d);
+}
+
+/** 返回全部 4 个时段：已保存的行原样返回，未保存的时段按派生值合成（不落库）。 */
+export async function listReminderPeriodSettings(): Promise<ReminderPeriodSetting[]> {
+  const d = await db();
+  const [stored, meds, rules] = await Promise.all([
+    d.getAll('reminderPeriods'),
+    d.getAll('meds'),
+    d.getAll('rules'),
+  ]);
+  const derived = deriveReminderPeriodSettings(meds.map(normalizeMedication), rules);
+  const storedBySlot = new Map(stored.map((setting) => [setting.slot, setting]));
+  const now = Date.now();
+  return derived.map((setting) => storedBySlot.get(setting.slot) ?? { ...setting, updatedAt: now });
+}
+
+export async function getReminderPeriodSetting(slot: Slot): Promise<ReminderPeriodSetting> {
+  const d = await db();
+  const stored = await d.get('reminderPeriods', slot);
+  if (stored) return stored;
+  const settings = await listReminderPeriodSettings();
+  return settings.find((setting) => setting.slot === slot) ?? {
+    slot,
+    timeLocal: SLOT_DEFAULT_TIME[slot],
+    mode: 'strong' as const,
+    escalate: defaultEscalate(),
+    state: 'active' as const,
+    updatedAt: Date.now(),
+  };
+}
+
+/** escalate 逐轴 clamp 到合法范围内（repeatEveryMin ≥ 1，其余 ≥ 0）。 */
+function applyEscalatePatch(base: EscalatePolicy, patch: Partial<EscalatePolicy> | undefined): EscalatePolicy {
+  if (!patch) return base;
+  const next: EscalatePolicy = { ...base };
+  if (Number.isFinite(patch.repeatEveryMin)) {
+    next.repeatEveryMin = Math.max(1, Math.floor(patch.repeatEveryMin as number));
+  }
+  if (Number.isFinite(patch.maxRepeats)) {
+    next.maxRepeats = Math.max(0, Math.floor(patch.maxRepeats as number));
+  }
+  if (Number.isFinite(patch.notifyCaregiverAfterMin)) {
+    next.notifyCaregiverAfterMin = Math.max(0, Math.floor(patch.notifyCaregiverAfterMin as number));
+  }
+  return next;
+}
+
+/**
+ * 原子更新时段设置：该时段尚无已存行时按当前派生值补全后落库。
+ * state（复核标记）不在此处改写——始终由 recompute 从时段内差异派生；
+ * 用户显式选择不消除差异，仅决定整体提醒实际采用的时间与方式。
+ */
+export async function updateReminderPeriodSetting(
+  slot: Slot,
+  patch: ReminderPeriodSettingPatch,
+): Promise<ReminderPeriodSetting> {
+  const d = await db();
+  const tx = d.transaction(['reminderPeriods', 'meds', 'rules'], 'readwrite');
+  try {
+    const [stored, meds, rules] = await Promise.all([
+      tx.objectStore('reminderPeriods').get(slot),
+      tx.objectStore('meds').getAll(),
+      tx.objectStore('rules').getAll(),
+    ]);
+    const derived = deriveReminderPeriodSettings(meds.map(normalizeMedication), rules)
+      .find((setting) => setting.slot === slot);
+    const base = stored ?? derived ?? {
+      slot,
+      timeLocal: SLOT_DEFAULT_TIME[slot],
+      mode: 'strong' as const,
+      escalate: defaultEscalate(),
+      state: 'active' as const,
+    };
+    const next: ReminderPeriodSetting = {
+      slot,
+      timeLocal: patch.timeLocal ?? base.timeLocal,
+      mode: patch.mode ? normalizeMedicationReminderMode(patch.mode) : base.mode,
+      escalate: applyEscalatePatch(base.escalate, patch.escalate),
+      state: base.state,
+      updatedAt: Date.now(),
+    };
+    if (!REMINDER_PERIOD_TIME_PATTERN.test(next.timeLocal)) {
+      throw new TypeError(`无效的提醒时间：${next.timeLocal}（应为 HH:mm）`);
+    }
+    await tx.objectStore('reminderPeriods').put(next);
+    await tx.done;
+    return next;
+  } catch (error) {
+    try { tx.abort(); } catch { /* Transaction may already be closed. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * 保存药品/规则后懒重算时段复核标记（needs-review）：
+ * - 无已存行、但时段内有非删除规则贡献者 → 按派生值建行；
+ * - 已有行 → 保留用户设置，仅刷新 state（差异信号，不静默归一化）；
+ * - 无行且无贡献者 → 跳过（界面按派生值合成展示）。
+ */
+export async function recomputeReminderPeriodReviewState(): Promise<void> {
+  await recomputeReminderPeriodReviewStateInDb(await db());
+}
+
+async function recomputeReminderPeriodReviewStateInDb(d: IDBPDatabase<MedboxDB>): Promise<void> {
+  const tx = d.transaction(['reminderPeriods', 'meds', 'rules'], 'readwrite');
+  try {
+    const [stored, meds, rules] = await Promise.all([
+      tx.objectStore('reminderPeriods').getAll(),
+      tx.objectStore('meds').getAll(),
+      tx.objectStore('rules').getAll(),
+    ]);
+    const medById = new Map(
+      meds.filter((record) => !record.deleted).map((record) => [record.id, record]),
+    );
+    const contributedSlots = new Set(
+      rules.filter((rule) => !rule.deleted && medById.has(rule.medId)).map((rule) => rule.slot),
+    );
+    const derived = deriveReminderPeriodSettings(meds.map(normalizeMedication), rules);
+    const storedBySlot = new Map(stored.map((setting) => [setting.slot, setting]));
+    const now = Date.now();
+    const store = tx.objectStore('reminderPeriods');
+    for (const setting of derived) {
+      const existing = storedBySlot.get(setting.slot);
+      if (!existing) {
+        if (!contributedSlots.has(setting.slot)) continue;
+        await store.put({ ...setting, updatedAt: now });
+      } else if (existing.state !== setting.state) {
+        await store.put({ ...existing, state: setting.state });
+      }
+    }
+    await tx.done;
+  } catch (error) {
+    try { tx.abort(); } catch { /* Transaction may already be closed. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
 }
 
 function inventoriesEqual(left: Medication['inventory'], right: Medication['inventory']): boolean {
@@ -784,19 +1003,100 @@ export async function setOccurrenceAction(
 ): Promise<IntakeMutationResult> {
   const d = await db();
   const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'logs', 'inventoryLogs'], 'readwrite');
+  try {
+    const result = await applyOccurrenceAction(buildOccurrenceActionAccess(tx), occurrence, action, options);
+    await tx.done;
+    return result;
+  } catch (error) {
+    try { tx.abort(); } catch { /* Transaction may already be closed. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * 批量版本：同一事务内逐条应用（供“全部已服用”等场景），任一条失败则整批回滚。
+ * 同一药品的多条 occurrence 在事务内共享同一条最新药品记录（库存/剂量逐条生效）。
+ */
+export async function setOccurrenceActions(
+  occurrences: readonly MedicationOccurrence[],
+  action: IntakeAction | undefined,
+  options: { ackAt?: number; confirmedDose?: StructuredDose; source?: InventorySource } = {},
+): Promise<IntakeMutationResult[]> {
+  if (occurrences.length === 0) return [];
+  const d = await db();
+  const tx = d.transaction(['meds', 'rules', 'scheduleRevisions', 'logs', 'inventoryLogs'], 'readwrite');
+  try {
+    const access = buildOccurrenceActionAccess(tx);
+    const results: IntakeMutationResult[] = [];
+    for (const occurrence of occurrences) {
+      results.push(await applyOccurrenceAction(access, occurrence, action, options));
+    }
+    await tx.done;
+    return results;
+  } catch (error) {
+    try { tx.abort(); } catch { /* Transaction may already be closed. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+}
+
+/** 单个事务内对药品/日志/库存等 store 的访问器（单条与批量动作共用）。 */
+interface OccurrenceActionAccess {
+  getMedication(medId: string): Promise<Medication | undefined>;
+  putMedication(value: Medication): Promise<void>;
+  getLog(logId: string): Promise<IntakeLog | undefined>;
+  putLog(value: IntakeLog): Promise<void>;
+  deleteLog(logId: string): Promise<void>;
+  getInventoryLog(logId: string): Promise<InventoryOperationLog | undefined>;
+  listMedicationInventoryLogs(medId: string): Promise<InventoryOperationLog[]>;
+  putInventoryLog(value: InventoryOperationLog): Promise<void>;
+  listRulesByMed(medId: string): Promise<ReminderRule[]>;
+  putScheduleRevision(value: MedicationScheduleRevision): Promise<void>;
+  abort(): void;
+}
+
+function buildOccurrenceActionAccess(
+  tx: IDBPTransaction<MedboxDB, ['meds', 'rules', 'scheduleRevisions', 'logs', 'inventoryLogs'], 'readwrite'>,
+): OccurrenceActionAccess {
   const medStore = tx.objectStore('meds');
   const logStore = tx.objectStore('logs');
   const inventoryLogStore = tx.objectStore('inventoryLogs');
-  const medRaw = await medStore.get(occurrence.medId);
-  if (!medRaw) {
-    tx.abort();
-    void tx.done.catch(() => undefined);
+  const rulesStore = tx.objectStore('rules');
+  const revisionsStore = tx.objectStore('scheduleRevisions');
+  return {
+    getMedication: async (medId) => {
+      const value = await medStore.get(medId);
+      return value ? normalizeMedication(value) : undefined;
+    },
+    putMedication: async (value) => { await medStore.put(value); },
+    getLog: (logId) => logStore.get(logId),
+    putLog: async (value) => { await logStore.put(value); },
+    deleteLog: (logId) => logStore.delete(logId),
+    getInventoryLog: (logId) => inventoryLogStore.get(logId),
+    listMedicationInventoryLogs: (medId) => inventoryLogStore.index('byMed').getAll(medId),
+    putInventoryLog: async (value) => { await inventoryLogStore.put(value); },
+    listRulesByMed: (medId) => rulesStore.index('byMed').getAll(medId),
+    putScheduleRevision: async (value) => { await revisionsStore.put(value); },
+    abort: () => { try { tx.abort(); } catch { /* Transaction may already be closed. */ } },
+  };
+}
+
+/** 单条 occurrence 动作的事务内实现（单条与批量共用）。失败时回滚整个事务并抛出。 */
+async function applyOccurrenceAction(
+  access: OccurrenceActionAccess,
+  occurrence: MedicationOccurrence,
+  action: IntakeAction | undefined,
+  options: { ackAt?: number; confirmedDose?: StructuredDose; source?: InventorySource } = {},
+): Promise<IntakeMutationResult> {
+  const med = await access.getMedication(occurrence.medId);
+  if (!med) {
+    access.abort();
     throw new MedicationIntakeError('medication-not-found', '找不到对应药品');
   }
-  const med = normalizeMedication(medRaw);
   const [currentLog, legacyLog] = await Promise.all([
-    logStore.get(occurrence.id),
-    logStore.get(occurrence.legacyLogId),
+    access.getLog(occurrence.id),
+    access.getLog(occurrence.legacyLogId),
   ]);
   const previous = currentLog && legacyLog
     ? currentLog.updatedAt >= legacyLog.updatedAt
@@ -833,8 +1133,7 @@ export async function setOccurrenceAction(
 
   if (action === 'taken' && previous?.status !== 'taken') {
     if (isMedicationExpiredOn(med, occurrence.localDate)) {
-      tx.abort();
-      void tx.done.catch(() => undefined);
+      access.abort();
       throw new MedicationIntakeError(
         'expired',
         `${med.name} 已于 ${getMedicationExpiryLocalDate(med) ?? '此前'} 过期，不能记录服用`,
@@ -847,8 +1146,7 @@ export async function setOccurrenceAction(
       if (occurrenceDose) {
         const inventoryResult = deductInventory(med, occurrenceDose, { allowPartial: true });
         if (inventoryResult.reviewRequired) {
-          tx.abort();
-          void tx.done.catch(() => undefined);
+          access.abort();
           throw new MedicationIntakeError(
             'dose-review-required',
             inventoryResult.message ?? `${med.name} 的剂量需要复核`,
@@ -868,19 +1166,21 @@ export async function setOccurrenceAction(
     if (!previous.preDeducted && (previous.inventoryDelta != null || previous.inventoryOperationLogId)) {
       try {
         const reverted = await revertLinkedIntakeInventoryEffect(previous, {
-          getMedication: async (medId) => {
-            const value = medId === med.id ? med : await medStore.get(medId);
-            return value ? normalizeMedication(value) : undefined;
-          },
-          putMedication: (value) => medStore.put(value),
-          getInventoryLog: (logId) => inventoryLogStore.get(logId),
-          listMedicationInventoryLogs: (medId) => inventoryLogStore.index('byMed').getAll(medId),
-          putInventoryLog: (value) => inventoryLogStore.put(value),
+          getMedication: access.getMedication,
+          putMedication: access.putMedication,
+          getInventoryLog: access.getInventoryLog,
+          listMedicationInventoryLogs: access.listMedicationInventoryLogs,
+          putInventoryLog: access.putInventoryLog,
         }, { conflict: 'throw', now });
         inventoryChanged = reverted.restored;
+        // revert 已把恢复后的库存写入 store；同步本地快照，避免下面
+        // 统一 putMedication(med) 把撤销前的旧剩余量回写回去。
+        if (inventoryChanged) {
+          const fresh = await access.getMedication(med.id);
+          if (fresh?.inventory) med.inventory = fresh.inventory;
+        }
       } catch (error) {
-        tx.abort();
-        void tx.done.catch(() => undefined);
+        access.abort();
         throw error;
       }
     }
@@ -889,11 +1189,11 @@ export async function setOccurrenceAction(
   if (inventoryChanged || options.confirmedDose) {
     const prevStock = roundStock((med.inventory?.remaining ?? 0) + (action === 'taken' ? (inventoryDelta ?? 0) : 0));
     med.updatedAt = now;
-    await medStore.put(med);
+    await access.putMedication(med);
     if (inventoryChanged && med.inventory && action === 'taken') {
-      const medLogs = await inventoryLogStore.index('byMed').getAll(med.id);
+      const medLogs = await access.listMedicationInventoryLogs(med.id);
       const operationId = uid();
-      await inventoryLogStore.put({
+      await access.putInventoryLog({
         id: operationId,
         medId: med.id,
         medName: med.name,
@@ -911,9 +1211,9 @@ export async function setOccurrenceAction(
       inventoryOperationLogId = operationId;
     }
     if (options.confirmedDose) {
-      const rules = await tx.objectStore('rules').index('byMed').getAll(med.id);
+      const rules = await access.listRulesByMed(med.id);
       for (const rule of rules) {
-        await tx.objectStore('scheduleRevisions').put(
+        await access.putScheduleRevision(
           createScheduleRevision(med, rule, {
             effectiveDate: occurrence.localDate,
             createdAt: now,
@@ -923,8 +1223,8 @@ export async function setOccurrenceAction(
     }
   }
 
-  if (currentLog) await logStore.delete(currentLog.id);
-  if (legacyLog && legacyLog.id !== currentLog?.id) await logStore.delete(legacyLog.id);
+  if (currentLog) await access.deleteLog(currentLog.id);
+  if (legacyLog && legacyLog.id !== currentLog?.id) await access.deleteLog(legacyLog.id);
 
   let nextLog: IntakeLog | undefined;
   if (action) {
@@ -954,9 +1254,8 @@ export async function setOccurrenceAction(
       preDeducted: action === 'taken' ? occurrencePreDeducted : undefined,
       updatedAt: now,
     };
-    await logStore.put(nextLog);
+    await access.putLog(nextLog);
   }
-  await tx.done;
   return { med, log: nextLog, inventoryChanged, lowStock, lowStockMessage };
 }
 

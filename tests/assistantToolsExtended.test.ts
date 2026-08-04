@@ -14,7 +14,7 @@ vi.mock('../src/db/local', () => ({
   listLogsByDay: vi.fn(async () => []),
   listLogsByRange: vi.fn(async () => []),
   putRule: vi.fn(async () => undefined),
-  putMed: vi.fn(async (med: { id: string; name: string; inventory?: { remaining: number; unit?: string } }) => {
+  putMed: vi.fn(async (med: { id: string; name: string; reminderMode?: string; inventory?: { remaining: number; unit?: string } }) => {
     savedMeds.set(med.id, med);
   }),
   getMed: vi.fn(async (id: string) => savedMeds.get(id)),
@@ -56,11 +56,40 @@ vi.mock('../src/db/local', () => ({
       },
     };
   }),
+  listReminderPeriodSettings: vi.fn(async () => Array.from(savedPeriodSettings.values())),
+  recomputeReminderPeriodReviewState: vi.fn(async () => undefined),
+  updateReminderPeriodSetting: vi.fn(async (slot: string, patch: {
+    timeLocal?: string;
+    mode?: string;
+    escalate?: { repeatEveryMin?: number; maxRepeats?: number; notifyCaregiverAfterMin?: number };
+  }) => {
+    const base = savedPeriodSettings.get(slot) ?? {
+      slot,
+      timeLocal: '08:00',
+      mode: 'strong',
+      escalate: { repeatEveryMin: 10, maxRepeats: 3, notifyCaregiverAfterMin: 30 },
+      state: 'active',
+      updatedAt: 1,
+    };
+    const next = {
+      ...base,
+      timeLocal: patch.timeLocal ?? base.timeLocal,
+      mode: patch.mode ?? base.mode,
+      escalate: patch.escalate ? { ...base.escalate, ...patch.escalate } : base.escalate,
+      updatedAt: Date.now(),
+    };
+    savedPeriodSettings.set(slot, next);
+    return next;
+  }),
   MedicationBatchValidationError: class MedicationBatchValidationError extends Error {},
 }));
 
 vi.mock('../src/features/reminderScheduler', () => ({
   rescheduleMedicationReminders: vi.fn(async () => undefined),
+}));
+
+vi.mock('../src/features/nativeMedicationAlarm', () => ({
+  checkFullScreenAlarmCapability: vi.fn(async () => 'granted'),
 }));
 
 vi.mock('../src/sync/lan/autoSync', () => ({
@@ -104,7 +133,20 @@ vi.mock('../src/ai/exaMcp', () => ({
 // 由于 vi.mock 在 vitest 中被 hoist，状态变量需要在工厂函数内部初始化
 // 用 hoisted 共享状态
 const state = vi.hoisted(() => ({
-  savedMeds: new Map<string, { id: string; name: string; inventory?: { remaining: number; unit?: string } }>(),
+  savedMeds: new Map<string, {
+    id: string;
+    name: string;
+    reminderMode?: string;
+    inventory?: { remaining: number; unit?: string };
+  }>(),
+  savedPeriodSettings: new Map<string, {
+    slot: string;
+    timeLocal: string;
+    mode: string;
+    escalate: { repeatEveryMin: number; maxRepeats: number; notifyCaregiverAfterMin: number };
+    state: 'active' | 'needs-review';
+    updatedAt: number;
+  }>(),
   deletedIds: new Set<string>(),
   notificationFlag: true,
   autoSyncFlag: false,
@@ -113,6 +155,7 @@ const state = vi.hoisted(() => ({
 }));
 
 const savedMeds = state.savedMeds;
+const savedPeriodSettings = state.savedPeriodSettings;
 const deletedIds = state.deletedIds;
 let currentNotificationFlag = state.notificationFlag;
 let currentAutoSyncFlag = state.autoSyncFlag;
@@ -131,9 +174,9 @@ describe('Phase F assistant tools registration', () => {
     'update_app_settings',
   ] as const;
 
-  it('registers all 8 new tools alongside the original 8 and 3 inventory tools', () => {
-    // 8 original + 8 phase F + 3 inventory tools = 19 total
-    expect(assistantTools).toHaveLength(19);
+  it('registers period-reminder management alongside existing assistant tools', () => {
+    expect(assistantTools).toHaveLength(20);
+    expect(findAssistantTool('set_reminder_period_settings')).toBeDefined();
     for (const name of NEW_TOOL_NAMES) {
       const tool = findAssistantTool(name);
       expect(tool, `expected ${name} to be registered`).toBeDefined();
@@ -144,7 +187,7 @@ describe('Phase F assistant tools registration', () => {
   });
 
   it('marks data-mutating tools with confirm hooks', () => {
-    // 这 6 个工具都会改数据/状态，必须有 confirm
+    // 这 7 个工具都会改数据/状态，必须有 confirm
     const mutatingTools = [
       'edit_inventory',
       'add_medication',
@@ -152,6 +195,7 @@ describe('Phase F assistant tools registration', () => {
       'delete_medication',
       'download_and_install_update',
       'update_app_settings',
+      'set_reminder_period_settings',
     ];
     for (const name of mutatingTools) {
       const tool = findAssistantTool(name);
@@ -326,6 +370,74 @@ describe('edit_inventory', () => {
     const result = (await tool.run({ medName: '阿莫西林', action: 'set' })) as { ok: boolean; 提示: string };
     expect(result.ok).toBe(false);
     expect(result.提示).toContain('数量');
+  });
+});
+
+describe('set_reminder_period_settings', () => {
+  beforeEach(() => {
+    savedMeds.clear();
+    savedPeriodSettings.clear();
+    vi.clearAllMocks();
+  });
+
+  it('updates a single slot time and mode in one tool call', async () => {
+    savedPeriodSettings.set('morning', {
+      slot: 'morning',
+      timeLocal: '08:00',
+      mode: 'strong',
+      escalate: { repeatEveryMin: 10, maxRepeats: 3, notifyCaregiverAfterMin: 30 },
+      state: 'active',
+      updatedAt: 1,
+    });
+    const db = await import('../src/db/local');
+    const scheduler = await import('../src/features/reminderScheduler');
+    const tool = findAssistantTool('set_reminder_period_settings')!;
+
+    const result = (await tool.run({
+      slot: 'morning',
+      time: '07:30',
+      mode: 'fullscreen-short',
+    })) as { ok: boolean; 已更新时段: string[] };
+
+    expect(result.ok).toBe(true);
+    expect(result.已更新时段).toEqual(['早上']);
+    expect(db.updateReminderPeriodSetting).toHaveBeenCalledTimes(1);
+    expect(db.updateReminderPeriodSetting).toHaveBeenCalledWith('morning', {
+      timeLocal: '07:30',
+      mode: 'fullscreen-short',
+    });
+    expect(scheduler.rescheduleMedicationReminders).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates all slots uniformly and applies the escalate policy', async () => {
+    const tool = findAssistantTool('set_reminder_period_settings')!;
+
+    const result = (await tool.run({
+      slot: 'all',
+      mode: 'strong',
+      escalate: { repeatEveryMin: 5, maxRepeats: 6, notifyCaregiverAfterMin: 20 },
+    })) as { ok: boolean; 已更新时段: string[] };
+
+    expect(result.ok).toBe(true);
+    expect(result.已更新时段).toEqual(['早上', '中午', '晚上', '睡前']);
+  });
+
+  it('rejects invalid slot, invalid time and empty patches without writing anything', async () => {
+    const db = await import('../src/db/local');
+    const tool = findAssistantTool('set_reminder_period_settings')!;
+
+    await expect(tool.run({ slot: 'afternoon', mode: 'strong' })).resolves.toMatchObject({ ok: false });
+    await expect(tool.run({ slot: 'morning', time: '25:99' })).resolves.toMatchObject({ ok: false });
+    await expect(tool.run({ slot: 'morning' })).resolves.toMatchObject({ ok: false });
+    expect(db.updateReminderPeriodSetting).not.toHaveBeenCalled();
+  });
+
+  it('confirm mentions the slot label and the requested change', () => {
+    const tool = findAssistantTool('set_reminder_period_settings')!;
+    const msg = tool.confirm!({ slot: 'bedtime', time: '22:00', mode: 'fullscreen-persistent' });
+    expect(msg).toContain('睡前');
+    expect(msg).toContain('22:00');
+    expect(msg).toContain('持续全屏');
   });
 });
 

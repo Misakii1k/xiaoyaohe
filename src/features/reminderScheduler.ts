@@ -1,20 +1,21 @@
 // Android App 由原生闹钟负责后台提醒；网页端由 Service Worker 尽力补发。
 // 两端的前台状态（本地计划、升级重复提醒）都在这里维护。
 import {
-  listMeds,
   listLogs,
+  listMeds,
+  listPushStates,
+  listReminderPeriodSettings,
   listRules,
   listScheduleRevisions,
-  listPushStates,
   putPushState,
 } from '../db/local';
 import {
   type Medication,
+  type MedicationReminderMode,
   type ReminderRule,
 } from '../db/schema';
 import {
   createScheduleRevision,
-  projectScheduleDate,
   isScheduleRestDay,
   toLocalDate,
 } from '../domain/medicationSchedule';
@@ -33,9 +34,10 @@ import {
 } from './notificationPreference';
 import {
   buildMedicationReminderPlan,
-  buildReminderBody,
-  buildReminderTitle,
+  buildReminderGroupBody,
+  type ReminderGroupOccurrence,
 } from './medicationReminderPlan';
+import type { ScheduledReminderNotification } from './reminderTransport';
 import { triggerReminderVibration } from './reminderVibration';
 
 const TICK_MS = 60_000;
@@ -129,14 +131,15 @@ export async function rescheduleMedicationReminders() {
     // Clear OS schedules when the in-app switch is off.
     result = await reconcileScheduledNotifications([]);
   } else {
-    const [meds, rules, revisions, logs] = await Promise.all([
+    const [meds, rules, revisions, logs, periodSettings] = await Promise.all([
       listMeds(),
       listRules(),
       listScheduleRevisions(),
       listLogs(),
+      listReminderPeriodSettings(),
     ]);
     result = await reconcileScheduledNotifications(
-      buildMedicationReminderPlan({ meds, rules, revisions, logs }),
+      buildMedicationReminderPlan({ meds, rules, revisions, logs, periodSettings }),
     );
   }
   lastReconcileAt = Date.now();
@@ -151,6 +154,36 @@ async function tick(): Promise<void> {
   return tickInFlight;
 }
 
+/** planner 生成的组载荷（V2）：一个 (日期, 时段) 的整体提醒 */
+interface ReminderGroupData {
+  kind: 'reminder-group';
+  groupId: string;
+  dueAt: number;
+  mode: MedicationReminderMode;
+  reminderCount: number;
+  occurrences: ReminderGroupOccurrence[];
+}
+
+function isReminderGroupData(data: unknown): data is ReminderGroupData {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { kind?: unknown }).kind === 'reminder-group'
+  );
+}
+
+/** 网页轮询视角的一个提醒组 */
+interface DueReminderGroup {
+  /** 组触发时刻（时段设置 timeLocal 当日） */
+  dueAt: number;
+  /** 时段提醒方式：振动等行为按组 mode 执行 */
+  mode: MedicationReminderMode;
+  /** 组内待服药物明细（用于实时生成正文，反映当前迟到分钟数） */
+  occurrences: ReminderGroupOccurrence[];
+  /** 该组在计划中的各跳提醒（dose / repeat-N） */
+  notifications: ScheduledReminderNotification[];
+}
+
 async function runTick(): Promise<void> {
   if (getPermission() !== 'granted') return;
   if (!isAppNotificationsEnabled()) {
@@ -161,15 +194,15 @@ async function runTick(): Promise<void> {
     return;
   }
   const native = isNativeReminderPlatform();
-  const [meds, rules, revisions, logs] = await Promise.all([
+  const [meds, rules, revisions, logs, periodSettings] = await Promise.all([
     listMeds(),
     listRules(),
     listScheduleRevisions(),
     listLogs(),
+    listReminderPeriodSettings(),
   ]);
-  const result = await reconcileScheduledNotifications(
-    buildMedicationReminderPlan({ meds, rules, revisions, logs }),
-  );
+  const plan = buildMedicationReminderPlan({ meds, rules, revisions, logs, periodSettings });
+  const result = await reconcileScheduledNotifications(plan);
   lastReconcileAt = Date.now();
   warnIfTruncated(result);
   // 原生端到此为止：系统闹钟会自己响，前台再发一遍就是重复通知。
@@ -177,56 +210,62 @@ async function runTick(): Promise<void> {
   // 网页端上面那次 reconcile 只是把计划交给 Service Worker 兜底补发；
   // 页面开着的这段时间仍由下面的轮询负责准点提醒和升级重复。
   if (!rules.length) return;
-  const medMap = new Map(meds.map((m) => [m.id, m]));
-  const ruleMap = new Map(rules.map((rule) => [rule.id, rule]));
-  const now = new Date();
-  const date = toLocalDate(now);
-  const entries = projectScheduleDate(revisions, date);
-  const dueEntries = entries.filter((entry) => entry.occurrence && entry.occurrence.dueAt <= now.getTime());
-  const dueOccurrenceIds = dueEntries.flatMap((entry) => entry.occurrence ? [entry.occurrence.id] : []);
-  const pushStates = await listPushStates(dueOccurrenceIds);
+  // 前台轮询视图保留已过点阶段：到点组的「当前跳」即使时刻已过也要能发出去
+  // （reconcile 给 SW 的计划已过滤过点项，两者互不干扰）。
+  const tickPlan = buildMedicationReminderPlan({
+    meds,
+    rules,
+    revisions,
+    logs,
+    periodSettings,
+    keepPastPhases: true,
+  });
+
+  // 按 (日期, 时段) 组轮询：每组到点发一条整体提醒，pushState 按组 id 计数。
+  const now = Date.now();
+  const groups = new Map<string, DueReminderGroup>();
+  for (const notification of tickPlan) {
+    if (!isReminderGroupData(notification.data)) continue;
+    let group = groups.get(notification.data.groupId);
+    if (!group) {
+      group = {
+        dueAt: notification.data.dueAt,
+        mode: notification.data.mode,
+        occurrences: notification.data.occurrences,
+        notifications: [],
+      };
+      groups.set(notification.data.groupId, group);
+    }
+    group.notifications.push(notification);
+  }
+  const dueGroupIds = [...groups.entries()]
+    .filter(([, group]) => group.dueAt <= now)
+    .map(([groupId]) => groupId);
+  if (!dueGroupIds.length) return;
+  const pushStates = await listPushStates(dueGroupIds);
   const pushStateMap = new Map(pushStates.map((state) => [state.id, state]));
-  const logMap = new Map(logs.map((log) => [log.id, log]));
 
-  for (const entry of dueEntries) {
-    const occurrence = entry.occurrence;
-    if (!occurrence) continue;
-    const med = medMap.get(occurrence.medId);
-    const rule = ruleMap.get(occurrence.sourceRuleId);
-    if (!med || !rule) continue;
-    const dueAt = occurrence.dueAt;
-    const currentLog = logMap.get(occurrence.id);
-    const legacyLog = logMap.get(occurrence.legacyLogId);
-    const log = !currentLog
-      ? legacyLog
-      : !legacyLog || currentLog.updatedAt >= legacyLog.updatedAt
-        ? currentLog
-        : legacyLog;
-    if (log?.status === 'taken' || log?.status === 'skipped') continue;
-
-    const logId = occurrence.id;
-    const ps = pushStateMap.get(logId) ?? { id: logId, count: 0, lastSentAt: 0 };
-    const minsLate = Math.floor((Date.now() - dueAt) / 60000);
-    const minsSinceLast = (Date.now() - ps.lastSentAt) / 60000;
-    const policy = rule.escalate;
-
-    let shouldSend = false;
-    if (ps.count === 0) shouldSend = true;
-    else if (ps.count < policy.maxRepeats + 1 && minsSinceLast >= policy.repeatEveryMin) shouldSend = true;
-    if (shouldSend) {
-      const next = ps.count + 1;
-      const reminderMode = med.reminderMode;
-      const sent = await showNotification(buildReminderTitle(med, next), {
-        body: buildReminderBody(med, entry.revision, minsLate),
-        tag: logId,
-        key: next === 1 ? 'dose' : `repeat-${next}`,
-        data: { kind: 'reminder', logId, occurrenceId: logId, medId: med.id, reminderCount: next, reminderMode },
-      });
-      if (sent) {
-        // 所有提醒模式都补一次 web 层振动；原生路径若已振动也会被覆盖，不影响效果
-        triggerReminderVibration(reminderMode);
-        await putPushState({ id: logId, count: next, lastSentAt: Date.now() });
-      }
+  for (const groupId of dueGroupIds) {
+    const group = groups.get(groupId)!;
+    const ps = pushStateMap.get(groupId) ?? { id: groupId, count: 0, lastSentAt: 0 };
+    // 按组依次发出计划中的 dose / repeat-N；各跳 at 已由时段设置的重复策略
+    // （repeatEveryMin）编码，到点即发，不依赖上次发送时刻，页面挂起恢复后也能跟上节奏。
+    const next = ps.count + 1;
+    const notification = group.notifications.find(
+      (candidate) => isReminderGroupData(candidate.data) && candidate.data.reminderCount === next,
+    );
+    if (!notification || notification.at > now) continue;
+    const minsLate = Math.floor((now - group.dueAt) / 60000);
+    const sent = await showNotification(notification.title, {
+      body: buildReminderGroupBody(group.occurrences, minsLate),
+      tag: groupId,
+      key: notification.key ?? 'dose',
+      data: notification.data,
+    });
+    if (sent) {
+      // 振动按组 mode 执行（与原生闹钟一致的强提醒行为）
+      triggerReminderVibration(group.mode);
+      await putPushState({ id: groupId, count: next, lastSentAt: now });
     }
   }
 }

@@ -26,3 +26,23 @@ describe('medication batch editor progressive disclosure', () => {
     expect(page).toContain('actionDock });');
   });
 });
+
+describe('medication editor period-level reminder contract', () => {
+  it('removes the per-medication reminder-mode selector from MedEdit', () => {
+    const page = source('src/pages/MedEdit.ts');
+
+    // 提醒方式选择器已退役：不再渲染、不再写回 med.reminderMode
+    expect(page).not.toContain('提醒方式', );
+    expect(page).not.toContain('medication-reminder-mode');
+    expect(page).not.toContain('selectedReminderMode');
+    expect(page).not.toContain('MEDICATION_REMINDER_MODE_LABEL');
+    // 改为指向设置页的时段级提示
+    expect(page).toContain('时段提醒设置');
+    expect(page).toContain('refreshReminderHint');
+  });
+
+  it('keeps the legacy reminderMode field only as inert schema compatibility', () => {
+    const page = source('src/pages/MedEdit.ts');
+    expect(page).toContain("reminderMode: 'strong'");
+  });
+});

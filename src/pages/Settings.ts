@@ -1,7 +1,20 @@
 // Android 设置页：系统提醒、AI、局域网家庭同步、本地备份和应用信息。
 // 主要配置使用折叠面板，默认收起并在标题行显示当前状态。
 import '../ui/styles/pages/settings.css';
-import { listLogs, listMeds, listRules } from '../db/local';
+import {
+  listLogs,
+  listMeds,
+  listRules,
+  listReminderPeriodSettings,
+  getReminderPeriodSetting,
+  updateReminderPeriodSetting,
+} from '../db/local';
+import {
+  SLOT_LABEL,
+  MEDICATION_REMINDER_MODE_LABEL,
+  type ReminderPeriodSetting,
+  type MedicationReminderMode,
+} from '../db/schema';
 import { confirmDialog, el, renderPage, toast, icon, type IconName } from '../ui/components';
 import { openLlmProviderEditor } from '../ui/llmProviderEditor';
 import {
@@ -107,6 +120,7 @@ export async function renderSettingsPage(
   }
 
   content.append(renderReminderPanel());
+  content.append(renderPeriodSettingsPanel());
   content.append(renderKeepAlivePanel());
   const llmPanel = renderLlmPanel();
   content.append(llmPanel.element);
@@ -639,7 +653,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       class: 'settings-hint',
       html: native
         ? '提醒说明：\n· 请允许通知、精确闹钟，以及（Android 14+）全屏提醒权限。\n' +
-          '· 药品编辑页可选择「增强通知 / 短时全屏 / 持续全屏」。\n' +
+          '· 提醒按时间段聚合：整体时间、提醒方式与重复策略都在「时段提醒设置」里统一管理。\n' +
           '· 全屏模式会在锁屏时点亮屏幕并弹出服药页；无权限时自动降级为增强通知。\n' +
           '· 若系统限制后台运行，请在电池优化里允许本应用。\n' +
           '· 回到应用时会自动检查遗漏的任务并重建闹钟。'
@@ -650,6 +664,208 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
           '· 重新打开页面时会自动补查一次遗漏的任务。',
     })
   );
+}
+
+/** ---------------- 时段提醒设置面板：按时段聚合的整体提醒 ---------------- */
+function periodSettingsChip(settings: ReminderPeriodSetting[]): PanelChip {
+  if (settings.some((s) => s.state === 'needs-review')) return { text: '待复核', tone: 'warn' };
+  if (settings.some((s) => s.state === 'active')) return { text: '已设置', tone: 'ok' };
+  return { text: '未设置', tone: 'muted' };
+}
+
+function renderPeriodSettingsPanel(): HTMLElement {
+  let panelEl!: HTMLElement;
+  panelEl = panel({
+    title: '时段提醒设置',
+    iconName: 'clock',
+    chip: { text: '…', tone: 'muted' },
+    renderBody: (body) => {
+      // 延迟到 panel() 返回后再执行，避免在 panelEl 赋值前引用（TDZ）
+      queueMicrotask(() => void renderPeriodSettingsBody(body, panelEl));
+    },
+  });
+  return panelEl;
+}
+
+async function renderPeriodSettingsBody(body: HTMLElement, panelEl: HTMLElement): Promise<void> {
+  let settings: ReminderPeriodSetting[];
+  try {
+    settings = await listReminderPeriodSettings();
+  } catch {
+    body.replaceChildren();
+    body.append(el('div', { class: 'banner warn' }, [
+      el('span', { html: '时段提醒设置读取失败，请稍后重试。' }),
+    ]));
+    return;
+  }
+  setChip(panelEl, periodSettingsChip(settings));
+  body.replaceChildren();
+  body.append(el('div', {
+    class: 'settings-hint',
+    html: '提醒按时间段聚合：每天早上/中午/晚上/睡前各发一条整体提醒，不再每种药各响一次。' +
+      '下方设置统一决定该时段所有药的整体时间、方式与重复策略；每种药自己的精确时间仍保留，仅用于记录与库存归因。',
+  }));
+
+  const needsReview = settings.filter((s) => s.state === 'needs-review');
+  if (needsReview.length > 0) {
+    body.append(el('div', { class: 'banner warn mt-3' }, [
+      el('span', {
+        html: `以下时段内不同药的提醒时间或方式不完全一致：${needsReview.map((s) => SLOT_LABEL[s.slot]).join('、')}。请逐个确认统一的整体时间与方式。`,
+      }),
+    ]));
+  }
+
+  const list = el('div', { class: 'period-setting-list mt-3' });
+  for (const setting of settings) list.append(buildPeriodSettingRow(setting, body, panelEl));
+  body.append(list);
+
+  body.append(el('div', {
+    class: 'settings-hint',
+    html: '新增药品不会改动上面的时段设置。提醒是否发送仍受「系统通知」开关控制。',
+  }));
+}
+
+function buildPeriodSettingRow(
+  setting: ReminderPeriodSetting,
+  body: HTMLElement,
+  panelEl: HTMLElement,
+): HTMLElement {
+  const row = el('div', {
+    class: 'period-setting-row' + (setting.state === 'needs-review' ? ' needs-review' : ''),
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': `编辑${SLOT_LABEL[setting.slot]}时段提醒`,
+  });
+  const copy = el('div', { class: 'settings-toggle-copy' });
+  const title = el('div', { class: 'settings-toggle-title' });
+  title.append(el('span', { text: SLOT_LABEL[setting.slot] }));
+  if (setting.state === 'needs-review') {
+    title.append(el('span', { class: 'panel-chip tone-warn period-review-badge', text: '待复核' }));
+  }
+  const meta = [MEDICATION_REMINDER_MODE_LABEL[setting.mode]];
+  if (setting.escalate.repeatEveryMin > 0) meta.push(`每 ${setting.escalate.repeatEveryMin} 分钟重推`);
+  copy.append(
+    title,
+    el('div', { class: 'period-setting-time', text: setting.timeLocal }),
+    el('div', { class: 'settings-toggle-desc', text: meta.join(' · ') }),
+  );
+  const chevron = el('span', { class: 'panel-chevron' });
+  chevron.append(icon('arrow-left'));
+  row.append(copy, chevron);
+  const open = () => void renderPeriodEditor(body, setting, panelEl);
+  row.onclick = open;
+  row.onkeydown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      open();
+    }
+  };
+  return row;
+}
+
+/** 时段编辑器：整体时间 + 提醒方式 + 重复策略，保存后重建闹钟。 */
+async function renderPeriodEditor(
+  body: HTMLElement,
+  setting: ReminderPeriodSetting,
+  panelEl: HTMLElement,
+): Promise<void> {
+  let latest: ReminderPeriodSetting;
+  try {
+    latest = await getReminderPeriodSetting(setting.slot);
+  } catch {
+    toast('时段设置读取失败，请重试');
+    return;
+  }
+  body.replaceChildren();
+
+  const back = el('button', { class: 'btn text small', type: 'button', html: '← 返回时段列表' });
+  back.onclick = () => void renderPeriodSettingsBody(body, panelEl);
+  body.append(back);
+
+  body.append(el('div', { class: 'section-title mt-3', html: `${SLOT_LABEL[latest.slot]}时段整体提醒` }));
+
+  if (latest.state === 'needs-review') {
+    body.append(el('div', { class: 'banner warn mt-3' }, [
+      el('span', {
+        html: '该时段内不同药的提醒时间或方式不完全一致，当前按下面的统一设置发送整体提醒。确认后复核标记自动消除；每种药自己的精确时间仍保留，仅用于记录与库存归因。',
+      }),
+    ]));
+  }
+
+  const timeIn = el('input', { type: 'time', step: '60', value: latest.timeLocal }) as HTMLInputElement;
+
+  const modeControl = el('div', {
+    class: 'period-mode-chips',
+    role: 'radiogroup',
+    'aria-label': '提醒方式',
+  });
+  let selectedMode: MedicationReminderMode = latest.mode;
+  for (const mode of Object.keys(MEDICATION_REMINDER_MODE_LABEL) as MedicationReminderMode[]) {
+    const option = el('button', {
+      class: 'period-mode-chip' + (mode === selectedMode ? ' is-selected' : ''),
+      type: 'button',
+      role: 'radio',
+      'aria-checked': String(mode === selectedMode),
+    });
+    option.append(el('strong', { text: MEDICATION_REMINDER_MODE_LABEL[mode] }));
+    option.append(el('span', {
+      text: mode === 'strong' ? '高优先级通知' : mode === 'fullscreen-short' ? '全屏 10 秒' : '持续提醒',
+    }));
+    option.onclick = () => {
+      selectedMode = mode;
+      for (const child of modeControl.querySelectorAll<HTMLElement>('[role="radio"]')) {
+        const selected = child === option;
+        child.classList.toggle('is-selected', selected);
+        child.setAttribute('aria-checked', String(selected));
+      }
+    };
+    modeControl.append(option);
+  }
+
+  const repeatIn = el('input', {
+    type: 'number', min: '1', step: '1', value: String(latest.escalate.repeatEveryMin),
+  }) as HTMLInputElement;
+  const maxRepeatsIn = el('input', {
+    type: 'number', min: '0', step: '1', value: String(latest.escalate.maxRepeats),
+  }) as HTMLInputElement;
+  const caregiverIn = el('input', {
+    type: 'number', min: '0', step: '1', value: String(latest.escalate.notifyCaregiverAfterMin),
+  }) as HTMLInputElement;
+
+  body.append(
+    field('整体提醒时间', timeIn),
+    field('提醒方式', modeControl),
+    field('未确认时每几分钟再提醒', repeatIn),
+    field('最多重推次数（不含首次）', maxRepeatsIn),
+    field('超过几分钟通知照护者（0 = 不通知）', caregiverIn),
+  );
+
+  const row = el('div', { class: 'btn-row mt-3' });
+  const saveBtn = el('button', { class: 'btn', html: '保存' });
+  saveBtn.onclick = async () => {
+    if (saveBtn.hasAttribute('disabled')) return;
+    saveBtn.setAttribute('disabled', 'true');
+    try {
+      await updateReminderPeriodSetting(latest.slot, {
+        timeLocal: timeIn.value,
+        mode: selectedMode,
+        escalate: {
+          repeatEveryMin: Math.max(1, Math.floor(Number(repeatIn.value) || 1)),
+          maxRepeats: Math.max(0, Math.floor(Number(maxRepeatsIn.value) || 0)),
+          notifyCaregiverAfterMin: Math.max(0, Math.floor(Number(caregiverIn.value) || 0)),
+        },
+      });
+    } catch (error) {
+      saveBtn.removeAttribute('disabled');
+      toast('保存失败：' + (error instanceof Error ? error.message : String(error)));
+      return;
+    }
+    try { await rescheduleMedicationReminders(); } catch { /* best-effort */ }
+    toast(`${SLOT_LABEL[latest.slot]}时段提醒已保存，闹钟已重建`);
+    void renderPeriodSettingsBody(body, panelEl);
+  };
+  row.append(saveBtn);
+  body.append(row);
 }
 
 /** ---------------- 后台运行/保活面板：申请电池优化白名单 ---------------- */

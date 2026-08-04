@@ -27,6 +27,7 @@ final class MedicationAlarmContract {
     static final String ACTION_TAKEN = "com.medbox.app.MEDICATION_TAKEN";
     static final String ACTION_SNOOZE = "com.medbox.app.MEDICATION_SNOOZE";
     static final String ACTION_SKIP = "com.medbox.app.MEDICATION_SKIP";
+    static final String ACTION_ALL_TAKEN = "com.medbox.app.MEDICATION_ALL_TAKEN";
     static final String EXTRA_PAYLOAD = "payload";
     static final String CHANNEL_STRONG = "medication_strong_v2";
     static final String CHANNEL_ALARM = "medication_alarm_v1";
@@ -209,10 +210,19 @@ final class MedicationAlarmContract {
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setOnlyAlertOnce(false)
             .setAutoCancel(false)
-            .setOngoing("fullscreen-persistent".equals(mode))
-            .addAction(0, "已服用", actionPending(context, payload, ACTION_TAKEN, id + 11))
-            .addAction(0, "10 分钟后提醒", actionPending(context, payload, ACTION_SNOOZE, id + 12))
-            .addAction(0, "跳过", actionPending(context, payload, ACTION_SKIP, id + 13));
+            .setOngoing("fullscreen-persistent".equals(mode));
+        if (isGroupPayload(payload)) {
+            // 组载荷：通知按钮只提供整体操作。「全部已服用」→ all-taken（TS 侧一次批量记录）；
+            // 组级 skip 没有 occurrenceId 无法解析，省略；单药 taken/skip 由全屏页每行按钮处理。
+            builder
+                .addAction(0, "全部已服用", actionPending(context, payload, ACTION_ALL_TAKEN, id + 11))
+                .addAction(0, "10 分钟后提醒", actionPending(context, payload, ACTION_SNOOZE, id + 12));
+        } else {
+            builder
+                .addAction(0, "已服用", actionPending(context, payload, ACTION_TAKEN, id + 11))
+                .addAction(0, "10 分钟后提醒", actionPending(context, payload, ACTION_SNOOZE, id + 12))
+                .addAction(0, "跳过", actionPending(context, payload, ACTION_SKIP, id + 13));
+        }
         if (fullScreen) {
             builder.setFullScreenIntent(openPending, true);
         }
@@ -277,7 +287,14 @@ final class MedicationAlarmContract {
             schedule(context, payload);
             return;
         }
-        String actionId = ACTION_TAKEN.equals(action) ? "taken" : "skip";
+        String actionId;
+        if (ACTION_ALL_TAKEN.equals(action)) {
+            actionId = "all-taken";
+        } else if (ACTION_TAKEN.equals(action)) {
+            actionId = "taken";
+        } else {
+            actionId = "skip";
+        }
         queueAction(context, actionId, payload);
         Intent open = new Intent(context, MainActivity.class)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -289,6 +306,7 @@ final class MedicationAlarmContract {
         try {
             JSONArray actions = new JSONArray(prefs.getString(ACTIONS, "[]"));
             JSONObject item = new JSONObject();
+            item.put("id", nextActionId(context));
             item.put("actionId", actionId);
             item.put("tag", payload.optString("tag"));
             item.put("data", payload.optJSONObject("data") != null ? payload.optJSONObject("data") : new JSONObject());
@@ -298,11 +316,116 @@ final class MedicationAlarmContract {
         } catch (JSONException ignored) {}
     }
 
-    static JSONArray takeActions(Context context) {
+    /** 单调递增 action id：TS 侧处理后按 id 精确 acknowledge，避免重放时重复确认。 */
+    private static String nextActionId(Context context) {
         SharedPreferences prefs = prefs(context);
-        String raw = prefs.getString(ACTIONS, "[]");
-        prefs.edit().remove(ACTIONS).apply();
-        try { return new JSONArray(raw); } catch (JSONException ignored) { return new JSONArray(); }
+        long seq = prefs.getLong("ack_seq", 0L) + 1L;
+        prefs.edit().putLong("ack_seq", seq).apply();
+        return "ack-" + seq;
+    }
+
+    /** 非破坏性读取：只读出待处理 action，不删除——处理成功后由 acknowledgeActions 按 id 移除（防丢）。 */
+    static JSONArray getPendingActions(Context context) {
+        SharedPreferences prefs = prefs(context);
+        try { return new JSONArray(prefs.getString(ACTIONS, "[]")); } catch (JSONException ignored) { return new JSONArray(); }
+    }
+
+    /** 只移除已确认成功的 action id；未确认项保留待下次重放（含遗留无 id 项，靠 TS 幂等无害）。 */
+    static void acknowledgeActions(Context context, JSONArray ids) {
+        if (ids == null || ids.length() == 0) return;
+        SharedPreferences prefs = prefs(context);
+        try {
+            JSONArray actions = new JSONArray(prefs.getString(ACTIONS, "[]"));
+            prefs.edit().putString(ACTIONS, filterActions(actions, ids).toString()).apply();
+        } catch (JSONException ignored) {}
+    }
+
+    /** 纯逻辑：保留 id 不在已确认集合中的项；遗留无 id 项永不匹配 → 每次启动重放（靠 TS 幂等无害）。 */
+    static JSONArray filterActions(JSONArray actions, JSONArray ids) throws JSONException {
+        Set<String> acknowledged = new HashSet<>();
+        for (int index = 0; index < ids.length(); index++) acknowledged.add(ids.optString(index));
+        JSONArray remaining = new JSONArray();
+        for (int index = 0; index < actions.length(); index++) {
+            JSONObject item = actions.optJSONObject(index);
+            if (item == null || !acknowledged.contains(item.optString("id"))) {
+                remaining.put(item != null ? item : JSONObject.NULL);
+            }
+        }
+        return remaining;
+    }
+
+    /** 组载荷（V2）：data.kind == "reminder-group"。 */
+    static boolean isGroupPayload(JSONObject payload) {
+        JSONObject data = payload.optJSONObject("data");
+        return data != null && "reminder-group".equals(data.optString("kind"));
+    }
+
+    static String slotLabel(String slot) {
+        if ("morning".equals(slot)) return "早上";
+        if ("noon".equals(slot)) return "中午";
+        if ("evening".equals(slot)) return "晚上";
+        if ("bedtime".equals(slot)) return "睡前";
+        return slot == null || slot.isEmpty() ? "服药" : slot;
+    }
+
+    /** 组载荷 body：occurrences 逐行「药名 剂量」。 */
+    static String buildGroupBody(JSONObject data) {
+        JSONArray occurrences = data.optJSONArray("occurrences");
+        if (occurrences == null || occurrences.length() == 0) return data.optString("body", "请按医嘱服药");
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < occurrences.length(); index++) {
+            JSONObject occurrence = occurrences.optJSONObject(index);
+            if (occurrence == null) continue;
+            String name = occurrence.optString("medName");
+            String dose = occurrence.optString("dose");
+            if (builder.length() > 0) builder.append('\n');
+            builder.append(name.isEmpty() ? "用药" : name);
+            if (!dose.isEmpty()) builder.append(' ').append(dose);
+        }
+        return builder.toString();
+    }
+
+    /** 组载荷 title：「早上服药时间到了」；第 3 次起加「第 N 次提醒」前缀。 */
+    static String buildGroupTitle(JSONObject data) {
+        String base = slotLabel(data.optString("slot")) + "服药时间到了";
+        int count = data.optInt("reminderCount", 1);
+        return count >= 3 ? "第 " + count + " 次提醒 · " + base : base;
+    }
+
+    /** snooze 重建：组载荷按组重建 title/body/mode 并沿用组 tag；遗留载荷保持旧格式。 */
+    static JSONObject buildSnoozePayload(JSONObject data, String tag, long at) throws JSONException {
+        boolean group = data != null && "reminder-group".equals(data.optString("kind"));
+        JSONObject payload = new JSONObject();
+        payload.put("id", Math.abs((tag + ":snooze").hashCode()) | 1);
+        payload.put("at", at);
+        payload.put("tag", tag);
+        payload.put("key", "snooze");
+        if (group) {
+            payload.put("title", buildGroupTitle(data));
+            payload.put("body", buildGroupBody(data));
+            payload.put("mode", data.optString("mode", "strong"));
+            payload.put("data", data);
+        } else {
+            payload.put("title", "⏰ 该吃药了");
+            payload.put("body", (data == null ? "用药提醒" : data.optString("medicationName", "用药提醒")) + " · 稍后提醒");
+            payload.put("mode", data == null ? "strong" : data.optString("reminderMode", "strong"));
+            payload.put("data", data != null ? data : new JSONObject());
+        }
+        return payload;
+    }
+
+    /** 全屏页单药行按钮：克隆载荷并向 data 注入 occurrenceId 后入队，保证 TS 侧能解析到具体 occurrence。 */
+    static void queueOccurrenceAction(Context context, String action, JSONObject payload, String occurrenceId) {
+        // 通知/全屏页按钮走 Java action 常量，入队时归一化成 TS 侧识别的 actionId
+        String actionId = ACTION_SKIP.equals(action) ? "skip" : "taken";
+        try {
+            JSONObject itemPayload = new JSONObject(payload.toString());
+            JSONObject data = itemPayload.optJSONObject("data");
+            if (data == null) data = new JSONObject();
+            data.put("occurrenceId", occurrenceId);
+            itemPayload.put("data", data);
+            queueAction(context, actionId, itemPayload);
+        } catch (JSONException ignored) {}
     }
 
     static JSONObject payloadFrom(Intent intent) throws JSONException {

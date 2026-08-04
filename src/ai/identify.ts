@@ -3,7 +3,7 @@ import { normalizeMealRelsBySlot, mealRelsFromBySlot, type Slot, type MealRel, t
 import { getLlmRouteCandidates, type LlmProvider } from './llmConfig';
 import { hasAiConsent, requireAiConsent, type AiDataKind } from './consent';
 
-export type IdentifyMode = 'medicine_box' | 'prescription_sheet' | 'medication_batch' | 'inventory';
+export type IdentifyMode = 'medicine_box' | 'prescription_sheet' | 'medication_batch' | 'inventory' | 'inventory_batch';
 
 /**
  * 一次识别会话：按优先级携带全部候选服务商，单个请求失败时顺延到下一家。
@@ -50,6 +50,8 @@ export interface PrescriptionItemDraft {
   mealRelsBySlot: MealRelsBySlot;
   notes: string;
   confidence: number;
+  /** 库存智能录入转到批量建档时保留识别到的初始库存。 */
+  inventory?: MedicationInventory;
 }
 
 export interface PrescriptionSheetResult {
@@ -99,6 +101,12 @@ const PROMPTS: Record<IdentifyMode, string> = {
     '你是药品库存识别助手。看一张购药票据、药盒侧面、药瓶标签或药品照片，仅输出严格 JSON，不要 markdown、不要解释。' +
     '目标是辅助填写剩余药量，只识别药名、包装量、单位、可推断的剩余量和来源说明；不确定字段留空或 0。' +
     'JSON 形如：{"name":"药名","inventory":{"remaining":0,"unit":"片/粒/袋/mL 等","packageQuantity":0,"lowThreshold":0,"sourceNote":"从图片看到或推断的依据"},"evidence":{"ocrNames":[],"rawText":"图片中可读到的关键文字"},"confidence":0-1}。',
+  inventory_batch:
+    '你是药品批量库存识别助手。看一张购药票据、药盒合照、药瓶标签或药品照片，仅输出严格 JSON，不要 markdown、不要解释。' +
+    '图片里有多少种药，就按稳定的阅读顺序返回多少条 items；不要只返回第一种，也不要把不同药合成一条。' +
+    '每条 action 只能是 add 或 set：购药票据、刚买、补货、入库表示 add（数量要加到原库存）；还剩、盘点为、现在有表示 set（直接设为当前剩余）。' +
+    '票据出现“2盒，每盒20片”时 inventory.remaining 填本次新增总量40，packageQuantity 填单盒20；看不清时留 0，不要编造。' +
+    'JSON 形如：{"items":[{"name":"药名","action":"add","inventory":{"remaining":40,"unit":"片","packageQuantity":20,"lowThreshold":0,"sourceNote":"可见依据"},"evidence":{"ocrNames":[],"rawText":"关键文字"},"confidence":0-1}],"confidence":0-1}。',
 };
 
 export async function identifyByBlob(
@@ -128,6 +136,15 @@ export async function identifyMedicationBatchByBlob(
 
 export async function identifyInventoryByBlob(blob: Blob, hint?: string, options?: IdentifyRequestOptions): Promise<InventoryIdentifyResult> {
   return requestIdentify<InventoryIdentifyResult>(blob, 'inventory', hint, options);
+}
+
+/** 识别一张图片里的全部药品库存条目；旧供应商漏传 action 时按 set 处理。 */
+export async function identifyInventoryBatchByBlob(
+  blob: Blob,
+  hint?: string,
+  options?: IdentifyRequestOptions,
+): Promise<InventorySpeechResult> {
+  return requestIdentify<InventorySpeechResult>(blob, 'inventory_batch', hint, options);
 }
 
 /** 顺延用：可恢复的失败（网络/超时/5xx/429/401/403）带上 retryable 标记。 */
@@ -235,20 +252,29 @@ export async function parseMedicationSpeech(
 const INVENTORY_SPEECH_PROMPT =
   '你是药品库存录入助手。用户会口述（或打字）手头药品的剩余情况，语句可能口语化、有停顿词。' +
   '把其中每种药整理成数组 items，仅输出严格 JSON，不要 markdown、不要解释。' +
-  '只提取药名、剩余数量、单位、一盒/一瓶有多少、剩多少时提醒买药；没说到的字段留空或 0，不要编造。' +
-  '口语对应关系："片/粒/袋/粒/mL"等是单位；"还剩5片"=remaining 5、unit 片；"一盒20片"=packageQuantity 20；' +
-  '"剩3天的量"=remaining 按天推算或留 0 并在 sourceNote 注明；"快没了/该买了"=lowThreshold 给一个保守值。' +
-  'JSON 形如：{"items":[{"name":"药名","inventory":{"remaining":0,"unit":"片","packageQuantity":0,"lowThreshold":0,"sourceNote":"从口述推断的依据"},"confidence":0-1}],"confidence":0-1}。';
+  '只提取药名、数量、单位、一盒/一瓶有多少、剩多少时提醒买药；没说到的字段留空或 0，不要编造。' +
+  '每条 action 只能是 add 或 set："刚买/买了/补了/入库"=add，数量是在原库存上增加；"还剩/盘点为/现在有"=set，数量是当前剩余。' +
+  '口语对应关系："片/粒/袋/mL"等是单位；"还剩5片"=set、remaining 5；"刚买一盒20片"=add、remaining 20、packageQuantity 20；' +
+  '"买了2盒，每盒20片"=add、remaining 40、packageQuantity 20；"剩3天的量"无法可靠换算时留 0 并在 sourceNote 注明。' +
+  'JSON 形如：{"items":[{"name":"药名","action":"add","inventory":{"remaining":0,"unit":"片","packageQuantity":0,"lowThreshold":0,"sourceNote":"从口述推断的依据"},"confidence":0-1}],"confidence":0-1}。';
 
 export interface InventorySpeechResult {
   items: InventorySpeechItem[];
   confidence: number;
 }
 
+export type InventoryEntryAction = 'add' | 'set';
+
 export interface InventorySpeechItem {
   name: string;
   inventory: MedicationInventory;
   confidence: number;
+  /** add=入库累加，set=盘点后直接设置；缺失的旧响应按 set 兼容。 */
+  action: InventoryEntryAction;
+  evidence?: {
+    ocrNames: string[];
+    rawText: string;
+  };
 }
 
 /** 把口述/手打的库存描述解析成多条库存草稿；复用 identifyInventory 的归一化。 */
@@ -310,8 +336,70 @@ function normalizeInventorySpeech(raw: Record<string, unknown>): InventorySpeech
     if (!entry || typeof entry !== 'object') return [];
     const obj = entry as Record<string, unknown>;
     const inv = normalizeInventory(obj);
-    return [{ name: str(obj.name), inventory: inv.inventory, confidence: conf(obj.confidence) }];
+    const name = str(obj.name);
+    if (!name) return [];
+    return [{
+      name,
+      inventory: inv.inventory,
+      confidence: conf(obj.confidence),
+      action: obj.action === 'add' ? 'add' : 'set',
+      evidence: inv.evidence,
+    }];
   });
+}
+
+/**
+ * 同名同单位的连续入库条目可以安全相加；盘点(set)或单位冲突必须保留为独立条目供用户核对。
+ * 返回新对象，避免识别队列和核对表共享可变 inventory 引用。
+ */
+export function mergeInventoryEntryItems(items: readonly InventorySpeechItem[]): InventorySpeechItem[] {
+  const merged: InventorySpeechItem[] = [];
+  const addIndex = new Map<string, number>();
+  for (const source of items) {
+    const item = cloneInventoryEntry(source);
+    const key = `${normalizeEntryKey(item.name)}\u0000${normalizeEntryKey(item.inventory.unit)}`;
+    if (item.action !== 'add') {
+      addIndex.delete(key);
+      merged.push(item);
+      continue;
+    }
+    const previousIndex = addIndex.get(key);
+    const previous = previousIndex === undefined ? undefined : merged[previousIndex];
+    if (!previous || previous.action !== 'add') {
+      addIndex.set(key, merged.length);
+      merged.push(item);
+      continue;
+    }
+    previous.inventory.remaining = roundInventory(previous.inventory.remaining + item.inventory.remaining);
+    previous.inventory.packageQuantity ??= item.inventory.packageQuantity;
+    previous.inventory.lowThreshold ??= item.inventory.lowThreshold;
+    previous.inventory.sourceNote = [previous.inventory.sourceNote, item.inventory.sourceNote]
+      .filter(Boolean)
+      .join('；') || undefined;
+    previous.confidence = Math.min(previous.confidence, item.confidence);
+    if (item.evidence) {
+      previous.evidence ??= { ocrNames: [], rawText: '' };
+      previous.evidence.ocrNames = [...new Set([...previous.evidence.ocrNames, ...item.evidence.ocrNames])];
+      previous.evidence.rawText = [previous.evidence.rawText, item.evidence.rawText].filter(Boolean).join('；');
+    }
+  }
+  return merged;
+}
+
+function cloneInventoryEntry(item: InventorySpeechItem): InventorySpeechItem {
+  return {
+    ...item,
+    inventory: { ...item.inventory },
+    evidence: item.evidence ? { ocrNames: [...item.evidence.ocrNames], rawText: item.evidence.rawText } : undefined,
+  };
+}
+
+function normalizeEntryKey(value: string): string {
+  return value.trim().toLocaleLowerCase('zh-CN').replace(/[\s\-_]/gu, '');
+}
+
+function roundInventory(value: number): number {
+  return Math.round((value + Number.EPSILON) * 10_000) / 10_000;
 }
 
 async function requestIdentify<T>(blob: Blob, mode: IdentifyMode, hint?: string, options: IdentifyRequestOptions = {}): Promise<T> {
@@ -378,8 +466,15 @@ async function requestLocalLlm<T>(base64: string, mode: IdentifyMode, hint: stri
   }
 }
 
-function normalizeResult(raw: Record<string, unknown>, mode: IdentifyMode): IdentifyResult | PrescriptionSheetResult | InventoryIdentifyResult {
+function normalizeResult(
+  raw: Record<string, unknown>,
+  mode: IdentifyMode,
+): IdentifyResult | PrescriptionSheetResult | InventoryIdentifyResult | InventorySpeechResult {
   if (mode === 'prescription_sheet' || mode === 'medication_batch') return normalizePrescriptionSheet(raw);
+  if (mode === 'inventory_batch') {
+    const items = mergeInventoryEntryItems(normalizeInventorySpeech(raw));
+    return { items, confidence: conf(raw.confidence, items.length ? 0.7 : 0) };
+  }
   if (mode === 'inventory') return normalizeInventory(raw);
   return normalizeMedicineBox(raw);
 }

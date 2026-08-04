@@ -4,7 +4,9 @@ import type { ScheduledReminderNotification } from './reminderTransport';
 export type FullScreenAlarmCapability = 'granted' | 'denied' | 'unavailable';
 
 export interface NativeMedicationAlarmAction {
-  actionId: 'taken' | 'snooze' | 'skip';
+  /** 原生侧生成的 action 唯一 id：非破坏性队列，处理成功后按 id acknowledge 移除 */
+  id: string;
+  actionId: 'taken' | 'snooze' | 'skip' | 'all-taken';
   tag: string;
   data: Record<string, unknown>;
 }
@@ -15,6 +17,8 @@ interface NativeAlarmPlugin {
   checkFullScreenPermission(): Promise<{ capability: FullScreenAlarmCapability }>;
   openFullScreenSettings(): Promise<void>;
   getPendingActions(): Promise<{ actions: NativeMedicationAlarmAction[] }>;
+  /** 非破坏性确认：只移除已处理成功的 action（防丢），未确认项保留待下次重放 */
+  acknowledgeActions(options: { ids: string[] }): Promise<void>;
   snooze(options: { tag: string; data: Record<string, unknown>; minutes: number }): Promise<void>;
   fireNow(options: { mode?: string; title?: string; body?: string }): Promise<void>;
 }
@@ -43,7 +47,8 @@ export async function reconcileNativeMedicationAlarms(
   if (!nativeMedicationAlarmAvailable()) return 0;
   const native = notifications.flatMap((notification): NativeAlarmNotification[] => {
     // Android 用药提醒统一走原生 AlarmManager + 通知通道，避免与 LocalNotifications 双轨漏响。
-    const rawMode = notification.data?.reminderMode;
+    // 组载荷（V2）用 data.mode，旧单药载荷用 data.reminderMode，两者都识别。
+    const rawMode = notification.data?.mode ?? notification.data?.reminderMode;
     const mode =
       rawMode === 'fullscreen-short' || rawMode === 'fullscreen-persistent' || rawMode === 'strong'
         ? rawMode
@@ -82,6 +87,11 @@ export async function openFullScreenAlarmSettings(): Promise<void> {
 export async function takePendingMedicationAlarmActions(): Promise<NativeMedicationAlarmAction[]> {
   if (!nativeMedicationAlarmAvailable()) return [];
   return (await plugin.getPendingActions()).actions ?? [];
+}
+
+export async function acknowledgeNativeMedicationAlarmActions(ids: readonly string[]): Promise<void> {
+  if (!nativeMedicationAlarmAvailable() || ids.length === 0) return;
+  await plugin.acknowledgeActions({ ids: [...ids] });
 }
 
 export async function snoozeNativeMedicationAlarm(action: NativeMedicationAlarmAction): Promise<void> {
