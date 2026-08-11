@@ -29,7 +29,7 @@ export async function seedVisualFixtures(page: Page): Promise<void> {
     localStorage.removeItem('medbox.llmHealth.v1');
     sessionStorage.clear();
 
-    const medsDb = await open('medbox', 8, (database) => {
+    const medsDb = await open('medbox', 9, (database) => {
       if (!database.objectStoreNames.contains('meds')) database.createObjectStore('meds', { keyPath: 'id' });
       if (!database.objectStoreNames.contains('rules')) {
         const rules = database.createObjectStore('rules', { keyPath: 'id' });

@@ -15,7 +15,9 @@ import {
   type ReminderPeriodSetting,
   type MedicationReminderMode,
 } from '../db/schema';
-import { confirmDialog, el, renderPage, toast, icon, type IconName } from '../ui/components';
+import { confirmDialog, el, renderPage, toast, icon, field, type IconName } from '../ui/components';
+import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
+import { getThemePreference, setThemePreference, type ThemePreference } from '../ui/theme';
 import { openLlmProviderEditor } from '../ui/llmProviderEditor';
 import {
   backupProviders,
@@ -53,14 +55,6 @@ import {
   type LlmHealth,
   type LlmProvider,
 } from '../ai/llmConfig';
-import { getAsrHealth, isNativeSpeechFallbackAvailable } from '../ai/asr';
-import {
-  clearAsrConfig,
-  getAsrConfig,
-  initializeAsrSecretStore,
-  isAsrCredentialsConfigured,
-  setAsrConfig,
-} from '../ai/asrConfig';
 import { clearAiConsents, getAiConsentRecords, revokeAiConsent } from '../ai/consent';
 import {
   getWebSecretPersistence,
@@ -103,7 +97,6 @@ export async function renderSettingsPage(
     listLogs(),
     Promise.allSettled([
       initializeLlmSecretStore(),
-      initializeAsrSecretStore(),
     ]),
   ]);
   if (signal?.aborted) return;
@@ -120,12 +113,12 @@ export async function renderSettingsPage(
   }
 
   content.append(renderReminderPanel());
+  content.append(renderAppearancePanel());
   content.append(renderPeriodSettingsPanel());
   content.append(renderKeepAlivePanel());
   const llmPanel = renderLlmPanel();
   content.append(llmPanel.element);
   content.append(renderAiConsentPanel());
-  content.append(renderAsrPanel());
   const lanSyncPanel = renderLanSyncSettingsPanel(signal);
   content.append(lanSyncPanel.element);
   const appUpdatePanel = renderAppUpdatePanel();
@@ -437,6 +430,49 @@ function setChip(panelEl: HTMLElement, chip: PanelChip): void {
   if (!c) return;
   c.className = 'panel-chip tone-' + chip.tone;
   c.textContent = chip.text;
+}
+
+/** ---------------- 外观面板 ---------------- */
+const THEME_PREFERENCE_LABEL: Record<ThemePreference, string> = {
+  system: '跟随系统',
+  light: '浅色',
+  dark: '深色',
+};
+
+function appearancePanelChip(): PanelChip {
+  const pref = getThemePreference();
+  return { text: THEME_PREFERENCE_LABEL[pref], tone: pref === 'system' ? 'muted' : 'info' };
+}
+
+function renderAppearancePanel(): HTMLElement {
+  return panel({
+    title: '外观',
+    iconName: 'moon',
+    chip: appearancePanelChip(),
+    defaultOpen: false,
+    renderBody: (body) => {
+      body.append(el('div', {
+        class: 'settings-hint mb-3',
+        text: '选择小药盒的配色。跟随系统会随手机的深色模式自动切换。',
+      }));
+      const control = createSegmentedControl<ThemePreference>(
+        '配色方案',
+        [
+          { value: 'system', label: '跟随系统' },
+          { value: 'light', label: '浅色' },
+          { value: 'dark', label: '深色' },
+        ],
+        getThemePreference(),
+        (value) => {
+          setThemePreference(value);
+          const host = body.closest('.panel');
+          if (host) setChip(host as HTMLElement, appearancePanelChip());
+          toast(`已切换为${THEME_PREFERENCE_LABEL[value]}`);
+        },
+      );
+      body.append(control);
+    },
+  });
 }
 
 /** ---------------- 通知面板 ---------------- */
@@ -1373,195 +1409,3 @@ function renderAiConsentControls(onChanged: () => void): HTMLElement {
   return wrap;
 }
 
-let settingsFieldSeq = 0;
-function field(label: string, input: HTMLElement): HTMLElement {
-  const f = el('div', { class: 'field' });
-  const control = input.matches('input,select,textarea')
-    ? input
-    : input.querySelector<HTMLElement>('input,select,textarea');
-  const labelEl = el('label', { html: label });
-  if (control) {
-    const id = control.id || `settings-field-${++settingsFieldSeq}`;
-    control.id = id;
-    if (!control.getAttribute('name')) control.setAttribute('name', id);
-    labelEl.htmlFor = id;
-  } else if (input.getAttribute('role') === 'group') {
-    labelEl.id = `settings-field-label-${++settingsFieldSeq}`;
-    input.setAttribute('aria-labelledby', labelEl.id);
-  }
-  f.append(labelEl);
-  f.append(input);
-  return f;
-}
-
-/** 把已保存的密钥在 UI 上脱敏显示：保留前 3 + 后 4，中间用 * 遮。 */
-function maskSecret(secret: string): string {
-  const trimmed = secret.trim();
-  if (trimmed.length <= 8) return '*'.repeat(trimmed.length);
-  return `${trimmed.slice(0, 3)}${'*'.repeat(Math.min(8, trimmed.length - 7))}${trimmed.slice(-4)}`;
-}
-
-/** ---------------- 语音识别（腾讯云）独立面板 ---------------- */
-function renderAsrPanel(): HTMLElement {
-  const asrCfg = getAsrConfig();
-  const asrHealth = getAsrHealth();
-  const initialChip: PanelChip = isAsrCredentialsConfigured()
-    ? { text: '已配置', tone: 'ok' }
-    : isNativeSpeechFallbackAvailable()
-      ? { text: '未填密钥', tone: 'warn' }
-      : { text: '未配置', tone: 'warn' };
-
-  const body = el('div', {});
-  body.append(
-    el('div', {
-      class: 'settings-hint mb-3',
-      text: isNativeSecretStore()
-        ? '小助手按住说话、说话录药、库存智能录入共用腾讯云一句话识别。密钥存进这台手机的系统安全存储，App 直连腾讯云，任意设备装好填密钥即可用，无需再跑代理。'
-        : '小助手按住说话、说话录药、库存智能录入共用腾讯云一句话识别。网页版的密钥是明文存在浏览器里的（存放方式跟随上面「AI 接口」里的设置），公用电脑请当心。',
-    })
-  );
-
-  const initialId = asrCfg.secretId;
-  const initialKey = asrCfg.secretKey;
-  const initialRegion = asrCfg.region || 'ap-guangzhou';
-
-  const idIn = el('input', {
-    type: 'text',
-    autocomplete: 'off',
-    spellcheck: false,
-    value: initialId ? maskSecret(initialId) : '',
-    placeholder: 'AKIDxxxxxxxxxxxxxxxx',
-  });
-  idIn.readOnly = Boolean(initialId); // 有保存就展示 mask，避免误改
-
-  const keyIn = el('input', {
-    class: 'secret-input',
-    type: 'text',
-    autocomplete: 'off',
-    autocapitalize: 'none',
-    autocorrect: false,
-    spellcheck: false,
-    value: initialKey ? maskSecret(initialKey) : '',
-    placeholder: 'sk-xxxxxxxxxxxxxxxx',
-  });
-  keyIn.readOnly = Boolean(initialKey);
-
-  const regionIn = el('input', {
-    type: 'text',
-    autocomplete: 'off',
-    value: initialRegion,
-    placeholder: 'ap-guangzhou',
-  });
-
-  body.append(field('SecretId', idIn));
-  body.append(field('SecretKey', keyIn));
-  body.append(field('地域 Region', regionIn));
-
-  const status = el('div', {
-    class: `banner ${asrHealth.stage === 'success' || asrHealth.stage === 'ready' ? 'ok' : asrHealth.stage === 'error' ? 'warn' : 'info'} mt-3`,
-  });
-  const renderStatus = (): void => {
-    const h = getAsrHealth();
-    status.className = `banner ${h.stage === 'success' || h.stage === 'ready' ? 'ok' : h.stage === 'error' ? 'warn' : 'info'}`;
-    const diagnostic = [
-      isAsrCredentialsConfigured()
-        ? h.message || '腾讯云语音识别已配置'
-        : isNativeSpeechFallbackAvailable()
-          ? '未填密钥，将使用设备系统语音识别'
-          : '请填写 SecretId 和 SecretKey',
-      h.code ? `错误码 ${h.code}` : '',
-      h.requestId ? `RequestId ${h.requestId}` : '',
-      h.at ? new Date(h.at).toLocaleString() : '',
-    ].filter(Boolean).join(' · ');
-    status.replaceChildren(el('span', { text: diagnostic }));
-  };
-  renderStatus();
-  body.append(status);
-
-  const row = el('div', { class: 'btn-row mt-3' });
-
-  // 已保存时：「修改」解锁两个输入框并切换为保存
-  const editBtn = el('button', { class: 'btn tonal', type: 'button', html: '修改密钥' });
-  const saveBtn = el('button', { class: 'btn', type: 'button', html: '保存' });
-  const clearBtn = el('button', { class: 'btn text', type: 'button', html: '清除' });
-
-  const enterEditMode = (): void => {
-    idIn.readOnly = false;
-    keyIn.readOnly = false;
-    idIn.value = '';
-    keyIn.value = '';
-    idIn.type = 'text';
-    keyIn.classList.add('is-visible');
-    editBtn.replaceWith(saveBtn);
-    idIn.focus();
-  };
-
-  editBtn.onclick = enterEditMode;
-  saveBtn.onclick = async () => {
-    const nextId = idIn.value.trim() || (idIn.readOnly ? initialId : '');
-    const nextKey = keyIn.value.trim() || (keyIn.readOnly ? initialKey : '');
-    if (!nextId || !nextKey) return toast('请填写 SecretId 和 SecretKey');
-    try {
-      await setAsrConfig({
-        secretId: nextId,
-        secretKey: nextKey,
-        region: regionIn.value.trim() || 'ap-guangzhou',
-      });
-    } catch {
-      return toast('密钥保存失败，请重试');
-    }
-    // 保存后回到 mask 显示，避免误读
-    idIn.value = maskSecret(nextId);
-    keyIn.value = maskSecret(nextKey);
-    idIn.readOnly = true;
-    keyIn.readOnly = true;
-    keyIn.classList.remove('is-visible');
-    if (saveBtn.parentNode) saveBtn.replaceWith(editBtn);
-    renderStatus();
-    setChip(panelEl, isAsrCredentialsConfigured() ? { text: '已配置', tone: 'ok' } : initialChip);
-    toast('语音密钥已保存到本机 ✓');
-  };
-  clearBtn.onclick = async () => {
-    if (!(await confirmDialog('清除本机腾讯云语音密钥？', '清除'))) return;
-    try {
-      await clearAsrConfig();
-    } catch (error) {
-      return toast('清除失败：' + (error instanceof Error ? error.message : String(error)));
-    }
-    idIn.value = '';
-    keyIn.value = '';
-    idIn.readOnly = false;
-    keyIn.readOnly = false;
-    keyIn.classList.remove('is-visible');
-    regionIn.value = 'ap-guangzhou';
-    if (editBtn.parentNode) editBtn.replaceWith(saveBtn);
-    renderStatus();
-    setChip(panelEl, { text: '未配置', tone: 'warn' });
-    toast('已清除语音密钥');
-  };
-
-  if (isAsrCredentialsConfigured()) {
-    row.append(editBtn, clearBtn);
-  } else {
-    row.append(saveBtn);
-    row.append(clearBtn);
-    if (!isAsrCredentialsConfigured()) {
-      // 首次配置：聚焦第一个空输入框
-      window.setTimeout(() => {
-        if (!idIn.value) idIn.focus();
-      }, 0);
-    }
-  }
-  body.append(row);
-
-  let panelEl: HTMLElement; // 由 panel() 赋值，saveBtn 闭包依赖
-  panelEl = panel({
-    title: '语音识别（腾讯云）',
-    iconName: 'mic',
-    chip: initialChip,
-    renderBody: (b) => {
-      b.append(...Array.from(body.children));
-    },
-  });
-  return panelEl;
-}

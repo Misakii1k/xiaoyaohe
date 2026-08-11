@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
 
   --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
   --safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
@@ -137,6 +137,112 @@
   --tone-danger-fg: #a32f38;
   --tone-danger-bg: #fdebec;
   --tone-danger-border: #f0bcc0;
+  --tone-muted-fg: var(--color-text-muted);
+  --tone-muted-bg: var(--color-surface-muted);
+  --tone-muted-border: var(--color-border);
+}
+
+/* ============ 暗色变体 ============
+   不要在 CSS 里再监听 prefers-color-scheme：theme.ts 已经把「跟随系统」解析好
+   并统一在 <html data-theme="light|dark"> 上落属性，CSS 只看这一个属性，
+   保证强制浅色或强制深色与跟随系统走同一条路径。玻璃拟态与标签色的暗色
+   由 legacy.css 末尾的暗色块继续承担（同一属性触发）。 */
+:root[data-theme='dark'] {
+  --color-bg: #17181d;
+  --color-bg-mesh: radial-gradient(at 10% 10%, #262a3d 0px, transparent 50%),
+                    radial-gradient(at 90% 20%, #33233d 0px, transparent 50%),
+                    radial-gradient(at 50% 80%, #1c2a3d 0px, transparent 50%),
+                    #14151a;
+  --color-surface: rgba(32, 33, 40, 0.88);
+  --color-surface-solid: #202128;
+  --color-surface-glass: rgba(32, 33, 40, 0.78);
+  --color-surface-muted: rgba(45, 46, 56, 0.85);
+  --color-text: #eceef5;
+  --color-text-muted: #9a9eb2;
+  --color-border: rgba(58, 60, 74, 0.8);
+  --color-border-glass: rgba(255, 255, 255, 0.16);
+
+  --color-primary: #8b90e8;
+  --color-primary-pressed: #6f74d8;
+  --color-primary-soft: #2b2e49;
+  --color-primary-gradient: linear-gradient(135deg, #7c82ee 0%, #6a5fe0 100%);
+  --color-hero-gradient: linear-gradient(135deg, #818cf8 0%, #a78bfa 50%, #38bdf8 100%);
+  --color-lilac: #8b90e8;
+  --color-ink-purple: #c8cbf0;
+
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+  --color-accent-coral: #fb7185;
+  --color-accent-mint: #22d3ee;
+
+  /* 助手 Markdown 渲染面：深色模式下代码块维持深色，调亮边框与底色对比 */
+  --color-code-bg: #1e2027;
+  --color-code-fg: #e8e8ef;
+  --color-code-border: #34363f;
+  --color-code-lang: #8a8fa8;
+  --color-inline-code-bg: #33354f;
+  --color-inline-code-fg: #cdd1f2;
+  --color-table-header-bg: #26272f;
+  --color-table-border: #3a3b47;
+  --color-table-row-alt: #202129;
+  --color-quote-bg: #232430;
+  --color-quote-bar: #8b90e8;
+  --tok-keyword: #c6a4ff;
+  --tok-string: #9be59b;
+  --tok-comment: #8a8fa8;
+  --tok-number: #f0b27a;
+  --tok-punct: #b9bed0;
+
+  /* 彩色浅底圆形图标：深色下去掉浅底，改为同色系透明底 + 亮前景 */
+  --tint-purple-bg: rgba(102, 109, 210, 0.16);
+  --tint-purple-fg: #a3a8f0;
+  --tint-pink-bg: rgba(208, 90, 104, 0.18);
+  --tint-pink-fg: #f0a3ac;
+  --tint-blue-bg: rgba(53, 162, 169, 0.16);
+  --tint-blue-fg: #7fd0d5;
+  --tint-green-bg: rgba(35, 129, 79, 0.20);
+  --tint-green-fg: #74d6a2;
+  --tint-orange-bg: rgba(163, 103, 31, 0.22);
+  --tint-orange-fg: #eab676;
+  --tint-gray-bg: rgba(63, 68, 112, 0.28);
+  --tint-gray-fg: #b9beea;
+
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.24), 0 1px 3px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.40), 0 4px 12px rgba(0, 0, 0, 0.24);
+  --shadow-lg: 0 16px 40px -6px rgba(0, 0, 0, 0.52), 0 8px 20px rgba(0, 0, 0, 0.32);
+
+  /* Legacy aliases 同步到深色对应的玻璃拟态/标签色（与 legacy.css 暗色块一致，
+     放在这里保证 tokens.css 单独被 import 时也自洽）。*/
+  --brand: var(--color-primary);
+  --brand-deep: var(--color-primary-pressed);
+  --brand-soft: #2b2e49;
+  --label-primary: var(--color-text);
+  --label-secondary: var(--color-text-muted);
+  --label-tertiary: #6d7186;
+  --label-quaternary: #4c4f61;
+  --separator: var(--color-border);
+  --bg-gradient: var(--color-bg-mesh);
+  --glass-thin: rgba(32, 33, 40, 0.70);
+  --glass-regular: rgba(32, 33, 40, 0.84);
+  --glass-thick: rgba(32, 33, 40, 0.94);
+  --glass-border: var(--color-border-glass);
+  --glass-border-strong: rgba(255, 255, 255, 0.24);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  --glass-highlight-strong: inset 0 1px 1px rgba(255, 255, 255, 0.16);
+  --scrim: rgba(0, 0, 0, 0.56);
+  --tone-ok-fg: #74d6a2;
+  --tone-ok-bg: rgba(52, 199, 89, 0.18);
+  --tone-ok-border: rgba(52, 199, 89, 0.40);
+  --tone-warn-fg: #fbbf24;
+  --tone-warn-bg: rgba(255, 149, 0, 0.20);
+  --tone-warn-border: rgba(255, 149, 0, 0.40);
+  --tone-info-fg: #9aa8f5;
+  --tone-info-bg: rgba(122, 108, 244, 0.20);
+  --tone-info-border: rgba(122, 108, 244, 0.42);
+  --tone-danger-fg: #f87171;
+  --tone-danger-bg: rgba(255, 59, 48, 0.18);
+  --tone-danger-border: rgba(255, 59, 48, 0.40);
   --tone-muted-fg: var(--color-text-muted);
   --tone-muted-bg: var(--color-surface-muted);
   --tone-muted-border: var(--color-border);

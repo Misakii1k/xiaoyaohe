@@ -24,6 +24,8 @@ if (!existingRoot) {
 
 async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
   await import('./ui/styles.css');
+  const { initTheme } = await import('./ui/theme');
+  initTheme();
   const [
     router,
     { appModuleRoutes },
@@ -32,7 +34,6 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
     { initializeNotifier },
     webReminderTransport,
     llmConfig,
-    { initializeAsrSecretStore },
     { mountGlobalAssistant },
     reminderActions,
     { migrateOversizedMedPhotos },
@@ -47,7 +48,6 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
     import('./features/notifier'),
     import('./features/webReminderTransport'),
     import('./ai/llmConfig'),
-    import('./ai/asrConfig'),
     import('./ui/AiAssistant'),
     import('./features/reminderActions'),
     import('./features/medPhotos'),
@@ -146,7 +146,6 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
     .catch(() => undefined)
     .then(() => Promise.all([
       initializeLlmSecretStore(),
-      initializeAsrSecretStore(),
     ]))
     .then(() => silentHealthCheck())
     .catch(() => {

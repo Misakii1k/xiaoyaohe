@@ -1,71 +1,42 @@
 # Claude Handoff
 
 Tool: Claude
-Branch: `workspace/claude`（本次工作直接提交在 `main`，沿用近几轮 UI/功能提交的既有做法；`workspace/claude` 尚未追平 main）
-Updated: 2026-07-23
+Branch: `workspace/claude`
+Updated: 2026-08-11
 Status: idle
-Latest commit: `0fc310e feat: embed Tencent Cloud ASR directly in the app`
+Latest commit: `02537de feat(ui): enable dark mode (system + settings toggle)`
 
 ## Goal
 
-版本号升至 `0.8.1` (`versionCode 17`)：本轮已交付腾讯云 ASR 内嵌 + 之前累积的小助手自由拖动 / 库存分享 / 智能录入 / 提醒振动 / 保活 / LAN 自动同步。已提交；APK 已重新打并放桌面。当前无活跃编码任务。
+本轮完成 UI 架构抽重复与深色模式支持（稳健模式），共 3 个独立 commit，运行在 `workspace/claude` 分支，未修改任何业务行为/数据结构/提醒/同步逻辑，全程未打扰 `main`。
 
-## What Landed on `main` (2026-07-22 晚)
+## What Landed on `workspace/claude` (2026-08-11)
 
-10. `0fc310e feat: embed Tencent Cloud ASR directly in the app`
-    - `src/ai/tencentAsr.ts`（新）：TC3-HMAC-SHA256 签名 + fetch 直连 `https://asr.tencentcloudapi.com/`（`SentenceRecognition`，16k_zh，60 秒内 WAV）。
-    - `src/ai/asrConfig.ts`（新）：`getAsrConfig` / `setAsrConfig` / `isAsrCredentialsConfigured` / `clearAsrConfig`；SecretId + SecretKey 走 SecureStorage，region 走 localStorage。
-    - `src/ai/asr.ts`：`recognizeSentenceWav` 优先本机密钥直连；缺密钥时抛 `unconfigured` 引导去设置；`getAsrHealth` 状态文案改为「腾讯云语音识别已配置（App 内嵌直连）」。`getAsrProxyUrl` 退回为仅 dev 用（`VITE_ASR_PROXY_URL`）。
-    - `src/ai/secretStore.ts`：新增 `ASR_SECRET_ID_KEY` / `ASR_SECRET_KEY_KEY`。
-    - `src/pages/Settings.ts`：语音识别面板三个输入（SecretId/SecretKey/Region）+ 保存/清除按钮 + `maskSecret` 脱敏显示（保留前 3 + 后 4，中间 * 遮）。
-    - `tests/asr.test.ts`：覆盖 ready/idle 切换、`recognizeSentenceWav` 直连 fetch 签名前缀 `TC3-HMAC-SHA256 Credential=AKID-.../`、SecretIdNotFound 错误映射、缺密钥引导。
-    - `npm test`：46 文件 / 203 通过；typecheck 干净。
+1. `f773aee refactor(ui): unify field() into shared components.ts helper`
+   - 扩展 `components.ts` 的 `field()` Helper（支持 `hint` 选项及 composite 非表单控件 `role="group"` / `aria-labelledby` 绑定）。
+   - 删除 `Settings.ts` / `MedEdit.ts` / `ScanSort.ts` / `llmProviderEditor.ts` 本地重复的 `field` / `fieldLite`，统一使用共享实现。
+   - 删除无调用方的 `src/ui/primitives/FormField.ts`。
 
-## Earlier Work (2026-07-22 晚)
+2. `07141aa refactor(ui): route wizards through openBottomSheet`
+   - 为 `BottomSheetOptions` 扩展 `dismissOnOverlay` 和 `dismissOnEscape` 控制参数。
+   - `MedOnboardWizard.ts` 与 `SortWizard.ts` 删除了自写的 `overlay` 创建、焦点陷阱、Escape / 背景点击处理，全量委托给 `openBottomSheet` 底座。
+   - `AiAssistant.ts` 的弹出菜单保留非模态 popover 交互。
 
-6. `8d53710 feat: free-place launcher + inventory share + dedup interaction prompt`
-   - 平板/桌面 ≥768px：小助手悬浮钮不吸附边缘，`minBottomClearance` 降到 8px。
-   - 库存页顶栏「分享」：需购买清单 / 全部库存；`navigator.share` 或剪贴板。
-   - 相互作用提醒去重：`filterNewInteractions` / `acknowledgeInteractions`。
+3. `02537de feat(ui): enable dark mode (system + settings toggle)`
+   - 新建 `src/ui/theme.ts`，支持 `system` / `light` / `dark` 偏好管理、`localStorage` 持久化 (`medbox.theme-preference`)、OS 深色模式动态监听、`meta[name="theme-color"]` 及 `document.documentElement.dataset.theme` 动态同步。
+   - `main.ts` 在加载 CSS 后立即调用 `initTheme()`，防止首屏主题闪烁。
+   - `tokens.css` 配置 `color-scheme: light dark;` 并补齐 `:root[data-theme='dark']` 与 `@media (prefers-color-scheme: dark)` 暗色变量。
+   - `Settings.ts` 新增「外观」设置面板，支持一键切换配色方案。
+   - 新增 `tests/theme.test.ts` 单元测试。
 
-7. `95fbbf6 feat: vibrate on all reminder modes (web + native strong)`
-   - web：`reminderVibration.ts` + scheduler 通知成功后 `navigator.vibrate`。
-   - 原生 strong：`MedicationAlarmContract.vibrateStrong` 显式 Vibrator。
+## Verification
 
-8. `630a457 feat: add inventory by photo or voice on inventory page`
-   - 库存页「智能录入」：拍照/相册 → `identifyInventoryByBlob`；语音 → `parseInventorySpeech`。
-   - 匹配已有药更新；未登记 → `setPendingInventoryPrefill` → `/meds/new`。
+- `npm run typecheck`：通过（`0 errors`）。
+- `npm run test`：73 个测试文件 / 417 个单元/契约测试全部通过。
+- `npm run build`：打包输出正常。
+- `npx playwright test`：52 个 E2E 自动化测试全数通过。
 
-9. `1ba6eb8 feat: keep-alive foreground service and half-hourly LAN auto-sync`
-   - **保活**：`KeepAliveService`（dataSync 前台服务）、开机重启、Settings「后台运行」电池白名单（`PowerSettingsPlugin`）；`LanSyncPlugin.handleOnPause` 不再 terminate。
-   - **自动同步**：`knownPeers` + `localAutoIdentity`（固定端口 38472 + 长期 secret/sessionId）；手动同步交换 `autoIdentity`；开关「每 30 分钟自动同步」→ 常驻 host + 定时 join；`main.ts` 启动 `startAutoSync()`。
-   - 限制：无 mDNS；IP 漂移需重新扫码；OEM 仍可能杀后台；单会话 join 时会短暂停 host。
+## Remaining / Handover
 
-## Earlier Work (同日)
-
-- 去掉药品页顶栏库存按钮、小助手批量一次确认、Android release 签名、通知总开关、LAN 覆盖策略 UX 等（见 git log）。
-
-## Tests
-
-- `npm test`：46 文件 / 202 通过。
-- `npm run typecheck`：干净。
-- 未跑完整 `npm run release` / Playwright / instrumentation；release APK 需在真机验保活通知与自动同步。
-
-## How to use (用户侧)
-
-1. **设置 → 后台运行** →「允许后台运行」加入电池白名单。
-2. 两台设备同 Wi‑Fi，**家庭同步**手动扫码成功一次（建立配对）。
-3. 两边打开 **「每 30 分钟自动同步」**。
-4. 通知栏应见「小药盒正在后台运行」。
-
-## Remaining / Optional
-
-- `workspace/claude` 落后 `main`；按 AGENTS.md 下次开工前合回。
-- `docs/handoffs/CURRENT.md` 仍 v0.7.7；发版可升到 v0.8.x 并记 APK 校验。
-- 真机验证：保活通知、强提醒振动、自动同步（可临时把 `POLL_INTERVAL_MS` 调小调试）。
-- 可选：IP 变更后的轻量重发现；组合 dev+ASR 脚本。
-
-## Notes
-
-- 强提醒不用 WxPusher/微信，走 Notification + 震动。
-- release keystore / `.env` 仅本地，勿提交。
+- 当前 3 个 commit 保留在 `workspace/claude` 分支，可由集成流程合并至 `main`。
+- 本机无 Android SDK，Android 真机/模拟器上的深色模式视觉与向导动画需用户在真机上最终确认。
