@@ -7,6 +7,7 @@ import { compressBoxPhoto } from '../features/medPhotos';
 import { registerRouteTransitionCleanup } from '../router';
 import { el, icon, SLOT_ICON } from './components';
 import { createButton } from './primitives/Button';
+import { openBottomSheet } from './primitives/BottomSheet';
 
 export interface MedOnboardWizardOptions {
   /** 走完（或跳过）拍照流程后回调；photos 下标与 items 一一对应 */
@@ -19,7 +20,6 @@ export interface MedOnboardWizardHandle {
 
 const SLOT_ORDER: readonly Slot[] = ['morning', 'noon', 'evening', 'bedtime'];
 const MEAL_LABEL: Record<MealRel, string> = { before: '饭前', with: '随餐', after: '饭后' };
-const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 const activeWizards = new Set<() => void>();
 registerRouteTransitionCleanup(() => {
@@ -58,15 +58,9 @@ export function openMedOnboardWizard(
   let busy = false;
   let disposed = false;
 
-  const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
-
-  const overlay = el('div', { class: 'med-wizard-overlay' });
-  overlay.setAttribute('role', 'presentation');
+  // 骨架仍由 wizard 自带（进度点/跳过拍照/过渡动画都挂在 .med-wizard 上），
+  // 弹层生命周期（overlay、inert、焦点陷阱、焦点归还、路由清理）统一交给 openBottomSheet。
   const sheet = el('section', { class: 'med-wizard' });
-  sheet.setAttribute('role', 'dialog');
-  sheet.setAttribute('aria-modal', 'true');
-  sheet.setAttribute('aria-label', '逐个认药');
-  sheet.tabIndex = -1;
 
   const grabber = el('div', { class: 'med-wizard-grabber', 'aria-hidden': 'true' } as any);
   const progress = el('div', { class: 'med-wizard-progress' });
@@ -84,17 +78,11 @@ export function openMedOnboardWizard(
   fileInput.setAttribute('capture', 'environment');
 
   sheet.append(grabber, head, dots, stage, actions, fileInput);
-  overlay.append(sheet);
-  document.body.append(overlay);
 
   const dispose = () => {
     if (disposed) return;
     disposed = true;
-    activeWizards.delete(dispose);
-    document.removeEventListener('keydown', onKeyDown);
-    for (const url of photoUrls) if (url) URL.revokeObjectURL(url);
-    overlay.remove();
-    previouslyFocused?.focus({ preventScroll: true });
+    sheetHandle.close();
   };
 
   const finish = () => {
@@ -105,29 +93,28 @@ export function openMedOnboardWizard(
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
+    // Escape 在认药向导里表示"带着已拍的照片收尾"，交给 finish 复用。
     if (event.key === 'Escape') {
       event.preventDefault();
       finish();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = Array.from(sheet.querySelectorAll<HTMLElement>(focusableSelector))
-      .filter((element) => !element.hasAttribute('disabled') && !element.hidden);
-    if (focusable.length === 0) {
-      event.preventDefault();
-      sheet.focus();
-      return;
-    }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && first && last && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && first && last && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
     }
   };
+  sheet.addEventListener('keydown', onKeyDown);
+
+  const sheetHandle = openBottomSheet({
+    label: '逐个认药',
+    content: [sheet],
+    className: 'med-wizard-host',
+    // 误点遮罩/误按系统返回不应丢弃已拍照片；收尾走"跳过拍照/认完了"。
+    dismissOnOverlay: false,
+    dismissOnEscape: false,
+    initialFocus: sheet,
+    onClose: () => {
+      activeWizards.delete(dispose);
+      sheet.removeEventListener('keydown', onKeyDown);
+      for (const url of photoUrls) if (url) URL.revokeObjectURL(url);
+    },
+  });
 
   function renderPhotoZone(zone: HTMLElement, index: number, animate: boolean): void {
     const url = photoUrls[index];
@@ -300,12 +287,7 @@ export function openMedOnboardWizard(
   });
 
   skipAll.onclick = finish;
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) finish();
-  });
-  document.addEventListener('keydown', onKeyDown);
   activeWizards.add(dispose);
   updateChrome();
-  sheet.focus({ preventScroll: true });
   return { close: dispose };
 }

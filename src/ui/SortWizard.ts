@@ -4,6 +4,7 @@ import { SLOT_LABEL, formatMealRels, type MealRel, type Medication, type Slot } 
 import { registerRouteTransitionCleanup, navigate } from '../router';
 import { el, icon, banner, SLOT_ICON } from './components';
 import { createButton } from './primitives/Button';
+import { openBottomSheet } from './primitives/BottomSheet';
 import { doseFormLabel } from './MedOnboardWizard';
 
 export interface SortWizardEntry {
@@ -75,7 +76,6 @@ export function buildSortWizardSummary(
 }
 
 const SLOT_ORDER: readonly Slot[] = ['morning', 'noon', 'evening', 'bedtime'];
-const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 const activeSortWizards = new Set<() => void>();
 registerRouteTransitionCleanup(() => {
@@ -91,15 +91,10 @@ export function openSortWizard(
   let step = 0; // 0..items.length-1 为逐盒卡，items.length 为完成卡
   let disposed = false;
   let completing = false;
-  const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
 
-  const overlay = el('div', { class: 'med-wizard-overlay' });
-  overlay.setAttribute('role', 'presentation');
+  // 骨架沿用 .med-wizard（进度点/过渡动画共用认药向导那套样式），
+  // 弹层生命周期统一交给 openBottomSheet。
   const sheet = el('section', { class: 'med-wizard' });
-  sheet.setAttribute('role', 'dialog');
-  sheet.setAttribute('aria-modal', 'true');
-  sheet.setAttribute('aria-label', '按顺序分药');
-  sheet.tabIndex = -1;
 
   const grabber = el('div', { class: 'med-wizard-grabber', 'aria-hidden': 'true' } as any);
   const progress = el('div', { class: 'med-wizard-progress' });
@@ -113,42 +108,24 @@ export function openSortWizard(
   const actions = el('div', { class: 'med-wizard-actions' });
 
   sheet.append(grabber, head, dots, stage, actions);
-  overlay.append(sheet);
-  document.body.append(overlay);
 
   const dispose = () => {
     if (disposed) return;
     disposed = true;
-    activeSortWizards.delete(dispose);
-    document.removeEventListener('keydown', onKeyDown);
-    overlay.remove();
-    previouslyFocused?.focus({ preventScroll: true });
+    sheetHandle.close();
   };
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      dispose();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = Array.from(sheet.querySelectorAll<HTMLElement>(focusableSelector))
-      .filter((element) => !element.hasAttribute('disabled') && !element.hidden);
-    if (focusable.length === 0) {
-      event.preventDefault();
-      sheet.focus();
-      return;
-    }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && first && last && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && first && last && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
+  const sheetHandle = openBottomSheet({
+    label: '按顺序分药',
+    content: [sheet],
+    className: 'med-wizard-host',
+    // 逐盒引导中误点遮罩不应整盒放弃；退出走明确的「先不分了」。
+    dismissOnOverlay: false,
+    initialFocus: sheet,
+    onClose: () => {
+      activeSortWizards.delete(dispose);
+    },
+  });
 
   function buildCard(index: number): HTMLElement {
     const item = items[index];
@@ -313,12 +290,7 @@ export function openSortWizard(
   }
 
   quit.onclick = dispose;
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) dispose();
-  });
-  document.addEventListener('keydown', onKeyDown);
   activeSortWizards.add(dispose);
   updateChrome();
-  sheet.focus({ preventScroll: true });
   return { close: dispose };
 }

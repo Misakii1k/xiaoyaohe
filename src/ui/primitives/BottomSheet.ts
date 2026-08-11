@@ -8,6 +8,16 @@ export interface BottomSheetOptions {
   className?: string;
   initialFocus?: HTMLElement;
   onClose?: () => void;
+  /**
+   * Close when the backdrop overlay itself is tapped. Defaults to true.
+   * Guided flows (wizards) pass false so a stray tap cannot abandon progress.
+   */
+  dismissOnOverlay?: boolean;
+  /**
+   * Close on Escape. Defaults to true. Guided flows can disable this and
+   * wire their own Escape semantics through the sheet's content.
+   */
+  dismissOnEscape?: boolean;
 }
 
 export interface BottomSheetHandle {
@@ -54,9 +64,10 @@ export function openBottomSheet(options: BottomSheetOptions): BottomSheetHandle 
     options.onClose?.();
   };
 
-  removeTrap = trapFocusIn(sheet, close);
+  removeTrap = trapFocusIn(sheet, options.dismissOnEscape === false ? null : close);
 
   overlay.addEventListener('click', (event) => {
+    if (options.dismissOnOverlay === false) return;
     if (event.target === overlay) close();
   });
   activeBottomSheets.add(close);

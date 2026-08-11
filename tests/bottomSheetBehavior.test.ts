@@ -47,12 +47,12 @@ describe('BottomSheet 行为契约', () => {
 
   it('给专用面板附加样式类而不改变通用生命周期', () => {
     const { overlay, close } = openBottomSheet({
-      label: '语音录入',
-      className: 'inventory-voice-sheet',
+      label: '专用面板',
+      className: 'custom-sheet',
       content: paragraph(),
     });
 
-    expect(overlay.querySelector('.bottom-sheet.inventory-voice-sheet')).not.toBeNull();
+    expect(overlay.querySelector('.bottom-sheet.custom-sheet')).not.toBeNull();
     expect(appRoot().getAttribute('aria-hidden')).toBe('true');
     close();
     expect(appRoot().getAttribute('aria-hidden')).toBeNull();
