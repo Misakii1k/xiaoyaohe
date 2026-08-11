@@ -20,28 +20,28 @@ const pngOptions = {
   palette: false,
 };
 
+const masterTrimmedBuffer = await sharp(masterPath).trim().toBuffer();
+
 async function standardIcon(size) {
-  const cropped = await sharp(masterPath)
-    .extract({ left: 12, top: 12, width: 488, height: 488 })
-    .resize(size, size, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
+  const source = await sharp(masterTrimmedBuffer)
+    .resize(size, size, { fit: 'contain', kernel: sharp.kernel.lanczos3 })
     .png(pngOptions)
     .toBuffer();
 
-  return applyMask(cropped, roundedSquareMask(size, 0.205));
+  return applyMask(source, roundedSquareMask(size, 0.205));
 }
 
 async function fullIcon(size) {
-  return sharp(masterPath)
-    .resize(size, size, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
+  return sharp(masterTrimmedBuffer)
+    .resize(size, size, { fit: 'contain', kernel: sharp.kernel.lanczos3 })
     .flatten({ background: '#eef1f5' })
     .png(pngOptions)
     .toBuffer();
 }
 
 async function roundIcon(size) {
-  const source = await sharp(masterPath)
-    .extract({ left: 12, top: 12, width: 488, height: 488 })
-    .resize(size, size, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
+  const source = await sharp(masterTrimmedBuffer)
+    .resize(size, size, { fit: 'contain', kernel: sharp.kernel.lanczos3 })
     .png(pngOptions)
     .toBuffer();
 
@@ -49,10 +49,13 @@ async function roundIcon(size) {
 }
 
 async function adaptiveForeground(size) {
-  // Android adaptive 图标使用 108dp 图层，但不同启动器只保证中央 72dp 可见。
-  // 母版是已完成合成的玻璃拟态稿，因此把整枚图标缩入安全区，避免药盒和文字被裁掉。
+  // Android adaptive 图标使用 108dp 图层，启动器在中央 72dp 内裁剪展示。
+  // 将修剪无边距的品牌母版铺满 72dp 安全区，保证图标边缘契合且不留多余边距线。
   const iconSize = Math.round(size * (72 / 108));
-  const icon = await standardIcon(iconSize);
+  const icon = await sharp(masterTrimmedBuffer)
+    .resize(iconSize, iconSize, { fit: 'contain', kernel: sharp.kernel.lanczos3 })
+    .png(pngOptions)
+    .toBuffer();
   const offset = Math.floor((size - iconSize) / 2);
 
   return sharp({
