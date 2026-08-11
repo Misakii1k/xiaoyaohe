@@ -30,7 +30,7 @@ import {
   type MedicationInventory,
   type LocalDate,
 } from '../db/schema';
-import { el, renderPage, toast, confirmDialog, icon } from '../ui/components';
+import { el, renderPage, toast, confirmDialog, icon, field } from '../ui/components';
 import { navigate } from '../router';
 import {
   identifyByBlob,
@@ -1061,29 +1061,6 @@ export async function renderMedEditPage(
     doseQuantityInput.value = String(parsed.quantity);
     doseUnitInput.value = parsed.unit;
   }
-}
-
-let medEditFieldSeq = 0;
-function field(label: string, input: HTMLElement): HTMLElement {
-  const f = el('div', { class: 'field' });
-  const control = input.matches('input,select,textarea')
-    ? input
-    : input.querySelector<HTMLElement>('input,select,textarea');
-  const labelElement = el('label', { html: label });
-  if (control) {
-    const id = control.id || `med-edit-field-${++medEditFieldSeq}`;
-    control.id = id;
-    if (!control.getAttribute('name')) control.setAttribute('name', id);
-    labelElement.htmlFor = id;
-  } else {
-    const labelId = `med-edit-group-${++medEditFieldSeq}`;
-    labelElement.id = labelId;
-    if (!input.getAttribute('role')) input.setAttribute('role', 'group');
-    input.setAttribute('aria-labelledby', labelId);
-  }
-  f.append(labelElement);
-  f.append(input);
-  return f;
 }
 
 function initMealMap(value: MealRelsBySlot): Map<Slot, Set<MealRel>> {

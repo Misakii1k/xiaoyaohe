@@ -1,5 +1,5 @@
 // 分药页：主流程是「按顺序分药」——弹卡一盒一盒带着放；
-// 扫码/拍药盒是认不出时的备选，拍药单/口述负责首轮把药录进来。
+// 扫码/拍药盒是认不出时的备选，拍药单负责首轮把药录进来。
 import '../ui/styles/pages/scanner.css';
 import '../ui/styles/pages/med-wizard.css';
 import { startScan, scanCodeFromImage, type Scanner } from '../features/scanner';
@@ -36,7 +36,7 @@ import {
   type ReminderRule,
   type Slot,
 } from '../db/schema';
-import { el, renderPage, toast, slotTag, icon, banner, confirmDialog } from '../ui/components';
+import { el, renderPage, toast, slotTag, icon, banner, confirmDialog, field } from '../ui/components';
 import { navigate } from '../router';
 import {
   identifyByBlob,
@@ -50,7 +50,6 @@ import { setPendingPrefill } from '../ai/pendingPrefill';
 import { setPendingMedicationBatch } from '../ai/pendingMedicationBatch';
 import { openMedOnboardWizard } from '../ui/MedOnboardWizard';
 import { openSortWizard, type SortWizardEntry, type SortWizardItem } from '../ui/SortWizard';
-import { openVoiceMedEntry } from '../ui/VoiceMedEntry';
 import { isMedicationExpiredOn, projectScheduleDate, toLocalDate } from '../domain/medicationSchedule';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { applyExplicitDose, createMedicationDraft } from '../domain/medicationDraft';
@@ -254,7 +253,6 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
       more.append(el('span', { class: 'scan-more-label', html: '要加新药，或认不出手里这盒？' }));
       moreBtns.append(
         moreBtn('sparkles', '拍药单录入', () => void enterMode('sheet', () => void openSheetCamera())),
-        moreBtn('mic', '说给 AI 听', () => void openVoiceMedEntry()),
         moreBtn('camera', '拍药盒识别', () => void enterMode('smart', () => void openSmartCamera())),
         moreBtn('plus', '手动添加', () => navigate('/meds/new')),
       );
@@ -267,14 +265,6 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
           '把医生开的药单拍下来，AI 帮您把药名、时段都填好',
           '第一步',
           () => void enterMode('sheet', () => void openSheetCamera()),
-        ),
-        entryCard(
-          'scan-entry-secondary',
-          'mic',
-          '说一说，AI 帮您录',
-          '没有药单？像聊天一样说出在吃的药，AI 整理成清单',
-          null,
-          () => void openVoiceMedEntry(),
         ),
       );
       more.append(el('span', { class: 'scan-more-label', html: '其他方式' }));
@@ -793,7 +783,7 @@ async function showUnknownCode(
   }));
 
   const input = el('input', { type: 'text', placeholder: '填写药名，例如：阿司匹林肠溶片' }) as HTMLInputElement;
-  card.append(fieldLite('药名', input));
+  card.append(field('药名', input));
 
   const save = iconButton('check', fromSmartScan ? '保存并继续填表' : '保存绑定', 'btn success');
   save.onclick = async () => {
@@ -1242,7 +1232,7 @@ function renderPrescriptionEditor(
   const notes = textInput(item.notes, '备注');
   notes.disabled = item.saved;
   notes.oninput = () => (item.notes = notes.value);
-  row.append(fieldLite('药名', name), fieldLite('规格', spec), fieldLite('每次剂量', dose), fieldLite('备注', notes));
+  row.append(field('药名', name), field('规格', spec), field('每次剂量', dose), field('备注', notes));
 
   const slotGroup = el('div', { class: 'scan-slot-tags', role: 'group', 'aria-label': '服药时段' } as any);
   for (const slot of SLOTS) {
@@ -1643,13 +1633,6 @@ function loadingCard(title: string, subtitle: string): HTMLElement {
   const card = el('div', { class: 'card' });
   card.append(el('div', { class: 'big', text: title }), el('div', { class: 'muted', text: subtitle }));
   return card;
-}
-
-function fieldLite(labelText: string, input: HTMLInputElement): HTMLElement {
-  if (!input.id) input.id = nextFieldId('scan-field');
-  const field = el('div', { class: 'field' });
-  field.append(el('label', { htmlFor: input.id, text: labelText } as any), input);
-  return field;
 }
 
 function textInput(value: string, placeholder: string): HTMLInputElement {

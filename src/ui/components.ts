@@ -128,7 +128,7 @@ const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:
  * 在容器内建立焦点陷阱：Tab 首尾循环 + Escape 触发 onEscape。
  * 返回清理函数；容器内没有可聚焦元素时 Tab 不拦截（与 openDialog 行为一致）。
  */
-export function trapFocusIn(container: HTMLElement, onEscape?: () => void): () => void {
+export function trapFocusIn(container: HTMLElement, onEscape?: (() => void) | null): () => void {
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -562,6 +562,11 @@ export interface FieldOptions {
   error?: string;
   /** extra classes on the wrapper */
   class?: string;
+  /**
+   * Render hint text under the control even when there is no error.
+   * When omitted the error slot stays hidden until setFieldError shows it.
+   */
+  hint?: string;
 }
 
 export function field(
@@ -571,18 +576,37 @@ export function field(
 ): HTMLElement {
   const wrap = el('div', { class: `field ${opts.class ?? ''}`.trim() });
   const label = el('label', { html: labelText });
-  const generatedId = opts.inputId || inputEl.id || `field-${++fieldSeq}`;
-  label.setAttribute('for', generatedId);
-  inputEl.setAttribute('id', generatedId);
-  if (!inputEl.getAttribute('name')) inputEl.setAttribute('name', generatedId);
+
+  // Resolve the focusable control: either inputEl itself, or the first
+  // form control nested inside a composite wrapper (chip groups, pickers).
+  const control: HTMLElement | null = inputEl.matches('input,select,textarea')
+    ? inputEl
+    : inputEl.querySelector<HTMLElement>('input,select,textarea');
+
+  if (control) {
+    const generatedId = opts.inputId || control.id || `field-${++fieldSeq}`;
+    label.setAttribute('for', generatedId);
+    control.setAttribute('id', generatedId);
+    if (!control.getAttribute('name')) control.setAttribute('name', generatedId);
+  } else {
+    // Composite non-form content (role=group / radiogroup / chip rows):
+    // label cannot point at a control, so bind via aria-labelledby instead.
+    if (!inputEl.getAttribute('role')) inputEl.setAttribute('role', 'group');
+    const labelId = `field-label-${++fieldSeq}`;
+    label.id = labelId;
+    inputEl.setAttribute('aria-labelledby', labelId);
+  }
+
   wrap.append(label);
   wrap.append(inputEl);
-  const errorText = el('small', { class: 'error-text', html: opts.error ?? '' });
+
+  const errorText = el('small', { class: 'error-text', html: opts.error ?? opts.hint ?? '' });
   if (opts.errorId) {
     errorText.setAttribute('id', opts.errorId);
-    inputEl.setAttribute('aria-describedby', opts.errorId);
+    const describeTarget = control ?? inputEl;
+    describeTarget.setAttribute('aria-describedby', opts.errorId);
   }
-  if (!opts.error) {
+  if (!opts.error && !opts.hint) {
     errorText.style.display = 'none';
   }
   wrap.append(errorText);

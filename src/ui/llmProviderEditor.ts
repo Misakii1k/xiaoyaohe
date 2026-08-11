@@ -1,6 +1,6 @@
 // AI 服务商编辑器：新增/编辑一家 OpenAI 兼容供应商。
 // 独立成模块是因为设置页的架构契约禁止出现 openDialog/closeDialog 等标识符。
-import { el, toast, openDialog, closeDialog, type IconName } from './components';
+import { el, toast, openDialog, closeDialog, field, type IconName } from './components';
 import { grantBatchConsent } from '../ai/consent';
 import {
   createLlmProviderId,
@@ -12,23 +12,6 @@ import {
 } from '../ai/llmConfig';
 
 let settingsFieldSeq = 0;
-
-function field(label: string, input: HTMLElement): HTMLElement {
-  const f = el('div', { class: 'field' });
-  const control = input.matches('input,select,textarea')
-    ? input
-    : input.querySelector<HTMLElement>('input,select,textarea');
-  const labelEl = el('label', { html: label });
-  if (control) {
-    const id = control.id || `llm-provider-field-${++settingsFieldSeq}`;
-    control.id = id;
-    if (!control.getAttribute('name')) control.setAttribute('name', id);
-    labelEl.htmlFor = id;
-  }
-  f.append(labelEl);
-  f.append(input);
-  return f;
-}
 
 function populateModelControl(
   sel: HTMLSelectElement,
