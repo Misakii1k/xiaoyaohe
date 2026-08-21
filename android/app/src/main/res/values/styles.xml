@@ -19,12 +19,12 @@
         <item name="android:statusBarColor">@color/systemBarSurface</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:navigationBarColor">@color/systemBarSurface</item>
-        <item name="android:background">@color/systemBarSurface</item>
+        <item name="android:windowBackground">@color/systemBarSurface</item>
     </style>
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="android:windowBackground">@drawable/splash</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 

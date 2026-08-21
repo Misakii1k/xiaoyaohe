@@ -15,7 +15,6 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LanSyncPlugin.class);
         registerPlugin(ApkDistributionPlugin.class);
         registerPlugin(MedicationAlarmPlugin.class);
-        registerPlugin(NativeSpeechPlugin.class);
         registerPlugin(PowerSettingsPlugin.class);
         super.onCreate(savedInstanceState);
         // 降低 WebView 缓存与媒体解码压力，缓解大图列表页闪退

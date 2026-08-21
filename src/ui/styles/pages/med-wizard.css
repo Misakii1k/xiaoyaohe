@@ -1,17 +1,25 @@
-/* AirPods 连接式逐药认药向导：底部弹卡 + 弹簧动效 */
-.med-wizard-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
+/* AirPods 连接式逐药认药向导：底部弹卡 + 弹簧动效
+   弹层骨架由 openBottomSheet 托管（.bottom-sheet-overlay + .med-wizard-host），
+   这里只负责向导自身的外观与逐步过渡动画。*/
+.bottom-sheet-overlay:has(.med-wizard-host) {
   display: grid;
   align-items: end;
   padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
-  background: var(--scrim);
   animation: med-wizard-fade 240ms var(--ease-out);
 }
 
 /* display 规则会盖掉 UA 的 [hidden]，向导内统一补回 */
-.med-wizard-overlay [hidden] { display: none; }
+.med-wizard-host [hidden] { display: none; }
+
+/* 覆写 .bottom-sheet 的默认留白与高度，让向导更贴底、可用空间更高 */
+.bottom-sheet.med-wizard-host {
+  padding: 0;
+  max-block-size: min(88dvh, 760px);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
 
 .med-wizard {
   display: grid;
@@ -208,8 +216,8 @@
 @keyframes med-wizard-out-back { to { transform: translateX(64px); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .med-wizard-overlay,
-  .med-wizard-overlay * {
+  .med-wizard-host,
+  .med-wizard-host * {
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
@@ -217,60 +225,7 @@
 }
 
 @media (min-width: 768px) {
-  .med-wizard-overlay { align-items: center; justify-items: center; padding: var(--space-5); }
+  .bottom-sheet-overlay:has(.med-wizard-host) { align-items: center; justify-items: center; padding: var(--space-5); }
+  .bottom-sheet.med-wizard-host { border-radius: var(--radius-xl); }
   .med-wizard { inline-size: min(520px, 100%); border-radius: var(--radius-xl); padding-block-end: var(--space-5); }
-}
-
-/* 口述录药弹卡：示例话术 + 文本区 + 话筒按钮（复用 med-wizard 骨架） */
-.voice-entry-example {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-  font-size: var(--fs-footnote);
-  line-height: 1.55;
-}
-
-.voice-entry-text {
-  min-block-size: 128px;
-  padding: var(--space-3);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--fs-body);
-  line-height: 1.5;
-  resize: vertical;
-}
-
-.voice-entry-text:focus-visible {
-  border-color: var(--color-primary);
-  outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
-}
-
-.voice-entry-error { display: grid; gap: var(--space-2); }
-.voice-entry-error:empty { display: none; }
-
-/* 实时字幕：识别中间结果的灰色预览，说完一段定稿才进正文 */
-.voice-entry-interim {
-  color: var(--color-text-muted);
-  font-size: var(--fs-footnote);
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.voice-entry-interim:empty { display: none; }
-
-/* 正在听：话筒按钮泛主色光圈，一眼看出在收音 */
-.voice-entry .is-listening {
-  border-color: var(--color-primary);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  animation: voice-entry-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes voice-entry-pulse {
-  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-primary) 16%, transparent); }
 }

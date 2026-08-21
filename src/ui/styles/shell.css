@@ -51,7 +51,7 @@
   block-size: var(--tap);
   border: 0;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--color-surface-glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow: var(--shadow-sm);
@@ -61,7 +61,7 @@
 
 .topbar .icon-btn:active {
   transform: scale(0.94);
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--color-surface);
 }
 
 .app-main {
@@ -86,7 +86,7 @@
   align-items: center;
   min-inline-size: 0;
   padding: var(--space-2) max(var(--space-3), var(--safe-right)) var(--space-2) max(var(--space-3), var(--safe-left));
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--color-surface-glass);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-block-start: 1px solid var(--color-border-glass);

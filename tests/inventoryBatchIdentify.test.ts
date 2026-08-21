@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   identifyInventoryBatchByBlob,
   mergeInventoryEntryItems,
-  parseInventorySpeech,
   type IdentifySession,
   type InventorySpeechItem,
 } from '../src/ai/identify';
@@ -70,7 +69,11 @@ describe('batch inventory identification', () => {
       confidence: 0.8,
     }));
 
-    const result = await parseInventorySpeech('钙片还剩十二片', { session: session() });
+    const result = await identifyInventoryBatchByBlob(
+      new Blob(['image'], { type: 'image/jpeg' }),
+      undefined,
+      { session: session() },
+    );
     expect(result.items[0]?.action).toBe('set');
   });
 
@@ -80,7 +83,11 @@ describe('batch inventory identification', () => {
       confidence: 0.8,
     }));
 
-    const result = await parseInventorySpeech('刚买了一盒钙片二十片', { session: session() });
+    const result = await identifyInventoryBatchByBlob(
+      new Blob(['image'], { type: 'image/jpeg' }),
+      undefined,
+      { session: session() },
+    );
     expect(result.items[0]).toMatchObject({ action: 'add', inventory: { remaining: 20, packageQuantity: 20 } });
   });
 

@@ -172,10 +172,15 @@ describe('Phase F assistant tools registration', () => {
     'check_app_update',
     'download_and_install_update',
     'update_app_settings',
+    'get_inventory_logs',
+    'undo_inventory_operation',
+    'batch_deduct_inventory',
+    'check_drug_interactions',
+    'batch_import_medications',
   ] as const;
 
   it('registers period-reminder management alongside existing assistant tools', () => {
-    expect(assistantTools).toHaveLength(20);
+    expect(assistantTools).toHaveLength(22);
     expect(findAssistantTool('set_reminder_period_settings')).toBeDefined();
     for (const name of NEW_TOOL_NAMES) {
       const tool = findAssistantTool(name);
@@ -187,15 +192,17 @@ describe('Phase F assistant tools registration', () => {
   });
 
   it('marks data-mutating tools with confirm hooks', () => {
-    // 这 7 个工具都会改数据/状态，必须有 confirm
     const mutatingTools = [
       'edit_inventory',
       'add_medication',
       'update_medication',
       'delete_medication',
-      'download_and_install_update',
-      'update_app_settings',
+      'set_reminder_time',
       'set_reminder_period_settings',
+      'download_and_install_update',
+      'batch_deduct_inventory',
+      'batch_import_medications',
+      'update_app_settings',
     ];
     for (const name of mutatingTools) {
       const tool = findAssistantTool(name);
@@ -558,5 +565,72 @@ describe('update_medication', () => {
     const result = (await tool.run({ medName: '阿莫西林' })) as { ok: boolean; 提示: string };
     expect(result.ok).toBe(false);
     expect(result.提示).toContain('没有要更新的字段');
+  });
+});
+
+describe('check_drug_interactions', () => {
+  beforeEach(() => {
+    savedMeds.clear();
+  });
+
+  it('detects interaction between saved meds and additional meds', async () => {
+    savedMeds.set('m1', { id: 'm1', name: '华法林钠片' });
+    const tool = findAssistantTool('check_drug_interactions')!;
+    const result = (await tool.run({ additionalMeds: ['阿司匹林肠溶片'] })) as {
+      ok: boolean;
+      发现相互作用数: number;
+      严重风险数: number;
+      ui: any;
+    };
+    expect(result.ok).toBe(true);
+    expect(result.发现相互作用数).toBeGreaterThanOrEqual(1);
+    expect(result.严重风险数).toBeGreaterThanOrEqual(1);
+    expect(result.ui.tone).toBe('warning');
+  });
+
+  it('reports safe when no interaction is found', async () => {
+    savedMeds.set('m1', { id: 'm1', name: '维生素C片' });
+    const tool = findAssistantTool('check_drug_interactions')!;
+    const result = (await tool.run({ additionalMeds: ['人工泪液'] })) as {
+      ok: boolean;
+      发现相互作用数: number;
+      ui: any;
+    };
+    expect(result.ok).toBe(true);
+    expect(result.发现相互作用数).toBe(0);
+    expect(result.ui.tone).toBe('success');
+  });
+});
+
+describe('batch_import_medications', () => {
+  beforeEach(() => {
+    savedMeds.clear();
+  });
+
+  it('confirm message lists all medication names to import', () => {
+    const tool = findAssistantTool('batch_import_medications')!;
+    const msg = tool.confirm!({
+      medications: [
+        { name: '氨氯地平片', dosageText: '5mg', slots: ['morning'] },
+        { name: '二甲双胍缓释片', dosageText: '500mg', slots: ['evening'] },
+      ],
+    });
+    expect(msg).toContain('氨氯地平片');
+    expect(msg).toContain('二甲双胍缓释片');
+    expect(msg).toContain('2 种');
+  });
+
+  it('batch imports multiple medications successfully', async () => {
+    const tool = findAssistantTool('batch_import_medications')!;
+    const result = (await tool.run({
+      medications: [
+        { name: '阿托伐他汀钙片', dosageText: '20mg', slots: ['bedtime'], inventoryRemaining: 30, inventoryUnit: '片' },
+        { name: '氯沙坦钾片', dosageText: '50mg', slots: ['morning'], inventoryRemaining: 28, inventoryUnit: '片' },
+      ],
+    })) as { ok: boolean; 成功录入数: number; 已录入药品: string[]; ui: any };
+    expect(result.ok).toBe(true);
+    expect(result.成功录入数).toBe(2);
+    expect(result.已录入药品).toContain('阿托伐他汀钙片');
+    expect(result.ui.tone).toBe('success');
   });
 });

@@ -189,8 +189,7 @@
 
 .inventory-picker-sheet,
 .inventory-add-sheet,
-.inventory-review-sheet,
-.inventory-voice-sheet {
+.inventory-review-sheet {
   inline-size: min(640px, 100%);
   margin-inline: auto;
 }
@@ -245,53 +244,6 @@
   overflow-wrap: anywhere;
 }
 
-.inventory-voice-sheet {
-  display: grid;
-  grid-template-rows: auto minmax(84px, 1fr) auto auto;
-  gap: var(--space-3);
-  max-block-size: min(76dvh, 620px);
-  padding-block-end: max(var(--space-3), var(--safe-bottom));
-  overflow: auto;
-}
-
-.inventory-voice-head .inventory-sheet-hint { margin-block-end: 0; }
-.inventory-voice-text {
-  min-block-size: 96px;
-  max-block-size: min(28dvh, 200px);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  line-height: 1.5;
-  resize: vertical;
-}
-
-.inventory-voice-interim,
-.inventory-voice-error {
-  min-block-size: 0;
-  color: var(--color-text-muted);
-  font-size: var(--fs-footnote);
-  overflow-wrap: anywhere;
-}
-
-.inventory-voice-error { color: var(--color-danger); }
-.inventory-voice-interim:empty,
-.inventory-voice-error:empty { display: none; }
-.inventory-voice-actions {
-  position: sticky;
-  inset-block-end: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-  padding-block-start: var(--space-2);
-  background: var(--color-surface);
-}
-.inventory-voice-actions .ui-button { inline-size: 100%; min-inline-size: 0; }
-.inventory-voice-actions .ui-button:last-child { grid-column: 1 / -1; justify-self: center; inline-size: auto; }
-.inventory-voice-actions .is-listening { border-color: var(--color-primary); background: var(--color-primary-soft); color: var(--color-primary); }
-
 .inventory-review-sheet {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
@@ -337,14 +289,11 @@
   .inventory-sheet-actions,
   .inventory-quick-actions,
   .inventory-add-form,
-  .inventory-voice-actions,
   .inventory-review-mode,
   .inventory-review-amount,
   .inventory-review-actions { grid-template-columns: 1fr; }
-  .inventory-add-preview,
-  .inventory-voice-actions .ui-button:last-child { grid-column: 1; }
+  .inventory-add-preview { grid-column: 1; }
   .inventory-review-actions .ui-button:last-child { inline-size: 100%; }
-  .inventory-voice-sheet { max-block-size: calc(100dvh - var(--safe-top)); }
 }
 
 /* 历史操作与分类标签 */

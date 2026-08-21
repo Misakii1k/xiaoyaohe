@@ -85,19 +85,17 @@ describe('settings information architecture contracts', () => {
   });
 
   it('uses the normal text keyboard for API secrets while keeping visual masking', () => {
-    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
     const providerEditor = readFileSync(join(root, 'src/ui/llmProviderEditor.ts'), 'utf8');
     const styles = readFileSync(join(root, 'src/ui/styles/legacy.css'), 'utf8');
 
-    for (const source of [settings, providerEditor]) {
-      expect(source).not.toMatch(/type:\s*['"]password['"]/);
-      expect(source).toContain("class: 'secret-input'");
-      expect(source).toContain("type: 'text'");
-      expect(source).toContain("autocomplete: 'off'");
-      expect(source).toContain("autocapitalize: 'none'");
-      expect(source).toContain('autocorrect: false');
-      expect(source).toContain('spellcheck: false');
-    }
+    // AI 服务商编辑弹窗是当前唯一保存 API 密钥的入口（语音识别密钥面板已随语音功能移除）。
+    expect(providerEditor).not.toMatch(/type:\s*['"]password['"]/);
+    expect(providerEditor).toContain("class: 'secret-input'");
+    expect(providerEditor).toContain("type: 'text'");
+    expect(providerEditor).toContain("autocomplete: 'off'");
+    expect(providerEditor).toContain("autocapitalize: 'none'");
+    expect(providerEditor).toContain('autocorrect: false');
+    expect(providerEditor).toContain('spellcheck: false');
     expect(providerEditor).not.toContain("keyIn.type = visible ? 'text' : 'password'");
     expect(styles).toMatch(/\.secret-input\s*\{\s*-webkit-text-security:\s*disc;/);
     expect(styles).toMatch(/\.secret-input\.is-visible\s*\{\s*-webkit-text-security:\s*none;/);

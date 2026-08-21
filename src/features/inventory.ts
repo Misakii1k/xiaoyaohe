@@ -203,6 +203,32 @@ export function estimateDaysLeft(med: Medication, rules: ReminderRule[]): number
   return Math.floor(remaining / daily);
 }
 
+export interface DaysLeftInfo {
+  days: number | null;
+  text: string;
+  status: 'empty' | 'danger' | 'warning' | 'ok' | 'unknown';
+}
+
+export function getDaysLeftInfo(med: Medication, rules: ReminderRule[]): DaysLeftInfo {
+  if (!med.inventory || med.inventory.remaining <= 0) {
+    return { days: 0, text: '已无库存', status: 'empty' };
+  }
+  const days = estimateDaysLeft(med, rules);
+  if (days === null) {
+    return { days: null, text: `剩余 ${med.inventory.remaining} ${med.inventory.unit || ''}`.trim(), status: 'unknown' };
+  }
+  if (days <= 0) {
+    return { days: 0, text: '不足 1 天用量', status: 'danger' };
+  }
+  if (days <= 3) {
+    return { days, text: `仅剩 ${days} 天用量`, status: 'danger' };
+  }
+  if (days <= 7) {
+    return { days, text: `约还够吃 ${days} 天`, status: 'warning' };
+  }
+  return { days, text: `约还够吃 ${days} 天`, status: 'ok' };
+}
+
 export interface BatchDeductionItemPreview {
   medId: string;
   medName: string;

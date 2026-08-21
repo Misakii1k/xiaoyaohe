@@ -10,11 +10,6 @@ import {
   type AssistantExchange,
 } from '../ai/assistant';
 import { getLlmConfig } from '../ai/llmConfig';
-import {
-  AsrSentenceError,
-  createHoldToTalkSession,
-  type HoldToTalkSession,
-} from '../ai/asr';
 import { createButton } from './primitives/Button';
 import { compressBoxPhoto } from '../features/medPhotos';
 
@@ -46,19 +41,19 @@ function renderAssistantMarkdown(text: string): HTMLElement {
   return fallback;
 }
 
-const GREETING = '你好呀，我是小助手。想知道今天吃什么药、最近是否按时，或者查看药品库存，直接说就行。也能拍照、发文件、按住说话。';
+const GREETING = '你好呀，我是小助手。想知道今天吃什么药、最近是否按时，或者查看药品库存，直接说就行。也能拍照、发文件。';
 const QUICK_PROMPTS = [
-  '今天要吃什么药？',
+  '今天我要吃什么药？',
+  '排查当前用药相互作用与禁忌',
+  '帮我从处方单/清单批量录入药品',
   '最近一周吃药按时吗？',
-  '哪些药快没了？',
+  '哪些药快吃完了？',
   '打开药品库存',
 ];
 
 /** 文本附件最多带入模型的字数，避免一次塞整本书 */
 const MAX_TEXT_EXCERPT = 12_000;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
-/** 上滑超过这个像素视为取消发送（微信风格） */
-const CANCEL_SLIDE_PX = 72;
 
 const history: AssistantExchange[] = [];
 let mounted = false;
@@ -67,16 +62,64 @@ async function fileToAttachment(file: File): Promise<AssistantAttachment> {
   if (file.size > MAX_FILE_BYTES) {
     throw new Error('文件太大了，请选 8MB 以内的');
   }
+  // 图片类（普通照片、处方长图、化验单截屏）
   if (file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic|bmp)$/i.test(file.name)) {
     const compressed = await compressBoxPhoto(file);
     const dataUrl = await blobToDataUrl(compressed);
     return { kind: 'image', name: file.name || '照片.jpg', mime: compressed.type || 'image/jpeg', dataUrl };
   }
-  // 文本类：直接读成字符串摘录
+  // 表格类：CSV / TSV / 表格文本自动转清晰的 Markdown 表格
+  if (/\.(csv|tsv|tab)$/i.test(file.name) || file.type.includes('csv')) {
+    const raw = await file.text();
+    const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+    let formatted = raw;
+    if (lines.length > 0) {
+      const delimiter = file.name.endsWith('.tsv') || file.name.endsWith('.tab') ? '\t' : ',';
+      const tableRows = lines.slice(0, 120).map((l) => l.split(delimiter).map((c) => c.trim().replace(/^"|"$/g, '')));
+      if (tableRows.length > 0 && tableRows[0]) {
+        const header = '| ' + tableRows[0].join(' | ') + ' |';
+        const divider = '| ' + tableRows[0].map(() => '---').join(' | ') + ' |';
+        const rows = tableRows.slice(1).map((r) => '| ' + r.join(' | ') + ' |').join('\n');
+        formatted = `${header}\n${divider}\n${rows}`;
+      }
+    }
+    const textExcerpt = formatted.slice(0, MAX_TEXT_EXCERPT);
+    return {
+      kind: 'file',
+      name: file.name || '药品清单.csv',
+      mime: 'text/csv',
+      textExcerpt: formatted.length > MAX_TEXT_EXCERPT ? `${textExcerpt}\n…（表格已截断）` : textExcerpt,
+    };
+  }
+  // PDF 电子病历/处方单/检验报告：提取文本流
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const textDecoder = new TextDecoder('utf-8', { fatal: false });
+    const decoded = textDecoder.decode(bytes);
+    const matches = decoded.match(/\(([^)]+)\)\s*(?:Tj|'|")/g) || [];
+    const textChunks: string[] = [];
+    for (const m of matches) {
+      const clean = m.replace(/[()Tj'"]/g, '').trim();
+      if (clean.length > 0) textChunks.push(clean);
+    }
+    let extracted = textChunks.join(' ');
+    if (!extracted.trim() || extracted.length < 20) {
+      extracted = `[电子文档: ${file.name}，文件大小: ${Math.round(file.size / 1024)} KB。若包含扫描图片处方，建议拍照或发截图供视觉模型识别]`;
+    }
+    const textExcerpt = extracted.slice(0, MAX_TEXT_EXCERPT);
+    return {
+      kind: 'file',
+      name: file.name || '电子处方病历.pdf',
+      mime: 'application/pdf',
+      textExcerpt: extracted.length > MAX_TEXT_EXCERPT ? `${textExcerpt}\n…（已截断）` : textExcerpt,
+    };
+  }
+  // 文本类 / JSON / XML / Markdown 等
   if (
     file.type.startsWith('text/')
-    || /json|xml|csv|markdown|javascript|typescript|html/.test(file.type)
-    || /\.(txt|md|csv|json|log|xml|html?|js|ts|css)$/i.test(file.name)
+    || /json|xml|markdown|javascript|typescript|html/.test(file.type)
+    || /\.(txt|md|json|log|xml|html?|js|ts|css)$/i.test(file.name)
   ) {
     const raw = await file.text();
     const textExcerpt = raw.slice(0, MAX_TEXT_EXCERPT);
@@ -126,6 +169,9 @@ export function mountGlobalAssistant(): void {
   const backdrop = el('div', { class: 'ai-panel-backdrop' });
   backdrop.setAttribute('aria-hidden', 'true');
 
+  const clearBtn = el('button', { class: 'ai-panel-clear', type: 'button' }, [icon('trash')]);
+  clearBtn.setAttribute('aria-label', '清空对话记录');
+  clearBtn.title = '清空对话记录';
   const closeBtn = el('button', { class: 'ai-panel-close', type: 'button' }, [icon('close')]);
   closeBtn.setAttribute('aria-label', '收起小助手');
   const expandBtn = el('button', { class: 'ai-panel-expand', type: 'button' }, [icon('expand')]);
@@ -137,6 +183,7 @@ export function mountGlobalAssistant(): void {
       el('h2', { class: 'ai-panel-title', text: '小助手' }),
       el('p', { class: 'ai-panel-subtitle', text: '吃药、药品和库存都可以问我' }),
     ]),
+    clearBtn,
     expandBtn,
     closeBtn,
   ]);
@@ -155,18 +202,11 @@ export function mountGlobalAssistant(): void {
   input.setAttribute('aria-label', '想对小助手说的话');
   const attachBtn = el('button', { class: 'ai-tool-btn', type: 'button' }, [icon('plus')]);
   attachBtn.setAttribute('aria-label', '添加图片或文件');
-  // 微信风格：按住说话 / 上滑取消
-  const micBtn = el('button', {
-    class: 'ai-tool-btn ai-mic-btn',
-    type: 'button',
-  }, [icon('mic')]) as HTMLButtonElement;
-  micBtn.setAttribute('aria-label', '按住说话');
-  micBtn.title = '按住说话，松开发送，上滑取消';
   const sendBtn = el('button', { class: 'ai-send', type: 'submit' }, [icon('send')]);
   sendBtn.setAttribute('aria-label', '发送');
   const form = el('form', { class: 'ai-composer' }, [
     attachPreview,
-    el('div', { class: 'ai-input-row' }, [attachBtn, micBtn, input, sendBtn]),
+    el('div', { class: 'ai-input-row' }, [attachBtn, input, sendBtn]),
   ]);
 
   // 隐藏文件选择：拍照 / 相册 / 任意文件 三套 input，避免安卓 WebView 权限混用问题
@@ -181,45 +221,7 @@ export function mountGlobalAssistant(): void {
   attachMenu.setAttribute('role', 'dialog');
   attachMenu.setAttribute('aria-label', '添加附件');
 
-  // 面板内紧凑录音反馈区，聊天内容保持可见。
-  // 计时器每秒变化不适合朗读，只对状态提示（开始/取消/停止）播报。
-  const voiceOverlay = el('div', { class: 'ai-voice-overlay', hidden: true } as any);
-  const voiceHint = el('div', { class: 'ai-voice-hint', text: '松开发送，上滑取消' });
-  voiceHint.setAttribute('aria-live', 'polite');
-  const voiceTimer = el('div', { class: 'ai-voice-timer', text: '0″' });
-  voiceTimer.setAttribute('aria-hidden', 'true');
-  // 弧形进度环：中央话筒 + 外圈 SVG 圆环随录音时长 0→60s 填满。
-  const voiceRingSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  voiceRingSvg.setAttribute('class', 'ai-voice-progress');
-  voiceRingSvg.setAttribute('viewBox', '0 0 120 120');
-  voiceRingSvg.setAttribute('aria-hidden', 'true');
-  const ringTrack = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-  ringTrack.setAttribute('class', 'ai-voice-progress-track');
-  ringTrack.setAttribute('cx', '60');
-  ringTrack.setAttribute('cy', '60');
-  ringTrack.setAttribute('r', '52');
-  ringTrack.setAttribute('fill', 'none');
-  const ringFill = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-  ringFill.setAttribute('class', 'ai-voice-progress-fill');
-  ringFill.setAttribute('cx', '60');
-  ringFill.setAttribute('cy', '60');
-  ringFill.setAttribute('r', '52');
-  ringFill.setAttribute('fill', 'none');
-  ringFill.setAttribute('pathLength', '100');
-  ringFill.style.strokeDasharray = '100';
-  ringFill.style.strokeDashoffset = '100';
-  voiceRingSvg.append(ringTrack, ringFill);
-  // 涟漪：话筒周围向外扩散的同心圆水波，录音时循环播放。
-  const voiceRipples = el('div', { class: 'ai-voice-ripples', 'aria-hidden': 'true' } as any, [
-    el('span', { class: 'ai-voice-ripple ai-voice-ripple--1' }),
-    el('span', { class: 'ai-voice-ripple ai-voice-ripple--2' }),
-    el('span', { class: 'ai-voice-ripple ai-voice-ripple--3' }),
-  ]);
-  const voiceGlyph = el('div', { class: 'ai-voice-glyph', 'aria-hidden': 'true' } as any, [icon('mic')]);
-  const voiceStage = el('div', { class: 'ai-voice-stage' }, [voiceRipples, voiceRingSvg, voiceGlyph]);
-  voiceOverlay.append(voiceStage, voiceTimer, voiceHint);
-
-  const panel = el('section', { class: 'ai-panel' }, [header, log, quick, voiceOverlay, form]);
+  const panel = el('section', { class: 'ai-panel' }, [header, log, quick, form]);
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', '小助手');
 
@@ -227,12 +229,6 @@ export function mountGlobalAssistant(): void {
   document.body.append(root);
 
   let pendingAttachment: AssistantAttachment | null = null;
-  let holdSession: HoldToTalkSession | null = null;
-  let holdActive = false;
-  let holdCancel = false;
-  let holdStartY = 0;
-  let holdPointerId = -1;
-  let recognizing = false;
 
   // ---- 悬浮按钮拖拽：按住挪走，免得挡住页面底部的按钮（比如批量管理栏） ----
   let dragging = false;
@@ -384,8 +380,6 @@ export function mountGlobalAssistant(): void {
   function closePanel(): void {
     busy?.abort();
     closeAttachMenu();
-    if (holdActive || holdSession) void endHoldTalk(true);
-    setVoiceOverlay(false);
     panel.classList.remove('is-fullscreen');
     expandBtn.replaceChildren(icon('expand'));
     expandBtn.setAttribute('aria-label', '展开面板');
@@ -492,121 +486,7 @@ export function mountGlobalAssistant(): void {
     camera.focus();
   }
 
-  function setVoiceOverlay(on: boolean, cancelHint = false): void {
-    voiceOverlay.hidden = !on;
-    panel.classList.toggle('is-voice-active', on);
-    voiceOverlay.classList.toggle('is-cancel', cancelHint);
-    if (!on) {
-      voiceTimer.textContent = '0″';
-      voiceHint.textContent = '松开发送，上滑取消';
-      ringFill.style.strokeDashoffset = '100';
-      micBtn.classList.remove('is-listening', 'is-cancel-zone');
-    }
-  }
-
-  async function beginHoldTalk(ev: PointerEvent): Promise<void> {
-    if (busy || recognizing || holdActive) return;
-    holdActive = true;
-    holdCancel = false;
-    holdStartY = ev.clientY;
-    holdPointerId = ev.pointerId;
-    try { micBtn.setPointerCapture(ev.pointerId); } catch { /* ignore */ }
-    micBtn.classList.add('is-listening');
-    setVoiceOverlay(true, false);
-    holdSession = createHoldToTalkSession({
-      onTick: (sec) => {
-        voiceTimer.textContent = `${sec}″`;
-        const pct = Math.min(100, (sec / 60) * 100);
-        ringFill.style.strokeDashoffset = String(100 - pct);
-        if (sec >= 55) voiceHint.textContent = '快到一分钟了，松手即可发送';
-      },
-    });
-    try {
-      await holdSession.start();
-    } catch (error) {
-      holdActive = false;
-      setVoiceOverlay(false);
-      holdSession = null;
-      if (error instanceof AsrSentenceError) {
-        if (error.code === 'not-allowed') toast('没有麦克风权限，请到系统设置里允许');
-        else if (error.code === 'unconfigured') toast(error.message);
-        else toast(error.message);
-      } else {
-        toast('打不开麦克风');
-      }
-    }
-  }
-
-  async function endHoldTalk(cancel: boolean): Promise<void> {
-    if (!holdActive && !holdSession) return;
-    holdActive = false;
-    const session = holdSession;
-    holdSession = null;
-    micBtn.classList.remove('is-listening', 'is-cancel-zone');
-    setVoiceOverlay(false);
-    if (!session) return;
-    if (cancel) {
-      try { await session.finish(true); } catch { /* ignore */ }
-      toast('已取消');
-      return;
-    }
-    recognizing = true;
-    micBtn.disabled = true;
-    const status = addStatus('正在识别语音…');
-    try {
-      const text = await session.finish(false);
-      status.remove();
-      if (text && text.trim()) {
-        // 识别结果填入输入框并直接发送
-        input.value = '';
-        void send(text.trim());
-      } else {
-        toast('没听清，请再按住说一次');
-      }
-    } catch (error) {
-      status.remove();
-      if (error instanceof AsrSentenceError) {
-        if (error.code === 'cancelled') toast('已取消');
-        else if (error.code === 'no-speech') toast('没听清，请按住多说一会儿');
-        else if (error.code === 'auth-failed') toast('语音服务鉴权失败，服务端凭证需要更新');
-        else toast(error.message);
-      } else {
-        toast('识别失败，请改成打字');
-      }
-    } finally {
-      recognizing = false;
-      micBtn.disabled = false;
-    }
-  }
-
-  function onHoldMove(ev: PointerEvent): void {
-    if (!holdActive || ev.pointerId !== holdPointerId) return;
-    const dy = holdStartY - ev.clientY;
-    holdCancel = dy > CANCEL_SLIDE_PX;
-    micBtn.classList.toggle('is-cancel-zone', holdCancel);
-    voiceOverlay.classList.toggle('is-cancel', holdCancel);
-    voiceHint.textContent = holdCancel ? '松开手指，取消发送' : '松开发送，上滑取消';
-  }
-
-  function onHoldEnd(ev: PointerEvent): void {
-    if (ev.pointerId !== holdPointerId && holdPointerId !== -1) return;
-    const cancel = holdCancel;
-    holdPointerId = -1;
-    void endHoldTalk(cancel);
-  }
-
   attachBtn.onclick = () => openAttachMenu();
-  // 按住说话：pointer 事件（兼容触摸 / 鼠标）
-  micBtn.addEventListener('pointerdown', (ev) => {
-    if (ev.button != null && ev.button !== 0) return;
-    ev.preventDefault();
-    void beginHoldTalk(ev);
-  });
-  micBtn.addEventListener('pointermove', onHoldMove);
-  micBtn.addEventListener('pointerup', onHoldEnd);
-  micBtn.addEventListener('pointercancel', onHoldEnd);
-  // 防止长按出系统菜单
-  micBtn.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
   launcher.onclick = () => {
     // 刚拖完松手会跟一个 click，别误开面板
@@ -615,6 +495,20 @@ export function mountGlobalAssistant(): void {
       return;
     }
     openPanel();
+  };
+  clearBtn.onclick = async () => {
+    if (log.childElementCount <= 1 && history.length === 0) return;
+    const confirmed = await confirmDialog('确定清空与小助手的对话记录吗？', '清空记录');
+    if (!confirmed) return;
+    history.length = 0;
+    log.replaceChildren();
+    addMsg('bot', GREETING);
+    const cfg = getLlmConfig();
+    if (!cfg.baseUrl || !cfg.apiKey) {
+      addSettingsHint('不过现在还没连上 AI 服务，先去设置里填好服务地址和密钥，我就能开工了。');
+    }
+    quick.hidden = false;
+    toast('对话已清空');
   };
   closeBtn.onclick = closePanel;
   backdrop.onclick = closePanel;
@@ -631,7 +525,6 @@ export function mountGlobalAssistant(): void {
     e.preventDefault();
     const text = input.value.trim();
     if (!text && !pendingAttachment) return;
-    if (holdActive || holdSession) void endHoldTalk(true);
     closeAttachMenu();
     input.value = '';
     input.placeholder = '跟我说点什么…';
@@ -659,7 +552,27 @@ export function mountGlobalAssistant(): void {
   function addAssistantReply(reply: AssistantTurnResult): HTMLElement {
     const msg = el('div', { class: 'ai-msg is-bot' });
     if (reply.markdown) {
-      msg.append(el('div', { class: 'ai-bubble' }, [renderAssistantMarkdown(reply.markdown)]));
+      const bubble = el('div', { class: 'ai-bubble' });
+      bubble.append(renderAssistantMarkdown(reply.markdown));
+      const footer = el('div', { class: 'ai-bubble-footer' });
+      const copyBtn = el('button', {
+        class: 'ai-bubble-copy-btn',
+        type: 'button',
+        'aria-label': '复制回复内容',
+        title: '复制回复内容',
+      });
+      copyBtn.append(icon('copy'), el('span', { text: '复制' }));
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(reply.markdown);
+          toast('已复制到剪贴板');
+        } catch {
+          toast('复制失败');
+        }
+      };
+      footer.append(copyBtn);
+      bubble.append(footer);
+      msg.append(bubble);
     }
     if (reply.blocks.length) {
       const cards = el('div', { class: 'ai-cards' });
@@ -714,9 +627,7 @@ export function mountGlobalAssistant(): void {
     sendBtn.setAttribute('aria-label', on ? '先不等回复了' : '发送');
     sendBtn.type = on ? 'button' : 'submit';
     sendBtn.onclick = on ? () => busy?.abort() : null;
-    attachBtn.disabled = on || recognizing;
-    micBtn.disabled = on || recognizing;
-    if (on && (holdActive || holdSession)) void endHoldTalk(true);
+    attachBtn.disabled = on;
   }
 
   async function send(text: string, attachment?: AssistantAttachment): Promise<void> {

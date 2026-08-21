@@ -1,6 +1,6 @@
 {
   "name": "xiaoyaohe",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "private": true,
   "type": "module",
   "engines": {
@@ -20,8 +20,7 @@
     "preview": "vite preview --host",
     "cap:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
-    "android:debug": "npm run cap:sync && node scripts/android-debug.mjs",
-    "server:asr": "node server/tencent-asr-proxy.mjs"
+    "android:debug": "npm run cap:sync && node scripts/android-debug.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.0",

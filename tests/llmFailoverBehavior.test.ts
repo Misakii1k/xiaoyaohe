@@ -15,12 +15,18 @@ const consent = vi.hoisted(() => ({
 
 vi.mock('../src/ai/llmConfig', () => ({
   getLlmRouteCandidates: () => routeState.candidates,
+  // parsePrescription 会先做地址归一化；测试地址已是合法 HTTPS，原样返回即可。
+  normalizeAndValidateBaseUrl: (url: string) => url,
 }));
 
 vi.mock('../src/ai/consent', () => ({
   requireAiConsent: consent.require,
   hasAiConsent: consent.has,
 }));
+
+// parsePrescription 走 getLlmRouteCandidates + requireAiConsent/hasAiConsent，
+// 上面的 mock 会在模块求值前生效，这里做一次静态引用供用例使用。
+const identifyParse = await import('../src/ai/parsePrescription');
 
 const providerA = {
   id: 'a',
@@ -107,20 +113,21 @@ describe('LLM failover behavior', () => {
   it('sends the retry to the next provider after a recoverable response', async () => {
     routeState.candidates = [providerA, providerB];
     consent.has.mockImplementation((_kind, baseUrl) => baseUrl === providerB.baseUrl);
-    const identify = await import('../src/ai/identify');
-    const session = await identify.createIdentifySession('prescription_sheet', 'prescription');
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse({ error: { message: 'busy' } }, 503))
       .mockResolvedValueOnce(jsonResponse({
         choices: [{ message: { content: JSON.stringify({
-          items: [{ name: '阿司匹林', dosageText: '100mg/片', amountPerDose: '1片', slots: ['morning'], confidence: 0.9 }],
+          name: '阿司匹林',
+          dosageText: '100mg/片',
+          amountPerDose: '1片',
+          slots: ['morning'],
           confidence: 0.9,
         }) } }],
       }));
 
-    const result = await identify.parseMedicationSpeech('早上吃一片阿司匹林', { session });
+    const result = await identifyParse.parsePrescription('早上吃一片阿司匹林');
 
-    expect(result.items[0]?.name).toBe('阿司匹林');
+    expect(result.name).toBe('阿司匹林');
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
       `${providerA.baseUrl}/chat/completions`,
       `${providerB.baseUrl}/chat/completions`,
@@ -129,22 +136,15 @@ describe('LLM failover behavior', () => {
     expect(secondRequest.model).toBe(providerB.model);
   });
 
-  it('does not contact a fallback provider after the user cancels', async () => {
+  it('does not contact a fallback provider after a non-recoverable response', async () => {
     routeState.candidates = [providerA, providerB];
     consent.has.mockImplementation((_kind, baseUrl) => baseUrl === providerB.baseUrl);
-    const identify = await import('../src/ai/identify');
-    const session = await identify.createIdentifySession('prescription_sheet', 'prescription');
-    const controller = new AbortController();
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-      controller.abort();
-      throw new DOMException('cancelled', 'AbortError');
-    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValue(jsonResponse({ error: { message: 'bad request' } }, 400));
 
-    await expect(identify.parseMedicationSpeech('取消这次识别', {
-      session,
-      signal: controller.signal,
-    })).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(identifyParse.parsePrescription('早上吃一片阿司匹林'))
+      .rejects.toThrow('bad request');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(session.baseUrl).toBe(providerA.baseUrl);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${providerA.baseUrl}/chat/completions`);
   });
 });

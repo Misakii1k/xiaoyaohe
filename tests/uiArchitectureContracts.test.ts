@@ -42,16 +42,6 @@ describe('0.7.0 UI architecture contracts', () => {
     }
   });
 
-  it('keeps inventory voice entry on the shared bottom-sheet lifecycle', () => {
-    const page = source('src/pages/MedInventory.ts');
-    const styles = source('src/ui/styles/pages/inventory.css');
-
-    expect(page).toContain("className: 'inventory-voice-sheet'");
-    expect(page).not.toContain("class: 'med-wizard-overlay'");
-    expect(styles).toContain('.inventory-voice-sheet');
-    expect(styles).toContain('max-block-size: calc(100dvh - var(--safe-top))');
-  });
-
   it('uses the application shell instead of page-owned top and bottom bars', () => {
     expect(existsSync(join(root, 'src/app/AppShell.ts'))).toBe(true);
     const shell = source('src/app/AppShell.ts');
@@ -61,9 +51,11 @@ describe('0.7.0 UI architecture contracts', () => {
     expect(shell).toContain('app-navigation');
   });
 
-  it('configures Android edge-to-edge system bars through Capacitor CSS insets', () => {
+  it('keeps edge-to-edge system bars off the plugin insets path so WebView selection UI anchors correctly', () => {
     const config = source('capacitor.config.ts');
-    expect(config).toContain("insetsHandling: 'css'");
+    // disable：避免插件清零/填充系统栏 insets 导致 Android 15/16 edge-to-edge 下 WebView
+    // 文本选择工具栏（长按输入框的原生菜单）渲染成巨大空白块；安全区由 env(safe-area-inset-*) 承担。
+    expect(config).toContain("insetsHandling: 'disable'");
     expect(config).toContain("style: 'LIGHT'");
     expect(source('android/app/src/main/res/values/styles.xml')).toContain('windowLightStatusBar');
   });
@@ -118,12 +110,10 @@ describe('0.7.0 UI architecture contracts', () => {
     const routerStart = main.indexOf("startRouter(appRoot, '/today');");
     const retiredStorageCleanup = main.indexOf('void Promise.all([', routerStart);
     const secretInitialization = main.indexOf('initializeLlmSecretStore()', retiredStorageCleanup);
-    const asrSecretInitialization = main.indexOf('initializeAsrSecretStore()', retiredStorageCleanup);
 
     expect(routerStart).toBeGreaterThan(-1);
     expect(retiredStorageCleanup).toBeGreaterThan(routerStart);
     expect(secretInitialization).toBeGreaterThan(retiredStorageCleanup);
-    expect(asrSecretInitialization).toBeGreaterThan(retiredStorageCleanup);
     expect(main).toContain('cleanupRetiredCloudSyncStorage()');
     expect(main).toContain('cleanupRetiredWorkStorage()');
     expect(main).toContain('.catch(() => undefined)');

@@ -4,24 +4,12 @@ import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-stora
 const SECRET_KEY = 'ai-api-key';
 /** 新版把地址、模型和密钥放在同一条安全存储记录中，避免新旧配置交叉。 */
 export const LLM_CONFIG_SECRET_KEY = 'ai-llm-config-v1';
-/** 新版把腾讯云凭据作为一对提交，避免只写入 SecretId 或 SecretKey。 */
-export const ASR_CREDENTIALS_SECRET_KEY = 'ai-asr-credentials-v1';
-/** 腾讯云 ASR 旧版 SecretId / SecretKey，仅用于迁移。 */
-export const ASR_SECRET_ID_KEY = 'ai-asr-secret-id';
-export const ASR_SECRET_KEY_KEY = 'ai-asr-secret-key';
-/** ASR 地域不是密钥，但跟随网页密钥的 device/session 生命周期迁移。 */
-export const ASR_REGION_STORAGE_KEY = 'medbox.asrRegion.v1';
-const WEB_AUXILIARY_KEYS = [ASR_REGION_STORAGE_KEY] as const;
 const KNOWN_KEYS = [
   SECRET_KEY,
   LLM_CONFIG_SECRET_KEY,
-  ASR_CREDENTIALS_SECRET_KEY,
-  ASR_SECRET_ID_KEY,
-  ASR_SECRET_KEY_KEY,
 ] as const;
 const RETIRED_IMAGE_SECRET_KEY = 'ai-image-api-key';
 const RETIRED_IMAGE_CONFIG_KEY = 'medbox.imageGenConfig.v1';
-const RETIRED_ASR_CONFIG_KEY = 'medbox.asrConfig.v1';
 const sessionSecrets = new Map<string, string>();
 let initializationPromise: Promise<void> | undefined;
 let webStorageMutation: Promise<void> = Promise.resolve();
@@ -123,7 +111,6 @@ export function initializeSecretStore(): Promise<void> {
 async function initializeSecretStoreOnce(): Promise<void> {
   try {
     localStorage.removeItem(RETIRED_IMAGE_CONFIG_KEY);
-    localStorage.removeItem(RETIRED_ASR_CONFIG_KEY);
   } catch {
     /* localStorage may be unavailable in private browsing or native startup */
   }
@@ -270,7 +257,6 @@ async function migrateWebSecrets(mode: WebSecretPersistence): Promise<void> {
   const source = storageForMode(previousMode);
   const target = storageForMode(mode);
   const snapshots = new Map<string, { source: string | null; target: string | null }>();
-  const auxiliarySnapshots = new Map<string, { source: string | null; target: string | null }>();
   const migratedValues = new Map<string, string>();
   let localPreference: string | null = null;
   let sessionPreference: string | null = null;
@@ -297,16 +283,6 @@ async function migrateWebSecrets(mode: WebSecretPersistence): Promise<void> {
       migratedValues.set(key, nextValue);
       setStorageValue(target, storageKey, nextValue);
     }
-    for (const storageKey of WEB_AUXILIARY_KEYS) {
-      const sourceValue = source.getItem(storageKey);
-      const targetValue = target.getItem(storageKey);
-      auxiliarySnapshots.set(storageKey, { source: sourceValue, target: targetValue });
-      const localValue = localStorage.getItem(storageKey);
-      const nextValue = mode === 'session'
-        ? localValue ?? sourceValue ?? targetValue ?? ''
-        : sourceValue ?? targetValue ?? localValue ?? '';
-      setStorageValue(target, storageKey, nextValue);
-    }
     try {
       setStorageValue(localStorage, WEB_PERSISTENCE_KEY, mode);
       setStorageValue(sessionStorage, WEB_PERSISTENCE_KEY, '');
@@ -319,22 +295,11 @@ async function migrateWebSecrets(mode: WebSecretPersistence): Promise<void> {
     for (const [key, snapshot] of snapshots) {
       if (snapshot.source !== null) setStorageValue(source, webSecretKey(key), '');
     }
-    for (const [storageKey, snapshot] of auxiliarySnapshots) {
-      if (snapshot.source !== null) setStorageValue(source, storageKey, '');
-    }
     replaceSessionSecrets(migratedValues);
   } catch (cause) {
     let rollbackFailed = false;
     for (const [key, snapshot] of snapshots) {
       const storageKey = webSecretKey(key);
-      try {
-        restoreStorageValue(source, storageKey, snapshot.source);
-        restoreStorageValue(target, storageKey, snapshot.target);
-      } catch {
-        rollbackFailed = true;
-      }
-    }
-    for (const [storageKey, snapshot] of auxiliarySnapshots) {
       try {
         restoreStorageValue(source, storageKey, snapshot.source);
         restoreStorageValue(target, storageKey, snapshot.target);

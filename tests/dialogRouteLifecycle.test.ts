@@ -22,7 +22,7 @@ describe('dialog and route lifecycle', () => {
       /activeDialogs\.delete\(overlay\);[\s\S]*?overlay\.remove\(\);[\s\S]*?restoreAppAfterLastDialog\(\);/,
     );
     // 「只在最后一个弹层关闭后才恢复主体」的计数逻辑由 appInertOwners 维护，
-    // 而不是 activeDialogs.size —— BottomSheet 与 VoiceMedEntry 同样共用 inert，
+    // 而不是 activeDialogs.size —— BottomSheet 同样共用 inert，
     // 却不登记在 activeDialogs 里。实际行为见 tests/bottomSheetBehavior.test.ts。
     expect(components).toMatch(/if \(appInertOwners > 0 \|\| !dialogAppState\) return;/);
   });

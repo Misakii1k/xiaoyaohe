@@ -187,77 +187,7 @@ export async function createIdentifySession(_mode: IdentifyMode, kind: AiDataKin
   };
 }
 
-// 口述录药：把老人随口说的一段话整理成与药单识别相同的 items 结构
-const SPEECH_PROMPT =
-  '你是用药录入助手。用户会口述（或打字）自己在吃的药，语句可能口语化、有停顿词。' +
-  '把其中每种药整理成数组 items，仅输出严格 JSON，不要 markdown、不要解释。' +
-  '只提取药名、规格、每次剂量、服药时段、餐食关系和必要备注；没说到的字段留空，不要编造。' +
-  '口语对应关系：早上/早饭=morning，中午/午饭=noon，晚上/晚饭=evening，睡前=bedtime；' +
-  '"早晚各一片"表示 morning 和 evening 各 1片；"饭前/随餐/饭后"对应 before/with/after。' +
-  'JSON 形如：{"items":[{"name":"药名","dosageText":"规格","amountPerDose":"每次用量","slots":["morning","noon","evening","bedtime"],"mealRels":["before","with","after"],"mealRelsBySlot":{"morning":["before"]},"notes":"备注","confidence":0-1}],"confidence":0-1}。';
-
-/** 把口述/手打的用药描述解析成批量建档草稿；复用药单识别的数据结构 */
-export async function parseMedicationSpeech(
-  text: string,
-  options: IdentifyRequestOptions = {},
-): Promise<PrescriptionSheetResult> {
-  throwIfAborted(options.signal);
-  const session = options.session ?? await createIdentifySession('prescription_sheet', 'prescription');
-  let lastError: IdentifyError | undefined;
-  for (;;) {
-    try {
-      const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer ' + session.apiKey,
-        },
-        body: JSON.stringify({
-          model: session.model,
-          messages: [
-            { role: 'system', content: SPEECH_PROMPT },
-            { role: 'user', content: `请整理这段用药描述：${text}` },
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.1,
-        }),
-      }, options.signal);
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
-        const msg = typeof data.error === 'string'
-          ? data.error
-          : data.error?.message || `AI 服务出错（${resp.status}）`;
-        if (resp.status === 401 || resp.status === 403 || resp.status === 404
-          || resp.status === 429 || resp.status >= 500) {
-          throw new IdentifyRetryableError(msg, resp.status);
-        }
-        throw new IdentifyError(msg);
-      }
-      const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
-      const raw = payload.choices?.[0]?.message?.content ?? '';
-      const parsed = tryParseJson(raw);
-      if (!parsed) throw new IdentifyError('AI 返回无法解析');
-      return normalizePrescriptionSheet(parsed);
-    } catch (error) {
-      if (options.signal?.aborted) throw error;
-      const retryable = error instanceof IdentifyRetryableError
-        || (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'));
-      lastError = error instanceof IdentifyError ? error : new IdentifyError('AI 请求失败');
-      if (!retryable || !session.advance()) throw lastError;
-    }
-  }
-}
-
-// 口述库存：把"阿司匹林还剩5片，二甲双胍刚买了一盒20片"整理成药名 + 库存字段
-const INVENTORY_SPEECH_PROMPT =
-  '你是药品库存录入助手。用户会口述（或打字）手头药品的剩余情况，语句可能口语化、有停顿词。' +
-  '把其中每种药整理成数组 items，仅输出严格 JSON，不要 markdown、不要解释。' +
-  '只提取药名、数量、单位、一盒/一瓶有多少、剩多少时提醒买药；没说到的字段留空或 0，不要编造。' +
-  '每条 action 只能是 add 或 set："刚买/买了/补了/入库"=add，数量是在原库存上增加；"还剩/盘点为/现在有"=set，数量是当前剩余。' +
-  '口语对应关系："片/粒/袋/mL"等是单位；"还剩5片"=set、remaining 5；"刚买一盒20片"=add、remaining 20、packageQuantity 20；' +
-  '"买了2盒，每盒20片"=add、remaining 40、packageQuantity 20；"剩3天的量"无法可靠换算时留 0 并在 sourceNote 注明。' +
-  'JSON 形如：{"items":[{"name":"药名","action":"add","inventory":{"remaining":0,"unit":"片","packageQuantity":0,"lowThreshold":0,"sourceNote":"从口述推断的依据"},"confidence":0-1}],"confidence":0-1}。';
-
+// 库存批量条目的共享形状：拍照识别（inventory_batch）与核对表都以该结构流转。
 export interface InventorySpeechResult {
   items: InventorySpeechItem[];
   confidence: number;
@@ -275,59 +205,6 @@ export interface InventorySpeechItem {
     ocrNames: string[];
     rawText: string;
   };
-}
-
-/** 把口述/手打的库存描述解析成多条库存草稿；复用 identifyInventory 的归一化。 */
-export async function parseInventorySpeech(
-  text: string,
-  options: IdentifyRequestOptions = {},
-): Promise<InventorySpeechResult> {
-  throwIfAborted(options.signal);
-  const session = options.session ?? await createIdentifySession('inventory', 'prescription');
-  let lastError: IdentifyError | undefined;
-  for (;;) {
-    try {
-      const resp = await fetchWithTimeout(session.baseUrl + '/chat/completions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer ' + session.apiKey,
-        },
-        body: JSON.stringify({
-          model: session.model,
-          messages: [
-            { role: 'system', content: INVENTORY_SPEECH_PROMPT },
-            { role: 'user', content: `请整理这段库存描述：${text}` },
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.1,
-        }),
-      }, options.signal);
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({})) as { error?: { message?: string } | string };
-        const msg = typeof data.error === 'string'
-          ? data.error
-          : data.error?.message || `AI 服务出错（${resp.status}）`;
-        if (resp.status === 401 || resp.status === 403 || resp.status === 404
-          || resp.status === 429 || resp.status >= 500) {
-          throw new IdentifyRetryableError(msg, resp.status);
-        }
-        throw new IdentifyError(msg);
-      }
-      const payload = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
-      const raw = payload.choices?.[0]?.message?.content ?? '';
-      const parsed = tryParseJson(raw);
-      if (!parsed) throw new IdentifyError('AI 返回无法解析');
-      const items = normalizeInventorySpeech(parsed);
-      return { items, confidence: conf(parsed.confidence) };
-    } catch (error) {
-      if (options.signal?.aborted) throw error;
-      const retryable = error instanceof IdentifyRetryableError
-        || (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'));
-      lastError = error instanceof IdentifyError ? error : new IdentifyError('AI 请求失败');
-      if (!retryable || !session.advance()) throw lastError;
-    }
-  }
 }
 
 function normalizeInventorySpeech(raw: Record<string, unknown>): InventorySpeechItem[] {

@@ -46,3 +46,6 @@ test-results/
 
 # 本地 UI 预览截图
 screenshots/
+
+# IDE / 审计缓存
+.mimosa/

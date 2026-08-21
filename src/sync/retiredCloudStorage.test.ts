@@ -57,7 +57,6 @@ describe('retired cloud storage cleanup', () => {
     nativeStorage.keys.mockResolvedValue([
       'sync-v2-credentials-household-a',
       'ai-api-key',
-      'ai-asr-secret-key',
       'sync-v2-credentials-household-b',
       'unrelated-secret',
     ]);

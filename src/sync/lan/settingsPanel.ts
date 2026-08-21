@@ -78,13 +78,14 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     text: '连接后可对比两边数据更新时间并选择覆盖或合并。库存数字仍各自保留在本机，避免同时服药时算错。',
   });
   const nameInput = el('input', {
+    class: 'lan-sync-device-input',
     type: 'text',
     maxLength: 80,
     autocomplete: 'off',
     value: getLanSyncDeviceName(),
   });
   nameInput.id = `lan-sync-device-name-${panelSequence}`;
-  const nameField = el('div', { class: 'field' }, [
+  const nameField = el('div', { class: 'field lan-sync-device-field' }, [
     el('label', { htmlFor: nameInput.id, text: '这台手机叫' }),
     nameInput,
   ]);
@@ -96,15 +97,14 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   allowOverwrite.checked = isLanAllowRemoteOverwrite();
   allowOverwrite.onchange = () => setLanAllowRemoteOverwrite(allowOverwrite.checked);
   const allowField = el('label', {
-    class: 'lan-sync-extras-item',
+    class: 'lan-sync-toggle-card',
     htmlFor: allowOverwrite.id,
-    style: 'display:flex;align-items:flex-start;gap:10px;margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:var(--color-surface-muted,#f2f1f5);',
   }, [
     allowOverwrite,
-    el('span', {
-      style: 'font-size:13px;line-height:1.45',
-      text: '允许多设备整库覆盖：对方选择「用对方数据覆盖」时，本机数据会被替换（局域网内多台设备同步时需要打开）',
-    }),
+    el('div', { class: 'lan-sync-toggle-copy' }, [
+      el('strong', { text: '允许多设备整库覆盖' }),
+      el('span', { text: '对方选择「用对方数据覆盖」时，本机数据会被替换（局域网内多台设备同步时需要打开）' }),
+    ]),
   ]);
 
   const autoSyncToggle = el('input', {
@@ -120,15 +120,14 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     renderPeersList();
   };
   const autoSyncField = el('label', {
-    class: 'lan-sync-extras-item',
+    class: 'lan-sync-toggle-card',
     htmlFor: autoSyncToggle.id,
-    style: 'display:flex;align-items:flex-start;gap:10px;margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:var(--color-surface-muted,#f2f1f5);',
   }, [
     autoSyncToggle,
-    el('span', {
-      style: 'font-size:13px;line-height:1.45',
-      text: '每 30 分钟自动同步：在同一 Wi‑Fi 下后台轮询已配对设备。需先扫码配对一次；两台都开启效果更好。依赖「设置 → 后台运行」。',
-    }),
+    el('div', { class: 'lan-sync-toggle-copy' }, [
+      el('strong', { text: '每 30 分钟自动同步' }),
+      el('span', { text: '在同一 Wi‑Fi 下后台轮询已配对设备。需先扫码配对一次；两台都开启效果更好。依赖「设置 → 后台运行」。' }),
+    ]),
   ]);
 
   const silentToggle = el('input', {
@@ -137,8 +136,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   });
   silentToggle.checked = isLanAutoSyncSilent();
   const silentHint = el('span', {
-    style: 'font-size:13px;line-height:1.45',
-    text: '自动同步冲突时静默处理：开启后用推荐策略（合并或整库覆盖）直接同步；关闭后遇到整库覆盖会跳过本次，留给手动同步确认。',
+    text: '开启后用推荐策略（合并或整库覆盖）直接同步；关闭后遇到整库覆盖会跳过本次，留给手动同步确认。',
   });
   silentToggle.onchange = () => {
     setLanAutoSyncSilent(silentToggle.checked);
@@ -147,30 +145,29 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
       : '已关闭静默处理：整库覆盖将被跳过，请用手动同步确认');
   };
   const silentField = el('label', {
-    class: 'lan-sync-extras-item',
+    class: 'lan-sync-toggle-card',
     htmlFor: silentToggle.id,
-    style: 'display:flex;align-items:flex-start;gap:10px;margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:var(--color-surface-muted,#f2f1f5);',
   }, [
     silentToggle,
-    silentHint,
+    el('div', { class: 'lan-sync-toggle-copy' }, [
+      el('strong', { text: '自动同步冲突时静默处理' }),
+      silentHint,
+    ]),
   ]);
 
-  const peersBox = el('div', { class: 'lan-sync-peers', style: 'margin:8px 0 4px' });
+  const peersBox = el('div', { class: 'lan-sync-peers' });
   const renderPeersList = (): void => {
     peersBox.replaceChildren();
     const peers = listKnownPeers();
     peersBox.append(el('div', {
-      class: 'muted',
-      style: 'font-size:12px;margin-bottom:6px',
+      class: 'muted lan-sync-peers-title',
       text: peers.length ? `已配对 ${peers.length} 台设备` : '还没有配对设备，请先用连接码/扫一扫同步一次',
     }));
     for (const peer of peers) {
-      const row = el('div', {
-        style: 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-block-start:1px solid var(--color-border)',
-      });
+      const row = el('div', { class: 'lan-sync-peer-row' });
       row.append(el('div', {
-        style: 'min-inline-size:0;font-size:13px;line-height:1.4',
-        html: `<strong>${escapeHtml(peer.deviceName)}</strong><br><span class="muted">${escapeHtml(peer.host)}:${peer.port}</span>`,
+        class: 'lan-sync-peer-info',
+        html: `<strong>${escapeHtml(peer.deviceName)}</strong><span class="muted">${escapeHtml(peer.host)}:${peer.port}</span>`,
       }));
       const forget = el('button', { class: 'btn text', type: 'button', text: '忘记' });
       forget.onclick = () => {
@@ -197,13 +194,17 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   const apiCheckbox = el('input', { type: 'checkbox', id: `lan-sync-api-${panelSequence}` });
   const extrasFieldset = el('fieldset', { class: 'lan-sync-extras' }, [
     el('legend', { text: '额外同步（可选）' }),
-    el('label', { class: 'lan-sync-extras-item', htmlFor: photosCheckbox.id }, [
-      photosCheckbox,
-      el('span', { text: '药品照片' }),
-    ]),
-    el('label', { class: 'lan-sync-extras-item', htmlFor: apiCheckbox.id }, [
-      apiCheckbox,
-      el('span', { text: 'AI 接口配置' }),
+    el('div', { class: 'lan-sync-extras-grid' }, [
+      el('label', { class: 'lan-sync-extras-item', htmlFor: photosCheckbox.id }, [
+        photosCheckbox,
+        icon('image'),
+        el('span', { text: '药品照片' }),
+      ]),
+      el('label', { class: 'lan-sync-extras-item', htmlFor: apiCheckbox.id }, [
+        apiCheckbox,
+        icon('sparkles'),
+        el('span', { text: 'AI 接口配置' }),
+      ]),
     ]),
   ]);
 
@@ -212,7 +213,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   const actions = el('div', { class: 'btn-row lan-sync-actions' }, [showCode, scanCode]);
   // 一键同步：立即对所有已配对设备做一次 join，不等 30 分钟轮询。
   const syncAllBtn = actionButton('retry', '一键同步所有设备', 'tonal');
-  const syncAllRow = el('div', { class: 'btn-row lan-sync-syncall-row', style: 'margin-top:8px' }, [syncAllBtn]);
+  const syncAllRow = el('div', { class: 'btn-row lan-sync-syncall-row' }, [syncAllBtn]);
   body.append(info, inventoryNote, nameField, allowField, autoSyncField, silentField, peersBox, extrasFieldset, actions, syncAllRow, status);
   if (!available) {
     showCode.disabled = true;

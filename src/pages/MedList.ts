@@ -31,9 +31,13 @@ import {
   closeDialog,
   SLOT_ICON,
   topbarPill,
+  badge,
+  searchBar,
+  filterChips,
+  type FilterChipItem,
 } from '../ui/components';
 import { navigate } from '../router';
-import { estimateDaysLeft } from '../features/inventory';
+import { getDaysLeftInfo, isLowStock } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import { checkInteractions, type DrugInteraction } from '../data/drugInteractions';
@@ -42,6 +46,7 @@ import { openBottomSheet } from '../ui/primitives/BottomSheet';
 import { createActionDock } from '../ui/primitives/ActionDock';
 import { createButton } from '../ui/primitives/Button';
 import { createIconButton } from '../ui/primitives/IconButton';
+import { matchPinyinOrText } from '../utils/pinyin';
 import {
   addLocalDays,
   calculateAdherence,
@@ -52,18 +57,19 @@ import {
   type AdherenceSummary,
 } from '../domain/medicationSchedule';
 
-/** 时段筛选选项（"全部" 不在 SLOTS 内，单独表示） */
-type SlotFilter = 'all' | Slot;
+/** 扩展筛选选项 */
+type ExtendedFilter = 'all' | Slot | 'low_stock' | 'near_expiry' | 'rest_day';
 
-const SLOT_FILTER_LABELS: Record<SlotFilter, string> = {
-  all: '全部',
-  morning: '早',
-  noon: '中',
-  evening: '晚',
-  bedtime: '睡前',
-};
-
-const SLOT_FILTER_ORDER: SlotFilter[] = ['all', 'morning', 'noon', 'evening', 'bedtime'];
+const FILTER_ITEMS: readonly FilterChipItem[] = [
+  { key: 'all', label: '全部' },
+  { key: 'morning', label: '早' },
+  { key: 'noon', label: '中' },
+  { key: 'evening', label: '晚' },
+  { key: 'bedtime', label: '睡前' },
+  { key: 'low_stock', label: '低库存' },
+  { key: 'near_expiry', label: '临期/过期' },
+  { key: 'rest_day', label: '停药期' },
+];
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const NEAR_EXPIRY_DAYS = 30;
@@ -176,40 +182,57 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     return a.name.localeCompare(b.name, 'zh-Hans-CN');
   });
 
-  // 搜索框（防抖 200ms）
-  const searchInput = el('input', {
-    type: 'search',
-    placeholder: '搜索药名 / 规格',
-    class: 'med-search-input',
-    'aria-label': '搜索药品',
-  } as any) as HTMLInputElement;
-  const searchBar = el('div', { class: 'med-search-bar' });
-  searchBar.append(icon('pill', 'med-search-icon'));
-  searchBar.append(searchInput);
+  // 搜索栏组件
+  let currentKeyword = '';
+  let currentFilter: ExtendedFilter = 'all';
 
-  // 时段筛选 chip 组
-  const filterRow = el('div', { class: 'med-filter-row medication-filter-row', role: 'group', 'aria-label': '服药时段筛选' } as any);
-  const filterChips = new Map<SlotFilter, HTMLButtonElement>();
-  let currentFilter: SlotFilter = 'all';
-  for (const key of SLOT_FILTER_ORDER) {
-    const chip = el('button', {
-      class: 'medication-filter-button' + (key === 'all' ? ' is-selected' : ''),
-      html: SLOT_FILTER_LABELS[key],
-      type: 'button',
-      'aria-pressed': String(key === 'all'),
-    } as any) as HTMLButtonElement;
-    chip.onclick = () => {
-      if (currentFilter === key) return;
-      currentFilter = key;
-      for (const [k, c] of filterChips) {
-        c.classList.toggle('is-selected', k === key);
-        c.setAttribute('aria-pressed', String(k === key));
-      }
+  const searchEl = searchBar({
+    placeholder: '搜索药名、规格或备注...',
+    onInput: (q) => {
+      currentKeyword = q.toLowerCase();
       applyFilter();
-    };
-    filterChips.set(key, chip);
-    filterRow.append(chip);
-  }
+    },
+    onClear: () => {
+      currentKeyword = '';
+      applyFilter();
+    },
+  });
+
+  // 筛选胶囊组件容器
+  const filterContainer = el('div', { class: 'med-filter-container medication-filter-row' });
+  const renderFilterBar = () => {
+    const items: FilterChipItem[] = FILTER_ITEMS.map((item) => {
+      let count = 0;
+      for (const m of sorted) {
+        if (item.key === 'all') {
+          count++;
+        } else if (item.key === 'morning' || item.key === 'noon' || item.key === 'evening' || item.key === 'bedtime') {
+          if (m.slots.includes(item.key as Slot)) count++;
+        } else if (item.key === 'low_stock') {
+          if (isLowStock(m) || (m.inventory?.remaining ?? 0) <= 0) count++;
+        } else if (item.key === 'near_expiry') {
+          const exp = getMedicationExpiryLocalDate(m);
+          if (exp) {
+            const diff = Math.round((localDayBounds(exp).start - localDayBounds(today).start) / MS_PER_DAY);
+            if (diff <= NEAR_EXPIRY_DAYS) count++;
+          }
+        } else if (item.key === 'rest_day') {
+          const medRules = rules.filter((r) => r.medId === m.id && !r.deleted && r.enabled);
+          if (medRules.some((r) => isRestDay(m, r, nowMs))) count++;
+        }
+      }
+      return { ...item, count };
+    });
+
+    filterContainer.replaceChildren(
+      filterChips(items, currentFilter, (nextKey) => {
+        currentFilter = nextKey as ExtendedFilter;
+        renderFilterBar();
+        applyFilter();
+      })
+    );
+  };
+  renderFilterBar();
 
   const useGroups = meds.length > 8;
   const grid = el('div', { class: 'medication-list' + (useGroups ? ' is-grouped' : ''), role: 'list' } as any);
@@ -249,22 +272,71 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     }
   }
 
-  content.append(searchBar, filterRow, grid);
+  const clearFiltersBtn = createButton({
+    label: '清除筛选',
+    variant: 'secondary',
+    onClick: () => {
+      const searchInput = searchEl.querySelector<HTMLInputElement>('input');
+      if (searchInput) searchInput.value = '';
+      const clearBtn = searchEl.querySelector<HTMLElement>('.ui-search-clear');
+      if (clearBtn) clearBtn.style.display = 'none';
+      currentKeyword = '';
+      currentFilter = 'all';
+      renderFilterBar();
+      applyFilter();
+    },
+  });
 
-  // 搜索 + 时段筛选叠加过滤；分组模式下同步更新组标题计数
-  let searchTimer: number | undefined;
+  const noResults = emptyState(
+    'pill',
+    '未找到匹配药品',
+    '尝试输入药名、规格、拼音缩写（如 amxl）或切换筛选条件。',
+    clearFiltersBtn,
+  );
+  noResults.classList.add('medication-no-results');
+  noResults.hidden = true;
+
+  content.append(searchEl, filterContainer, grid, noResults);
+
   const applyFilter = () => {
-    const keyword = searchInput.value.trim().toLowerCase();
+    let visibleCount = 0;
     for (const m of sorted) {
       const card = cardByMedId.get(m.id);
       if (!card) continue;
+      
       const matchKeyword =
-        !keyword ||
-        (m.name || '').toLowerCase().includes(keyword) ||
-        (m.dosageText || '').toLowerCase().includes(keyword);
-      const matchSlot = currentFilter === 'all' || m.slots.includes(currentFilter);
-      card.style.display = matchKeyword && matchSlot ? '' : 'none';
+        !currentKeyword ||
+        matchPinyinOrText(m.name, currentKeyword) ||
+        matchPinyinOrText(m.dosageText, currentKeyword) ||
+        matchPinyinOrText(m.notes, currentKeyword);
+
+      let matchFilter = true;
+      if (currentFilter === 'all') {
+        matchFilter = true;
+      } else if (currentFilter === 'morning' || currentFilter === 'noon' || currentFilter === 'evening' || currentFilter === 'bedtime') {
+        matchFilter = m.slots.includes(currentFilter);
+      } else if (currentFilter === 'low_stock') {
+        matchFilter = isLowStock(m) || (m.inventory?.remaining ?? 0) <= 0;
+      } else if (currentFilter === 'near_expiry') {
+        const exp = getMedicationExpiryLocalDate(m);
+        if (!exp) matchFilter = false;
+        else {
+          const diff = Math.round((localDayBounds(exp).start - localDayBounds(today).start) / MS_PER_DAY);
+          matchFilter = diff <= NEAR_EXPIRY_DAYS;
+        }
+      } else if (currentFilter === 'rest_day') {
+        const medRules = rules.filter((r) => r.medId === m.id && !r.deleted && r.enabled);
+        matchFilter = medRules.some((r) => isRestDay(m, r, nowMs));
+      }
+
+      const visible = matchKeyword && matchFilter;
+      card.style.display = visible ? '' : 'none';
+      if (visible) visibleCount++;
     }
+
+    grid.hidden = visibleCount === 0 && !useGroups;
+    noResults.hidden = visibleCount > 0;
+
     if (useGroups) {
       for (const [slot, section] of groupSections) {
         const visible = [...section.querySelectorAll<HTMLElement>('.medication-list-row')].filter(
@@ -276,22 +348,6 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
       }
     }
   };
-  const onSearchInput = () => {
-    window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(() => {
-      searchTimer = undefined;
-      if (!signal?.aborted) applyFilter();
-    }, 200);
-  };
-  const cleanupSearch = () => {
-    window.clearTimeout(searchTimer);
-    searchTimer = undefined;
-    searchInput.removeEventListener('input', onSearchInput);
-    signal?.removeEventListener('abort', cleanupSearch);
-  };
-  cleanupPageInteractions = cleanupSearch;
-  searchInput.addEventListener('input', onSearchInput);
-  signal?.addEventListener('abort', cleanupSearch, { once: true });
 
   renderPage({ root, title: '药品', activeTab: 'meds', topRight, content });
 }
@@ -330,7 +386,7 @@ function renderMedCard(
   // 停药期标签：该药任一启用 rule 命中 rest 日
   const medRules = allRules.filter((r) => r.medId === m.id && !r.deleted && r.enabled);
   if (medRules.some((r) => isRestDay(m, r, nowMs))) {
-    metaTags.append(el('span', { class: 'rest-day-tag', html: '停药期' }));
+    metaTags.append(badge('停药期', 'secondary', 'clock'));
   }
   // 相互作用图标（点击查看详情）
   if (interactions.length > 0) {
@@ -412,39 +468,34 @@ function appendExpiryTag(host: HTMLElement, m: Medication): void {
     (localDayBounds(expiryDate).start - localDayBounds(today).start) / MS_PER_DAY,
   );
   if (diffDays < 0) {
-    host.append(
-      el('span', { class: 'med-tag med-tag-danger', html: '已过期' })
-    );
+    host.append(badge('已过期', 'danger', 'warn'));
   } else if (diffDays === 0) {
-    host.append(el('span', { class: 'med-tag med-tag-warn', html: '今天到期' }));
+    host.append(badge('今天到期', 'warning', 'clock'));
   } else if (diffDays <= NEAR_EXPIRY_DAYS) {
-    host.append(
-      el('span', { class: 'med-tag med-tag-warn', html: `${diffDays} 天后过期` })
-    );
+    host.append(badge(`${diffDays}天后过期`, 'warning', 'clock'));
   }
 }
 
 /** 追加可用天数标签 */
 function appendDaysLeftTag(host: HTMLElement, m: Medication, rules: ReminderRule[]): void {
-  const days = estimateDaysLeft(m, rules);
-  if (days == null || days < 0) return;
-  const cls = days <= 3 ? 'med-tag-warn' : 'med-tag-info';
-  host.append(
-    el('span', { class: `med-tag ${cls}`, html: `约还够 ${days} 天` })
-  );
+  const info = getDaysLeftInfo(m, rules);
+  if (info.days === null && info.status === 'unknown') return;
+  const variant = info.status === 'empty' || info.status === 'danger'
+    ? 'danger'
+    : info.status === 'warning'
+      ? 'warning'
+      : 'success';
+  host.append(badge(info.text, variant, 'box'));
 }
 
 /** 跳过仅计入处理率；依从率固定为已服 / 已到期应服。 */
 function appendAdherenceTag(host: HTMLElement, summary: AdherenceSummary | undefined): void {
   if (!summary || summary.due === 0) return;
   const rate = Math.round(summary.adherenceRate * 100);
-  const handled = Math.round(summary.handledRate * 100);
-  const cls = rate >= 80 ? 'med-tag-ok' : 'med-tag-warn';
-  host.append(el('span', {
-    class: `med-tag ${cls}`,
-    html: `近 7 天按时服药 ${rate}%`,
-    title: `已服 ${summary.taken}/${summary.due}；已处理 ${handled}%（跳过 ${summary.skipped}，漏服 ${summary.missed}）`,
-  } as any));
+  const variant = rate >= 80 ? 'success' : 'warning';
+  const tag = badge(`近7天 ${rate}%`, variant);
+  tag.title = `已服 ${summary.taken}/${summary.due}；依从率 ${rate}%`;
+  host.append(tag);
 }
 
 function slotChip(slot: Slot, time: string, mealText: string): HTMLElement {

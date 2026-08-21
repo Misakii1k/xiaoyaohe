@@ -469,9 +469,18 @@ export function progressRing(value: number, total: number): HTMLElement {
   return wrap;
 }
 
-/** ---------- 数量徽章 ---------- */
-export function badge(text: string | number): HTMLElement {
-  return el('span', { class: 'badge', html: String(text) });
+/** ---------- 徽章 Badge (Shadcn 风格) ---------- */
+export type BadgeVariant = 'default' | 'secondary' | 'success' | 'warning' | 'danger' | 'destructive' | 'info' | 'outline';
+
+export function badge(
+  text: string | number,
+  variant: BadgeVariant = 'default',
+  iconName?: IconName
+): HTMLElement {
+  const b = el('span', { class: `ui-badge ui-badge-${variant} badge` });
+  if (iconName) b.append(icon(iconName));
+  b.append(el('span', { text: String(text) }));
+  return b;
 }
 
 /** ---------- Banner ---------- */
@@ -688,3 +697,211 @@ export async function withBusyState<T>(
     btn.style.width = originalWidth;
   }
 }
+
+/** ---------- Shadcn-inspired SearchBar & FilterChips Primitives ---------- */
+
+export interface SearchBarOptions {
+  placeholder?: string;
+  value?: string;
+  ariaLabel?: string;
+  onInput: (query: string) => void;
+  onClear?: () => void;
+}
+
+export function searchBar(opts: SearchBarOptions): HTMLElement {
+  const container = el('div', { class: 'ui-search-bar' });
+  const searchIcon = el('span', { class: 'ui-search-icon', 'aria-hidden': 'true' }, [icon('scan')]);
+  
+  const input = el('input', {
+    class: 'ui-search-input',
+    type: 'search',
+    autocomplete: 'off',
+    placeholder: opts.placeholder ?? '搜索药品名称、拼音...',
+    value: opts.value ?? '',
+    'aria-label': opts.ariaLabel ?? opts.placeholder ?? '搜索',
+  });
+
+  const clearBtn = el('button', {
+    class: 'ui-search-clear',
+    type: 'button',
+    'aria-label': '清空搜索',
+    style: { display: (opts.value ?? '') ? 'grid' : 'none' },
+  }, [icon('close')]);
+
+  input.addEventListener('input', () => {
+    const val = input.value.trim();
+    clearBtn.style.display = val ? 'grid' : 'none';
+    opts.onInput(val);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    clearBtn.style.display = 'none';
+    input.focus();
+    opts.onInput('');
+    opts.onClear?.();
+  });
+
+  container.append(searchIcon, input, clearBtn);
+  return container;
+}
+
+export interface FilterChipItem {
+  key: string;
+  label: string;
+  count?: number;
+  icon?: IconName;
+}
+
+export function filterChips(
+  items: readonly FilterChipItem[],
+  activeKey: string,
+  onChange: (key: string) => void
+): HTMLElement {
+  const container = el('div', { class: 'ui-filter-chips', role: 'group', 'aria-label': '筛选条件' });
+  
+  for (const item of items) {
+    const isActive = item.key === activeKey;
+    const btn = el('button', {
+      class: `ui-filter-chip${isActive ? ' is-active' : ''}`,
+      type: 'button',
+      'aria-pressed': isActive ? 'true' : 'false',
+    });
+    if (item.icon) btn.append(icon(item.icon));
+    btn.append(el('span', { text: item.label }));
+    if (typeof item.count === 'number') {
+      btn.append(el('span', { class: `chip-count${item.count === 0 ? ' is-zero' : ''}`, text: String(item.count) }));
+    }
+    btn.addEventListener('click', () => {
+      onChange(item.key);
+    });
+    container.append(btn);
+  }
+
+  return container;
+}
+
+export interface AlertBoxOptions {
+  title?: string;
+  message: string;
+  variant?: 'info' | 'warning' | 'danger' | 'success';
+  icon?: IconName;
+}
+
+export function alertBox(opts: AlertBoxOptions): HTMLElement {
+  const variant = opts.variant ?? 'info';
+  const defaultIcons: Record<string, IconName> = {
+    info: 'info',
+    warning: 'warn',
+    danger: 'warn',
+    success: 'check',
+  };
+  const iconName = opts.icon ?? defaultIcons[variant] ?? 'info';
+  
+  const box = el('div', { class: `ui-alert ui-alert-${variant}`, role: variant === 'danger' ? 'alert' : 'status' });
+  box.append(el('div', { class: 'ui-alert-icon', 'aria-hidden': 'true' }, [icon(iconName)]));
+  
+  const content = el('div', { class: 'ui-alert-content' });
+  if (opts.title) {
+    content.append(el('div', { class: 'ui-alert-title', text: opts.title }));
+  }
+  content.append(el('div', { class: 'ui-alert-desc', text: opts.message }));
+  box.append(content);
+  return box;
+}
+
+export interface CircularProgressOptions {
+  percentage: number; // 0 - 100
+  size?: number;
+  strokeWidth?: number;
+  label?: string;
+  sublabel?: string;
+  class?: string;
+}
+
+export function circularProgress(opts: CircularProgressOptions): HTMLElement {
+  const size = opts.size ?? 108;
+  const stroke = opts.strokeWidth ?? 10;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const safePercentage = Math.max(0, Math.min(100, Math.round(opts.percentage)));
+  const offset = circumference - (safePercentage / 100) * circumference;
+
+  const container = el('div', {
+    class: `circular-progress-wrap ${opts.class ?? ''}`.trim(),
+    role: 'progressbar',
+    'aria-valuenow': String(safePercentage),
+    'aria-valuemin': '0',
+    'aria-valuemax': '100',
+    'aria-label': opts.label ?? `进度 ${safePercentage}%`,
+  });
+  container.style.cssText = `position:relative;width:${size}px;height:${size}px;display:grid;place-items:center;flex:none;`;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+  svg.style.cssText = 'transform:rotate(-90deg);overflow:visible;';
+
+  // Gradient definition
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+  gradient.id = 'cp-grad-' + Math.random().toString(36).slice(2, 8);
+  gradient.setAttribute('x1', '0%');
+  gradient.setAttribute('y1', '0%');
+  gradient.setAttribute('x2', '100%');
+  gradient.setAttribute('y2', '100%');
+  
+  const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+  stop1.setAttribute('offset', '0%');
+  stop1.setAttribute('stop-color', 'var(--color-primary)');
+  const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+  stop2.setAttribute('offset', '100%');
+  stop2.setAttribute('stop-color', 'var(--color-success)');
+  gradient.append(stop1, stop2);
+  defs.append(gradient);
+  svg.append(defs);
+
+  // Background track
+  const track = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  track.setAttribute('cx', String(size / 2));
+  track.setAttribute('cy', String(size / 2));
+  track.setAttribute('r', String(radius));
+  track.setAttribute('fill', 'none');
+  track.setAttribute('stroke', 'var(--color-primary-soft)');
+  track.setAttribute('stroke-width', String(stroke));
+  svg.append(track);
+
+  // Progress circle
+  const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  circle.setAttribute('cx', String(size / 2));
+  circle.setAttribute('cy', String(size / 2));
+  circle.setAttribute('r', String(radius));
+  circle.setAttribute('fill', 'none');
+  circle.setAttribute('stroke', `url(#${gradient.id})`);
+  circle.setAttribute('stroke-width', String(stroke));
+  circle.setAttribute('stroke-linecap', 'round');
+  circle.setAttribute('stroke-dasharray', String(circumference));
+  circle.setAttribute('stroke-dashoffset', String(offset));
+  circle.style.transition = 'stroke-dashoffset 0.4s ease-out';
+  svg.append(circle);
+
+  container.append(svg);
+
+  const centerText = el('div', { class: 'circular-progress-text' });
+  centerText.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;';
+  
+  const pctEl = el('span', { class: 'progress-percent', text: `${safePercentage}%` });
+  pctEl.style.cssText = 'font-size:22px;font-weight:700;line-height:1.1;color:var(--color-text);';
+  centerText.append(pctEl);
+
+  if (opts.sublabel) {
+    const sub = el('span', { class: 'progress-sublabel', text: opts.sublabel });
+    sub.style.cssText = 'font-size:11px;color:var(--color-text-muted);margin-top:2px;font-weight:500;';
+    centerText.append(sub);
+  }
+
+  container.append(centerText);
+  return container;
+}
+

@@ -17,18 +17,17 @@ import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/Bottom
 import { createButton } from '../ui/primitives/Button';
 import { createIconButton } from '../ui/primitives/IconButton';
 import { toLocalDate } from '../domain/medicationSchedule';
+import { matchPinyinOrText } from '../utils/pinyin';
 import {
   createIdentifySession,
   identifyInventoryBatchByBlob,
   IdentifyError,
   mergeInventoryEntryItems,
-  parseInventorySpeech,
   type InventoryEntryAction,
   type InventorySpeechItem,
   type PrescriptionItemDraft,
 } from '../ai/identify';
 import { setPendingMedicationBatch } from '../ai/pendingMedicationBatch';
-import { createProxyAsrRecognizer, isAsrConfigured, type SpeechRecognitionLike } from '../ai/asr';
 import { recognizeMedicationImageBatch } from '../features/medicationBatch';
 import { processInventoryReviewCommits } from '../features/inventoryReview';
 
@@ -210,15 +209,15 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
   }
 
   function applyFilters(): void {
-    const keyword = searchInput.value.trim().toLocaleLowerCase('zh-CN');
+    const keyword = searchInput.value.trim();
     let visibleCount = 0;
     for (const med of sorted) {
       const row = rowByMedId.get(med.id);
       if (!row) continue;
       const medRules = rulesByMedId.get(med.id) ?? [];
       const matchesKeyword = !keyword
-        || med.name.toLocaleLowerCase('zh-CN').includes(keyword)
-        || med.dosageText.toLocaleLowerCase('zh-CN').includes(keyword);
+        || matchPinyinOrText(med.name, keyword)
+        || matchPinyinOrText(med.dosageText, keyword);
       const matchesFilter = matchesInventoryFilter(med, medRules, currentFilter);
       const visible = matchesKeyword && matchesFilter;
       row.hidden = !visible;
@@ -336,10 +335,10 @@ function openInventoryMedicationPicker(root: HTMLElement, meds: Medication[], si
   let sheet: BottomSheetHandle | undefined;
 
   const render = () => {
-    const keyword = search.value.trim().toLocaleLowerCase('zh-CN');
+    const keyword = search.value.trim();
     const visible = meds.filter((med) => !keyword
-      || med.name.toLocaleLowerCase('zh-CN').includes(keyword)
-      || med.dosageText.toLocaleLowerCase('zh-CN').includes(keyword));
+      || matchPinyinOrText(med.name, keyword)
+      || matchPinyinOrText(med.dosageText, keyword));
     list.replaceChildren(...visible.map((med) => {
       const button = el('button', {
         class: 'inventory-picker-item',
@@ -664,7 +663,7 @@ function openShareSheet(sorted: Medication[], rulesByMedId: Map<string, Reminder
   sheet = openBottomSheet({ label: '分享库存清单', content: [title, hint, actions] });
 }
 
-/** 智能录入：拍照/相册图片识别库存，或按住说话口述库存。识别后匹配已有药品→更新；未登记→提示去添加。 */
+/** 智能录入：拍照/相册图片识别库存。识别后匹配已有药品→更新；未登记→提示去添加。 */
 function openInventorySmartSheet(
   root: HTMLElement,
   sorted: Medication[],
@@ -674,7 +673,7 @@ function openInventorySmartSheet(
   const title = el('h2', { class: 'inventory-sheet-title', text: '智能录入库存' });
   const hint = el('p', {
     class: 'inventory-sheet-hint',
-    text: '拍药盒/票据让 AI 数药量，或按住说一句话描述还剩多少。识别完会先让你核对再保存。',
+    text: '拍药盒/票据让 AI 数药量。识别完会先让你核对再保存。',
   });
   const actions = el('div', { class: 'inventory-sheet-actions' });
 
@@ -698,20 +697,6 @@ function openInventorySmartSheet(
     onClick: () => { albumInput.value = ''; albumInput.click(); },
   }));
 
-  const recognizer = createInventoryRecognizer();
-  if (recognizer) {
-    actions.append(createButton({
-      label: '按住说话',
-      variant: 'secondary',
-      icon: 'mic',
-      onClick: () => startVoiceInventory(recognizer, root, sorted, rulesByMedId, signal, close),
-    }));
-  } else {
-    actions.append(el('p', {
-      class: 'inventory-sheet-hint',
-      text: '这个浏览器不支持语音输入，可用拍照或相册。',
-    } as any));
-  }
   actions.append(createButton({ label: '取消', variant: 'text', onClick: close }));
 
   const onImages = (files: File[]) => {
@@ -721,25 +706,6 @@ function openInventorySmartSheet(
   };
   cameraInput.onchange = () => onImages(Array.from(cameraInput.files ?? []));
   albumInput.onchange = () => onImages(Array.from(albumInput.files ?? []));
-}
-
-function createInventoryRecognizer(): SpeechRecognitionLike | null {
-  if (isAsrConfigured()) return createProxyAsrRecognizer();
-  const Ctor = (window as unknown as {
-    SpeechRecognition?: new () => SpeechRecognitionLike;
-    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-  });
-  const Recognition = Ctor.SpeechRecognition ?? Ctor.webkitSpeechRecognition;
-  if (!Recognition) return null;
-  try {
-    const r = new Recognition();
-    r.lang = 'zh-CN';
-    r.continuous = false;
-    r.interimResults = false;
-    return r;
-  } catch {
-    return null;
-  }
 }
 
 async function runImageInventory(
@@ -774,140 +740,6 @@ async function runImageInventory(
     if (error instanceof IdentifyError) toast(error.message);
     else toast(error instanceof Error ? error.message : '没认出药量，换个角度或更清楚的图试试');
   }
-}
-
-function startVoiceInventory(
-  recognizer: SpeechRecognitionLike,
-  root: HTMLElement,
-  sorted: Medication[],
-  rulesByMedId: Map<string, ReminderRule[]>,
-  signal: AbortSignal | undefined,
-  closeParent: () => void,
-): void {
-  closeParent();
-  const title = el('div', { class: 'inventory-voice-head' }, [
-    el('h2', { class: 'inventory-sheet-title', text: '说一说库存' }),
-    el('p', { class: 'inventory-sheet-hint', text: '例如：“阿司匹林还剩 5 片，二甲双胍刚买了一盒 20 片。”' }),
-  ]);
-  const input = el('textarea', {
-    class: 'inventory-voice-text',
-    placeholder: '点话筒说话，或直接在这里打字…',
-    rows: 3,
-    'aria-label': '库存描述',
-  } as any) as HTMLTextAreaElement;
-  const interim = el('div', { class: 'inventory-voice-interim', 'aria-live': 'polite' } as any);
-  const errorBox = el('div', { class: 'inventory-voice-error', role: 'alert' } as any);
-  const micBtn = createButton({ label: '开始说', variant: 'secondary', icon: 'mic' });
-  const submitBtn = createButton({ label: '整理成库存', icon: 'sparkles' });
-  const quitBtn = createButton({ label: '取消', variant: 'text' });
-  const actions = el('div', { class: 'inventory-voice-actions' });
-  actions.append(micBtn, submitBtn, quitBtn);
-
-  let listening = false;
-  let disposed = false;
-  let parseAbort: AbortController | undefined;
-  let sheet: BottomSheetHandle | undefined;
-  const setListening = (next: boolean) => {
-    listening = next;
-    micBtn.classList.toggle('is-listening', next);
-    const label = micBtn.querySelector('span');
-    if (label) label.textContent = next ? '正在听…点一下停止' : '开始说';
-  };
-  const stop = () => {
-    try { recognizer.abort?.(); } catch { /* 已停止 */ }
-    setListening(false);
-  };
-  const cleanup = () => {
-    if (disposed) return;
-    disposed = true;
-    parseAbort?.abort();
-    parseAbort = undefined;
-    stop();
-    recognizer.onresult = null;
-    recognizer.onerror = null;
-    recognizer.onend = null;
-  };
-
-  micBtn.onclick = () => {
-    if (listening) {
-      try { recognizer.stop(); } catch { /* 已停止 */ }
-      setListening(false);
-      return;
-    }
-    errorBox.textContent = '';
-    try {
-      recognizer.start();
-      setListening(true);
-    } catch {
-      errorBox.textContent = '话筒没打开成功，可以直接打字后整理。';
-    }
-  };
-  recognizer.onresult = (event) => {
-    if (disposed) return;
-    let finalText = '';
-    for (const result of Array.from(event.results)) {
-      if (result.isFinal) finalText += String(result[0]?.transcript ?? '');
-    }
-    if (finalText.trim()) input.value = [input.value.trim(), finalText.trim()].filter(Boolean).join('，');
-    interim.textContent = '';
-  };
-  recognizer.onerror = () => {
-    if (disposed) return;
-    setListening(false);
-    errorBox.textContent = '刚才没听清，可以再试一次或直接打字。';
-  };
-  recognizer.onend = () => {
-    if (!disposed) setListening(false);
-  };
-
-  submitBtn.onclick = async () => {
-    const text = input.value.trim();
-    if (!text) {
-      errorBox.textContent = '先说一说或打几个字';
-      input.focus();
-      return;
-    }
-    stop();
-    errorBox.textContent = '';
-    micBtn.disabled = true;
-    submitBtn.disabled = true;
-    input.disabled = true;
-    const submitLabel = submitBtn.querySelector('span');
-    if (submitLabel) submitLabel.textContent = '正在整理…';
-    parseAbort = new AbortController();
-    const abortForRoute = () => parseAbort?.abort();
-    signal?.addEventListener('abort', abortForRoute, { once: true });
-    try {
-      const result = await parseInventorySpeech(text, { signal: parseAbort.signal });
-      if (signal?.aborted || disposed) return;
-      if (result.items.length === 0) {
-        errorBox.textContent = '没听出来有哪些药，补充药名和数量再试。';
-        return;
-      }
-      sheet?.close();
-      openInventoryReviewSheet(root, mergeInventoryEntryItems(result.items), sorted, rulesByMedId, signal);
-    } catch (error) {
-      if (signal?.aborted || disposed) return;
-      errorBox.textContent = error instanceof IdentifyError ? error.message : '没整理出来，换个说法再试';
-    } finally {
-      signal?.removeEventListener('abort', abortForRoute);
-      parseAbort = undefined;
-      if (!disposed) {
-        micBtn.disabled = false;
-        submitBtn.disabled = false;
-        input.disabled = false;
-        if (submitLabel) submitLabel.textContent = '整理成库存';
-      }
-    }
-  };
-  quitBtn.onclick = () => sheet?.close();
-  sheet = openBottomSheet({
-    label: '说一说库存',
-    className: 'inventory-voice-sheet',
-    content: [title, input, interim, errorBox, actions],
-    initialFocus: micBtn,
-    onClose: cleanup,
-  });
 }
 
 type InventoryReviewTarget = string | 'new' | '';

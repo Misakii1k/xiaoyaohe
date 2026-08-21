@@ -50,6 +50,68 @@ function getCurrentModel(sel: HTMLSelectElement, input: HTMLInputElement): strin
   return input.value.trim();
 }
 
+export interface LlmPresetTemplate {
+  name: string;
+  label: string;
+  baseUrl: string;
+  defaultModel: string;
+  keyPlaceholder?: string;
+  hint?: string;
+}
+
+export const LLM_PRESETS: readonly LlmPresetTemplate[] = [
+  {
+    name: 'DeepSeek',
+    label: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-chat',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    name: '通义千问',
+    label: '通义千问 (Qwen)',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    defaultModel: 'qwen-plus',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    name: 'Kimi',
+    label: '月之暗面 (Kimi)',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    defaultModel: 'moonshot-v1-8k',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    name: '硅基流动',
+    label: '硅基流动 (SiliconFlow)',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    defaultModel: 'deepseek-ai/DeepSeek-V3',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    name: '智谱 GLM',
+    label: '智谱 AI (GLM)',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    defaultModel: 'glm-4-flash',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    name: 'Ollama 本地',
+    label: 'Ollama 本地大模型',
+    baseUrl: 'http://127.0.0.1:11434/v1',
+    defaultModel: 'qwen2.5:7b',
+    keyPlaceholder: '无需密钥 (可填 ollama)',
+    hint: '本地私密运行，支持局域网或本机 Ollama 服务',
+  },
+  {
+    name: 'OpenRouter',
+    label: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'deepseek/deepseek-chat',
+    keyPlaceholder: 'sk-or-...',
+  },
+];
+
 /** 新增或编辑一家服务商；保存前先拉一次模型列表，失败可手填。 */
 export function openLlmProviderEditor(
   existing: LlmProvider | undefined,
@@ -111,6 +173,34 @@ export function openLlmProviderEditor(
   populateModelControl(modelSel, modelIn, modelLabel, existing ? getLlmHealth(existing.id).models : [], existing?.model ?? '');
   statusBar.replaceChildren(el('span', { class: 'muted', html: '点「刷新」自动拉取模型列表；拉不到就手填模型名。' }));
 
+  const presetWrapper = el('div', { class: 'llm-preset-wrap' });
+  presetWrapper.append(el('div', { class: 'llm-preset-label', text: '快捷预设模板：' }));
+  const presetChips = el('div', { class: 'llm-preset-chips' });
+  for (const preset of LLM_PRESETS) {
+    const chip = el('button', {
+      class: 'llm-preset-chip',
+      type: 'button',
+      text: preset.name,
+      title: `快速填入 ${preset.label} 配置`,
+    });
+    chip.onclick = () => {
+      labelIn.value = preset.label;
+      urlIn.value = preset.baseUrl;
+      modelIn.value = preset.defaultModel;
+      if (preset.keyPlaceholder && !keyIn.value) {
+        keyIn.placeholder = preset.keyPlaceholder;
+      }
+      if (preset.name === 'Ollama 本地' && !keyIn.value) {
+        keyIn.value = 'ollama';
+      }
+      populateModelControl(modelSel, modelIn, modelLabel, [preset.defaultModel], preset.defaultModel);
+      keyIn.focus();
+      toast(`已填入 ${preset.name} 预设`);
+    };
+    presetChips.append(chip);
+  }
+  presetWrapper.append(presetChips);
+
   refreshBtn.onclick = async () => {
     refreshBtn.setAttribute('disabled', 'true');
     refreshBtn.textContent = '检测中…';
@@ -132,6 +222,7 @@ export function openLlmProviderEditor(
 
   card.append(
     el('div', { class: 'big', text: existing ? `编辑「${existing.label}」` : '添加服务商', id: titleId }),
+    presetWrapper,
     field('服务商名称', labelIn),
     field('API 地址', urlIn),
     field('API 密钥', keyWrap),

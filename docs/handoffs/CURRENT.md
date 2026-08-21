@@ -25,11 +25,9 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
 - App-only release pipeline with APK and checksum; PWA, Service Worker, cloud sync, Worker/Wrangler, Pages, and Web ZIP paths are removed.
 - Camera actions use the shared primary, tonal, and text-button hierarchy with consistent icons and responsive layout.
 - In-app medication reminder master toggle, vibrate on all reminder modes (web + native strong).
-- Tablet/assistant free placement, inventory share to family/clipboard, inventory quick capture (photo/voice).
+- Tablet/assistant free placement, inventory share to family/clipboard, inventory quick capture (photo).
 - Android foreground service keep-alive (battery whitelist prompt), 30-minute LAN auto-sync with long-lived pairing identity.
 - Full-screen alarm now launches over an awake, unlocked screen: notify-first (Android 14+ fullScreenIntent BAL window) + AlarmRingService foreground-service fallback + setAlarmClock when exact-alarm permission is unavailable.
-- Standalone Tencent ASR settings panel (masked secrets, edit-to-unlock, clear confirmation), Web-preview secret persistence via localStorage, error toast when key save fails.
-- ASR settings panel edit/save button swap logic corrected (edit→save on edit, save→edit on save/clear).
 - Medication history with 7/30/90-day and custom ranges, adherence summary, filters, daily records, and 90-day correction actions.
 - Full-screen history UI with narrow-phone layouts, cutout/gesture-safe spacing, bottom thumb-zone actions, and a two-column short-landscape layout.
 
@@ -40,7 +38,6 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
 - Desktop artifact: `小药盒-v0.9.0-release.apk`.
 - SHA-256: `17550fec9c18e68400bdd65ae19503d8f01b1e90327ae979b7fe3284f08c3706`.
 - APK signature: verified with APK Signature Scheme v2, one signer.
-- Tencent Cloud ASR embedded directly in the app (no separate proxy server required).
 
 ## External Follow-Ups
 

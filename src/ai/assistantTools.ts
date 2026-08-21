@@ -78,6 +78,7 @@ import type {
   AssistantNavigationBlock,
 } from './assistant';
 import { searchExaWeb } from './exaMcp';
+import { checkInteractions } from '../data/drugInteractions';
 
 export interface AssistantTool {
   name: string;
@@ -1574,6 +1575,235 @@ const batchDeductInventoryTool: AssistantTool = {
   },
 };
 
+const checkDrugInteractionsTool: AssistantTool = {
+  name: 'check_drug_interactions',
+  label: '排查药物相互作用与禁忌',
+  description: '排查当前药箱中已登记的所有药品，或者结合用户提到的额外药品名称，检查是否存在已知的配伍禁忌、严重出血风险、代谢抑制或不良相互作用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      additionalMeds: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '可选，要加入一起联合排查的新增/拟服用药品名称列表',
+      },
+    },
+    additionalProperties: false,
+  },
+  async run(args) {
+    const meds = await listMeds();
+    const existingNames = meds.filter((m) => !m.deleted).map((m) => m.name);
+    const additional = Array.isArray(args.additionalMeds)
+      ? (args.additionalMeds as unknown[]).map(str).filter(Boolean)
+      : [];
+    const allNames = Array.from(new Set([...existingNames, ...additional]));
+
+    if (allNames.length < 2) {
+      return {
+        ok: true,
+        提示: '当前排查的药品数量少于 2 种，未发现相互作用组合。可以传入额外药品名称一起联合排查。',
+        参与排查药品: allNames,
+      };
+    }
+
+    const hits = checkInteractions(allNames);
+    const severeHits = hits.filter((h) => h.severity === 'severe');
+    const moderateHits = hits.filter((h) => h.severity === 'moderate');
+    const mildHits = hits.filter((h) => h.severity === 'mild');
+
+    const items: AssistantCardItem[] = hits.map((hit) => {
+      const status: AssistantCardItemStatus = hit.severity === 'severe'
+        ? 'warning'
+        : hit.severity === 'moderate'
+          ? 'warning'
+          : 'muted';
+      const statusLabel = hit.severity === 'severe' ? '严重警告' : hit.severity === 'moderate' ? '中度风险' : '轻度注意';
+      return {
+        title: hit.drugs.join(' ✕ '),
+        subtitle: hit.description,
+        status,
+        statusLabel,
+        icon: hit.severity === 'severe' ? 'warn' : 'info',
+      };
+    });
+
+    const ui: AssistantCardBlock = {
+      type: 'card',
+      variant: 'notice',
+      icon: hits.length > 0 ? 'warn' : 'check',
+      eyebrow: `相互作用排查 · 共排查 ${allNames.length} 种药物`,
+      title: hits.length > 0 ? `发现 ${hits.length} 项潜在用药相互作用` : '未发现已知严重药物相互作用',
+      badge: hits.length > 0 ? (severeHits.length > 0 ? `${severeHits.length} 严重风险` : `${hits.length} 项注意`) : '安全',
+      tone: severeHits.length > 0 ? 'warning' : hits.length > 0 ? 'warning' : 'success',
+      body: hits.length > 0
+        ? `排查了 ${allNames.join('、')}。发现以下相互作用，请遵医嘱合理调整服药间隔或监测指标：`
+        : `排查了 ${allNames.join('、')}，在当前规则库中未命中常见严重禁忌组合。若有特殊用药需求请遵医嘱。`,
+      items,
+      facts: [
+        { label: '排查药品', value: `${allNames.length} 种` },
+        { label: '严重风险', value: `${severeHits.length} 项` },
+        { label: '中度/轻度', value: `${moderateHits.length + mildHits.length} 项` },
+      ],
+    };
+
+    return {
+      ok: true,
+      发现相互作用数: hits.length,
+      严重风险数: severeHits.length,
+      排查药品清单: allNames,
+      命中详情: hits.map((h) => ({
+        药物组合: h.drugs.join(' + '),
+        严重程度: h.severity === 'severe' ? '严重' : h.severity === 'moderate' ? '中度' : '轻度',
+        风险说明: h.description,
+      })),
+      ui,
+    };
+  },
+};
+
+const batchImportMedicationsTool: AssistantTool = {
+  name: 'batch_import_medications',
+  label: '批量导入处方/清单中的药品',
+  description: '把从处方单、病历单、图片或表格中提取的一批药品（多项）一次性录入到药箱中，并建立提醒规则与初始库存。',
+  parameters: {
+    type: 'object',
+    properties: {
+      medications: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 30,
+        description: '要批量录入的药品列表',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: '药品名称', maxLength: 120 },
+            dosageText: { type: 'string', description: '规格，如 "5mg/片"', maxLength: 80 },
+            amountPerDose: { type: 'string', description: '每次用量文本，如 "1片" / "10ml"', maxLength: 40 },
+            slots: {
+              type: 'array',
+              items: { type: 'string', enum: SLOT_VALUES },
+              description: '提醒时段（morning/noon/evening/bedtime）',
+              maxItems: 4,
+            },
+            inventoryRemaining: { type: 'number', description: '初始库存数量', minimum: 0 },
+            inventoryUnit: { type: 'string', description: '库存单位，如 片/粒/盒', maxLength: 12 },
+            notes: { type: 'string', description: '医嘱说明或用药备注', maxLength: 200 },
+          },
+          required: ['name'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['medications'],
+    additionalProperties: false,
+  },
+  confirm(args) {
+    const list = Array.isArray(args.medications) ? (args.medications as Array<Record<string, unknown>>) : [];
+    const names = list.map((m) => str(m.name)).filter(Boolean);
+    return `确认一键将以下 ${names.length} 种药品批量录入到药箱中吗？\n${names.map((n, i) => `${i + 1}. ${n}`).join('\n')}`;
+  },
+  async run(args) {
+    const list = Array.isArray(args.medications) ? (args.medications as Array<Record<string, unknown>>) : [];
+    if (list.length === 0) {
+      return { ok: false, 提示: '没有提供要导入的药品' };
+    }
+
+    const existing = await listMeds();
+    const existingNameSet = new Set(existing.filter((m) => !m.deleted).map((m) => m.name.trim().toLowerCase()));
+
+    const drafts = [];
+    const skippedDups: string[] = [];
+
+    for (const item of list) {
+      const name = str(item.name);
+      if (!name) continue;
+      if (existingNameSet.has(name.toLowerCase())) {
+        skippedDups.push(name);
+        continue;
+      }
+      const slots: Slot[] = Array.isArray(item.slots)
+        ? (item.slots as Slot[]).filter((s) => SLOT_VALUES.includes(s))
+        : [];
+      const draft = createMedicationDraft({
+        sourceKind: 'manual',
+        medication: {
+          name,
+          dosageText: str(item.dosageText),
+          amountPerDose: str(item.amountPerDose),
+          slots,
+          daysOfWeek: [],
+          notes: str(item.notes) || undefined,
+        },
+      });
+      applyExplicitDose(draft);
+      if (typeof item.inventoryRemaining === 'number' && item.inventoryRemaining >= 0) {
+        draft.medication.inventory = {
+          remaining: roundStock(item.inventoryRemaining),
+          unit: str(item.inventoryUnit) || draft.medication.doseUnit || '片',
+        };
+      }
+      draft.rules = slots.map((slot) => ({
+        id: `rule-${draft.id}-${slot}`,
+        slot,
+        timeLocal: MEDICATION_SLOT_TO_TIME[slot],
+        enabled: true,
+      }));
+      drafts.push(draft);
+    }
+
+    if (drafts.length === 0) {
+      return {
+        ok: false,
+        提示: skippedDups.length > 0
+          ? `拟导入的药品（${skippedDups.join('、')}）均已存在于药箱中，无需重复录入。`
+          : '没有合法的药品条目可录入',
+      };
+    }
+
+    try {
+      await createMedicationBatch(drafts);
+      try { await rescheduleMedicationReminders(); } catch { /* ignore */ }
+      try { await recomputeReminderPeriodReviewState(); } catch { /* ignore */ }
+
+      const items: AssistantCardItem[] = drafts.map((d) => ({
+        title: d.medication.name,
+        subtitle: [d.medication.dosageText, d.medication.amountPerDose ? `每次 ${d.medication.amountPerDose}` : '', d.rules.map((r) => SLOT_LABEL[r.slot]).join('·')].filter(Boolean).join(' · '),
+        meta: d.medication.inventory ? `${d.medication.inventory.remaining}${d.medication.inventory.unit}` : undefined,
+        status: 'success',
+        statusLabel: '已入库',
+        icon: 'pill',
+      }));
+
+      const ui: AssistantCardBlock = {
+        type: 'card',
+        variant: 'medication',
+        icon: 'check',
+        eyebrow: `处方批量录入 · 成功添加 ${drafts.length} 种药品`,
+        title: '已批量导入药品到药箱',
+        badge: `${drafts.length} 种新药`,
+        tone: 'success',
+        body: `成功批量录入了 ${drafts.length} 种药品。${skippedDups.length > 0 ? ` 已跳过已存在的 ${skippedDups.join('、')}。` : ''}可在「今天的用药」或「药品列表」中查看。`,
+        items,
+        facts: [
+          { label: '成功录入', value: `${drafts.length} 种` },
+          { label: '跳过重复', value: `${skippedDups.length} 种` },
+        ],
+      };
+
+      return {
+        ok: true,
+        成功录入数: drafts.length,
+        跳过重复数: skippedDups.length,
+        已录入药品: drafts.map((d) => d.medication.name),
+        ui,
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { ok: false, 提示: `批量录入失败：${msg}` };
+    }
+  },
+};
+
 export const assistantTools: readonly AssistantTool[] = [
   getTodayPlan,
   listMyMedications,
@@ -1595,6 +1825,8 @@ export const assistantTools: readonly AssistantTool[] = [
   getInventoryLogs,
   undoInventoryOperationTool,
   batchDeductInventoryTool,
+  checkDrugInteractionsTool,
+  batchImportMedicationsTool,
 ];
 
 export function findAssistantTool(name: string): AssistantTool | undefined {

@@ -23,13 +23,10 @@ describe('native text selection contracts', () => {
   });
 
   it('suppresses the system menu only on controls with dedicated hold gestures', () => {
-    const assistant = read('src/ui/AiAssistant.ts');
     const assistantStyles = read('src/ui/styles/pages/assistant.css');
     const medicationEditorStyles = read('src/ui/styles/pages/medication-editor.css');
 
-    expect(assistant).toContain("micBtn.addEventListener('contextmenu', (ev) => ev.preventDefault())");
     expect(assistantStyles).toMatch(/\.ai-launcher\s*\{[^}]*touch-action:\s*none;[^}]*user-select:\s*none;/s);
-    expect(assistantStyles).toMatch(/\.ai-tool-btn\.is-listening\s*\{[^}]*touch-action:\s*none;[^}]*user-select:\s*none;/s);
     expect(medicationEditorStyles).toMatch(/\.box-photo-crop-stage\s*\{[^}]*touch-action:\s*none;[^}]*user-select:\s*none;/s);
   });
 });

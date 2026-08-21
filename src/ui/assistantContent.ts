@@ -37,7 +37,7 @@ const aiRenderer: RendererObject = {
       body += this.tablerow({ text: cells });
     }
     if (body) body = `<tbody>${body}</tbody>`;
-    return `<table class="ai-table">\n<thead>\n${header}</thead>\n${body}</table>\n`;
+    return `<div class="ai-table-wrap"><table class="ai-table">\n<thead>\n${header}</thead>\n${body}</table></div>\n`;
   },
   listitem(item: Tokens.ListItem): string {
     if (item.task) {
@@ -153,6 +153,18 @@ export function renderAssistantBlock(
     }
     card.append(facts);
   }
+
+  const targetPath = variant === 'medication' ? '/today' : variant === 'inventory' ? '/meds/inventory' : variant === 'stats' ? '/history' : null;
+  if (targetPath) {
+    const actionText = variant === 'medication' ? '查看今日用药' : variant === 'inventory' ? '管理药品库存' : '查看完整历史';
+    const footerAction = el('button', { class: 'ai-card-action-btn', type: 'button' }, [
+      el('span', { text: actionText }),
+      icon('chevron-right'),
+    ]);
+    footerAction.onclick = () => onNavigate(targetPath);
+    card.append(footerAction);
+  }
+
   return card;
 }
 
