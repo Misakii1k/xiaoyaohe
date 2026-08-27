@@ -10,6 +10,9 @@ ext {
     kotlinVersion = '2.3.10'
     jbComposeVersion = '1.10.3'
     androidxComposeVersion = '1.10.3'
+    /* 扫码解除强制提醒：相机 + 条码识别（bundled 版，无需 Firebase） */
+    cameraxVersion = '1.6.2'
+    mlkitBarcodeVersion = '17.3.0'
     androidxActivityVersion = '1.11.0'
     androidxAppCompatVersion = '1.7.1'
     androidxCoordinatorLayoutVersion = '1.3.0'

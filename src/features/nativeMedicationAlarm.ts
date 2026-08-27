@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { getAlarmScanVerifyPreference, isAlarmScanVerifyEnabled } from './alarmScanVerify';
 import type { ScheduledReminderNotification } from './reminderTransport';
 
 export type FullScreenAlarmCapability = 'granted' | 'denied' | 'unavailable';
@@ -20,7 +21,7 @@ interface NativeAlarmPlugin {
   /** 非破坏性确认：只移除已处理成功的 action（防丢），未确认项保留待下次重放 */
   acknowledgeActions(options: { ids: string[] }): Promise<void>;
   snooze(options: { tag: string; data: Record<string, unknown>; minutes: number }): Promise<void>;
-  fireNow(options: { mode?: string; title?: string; body?: string }): Promise<void>;
+  fireNow(options: { mode?: string; title?: string; body?: string; scanVerify?: boolean; scanToken?: string }): Promise<void>;
 }
 
 interface NativeAlarmNotification {
@@ -32,6 +33,10 @@ interface NativeAlarmNotification {
   key: string;
   mode: 'strong' | 'fullscreen-short' | 'fullscreen-persistent';
   data: Record<string, unknown>;
+  /** 开启「扫码解除强制提醒」时置 true，全屏页需扫码后才能出现操作按钮 */
+  scanVerify?: boolean;
+  /** 解锁码完整内容（含前缀），闹钟页相机扫描结果与之比对 */
+  scanToken?: string;
 }
 
 const plugin = registerPlugin<NativeAlarmPlugin>('MedicationAlarm');
@@ -45,6 +50,8 @@ export async function reconcileNativeMedicationAlarms(
   notificationIdFor: (tag: string, key?: string) => number,
 ): Promise<number> {
   if (!nativeMedicationAlarmAvailable()) return 0;
+  const scanVerify = isAlarmScanVerifyEnabled();
+  const scanToken = scanVerify ? `medbox-unlock:${getAlarmScanVerifyPreference().token}` : undefined;
   const native = notifications.flatMap((notification): NativeAlarmNotification[] => {
     // Android 用药提醒统一走原生 AlarmManager + 通知通道，避免与 LocalNotifications 双轨漏响。
     // 组载荷（V2）用 data.mode，旧单药载荷用 data.reminderMode，两者都识别。
@@ -54,6 +61,11 @@ export async function reconcileNativeMedicationAlarms(
         ? rawMode
         : 'strong';
     const key = notification.key ?? 'dose';
+    // scan 标记同时放顶层与 data：顶层供当次调度，data 副本保证贪睡重建
+    // （buildSnoozePayload 只透传 data）后的闹钟仍要求扫码。
+    const withScanData = scanVerify && scanToken
+      ? { ...(notification.data ?? {}), scanVerify: true, scanToken }
+      : (notification.data ?? {});
     return [{
       id: notificationIdFor(notification.tag, key),
       at: notification.at,
@@ -62,7 +74,8 @@ export async function reconcileNativeMedicationAlarms(
       tag: notification.tag,
       key,
       mode,
-      data: notification.data ?? {},
+      data: withScanData,
+      ...(scanVerify && scanToken ? { scanVerify, scanToken } : {}),
     }];
   });
   const result = await plugin.reconcile({ notifications: native });
@@ -104,11 +117,16 @@ export async function fireNativeMedicationAlarmNow(
   mode: 'strong' | 'fullscreen-short' | 'fullscreen-persistent' = 'fullscreen-short',
 ): Promise<void> {
   if (!nativeMedicationAlarmAvailable()) return;
+  const scanVerify = isAlarmScanVerifyEnabled();
+  const scanToken = scanVerify
+    ? `medbox-unlock:${getAlarmScanVerifyPreference().token}`
+    : undefined;
   await plugin.fireNow({
     mode,
     title: mode === 'strong' ? '测试增强通知' : '测试全屏提醒',
     body: mode === 'strong'
       ? '高优先级通知 + 铃声振动（锁屏可见）'
       : '应点亮屏幕并显示全屏服药页',
+    ...(scanVerify && scanToken ? { scanVerify, scanToken } : {}),
   });
 }

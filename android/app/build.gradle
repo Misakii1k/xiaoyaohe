@@ -23,13 +23,15 @@ android {
     }
     kotlinOptions {
         jvmTarget = '21'
+        // CameraX 的 Proxy.getImage 带 ExperimentalGetImage 注解，全局 opt-in 省样板
+        freeCompilerArgs += ["-opt-in=androidx.camera.core.ExperimentalGetImage"]
     }
     defaultConfig {
         applicationId "com.medbox.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 27
-        versionName "0.9.8"
+        versionCode 28
+        versionName "0.9.9"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -80,6 +82,13 @@ dependencies {
     implementation "androidx.compose.ui:ui-graphics:$androidxComposeVersion"
     implementation "io.github.kyant0:shapes:1.2.0"
     implementation "androidx.activity:activity-compose:$androidxActivityVersion"
+    // 扫码解除强制提醒：CameraX 取景 + ZXing QR 解码（纯 Java，无内置识别模型，控体积；
+    // MLKit bundled 会让 APK +25MB，不采用）
+    implementation "androidx.camera:camera-core:$cameraxVersion"
+    implementation "androidx.camera:camera-camera2:$cameraxVersion"
+    implementation "androidx.camera:camera-lifecycle:$cameraxVersion"
+    implementation "androidx.camera:camera-view:$cameraxVersion"
+    implementation "com.google.zxing:core:3.5.3"
     // backdrop 1.0.6：aar-metadata minCompileSdk=36 与本工程匹配；
     // 2.0.x 线要求 compileSdk 37 + AGP 9.1（Capacitor 8 矩阵不支持），暂不可升。
     implementation "io.github.kyant0:backdrop:1.0.6"

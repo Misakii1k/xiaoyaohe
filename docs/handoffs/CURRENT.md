@@ -2,8 +2,16 @@
 
 Updated: 2026-08-27
 Integration branch: `main`
-Product version: `0.9.8`（workspace/claude 分支已发布，待合并 main）
+Product version: `0.9.9`（workspace/claude 分支已发布，待合并 main）
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Alarm UI Redesign + Scan-to-Dismiss 2026-08-27 (workspace/claude)
+
+- 0.9.9 (`versionCode 28`)：
+  - 全屏闹钟页 Compose UI 重设计（时钟/呼吸点/三级按钮层次/倒计时 Compose 化）；
+  - 「扫码解除强制提醒」：设置生成解锁二维码 → 载荷注入 scanVerify/scanToken → 原生锁定动作按钮，CameraX+ZXing 扫码匹配后解锁；通知按钮剥离防绕过；详见 claude.md 第 5 节。
+  - 验证门全过：typecheck / vitest 424 / playwright 52 / gradlew testDebugUnitTest+assembleRelease；APK `release/xiaoyaohe-0.9.9-android-release.apk`（13.45MB，SHA-256 见 release/SHA256SUMS.txt）。
+- 发版流程注意：新版本必须同时登记 `scripts/lib/release-utils.mjs` 的 VERSION_CODE_BY_VERSION 与 docs/releases/<ver>.md，否则 vitest/原生版本锁测试失败。
 
 ## Liquid Glass Integration 2026-08-27 (workspace/claude)
 

@@ -4,9 +4,26 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-08-27
 Status: active
-Latest version: `0.9.8` (Android `versionCode: 27`)
+Latest version: `0.9.9` (Android `versionCode: 28`)
 
 ## Summary of Accomplished Work
+
+### 5. 全屏闹钟 UI 重设计 + 扫码解除强制提醒（0.9.9）
+
+**UI 重设计（MedicationAlarmActivity.kt 全面重写）**：
+- 呼吸状态点 + 大号实时时钟头部；组模式保留行列表，单药模式大标题+剂量 chip；
+- 渐变主 CTA（按压缩放反馈）+ 玻璃胶囊次按钮 + 幽灵危险按钮的三级层次；
+- 自动关闭倒计时改为 Compose 驱动（LaunchedEffect，0.9.8 的 Handler 已移除），footer 显示"N 秒后自动收起"。
+
+**扫码解除强制提醒**：
+- `src/features/alarmScanVerify.ts`：`{enabled, token}` localStorage（key `medbox.alarm-scan-verify.v1`），token=`medbox-unlock:<32hex>`；
+- 设置→系统通知 开关 + 「查看解锁二维码」BottomSheet（QRCode.toCanvas）+ 重新生成（confirmDialog 后 rotate token）；
+- TS reconcile 注入 scanVerify/scanToken **顶层+data 双写**（贪睡 buildSnoozePayload 只透传 data，双写保证重建后仍锁定）；fireNow 测试同样注入；
+- Contract `requiresScanVerification/scanTokenOf` 双处兜底读取；requireScan 时：通知剥离全部 addAction（防绕过）、strong 升级 fullScreenIntent、全部操作必须进全屏页；
+- Activity 锁定态：隐藏所有动作按钮，仅显示「扫描解锁二维码」CTA → 内嵌 CameraX 取景器 + ZXing QR 解码，匹配 scanToken 才解锁；取景期间自动关闭倒计时暂停；
+- 解锁后展示常规按钮并附加"已验证"提示 + 短振动确认。
+- **依赖决策（体积教训）**：先选 MLKit barcode bundled → APK 从 10.35MB 暴涨至 **35.2MB**（内置各 ABI 识别模型），立即回退改用 **ZXing core 3.5.3**（纯 Java QR-only，PlanarYUVLuminanceSource+rotation 处理），最终 APK **13.45MB**（相对 0.9.8 +3.1MB ≈ CameraX+UI 重设计增量）。CameraX 1.6.2 固定（variables.gradle）。
+- 发版流程坑（已修）：`scripts/lib/release-utils.mjs` 的 `VERSION_CODE_BY_VERSION` 必须登记新版本映射（0.9.8/27、0.9.9/28 已补），否则 vitest define 注入 null 导致 apkTransport 测试假失败；`tests/release-utils.test.ts` 版本锁与原生 `AppConfigurationTest` 同步更新为 0.9.9/28；release notes `docs/releases/0.9.9.md` 已建。
 
 ### 4. Liquid Glass 液态玻璃全面接入（0.9.8，灵感源 Kyant0/AndroidLiquidGlass）
 

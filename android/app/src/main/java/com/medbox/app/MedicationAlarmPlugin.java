@@ -76,6 +76,8 @@ public final class MedicationAlarmPlugin extends Plugin {
         String mode = call.getString("mode", "fullscreen-short");
         String title = call.getString("title", "测试用药提醒");
         String body = call.getString("body", "这是一条全屏/锁屏测试提醒");
+        boolean scanVerify = call.getBoolean("scanVerify", false);
+        String scanToken = call.getString("scanToken", "");
         try {
             JSONObject payload = new JSONObject();
             int id = Math.abs(("medbox-test-" + mode).hashCode()) | 1;
@@ -90,6 +92,12 @@ public final class MedicationAlarmPlugin extends Plugin {
             data.put("reminderMode", mode);
             data.put("medicationName", "测试药");
             data.put("medicationDose", "1 片");
+            if (scanVerify && scanToken != null && !scanToken.isEmpty()) {
+                data.put("scanVerify", true);
+                data.put("scanToken", scanToken);
+                payload.put("scanVerify", true);
+                payload.put("scanToken", scanToken);
+            }
             payload.put("data", data);
             MedicationAlarmContract.showNotification(getContext(), payload);
             call.resolve();

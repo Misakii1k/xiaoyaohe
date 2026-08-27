@@ -184,7 +184,9 @@ final class MedicationAlarmContract {
         int id = payload.getInt("id");
         String mode = payload.optString("mode", "strong");
         boolean wantsFullScreen = !"strong".equals(mode);
-        boolean fullScreen = wantsFullScreen && canUseFullScreen(context);
+        // 扫码解除模式：strong 也升级为全屏拦截面，且剥离通知按钮防绕过
+        boolean requireScan = requiresScanVerification(payload);
+        boolean fullScreen = (requireScan || wantsFullScreen) && canUseFullScreen(context);
         Intent open = new Intent(context, MedicationAlarmActivity.class)
             .putExtra(EXTRA_PAYLOAD, payload.toString())
             .addFlags(
@@ -211,18 +213,20 @@ final class MedicationAlarmContract {
             .setOnlyAlertOnce(false)
             .setAutoCancel(false)
             .setOngoing("fullscreen-persistent".equals(mode));
-        if (isGroupPayload(payload)) {
-            // 组载荷：通知按钮只提供整体操作。「全部已服用」→ all-taken（TS 侧一次批量记录）；
-            // 组级 skip 没有 occurrenceId 无法解析，省略；单药 taken/skip 由全屏页每行按钮处理。
-            builder
-                .addAction(0, "全部已服用", actionPending(context, payload, ACTION_ALL_TAKEN, id + 11))
-                .addAction(0, "10 分钟后提醒", actionPending(context, payload, ACTION_SNOOZE, id + 12));
-        } else {
-            builder
-                .addAction(0, "已服用", actionPending(context, payload, ACTION_TAKEN, id + 11))
-                .addAction(0, "10 分钟后提醒", actionPending(context, payload, ACTION_SNOOZE, id + 12))
-                .addAction(0, "跳过", actionPending(context, payload, ACTION_SKIP, id + 13));
+        if (!requireScan) {
+            if (isGroupPayload(payload)) {
+                // 组载荷：通知按钮只提供整体操作。「全部已服用」→ all-taken（TS 侧一次批量记录）；
+                // 组级 skip 没有 occurrenceId 无法解析，省略；单药 taken/skip 由全屏页每行按钮处理。
+                builder.addAction(0, "全部已服用", actionPending(context, payload, ACTION_ALL_TAKEN, id + 11))
+                    .addAction(0, "10 分钟后提醒", actionPending(context, payload, ACTION_SNOOZE, id + 12));
+            } else {
+                builder.addAction(0, "已服用", actionPending(context, payload, ACTION_TAKEN, id + 11))
+                    .addAction(0, "10 分钟后提醒", actionPending(context, payload, ACTION_SNOOZE, id + 12))
+                    .addAction(0, "跳过", actionPending(context, payload, ACTION_SKIP, id + 13));
+            }
         }
+        // requireScan 时通知不带任何动作按钮：从通知点动作可绕过全屏页扫码，
+        // 一切操作都必须进全屏页、扫码解锁后才出现。
         if (fullScreen) {
             builder.setFullScreenIntent(openPending, true);
         }
@@ -232,7 +236,7 @@ final class MedicationAlarmContract {
         // 通知发出后会授予短暂的「后台 Activity 启动」窗口——所以先 notify，再借
         // 这个窗口主动 startActivity，亮屏解锁时也能拉起全屏页面。
         context.getSystemService(NotificationManager.class).notify(id, builder.build());
-        if (wantsFullScreen) {
+        if (fullScreen && (wantsFullScreen || requireScan)) {
             try {
                 context.startActivity(open);
             } catch (Throwable directFailed) {
@@ -242,9 +246,32 @@ final class MedicationAlarmContract {
         }
         // 强提醒（非全屏）路径补一次显式振动：部分机型会抑制通道配置的振动，
         // 这里像全屏 Activity 那样主动调 Vibrator，确保用户一定感受到。
-        if (!wantsFullScreen) {
+        if (!wantsFullScreen && !requireScan) {
             vibrateStrong(context);
         }
+    }
+
+    /**
+     * 该提醒是否要求「扫指定二维码才能解除」（防止睡迷糊时随手关掉）。
+     * 开启时通知不提供任何动作按钮（按钮可绕过全屏页），一切操作必须经扫码解锁后的页面完成。
+     * 顶层与 data 双写：贪睡重建（buildSnoozePayload 只透传 data）后仍能找回标记。
+     */
+    static boolean requiresScanVerification(JSONObject payload) {
+        if (payload.optBoolean("scanVerify", false) && !payload.optString("scanToken").isEmpty()) {
+            return true;
+        }
+        JSONObject data = payload.optJSONObject("data");
+        return data != null
+            && data.optBoolean("scanVerify", false)
+            && !data.optString("scanToken").isEmpty();
+    }
+
+    /** 解锁码完整内容（顶层优先，data 兜底）。 */
+    static String scanTokenOf(JSONObject payload) {
+        String top = payload.optString("scanToken");
+        if (!top.isEmpty()) return top;
+        JSONObject data = payload.optJSONObject("data");
+        return data == null ? "" : data.optString("scanToken");
     }
 
     /** strong 模式触发时显式振动 ~1.5 秒后停，不依赖通道配置被 OS 尊重。 */

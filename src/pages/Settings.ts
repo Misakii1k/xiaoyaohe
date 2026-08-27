@@ -17,6 +17,8 @@ import {
 } from '../db/schema';
 import { confirmDialog, el, renderPage, toast, icon, field, type IconName } from '../ui/components';
 import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
+import { openBottomSheet } from '../ui/primitives/BottomSheet';
+import QRCode from 'qrcode';
 import { getThemePreference, setThemePreference, type ThemePreference } from '../ui/theme';
 import {
   getLiquidGlassPreference,
@@ -44,6 +46,13 @@ import {
   showNotification,
 } from '../features/notifier';
 import { fireNativeMedicationAlarmNow, nativeMedicationAlarmAvailable } from '../features/nativeMedicationAlarm';
+import {
+  disableAlarmScanVerify,
+  enableAlarmScanVerify,
+  getAlarmScanVerifyPreference,
+  hasAlarmScanToken,
+  rotateAlarmScanToken,
+} from '../features/alarmScanVerify';
 import {
   isAppNotificationsEnabled,
   setAppNotificationsEnabled,
@@ -722,6 +731,50 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     void refreshFullScreenAlarmCapability();
   }
 
+  // ── 扫码解除强制提醒（仅 Android 原生全屏提醒生效）──
+  if (isNativeReminderPlatform() && nativeMedicationAlarmAvailable()) {
+    const scanPref = getAlarmScanVerifyPreference();
+    const scanRow = el('label', { class: 'settings-toggle-row mt-3' });
+    const scanCopy = el('div', { class: 'settings-toggle-copy' });
+    scanCopy.append(
+      el('div', { class: 'settings-toggle-title', text: '扫码解除强制提醒' }),
+      el('div', {
+        class: 'settings-toggle-desc',
+        text: scanPref.enabled
+          ? '已开启：全屏提醒必须扫描配对二维码后才能操作'
+          : '关闭：提醒到点可直接点击完成或贪睡',
+      }),
+    );
+    const scanToggle = el('input', {
+      type: 'checkbox',
+      role: 'switch',
+      'aria-label': '扫码解除强制提醒',
+    });
+    scanToggle.checked = scanPref.enabled;
+    scanToggle.onchange = async () => {
+      if (scanToggle.checked) {
+        enableAlarmScanVerify();
+        toast('已开启，请查看解锁二维码');
+        openUnlockQrSheet(rerender);
+      } else {
+        disableAlarmScanVerify();
+        toast('已关闭扫码验证');
+        await rescheduleMedicationReminders().catch(() => {});
+      }
+      rerender();
+    };
+    scanRow.append(scanCopy, scanToggle);
+    body.append(scanRow);
+
+    if (scanPref.enabled && hasAlarmScanToken()) {
+      const qrRow = el('div', { class: 'btn-row mt-3' });
+      const showQrBtn = el('button', { class: 'btn tonal', html: '查看解锁二维码' });
+      showQrBtn.onclick = () => openUnlockQrSheet(rerender);
+      qrRow.append(showQrBtn);
+      body.append(qrRow);
+    }
+  }
+
   body.append(
     el('div', {
       class: 'settings-hint',
@@ -738,6 +791,47 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
           '· 重新打开页面时会自动补查一次遗漏的任务。',
     })
   );
+}
+
+/** ---------------- 扫码解除：解锁二维码 Sheet ---------------- */
+function openUnlockQrSheet(rerender: () => void): void {
+  const tokenValue = enableAlarmScanVerify();
+  const title = el('h3', { class: 'lan-sync-sheet-title', text: '强制提醒解锁码' });
+  const canvas = document.createElement('canvas');
+  canvas.className = 'lan-sync-qr';
+  canvas.setAttribute('aria-label', '强制提醒解锁二维码');
+  void QRCode.toCanvas(canvas, tokenValue, {
+    width: 320,
+    margin: 4,
+    errorCorrectionLevel: 'M',
+    color: { dark: '#151918', light: '#ffffff' },
+  });
+  const hint = el('div', {
+    class: 'settings-hint',
+    html: '把这个二维码<b>截图保存并打印</b>，贴到药箱、冰箱门或卫生间等远离床的位置。\n\n' +
+      '开启后，全屏用药提醒必须走到这里扫到这个码，才会出现「已服用 / 贪睡 / 跳过」按钮。',
+  });
+  const rotateBtn = el('button', { class: 'btn tonal', html: '重新生成（旧码作废）' });
+  rotateBtn.onclick = async () => {
+    const confirmed = await confirmDialog(
+      '重新生成解锁码？旧二维码将立即作废；已贴出去的打印件需要替换，否则将无法解除提醒。',
+      '重新生成',
+      true,
+    );
+    if (!confirmed) return;
+    rotateAlarmScanToken();
+    toast('已生成新的解锁码');
+    sheet.close();
+    rerender();
+    openUnlockQrSheet(rerender);
+  };
+  const closeBtn = el('button', { class: 'btn', html: '完成' });
+  let sheet!: ReturnType<typeof openBottomSheet>;
+  sheet = openBottomSheet({
+    label: '强制提醒解锁二维码',
+    content: [title, canvas, hint, el('div', { class: 'btn-row mt-3' }, [rotateBtn, closeBtn])],
+    initialFocus: closeBtn,
+  });
 }
 
 /** ---------------- 时段提醒设置面板：按时段聚合的整体提醒 ---------------- */
