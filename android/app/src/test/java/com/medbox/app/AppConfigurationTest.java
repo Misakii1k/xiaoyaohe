@@ -9,7 +9,7 @@ public class AppConfigurationTest {
     @Test
     public void buildUsesMedboxApplicationId() {
         assertEquals("com.medbox.app", BuildConfig.APPLICATION_ID);
-        assertEquals("0.9.9", BuildConfig.VERSION_NAME);
-        assertEquals(28, BuildConfig.VERSION_CODE);
+        assertEquals("0.9.10", BuildConfig.VERSION_NAME);
+        assertEquals(29, BuildConfig.VERSION_CODE);
     }
 }

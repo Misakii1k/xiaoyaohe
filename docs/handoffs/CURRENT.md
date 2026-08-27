@@ -1,9 +1,15 @@
 # Current Integration State
 
-Updated: 2026-08-27
+Updated: 2026-08-28
 Integration branch: `main`
-Product version: `0.9.9`（workspace/claude 分支已发布，待合并 main）
+Product version: `0.9.10`（workspace/claude 分支已发布，待合并 main）
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Tabbar Glass Bubble + Icon Fix 2026-08-28 (workspace/claude)
+
+- 0.9.10 (`versionCode 29`)：模拟器视觉验收后三修——①底栏选中项「液态玻璃泡」（酷安式，专用 SVG 折射滤镜）+ FAB 横胶囊化（保持品牌紫）；②底栏占位压缩（min-height 54px，safe-area 改由外层 margin 承担）；③应用图标 adaptive 安全区 66/108 重裁（gen-icons.mjs，文字不再被遮罩裁切）。
+- 第 4 修：insetsHandling=disable 导致 env(safe-area-*) 恒 0、3 键导航条遮挡底栏——MainActivity 原生注入真实 insets 到 CSS 变量（仅 bottom/left/right）。
+- 验证门全过；APK `release/xiaoyaohe-0.9.10-android-release.apk`（13.4MB）。详见 claude.md 第 6 节。
 
 ## Alarm UI Redesign + Scan-to-Dismiss 2026-08-27 (workspace/claude)
 

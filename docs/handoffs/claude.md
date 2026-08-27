@@ -2,11 +2,23 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-08-27
+Updated: 2026-08-28
 Status: active
-Latest version: `0.9.9` (Android `versionCode: 28`)
+Latest version: `0.9.10` (Android `versionCode: 29`)
 
 ## Summary of Accomplished Work
+
+### 6. 模拟器视觉验收 + 底栏玻璃泡 / 占位 / 图标三修（0.9.10）
+
+用户酷安截图验收后反馈三问题，已用 Android 模拟器（AVD ldj_test35，SDK C:\Android\Sdk，adb 直连）全流程截图迭代修复：
+
+- **选中项玻璃泡（酷安式）**：`liquid-glass.css` 给 `.tabbar a.active::before` 加横向胶囊透明泡——近透明填充 + 1.5px 白描边 + 顶亮/底暗 inset 光 + 下方双层投影浮起，backdrop 引用新 SVG 滤镜 `#medbox-lens-bubble`（scale=26 低频位移，index.html 新增），泡包住图标+文字并凸出底栏；切页跟随由 active 类驱动。平板侧栏模式显式关闭泡。
+- **占位压缩**：底栏 min-height 64→54px（safe-area 由外层 margin 承担，原 min-height 双重计入 safe 是"占位大"主因之一）、项高 46、图标 22、字号 12px、留缝 10/6px、toast 64px。
+- **FAB**：58×42 横向胶囊凸出 -16px；保持品牌紫渐变（用户澄清：参考图演示的是玻璃质感，**不是改绿色**），叠加 ::after 顶部流光。
+- **图标裁切修复**：根因是 adaptive foreground 把成品图标铺满 72/108，遮罩裁掉边缘与文字。`gen-icons.mjs` 改为 66/108 官方可见安全区 + `assets:build` 重生成；模拟器抽屉验收图案与文字完整。
+- **底部遮挡修复（模拟器发现的第 4 个问题）**：insetsHandling=disable 下 env(safe-area-*) 恒 0，3 键导航条会压住底栏文字。`MainActivity.installInsetsBridge()` 在 decor 层监听真实 WindowInsets，把 bottom/left/right dp 写入 CSS 变量 `--safe-area-inset-*`（tokens.css 的二级兜底变量，顶部刻意不注入以维持沉浸态）。
+- 验证门：typecheck 0 错、vitest 424、playwright 52、gradlew testDebugUnitTest + assembleRelease 全绿。
+- 版本链已登记 0.9.10/29（映射表 + 两个版本锁测试 + notes）。注意 tests/release-utils.test.ts 是 CRLF 行尾，node 字符串 replace 用 `\n` 会静默失配，需正则 `\r?\n`。
 
 ### 5. 全屏闹钟 UI 重设计 + 扫码解除强制提醒（0.9.9）
 

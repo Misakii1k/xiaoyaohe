@@ -39,7 +39,8 @@ export const VERSION_CODE_BY_VERSION = Object.freeze({
   '0.9.7': 26,
   '0.9.8': 27,
   '0.9.9': 28,
-});;
+  '0.9.10': 29,
+});;;
 
 /**
  * 在 vite.config.ts 中由构建期注入到 WebView：把 package.json 的 version

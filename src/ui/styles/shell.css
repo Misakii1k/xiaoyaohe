@@ -23,8 +23,8 @@
 /* 悬浮玻璃条（底栏 / 操作坞）共用：离屏留缝 + 内容安全区。 */
 .app-shell > .tabbar.app-navigation,
 .app-shell > .action-dock {
-  --float-gap: 10px;
-  margin-inline: calc(12px + var(--safe-left)) calc(12px + var(--safe-right));
+  --float-gap: 6px;
+  margin-inline: calc(10px + var(--safe-left)) calc(10px + var(--safe-right));
   margin-block-end: calc(var(--float-gap) + var(--safe-bottom));
 }
 
@@ -103,17 +103,17 @@
 
 .action-dock:empty { display: none; }
 
-/* 图 2 级别水凝玻璃底栏：悬浮胶囊式，圆角厚玻璃浮于内容之上 */
+/* 悬浮胶囊底栏：贴近酷安式的扁条，safe-area 已由外层 margin 承担 */
 .tabbar.app-navigation {
   position: relative;
   inset: auto;
   transform: none;
   inline-size: auto;
   max-inline-size: none;
-  min-block-size: calc(64px + var(--safe-bottom));
+  min-block-size: 54px;
   height: auto;
   margin-block-start: 0;
-  padding: var(--space-1) var(--space-2) var(--space-1);
+  padding: 3px var(--space-1) 3px;
   border: 0;
   border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.78);
@@ -129,13 +129,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 3px;
+  gap: 2px;
   min-inline-size: 0;
-  min-block-size: 56px;
-  padding: 4px 2px;
+  min-block-size: 46px;
+  padding: 3px 2px;
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
-  font-size: var(--fs-caption);
+  font-size: 12px;
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
@@ -150,16 +150,16 @@
 .tabbar.app-navigation a .ic {
   display: grid;
   place-items: center;
-  inline-size: 26px;
-  block-size: 26px;
+  inline-size: 24px;
+  block-size: 24px;
   background: transparent;
   box-shadow: none;
 }
-.tabbar.app-navigation a .ic svg { inline-size: 24px; block-size: 24px; }
+.tabbar.app-navigation a .ic svg { inline-size: 22px; block-size: 22px; }
 .tabbar.app-navigation a.active .ic { background: transparent; box-shadow: none; }
 .tabbar.app-navigation a.active .ic svg { stroke-width: 2.3; stroke: var(--color-primary); }
 
-/* 中央扫描项：参考图 2 浮光微拟物圆形主按钮 */
+/* 中央扫描项：横向胶囊主按钮，凸出底栏顶部 */
 .tabbar.app-navigation a[href='#/scan'] {
   justify-content: flex-start;
 }
@@ -167,36 +167,39 @@
 .tabbar.app-navigation a[href='#/scan'] .ic {
   display: grid;
   place-items: center;
-  inline-size: 48px;
-  block-size: 48px;
-  margin-block-start: -18px;
+  inline-size: 58px;
+  block-size: 42px;
+  margin-block-start: -16px;
   border-radius: var(--radius-full);
   background: var(--color-primary-gradient);
   color: #ffffff;
-  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35), 0 2px 6px rgba(99, 102, 241, 0.2);
+  box-shadow:
+    0 10px 22px rgba(99, 102, 241, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .tabbar.app-navigation a[href='#/scan'] .ic svg { inline-size: 24px; block-size: 24px; stroke: #ffffff; }
 
 .tabbar.app-navigation a[href='#/scan']:active .ic {
-  transform: scale(0.92);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  transform: scale(0.94);
+  box-shadow: 0 5px 12px rgba(23, 116, 91, 0.28);
 }
 
 .tabbar.app-navigation a[href='#/scan'].active .ic {
-  background: var(--color-primary-gradient);
+  background: linear-gradient(160deg, #21b486 0%, #17745b 100%);
   color: #ffffff;
 }
 
 .toast {
-  inset-block-end: calc(74px + var(--safe-bottom));
+  inset-block-end: calc(64px + var(--safe-bottom));
   margin-inline: max(var(--space-3), var(--safe-right));
 }
 
 /* 窄屏下把 Toast 再抬高，避免遮住底部卡片里的撤销/操作按钮 */
 @media (max-width: 360px) {
-  .toast { inset-block-end: calc(148px + var(--safe-bottom)); }
+  .toast { inset-block-end: calc(140px + var(--safe-bottom)); }
 }
 
 .overlay {

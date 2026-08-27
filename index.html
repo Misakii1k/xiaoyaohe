@@ -83,6 +83,31 @@
             yChannelSelector="G"
           />
         </filter>
+        <!-- 选中泡专用：低频强位移，模拟凸透镜的边缘弯折 -->
+        <filter
+          id="medbox-lens-bubble"
+          x="-25%"
+          y="-25%"
+          width="150%"
+          height="150%"
+          color-interpolation-filters="sRGB"
+        >
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.006 0.008"
+            numOctaves="2"
+            seed="23"
+            result="noise"
+          />
+          <feGaussianBlur in="noise" stdDeviation="3" result="soft-noise" />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="soft-noise"
+            scale="26"
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
+        </filter>
       </defs>
     </svg>
     <div id="app"></div>

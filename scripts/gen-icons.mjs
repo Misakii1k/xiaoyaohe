@@ -49,9 +49,10 @@ async function roundIcon(size) {
 }
 
 async function adaptiveForeground(size) {
-  // Android adaptive 图标使用 108dp 图层，启动器在中央 72dp 内裁剪展示。
-  // 将修剪无边距的品牌母版铺满 72dp 安全区，保证图标边缘契合且不留多余边距线。
-  const iconSize = Math.round(size * (72 / 108));
+  // Android adaptive 图标为 108dp 图层，但各启动器遮罩（圆/圆角方）只保证中央
+  // 66dp 可见。把母版缩到 66/108 安全区内、四周透出 background 渐变层，
+  // 避免成品图边缘/文字被遮罩裁切（此前铺满 72dp 导致文字贴边被切）。
+  const iconSize = Math.round(size * (66 / 108));
   const icon = await sharp(masterTrimmedBuffer)
     .resize(iconSize, iconSize, { fit: 'contain', kernel: sharp.kernel.lanczos3 })
     .png(pngOptions)
