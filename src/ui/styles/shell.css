@@ -20,6 +20,14 @@
   background-attachment: fixed;
 }
 
+/* 悬浮玻璃条（底栏 / 操作坞）共用：离屏留缝 + 内容安全区。 */
+.app-shell > .tabbar.app-navigation,
+.app-shell > .action-dock {
+  --float-gap: 10px;
+  margin-inline: calc(12px + var(--safe-left)) calc(12px + var(--safe-right));
+  margin-block-end: calc(var(--float-gap) + var(--safe-bottom));
+}
+
 /* 双参考图融和：顶栏保持大号粗标题，高透水凝玻璃面 */
 .topbar {
   position: relative;
@@ -86,32 +94,32 @@
   align-items: center;
   min-inline-size: 0;
   padding: var(--space-2) max(var(--space-3), var(--safe-right)) var(--space-2) max(var(--space-3), var(--safe-left));
+  border-radius: var(--radius-xl);
   background: var(--color-surface-glass);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-block-start: 1px solid var(--color-border-glass);
+  box-shadow: var(--shadow-md);
 }
 
 .action-dock:empty { display: none; }
 
-/* 图 2 级别水凝玻璃底栏：软阴影 + 浮光悬浮按钮 */
+/* 图 2 级别水凝玻璃底栏：悬浮胶囊式，圆角厚玻璃浮于内容之上 */
 .tabbar.app-navigation {
   position: relative;
   inset: auto;
   transform: none;
-  inline-size: 100%;
+  inline-size: auto;
   max-inline-size: none;
   min-block-size: calc(64px + var(--safe-bottom));
   height: auto;
-  margin: 0;
-  padding: var(--space-1) max(var(--space-3), var(--safe-right)) calc(var(--space-1) + var(--safe-bottom)) max(var(--space-3), var(--safe-left));
+  margin-block-start: 0;
+  padding: var(--space-1) var(--space-2) var(--space-1);
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.78);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-block-start: 1px solid var(--color-border-glass);
-  box-shadow: 0 -4px 20px rgba(30, 32, 46, 0.04);
+  box-shadow: var(--shadow-md);
 }
 
 .tabbar.app-navigation::after { display: none; }
@@ -182,7 +190,7 @@
 }
 
 .toast {
-  inset-block-end: calc(76px + var(--safe-bottom));
+  inset-block-end: calc(74px + var(--safe-bottom));
   margin-inline: max(var(--space-3), var(--safe-right));
 }
 
@@ -216,6 +224,9 @@
     justify-content: flex-start;
     gap: var(--space-2);
     min-block-size: 100dvh;
+    margin-inline: 0;
+    margin-block-end: 0;
+    border-radius: 0;
     padding: calc(var(--safe-top) + var(--space-4)) var(--space-3) calc(var(--safe-bottom) + var(--space-4)) max(var(--space-3), var(--safe-left));
     border-block-start: 0;
     border-inline-end: 1px solid var(--color-border);

@@ -9,6 +9,12 @@ buildscript {
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.0'
         classpath 'com.google.gms:google-services:4.4.4'
+        // Kotlin + Compose 编译插件（MedicationAlarmActivity 液态玻璃页使用）。
+        // buildscript 先于 variables.gradle 求值，只能写字面量；版本须与
+        // variables.gradle 的 kotlinVersion 保持一致（backdrop 1.0.6 依赖线 2.3.10）。
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.10'
+        // Compose 编译插件的实现构件（apply plugin 'org.jetbrains.kotlin.plugin.compose' 由它提供）
+        classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.3.10'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files

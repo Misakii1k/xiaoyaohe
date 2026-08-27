@@ -1,0 +1,280 @@
+/* ============================================================
+   Liquid Glass 液态玻璃（灵感：Kyant0/AndroidLiquidGlass）
+   开关挂在 <html data-liquid="on">（src/ui/liquidGlass.ts 控制），
+   属性缺失或为 off 时本文件所有规则都不命中，自动回退到
+   shell/primitives 里的普通毛玻璃材质。
+
+   三段式材质：
+   1) 厚玻璃基底 —— 更重的 blur + 饱和度提纯 + 亮度补偿；
+   2) 折射边带 —— SVG feDisplacementMap「弯折光线」。小面积控件
+      （按钮胶囊 / FAB / Toast）整面引用滤镜；大面积悬浮条只对
+      边缘细环（::before + mask）引用，中心保持清晰、成本可控；
+   3) 镜面高光 —— 斜向流光背景层 + 渐变亮边框 + 内缘受光阴影。
+
+   兼容回退不靠 @supports：每条 backdrop-filter 先写同值普通链，
+   再写 url() 变体。不支持 url() 的引擎丢弃后者保留前者，
+   支持的引擎后者胜出（规则内后者声明优先）。
+   ============================================================ */
+
+:root[data-liquid='on'] {
+  --lg-blur: 20px;
+  --lg-blur-heavy: 26px;
+  --lg-saturate: 180%;
+  --lg-brightness: 1.05;
+  --lg-tint: rgba(255, 255, 255, 0.30);
+  /* 顶光斜切流光：左上强反光 → 中段透明 → 右下弱反光 */
+  --lg-sheen: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.12) 28%,
+    rgba(255, 255, 255, 0.02) 55%,
+    rgba(255, 255, 255, 0.24) 100%
+  );
+  /* 边框渐变亮环：顶缘最亮，侧缘渐弱 */
+  --lg-rim: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.92),
+    rgba(255, 255, 255, 0.30) 42%,
+    rgba(255, 255, 255, 0.10) 72%,
+    rgba(255, 255, 255, 0.44)
+  );
+  /* 底衬：半透明填充，遮住边缘渐变向中心的渗色 */
+  --lg-fill: linear-gradient(rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.36));
+  --lg-inner-top: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --lg-inner-bottom: inset 0 -1px 0 rgba(28, 30, 38, 0.05);
+  --lg-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+  --lg-drop: 0 12px 32px -8px rgba(30, 32, 46, 0.16), 0 4px 14px rgba(30, 32, 46, 0.07);
+}
+
+:root[data-theme='dark'][data-liquid='on'] {
+  --lg-brightness: 0.96;
+  --lg-tint: rgba(30, 31, 39, 0.40);
+  --lg-sheen: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.24) 0%,
+    rgba(255, 255, 255, 0.05) 30%,
+    rgba(255, 255, 255, 0.01) 55%,
+    rgba(255, 255, 255, 0.11) 100%
+  );
+  --lg-rim: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.34),
+    rgba(255, 255, 255, 0.13) 45%,
+    rgba(255, 255, 255, 0.05) 72%,
+    rgba(255, 255, 255, 0.17)
+  );
+  --lg-fill: linear-gradient(rgba(37, 38, 47, 0.50), rgba(34, 35, 43, 0.42));
+  --lg-inner-top: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  --lg-inner-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+  --lg-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  --lg-drop: 0 12px 32px -8px rgba(0, 0, 0, 0.46), 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+/* ============ 通用厚玻璃基底（弹层类） ============ */
+
+:root[data-liquid='on'] .bottom-sheet,
+:root[data-liquid='on'] .overlay > *,
+:root[data-liquid='on'] .toast {
+  border: 1px solid transparent;
+  background:
+    var(--lg-sheen) padding-box,
+    var(--lg-fill) padding-box,
+    var(--lg-rim) border-box,
+    var(--lg-tint);
+  box-shadow: var(--lg-drop), var(--lg-inner-top), var(--lg-inner-bottom), var(--lg-ring);
+}
+
+:root[data-liquid='on'] .bottom-sheet {
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate));
+  backdrop-filter:
+    blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
+}
+
+:root[data-liquid='on'] .overlay > * {
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate));
+  backdrop-filter:
+    blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
+}
+
+/* Toast 面积小，直接整面引用折射滤镜；不支持的引擎回退上一行普通毛玻璃 */
+:root[data-liquid='on'] .toast {
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  backdrop-filter:
+    blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
+  backdrop-filter:
+    url('#medbox-lens') blur(var(--lg-blur)) saturate(var(--lg-saturate))
+    brightness(var(--lg-brightness));
+}
+
+/* 底部抽屉从纯白面板升级为玻璃面后，拖动把手加深一点保证可感知 */
+:root[data-liquid='on'] .bottom-sheet::before {
+  background: color-mix(in srgb, var(--color-text-muted) 48%, transparent);
+}
+
+/* ============ 小面积控件整面折射 ============ */
+
+:root[data-liquid='on'] .topbar .icon-btn {
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background:
+    var(--lg-sheen) padding-box,
+    var(--lg-fill) padding-box,
+    var(--lg-rim) border-box,
+    var(--lg-tint);
+  box-shadow: var(--shadow-sm), var(--lg-inner-top), var(--lg-ring);
+  -webkit-backdrop-filter: blur(14px) saturate(var(--lg-saturate));
+  backdrop-filter: blur(14px) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
+  backdrop-filter:
+    url('#medbox-lens') blur(14px) saturate(var(--lg-saturate))
+    brightness(var(--lg-brightness));
+}
+
+/* 扫描 FAB：主色渐变之上叠加顶部流光与内缘受光，玻璃感主按钮 */
+:root[data-liquid='on'] .tabbar.app-navigation a[href='#/scan'] .ic {
+  position: relative;
+  box-shadow:
+    0 8px 20px rgba(99, 102, 241, 0.35),
+    0 2px 6px rgba(99, 102, 241, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -6px 14px rgba(15, 15, 60, 0.18);
+}
+
+:root[data-liquid='on'] .tabbar.app-navigation a[href='#/scan'] .ic::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.50) 0%,
+    rgba(255, 255, 255, 0.08) 38%,
+    rgba(255, 255, 255, 0) 60%
+  );
+}
+
+/* ============ 悬浮条：基底 + 边缘折射环带 ============ */
+
+:root[data-liquid='on'] .tabbar.app-navigation,
+:root[data-liquid='on'] .action-dock {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid transparent;
+  background:
+    var(--lg-sheen) padding-box,
+    var(--lg-fill) padding-box,
+    var(--lg-rim) border-box,
+    var(--lg-tint);
+  box-shadow: var(--lg-drop), var(--lg-inner-top), var(--lg-inner-bottom), var(--lg-ring);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  backdrop-filter:
+    blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
+}
+
+/* 边缘细环带：先放大位移折射，再用遮罩只留边缘 ~18px。
+   整条背景仍是上面那条普通厚玻璃——环带不支持时只是少了折射，不影响材质。 */
+:root[data-liquid='on'] .tabbar.app-navigation::before,
+:root[data-liquid='on'] .action-dock::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  -webkit-backdrop-filter: url('#medbox-lens-edge');
+  backdrop-filter: url('#medbox-lens-edge');
+  --lg-band: 18px;
+  -webkit-mask-image:
+    linear-gradient(to right, #000 0, transparent var(--lg-band), transparent calc(100% - var(--lg-band)), #000),
+    linear-gradient(to bottom, #000 0, transparent var(--lg-band), transparent calc(100% - var(--lg-band)), #000);
+  mask-image:
+    linear-gradient(to right, #000 0, transparent var(--lg-band), transparent calc(100% - var(--lg-band)), #000),
+    linear-gradient(to bottom, #000 0, transparent var(--lg-band), transparent calc(100% - var(--lg-band)), #000);
+}
+
+/* 活跃态导航项加一个玻璃泡高亮，替代原平涂 primary-soft 的层次感 */
+:root[data-liquid='on'] .tabbar.app-navigation a.active:not([href='#/scan']) {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.65),
+    rgba(255, 255, 255, 0.25)
+  );
+  box-shadow: var(--lg-inner-top), inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+:root[data-theme='dark'][data-liquid='on'] .tabbar.app-navigation a.active:not([href='#/scan']) {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.14),
+    rgba(255, 255, 255, 0.05)
+  );
+  box-shadow: var(--lg-inner-top), inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+}
+
+/* ============ 平板侧栏模式（≥768×600）：只升材质，不改几何 ============ */
+
+@media (min-width: 768px) and (min-height: 600px) {
+  :root[data-liquid='on'] .tabbar.app-navigation,
+  :root[data-liquid='on'] .action-dock {
+    background:
+      var(--lg-fill) padding-box,
+      var(--lg-rim) border-box,
+      var(--lg-tint);
+    box-shadow: none;
+  }
+
+  :root[data-liquid='on'] .tabbar.app-navigation::before,
+  :root[data-liquid='on'] .action-dock::before { display: none; }
+
+  :root[data-liquid='on'] .tabbar.app-navigation a.active:not([href='#/scan']) {
+    background:
+      var(--lg-sheen) padding-box,
+      color-mix(in srgb, var(--color-primary-soft) 78%, transparent);
+    box-shadow: var(--lg-inner-top), var(--lg-ring);
+  }
+}
+
+/* ============ 降低动效/省电模式：退回普通毛玻璃 ============ */
+
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-liquid='on'] {
+    --lg-sheen: none;
+    --lg-rim: linear-gradient(to bottom, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.18));
+    --lg-fill: linear-gradient(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.66));
+    --lg-tint: rgba(255, 255, 255, 0.52);
+    --lg-drop: var(--shadow-sm);
+    --lg-saturate: 120%;
+    --lg-brightness: none;
+  }
+
+  :root[data-theme='dark'][data-liquid='on'] {
+    --lg-rim: linear-gradient(to bottom, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.07));
+    --lg-fill: linear-gradient(rgba(41, 42, 51, 0.76), rgba(37, 38, 47, 0.70));
+    --lg-tint: rgba(33, 34, 42, 0.62);
+  }
+
+  :root[data-liquid='on'] .bottom-sheet,
+  :root[data-liquid='on'] .overlay > * {
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+
+  :root[data-liquid='on'] .toast {
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+
+  :root[data-liquid='on'] .topbar .icon-btn {
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  :root[data-liquid='on'] .tabbar.app-navigation,
+  :root[data-liquid='on'] .action-dock {
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+
+  :root[data-liquid='on'] .tabbar.app-navigation::before,
+  :root[data-liquid='on'] .action-dock::before { display: none; }
+}

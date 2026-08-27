@@ -2,6 +2,14 @@ ext {
     minSdkVersion = 24
     compileSdkVersion = 36
     targetSdkVersion = 36
+    /* Kotlin / Compose / LiquidGlass：与 io.github.kyant0:backdrop（液态玻璃库）对齐。
+       backdrop-android 1.0.6 的 aar-metadata 要求 minCompileSdk=36（与本工程一致），
+       其依赖线为 Kotlin 2.3.10 + JB Compose Multiplatform 1.10.3。
+       注意：2.0.x 线全部要求 minCompileSdk=37 + AGP 9.1，Capacitor 8 官方矩阵
+       （AGP 8.13 + compileSdk 36）不支持，升级 backdrop 前须先升 Android 工程矩阵。 */
+    kotlinVersion = '2.3.10'
+    jbComposeVersion = '1.10.3'
+    androidxComposeVersion = '1.10.3'
     androidxActivityVersion = '1.11.0'
     androidxAppCompatVersion = '1.7.1'
     androidxCoordinatorLayoutVersion = '1.3.0'

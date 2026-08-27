@@ -1,9 +1,16 @@
 # Current Integration State
 
-Updated: 2026-07-30
+Updated: 2026-08-27
 Integration branch: `main`
-Product version: `0.9.2`
+Product version: `0.9.8`（workspace/claude 分支已发布，待合并 main）
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Liquid Glass Integration 2026-08-27 (workspace/claude)
+
+- 0.9.8 (`versionCode 27`)：Kyant0/AndroidLiquidGlass 液态玻璃接入，双轨落地。
+  - Web 端全局复刻：`liquid-glass.css` + SVG 折射滤镜 + 悬浮胶囊底栏 + 外观开关（详见 `docs/handoffs/claude.md` 第 4 节）。
+  - 原生真库：MedicationAlarmActivity 转 Kotlin/Compose，backdrop 1.0.6 lens 折射按钮；**backdrop 锁定 1.0.6**——2.0.x 要求 compileSdk 37 + AGP 9.1，与 Capacitor 8 矩阵冲突。
+- 验证门全过：typecheck / vitest 74 套件 424 测试 / playwright 52 / build+cap sync / gradlew assembleDebug+testDebugUnitTest / signed release APK 已产出（release/xiaoyaohe-0.9.8-android-release.apk, SHA-256 见 claude.md）。
 
 ## Baseline
 

@@ -18,6 +18,11 @@ import {
 import { confirmDialog, el, renderPage, toast, icon, field, type IconName } from '../ui/components';
 import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
 import { getThemePreference, setThemePreference, type ThemePreference } from '../ui/theme';
+import {
+  getLiquidGlassPreference,
+  setLiquidGlassPreference,
+  type LiquidGlassPreference,
+} from '../ui/liquidGlass';
 import { openLlmProviderEditor } from '../ui/llmProviderEditor';
 import {
   backupProviders,
@@ -471,6 +476,39 @@ function renderAppearancePanel(): HTMLElement {
         },
       );
       body.append(control);
+
+      const liquidEnabled = getLiquidGlassPreference() === 'on';
+      const liquidRow = el('label', { class: 'settings-toggle-row mt-3' });
+      const liquidCopy = el('div', { class: 'settings-toggle-copy' });
+      liquidCopy.append(
+        el('div', { class: 'settings-toggle-title', text: '液态玻璃效果' }),
+        el('div', {
+          class: 'settings-toggle-desc',
+          text: liquidEnabled
+            ? '底栏与弹层带折射高光的玻璃质感，更耗一点电'
+            : '已关闭：使用普通毛玻璃材质，更省电',
+        }),
+      );
+      const liquidToggle = el('input', {
+        type: 'checkbox',
+        role: 'switch',
+        'aria-label': '液态玻璃效果',
+      });
+      liquidToggle.checked = liquidEnabled;
+      liquidToggle.onchange = () => {
+        const next: LiquidGlassPreference = liquidToggle.checked ? 'on' : 'off';
+        setLiquidGlassPreference(next);
+        toast(liquidToggle.checked ? '液态玻璃已开启' : '液态玻璃已关闭');
+        // 描述随状态变化
+        const desc = liquidCopy.querySelector<HTMLElement>('.settings-toggle-desc');
+        if (desc) {
+          desc.textContent = liquidToggle.checked
+            ? '底栏与弹层带折射高光的玻璃质感，更耗一点电'
+            : '已关闭：使用普通毛玻璃材质，更省电';
+        }
+      };
+      liquidRow.append(liquidCopy, liquidToggle);
+      body.append(liquidRow);
     },
   });
 }

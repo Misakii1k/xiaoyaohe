@@ -1,4 +1,6 @@
 apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 // Local release signing (keystore.properties is gitignored; generate with keytool if missing)
 def keystorePropertiesFile = rootProject.file('app/keystore.properties')
@@ -10,15 +12,24 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.medbox.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    // 与 capacitor.build.gradle 的 Java 21 保持一致，否则混合编译报 Inconsistent JVM-target
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
     buildFeatures {
         buildConfig true
+        compose true
+    }
+    kotlinOptions {
+        jvmTarget = '21'
     }
     defaultConfig {
         applicationId "com.medbox.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 26
-        versionName "0.9.7"
+        versionCode 27
+        versionName "0.9.8"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -59,6 +70,19 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // ── 液态玻璃全屏提醒页（Kotlin + Compose + Kyant0/AndroidLiquidGlass）──
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+    // Compose 栈：backdrop 1.0.6 的 POM 声明 androidx.compose 1.10.3（不走 JetBrains 线），
+    // 且其 android 变体不带出传递依赖，须显式声明同一版本避免双运行时类冲突。
+    // 文字用 foundation 的 BasicText（material3 无对应稳定版，不引入）。
+    implementation "androidx.compose.foundation:foundation:$androidxComposeVersion"
+    implementation "androidx.compose.ui:ui:$androidxComposeVersion"
+    implementation "androidx.compose.ui:ui-graphics:$androidxComposeVersion"
+    implementation "io.github.kyant0:shapes:1.2.0"
+    implementation "androidx.activity:activity-compose:$androidxActivityVersion"
+    // backdrop 1.0.6：aar-metadata minCompileSdk=36 与本工程匹配；
+    // 2.0.x 线要求 compileSdk 37 + AGP 9.1（Capacitor 8 矩阵不支持），暂不可升。
+    implementation "io.github.kyant0:backdrop:1.0.6"
     testImplementation "junit:junit:$junitVersion"
     // JVM 单测里 android.jar 的 org.json 是抛 "not mocked" 的桩，用真实实现顶替
     testImplementation 'org.json:json:20240303'

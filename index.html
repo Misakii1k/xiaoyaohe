@@ -22,6 +22,69 @@
     <title>小药盒</title>
   </head>
   <body>
+    <!--
+      液态玻璃折射滤镜（供 backdrop-filter: url(#…) 引用）。
+      静态内联、零尺寸、不遮挡布局；display:none 会破坏部分引擎的滤镜引用，
+      因此用绝对定位 + 0 尺寸隐藏。
+    -->
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      style="position: absolute; inline-size: 0; block-size: 0; overflow: hidden"
+    >
+      <defs>
+        <!-- 小面积全表面折射：顶栏按钮胶囊 / 扫描 FAB / Toast -->
+        <filter
+          id="medbox-lens"
+          x="-15%"
+          y="-15%"
+          width="130%"
+          height="130%"
+          color-interpolation-filters="sRGB"
+        >
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.012 0.015"
+            numOctaves="2"
+            seed="7"
+            result="noise"
+          />
+          <feGaussianBlur in="noise" stdDeviation="1.5" result="soft-noise" />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="soft-noise"
+            scale="7"
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
+        </filter>
+        <!-- 边缘环带折射：底栏 / 操作坞（配合遮罩只取边缘细环，成本低） -->
+        <filter
+          id="medbox-lens-edge"
+          x="-15%"
+          y="-15%"
+          width="130%"
+          height="130%"
+          color-interpolation-filters="sRGB"
+        >
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.009 0.012"
+            numOctaves="2"
+            seed="11"
+            result="noise"
+          />
+          <feGaussianBlur in="noise" stdDeviation="2" result="soft-noise" />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="soft-noise"
+            scale="13"
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
+        </filter>
+      </defs>
+    </svg>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
