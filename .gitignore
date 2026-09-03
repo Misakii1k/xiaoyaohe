@@ -1,12 +1,10 @@
 # 依赖
 node_modules/
 
-# 构建产物
+# 构建产物与发布目录（APK/zip/校验和均不入库）
 dist/
 dev-dist/
-release/*.apk
-release/*.zip
-release/*-SHA256SUMS.txt
+release/
 
 # Cloudflare / Wrangler 本地状态
 .wrangler/
@@ -37,6 +35,11 @@ Thumbs.db
 *.tmp
 .cache/
 tmp/imagegen/
+
+# 图标/视觉迭代的调试残留（下划线前缀脚本与截图）
+scripts/_*
+design/brand/master/_*
+test-cn-text.png
 
 # Browser-test sessions, screenshots, traces, and reports
 .playwright-cli/
