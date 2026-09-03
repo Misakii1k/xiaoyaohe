@@ -110,4 +110,4 @@ Latest version: `0.9.10` (Android `versionCode: 29`)
 - 0.9.11 的全部未提交改动（UI 平权重构、Gemini 3D 头像库、去代码化文案、versionCode 30、图标/闪屏、handoff 文档）已分批提交至 `workspace/claude`；`.gitignore` 补充 `release/` 整目录与 `scripts/_*` 调试残留。验证门：typecheck 0 错误、vitest 429/429 全绿。
 - **缺陷修复**：0.9.11 期间 `gen-icons.mjs` 的 `adaptiveForeground` 被改为直接缩放 `design/brand/master/app-icon-foreground.png`，但该素材的紫色渐变背景未抠除（外环 100% 不透明），`tests/iconAssets.test.ts` 安全区断言失败，并回退了 0.9.10 的 66/108 防裁切修复。已还原为 HEAD 的透明画布合成逻辑，重新生成全部 32 个图标资源，测试转绿。
 - **遗留**：`release/xiaoyaohe-0.9.11-android-release.apk` 仍含修复前的图标，下次发版重建时自动带上；「主体抠图式自适应前景」列为后续优化项（需先产出真正透明底的抠图素材）。
-- 后端全面审计计划见 `docs/plans/2026-09-03-backend-audit.md`（含 server/ 处置决策点：ASR 代理在 main 上仍保留、工作分支已删，待用户确认是否仍有部署）。
+- 后端全面审计计划见 `docs/plans/2026-09-03-backend-audit.md`。**2026-09-03 用户拍板：腾讯云语音代理彻底退役（决策 A）**——`main` 已快进合并 `workspace/claude`，`server/`（tencent-asr-proxy.mjs + README）随 0.9.11 基线从 main 移除；审计计划 Task 2/3 作废。遗留收尾（需用户在 git 之外操作）：下线服务器上的代理进程、在腾讯云控制台删除/轮换 `TENCENT_SECRET_ID/KEY`。

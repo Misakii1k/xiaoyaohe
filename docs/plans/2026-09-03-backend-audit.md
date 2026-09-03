@@ -79,12 +79,16 @@ git log --oneline -1 origin/main
 
 Expected: 均为 `0a4b3a2`（0.9.6），而 `CURRENT.md` 声称 main 已到 0.9.11 合并——说明本地与远端跟踪引用都旧。**执行 `git fetch origin`（需要网络/凭据，失败则跳过并记录）**，fetch 成功后重跑上面两条命令，以最新 `origin/main` 为准。
 
-**Step 3: 向用户提问（阻塞点，必须等回答）**
+**Step 3: 处置决策（2026-09-03 用户已拍板：决策 A 彻底退役）**
 
-> 「腾讯云语音代理（server/tencent-asr-proxy.mjs）客户端调用已在 0.9.7 移除，但 main 分支仍保留该文件。你的服务器上是否还部署着这个代理（VITE_ASR_PROXY_URL 指向的服务）？」
+> 用户指示：「把这个腾讯云的直接彻底退役」。
 
-- 回答「已下线/没有」→ 记为 **决策 A：彻底退役**。后续 Task 2/3 降级为「仅存档性检查」，并在 main 集成时删除 `server/`（本分支不动 main，只把决策写进 handoff，由集成流程执行）。
-- 回答「还在跑」→ 记为 **决策 B：保留并完整审计**。继续 Task 2、3 全部步骤。
+已执行：`main` 快进合并 `workspace/claude`（其历史中 `abb06f2` 已删除 `server/`），`server/` 随 0.9.11 基线从 main 消失。**Task 2、Task 3 整体作废（不再对代理做黑盒/白盒审计）。**
+
+仍需用户手动完成的退役收尾（git 管不到的部分）：
+1. 若服务器上仍部署该代理进程（`tencent-asr-proxy` / 8787 / nginx `/api/speech/tencent`），停止并下线。
+2. 到腾讯云控制台**删除或轮换 `TENCENT_SECRET_ID`/`TENCENT_SECRET_KEY`**——密钥一旦长期闲置也应作废。
+3. 应用内旧腾讯语音密钥仍留在本机安全存储（0.9.7 明示保留），如需清除见 Task 6 Step 2。
 
 **Step 4: 写决策进 handoff 并提交**
 
@@ -97,7 +101,7 @@ git commit -m "audit: record ASR proxy disposition decision (A retire / B keep)"
 
 ---
 
-### Task 2: ASR 代理黑盒探测（决策 B 必做；决策 A 可跳过）
+### Task 2: ASR 代理黑盒探测 —— ❌ 已作废（决策 A：代理彻底退役）
 
 **Files:**
 - Create（临时，不入库）: `/tmp/asr-audit/proxy.mjs`（从 main 提取）
@@ -144,7 +148,7 @@ kill %1   # 停掉探测进程
 
 ---
 
-### Task 3: ASR 代理白盒安全评审（决策 B 必做）
+### Task 3: ASR 代理白盒安全评审 —— ❌ 已作废（决策 A：代理彻底退役）
 
 **Files:**
 - Read: `/tmp/asr-audit/proxy.mjs`（全文 270 行）
