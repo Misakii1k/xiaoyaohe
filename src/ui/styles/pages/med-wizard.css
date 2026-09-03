@@ -229,3 +229,23 @@
   .bottom-sheet.med-wizard-host { border-radius: var(--radius-xl); }
   .med-wizard { inline-size: min(520px, 100%); border-radius: var(--radius-xl); padding-block-end: var(--space-5); }
 }
+/* 3D 现代医疗分药向导增强 */
+.med-wizard {
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: 0 -8px 32px rgba(99, 102, 241, 0.12);
+}
+
+.med-wizard-card {
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme='dark'] .med-wizard,
+[data-theme='dark'] .med-wizard-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}

@@ -8,9 +8,9 @@ export interface PrimaryNavigationItem {
 }
 
 export const primaryNavigation: readonly PrimaryNavigationItem[] = [
-  { id: 'today', href: '/today', label: '今日', icon: 'calendar' },
+  { id: 'today', href: '/today', label: '今日', icon: 'home' },
   { id: 'meds', href: '/meds', label: '药品', icon: 'pill' },
   { id: 'scan', href: '/scan', label: '分药', icon: 'pillbox' },
   { id: 'inventory', href: '/meds/inventory', label: '库存', icon: 'box' },
-  { id: 'settings', href: '/settings', label: '设置', icon: 'gear' },
+  { id: 'settings', href: '/settings', label: '设置', icon: 'user' },
 ];

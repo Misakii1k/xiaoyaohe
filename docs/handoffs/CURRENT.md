@@ -1,9 +1,43 @@
 # Current Integration State
 
-Updated: 2026-08-28
+Updated: 2026-09-02
 Integration branch: `main`
-Product version: `0.9.10`（workspace/claude 分支已发布，待合并 main）
+Product version: `0.9.11`（新增 Gemini 3D 全家福头像库、去代码化文案优化，versionCode 30 发布打包完成）
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Full-Screen UI Adaptation & Real Visual UI Defect Remediation 2026-09-01 (workspace/claude)
+
+- **底栏（TabBar）平权与动态激活态修复**：移除原 `shell.css` 与 `liquid-glass.css` 中对 `#/scan`（分药）强行写死的高亮紫渐变与胶囊凸起，5 个 Tab（今日、药品、分药、库存、设置）完全平权等宽等高，由当前路由动态高亮选中项图标（品牌紫 + 柔光胶囊），不再产生永久选中的视觉误导。
+- **全局小助手（AiAssistant）悬浮球移除与顶栏常驻化**：废除全局右下角悬浮小球（设置 `.ai-launcher { display: none !important; }`，彻底根治与卡片文字、多重 FAB、底栏的叠放遮挡），在各页面顶栏（TopBar）以及今日页问候栏右上角新增精致常驻的「✦ AI 助手」药丸按钮，点击即在底部滑出 AI 问答面板。
+- **今日页与药品页操作区规范化（移除遮挡 FAB）**：废除今日页右下角浮动遮挡底栏第 5 项的 `.today-fab`，改为结构化卡片与卡片内嵌式 `+ 添加第一种药品` 主按钮；药品列表页添加药品按钮规范放入操作坞与列表顶部。
+- **3D 拟物图标加载与备用 SVG 修复**：移除 `render3dMedia` 的 `img.loading = 'lazy'` 避免首屏与截图时图片不加载而空白，当未传入图片时直接同步渲染 3D 风格 SVG；重构「节省费用」SVG 图标（匹配 48x48 拟物圆角与金币质感），修复「我的数据」2x2 卡片完整展示。
+- **全面屏 Shell 布局防裁剪加固**：`.app-shell` 布局全面强化为弹性垂直盒模型（`flex-direction: column`），`.app-main` 承担独立滚动，底栏 `app-navigation` 稳固吸附在底部安全区之上，彻底解决不同安全区 inset 下底栏被裁剪的问题。
+- **设置页真实数据对接与 4 大分组手风琴卡片重构**：
+  - 彻底删除“节省费用”卡片及写死的 128 天、7 天连续打卡、32 次分药等所有 mock 假数据；
+  - 移除顶部与下方面板重复的 3 个“常用功能”跳转按钮；
+  - 对接真实数据库统计：展示真实的「在库药品」（`meds.length` 种，点击直达 `#/meds`）、「用药计划」（`rules.filter(r => r.enabled).length` 条，点击直达 `#/today`）与「打卡记录」（`logs.length` 次，点击直达 `#/history`），根据首条服药记录真实计算管理天数；
+- **极简原生通栏底栏（iOS 18 / 微信原生质感）彻底重构**：
+  - 彻底去除突兀的悬浮大香肠药丸造型、紫色圆形底衬斑块以及下方硬生生截断内容的方形遮罩；
+  - 升级为全屏 100% 满宽贴底原生底栏：0.5px 精致顶边线、超薄高透毛玻璃（`backdrop-filter: blur(20px)`），自动适配各全面屏安全区；
+  - 5 项导航平权均分，图标与 11px 标签字距紧凑，选中项以纯净品牌蓝紫高亮并配合轻微缩放微动效，浑然一体；
+- **设置页间距收紧与「本地数据与备份」卡片规范重构**：
+  - 清除了 `.profile-page` 内多重累加的 `margin-block-start`（从 ~48px 收紧至统一 16px 自然韵律），使「我的数据」与上方用户卡片紧凑协调；
+  - 将原裸露破坏卡片边框的「本地数据与备份」重构为标准折叠手风琴面板（`panel`，带 `box` 图标与状态 chip），导出/导入按钮与文字安全内嵌，全站加固容器 `overflow-wrap: anywhere;` 防溢出；
+- **16 套 Gemini 生图 + 精细抠图裁切 3D 黏土/皮克斯全家福头像落地**：
+  - 使用 Gemini 按照统一视角、相同光照与 4x4 网格生成高质量 3D 角色母图；
+  - 编写专用切图脚本 `scripts/slice_avatars.py`，采用色彩距离阈值（diff 渐变抗锯齿）与 OpenCV/SciPy 连通域拓扑分析，自动剔除四周边框邻格杂质与溢出碎片，精准输出 16 张 256x256 高清透明 PNG 头像（`src/ui/assets/avatars/`）；
+  - `AvatarPicker`、`Settings` 个人中心与 `Today` 顶栏全面直读高清角色图，点击即换并持久化；
+- **全面排查并优化前端外显文案（消除代码类展示内容）**：
+  - **关于小药盒**：彻底重构为精致品牌卡片，移除“本地优先版”等极客术语，展示软件名称、稳定版本标识、四条核心健康管家功能清单以及专业严谨的健康免责声明；
+  - **版本显示规范**：移除外显给普通用户的代码字段 `versionCode 29`，统一规范为用户友好的 `正式版`；
+  - **备份与恢复文案**：将生硬的 `导出（JSON）` 与 `导入恢复（JSON）` 优化为贴合用户心智的 `导出备份文件` 与 `从备份恢复数据`；
+  - **AI 助手提示文案**：将“接口需兼容 OpenAI /chat/completions 协议”等开发接口描述优化为面向用户的服务商说明与隐私安全承诺；
+- **分药页面真实数据对接与假数据根除**：
+  - 彻底移除硬编码的「分药盒 A/B」mock 假数据；
+  - 真实读取本地数据库 `listRecentInventoryOperations` 中今日分药向导完成记录，有记录展示真实分药药品与分装数量，无记录展示舒适的空状态引导；
+- **自动化测试与模拟器视觉逐帧验收通过**：
+  - Vitest 75 个测试套件（429 个测试）100% 全部通过；`tsc --noEmit` 0 错误；
+  - 多机型视觉截图验收全部通过；发布产物 APK 已生成并更新校验和。
 
 ## Tabbar Glass Bubble + Icon Fix 2026-08-28 (workspace/claude)
 

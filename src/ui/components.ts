@@ -93,6 +93,22 @@ export function topbarPill(options: {
   return btn;
 }
 
+/** 顶栏「✦ AI 助手」胶囊按钮 */
+export function topbarAiPill(onClick?: () => void): HTMLButtonElement {
+  const btn = el('button', {
+    class: 'topbar-pill topbar-ai-pill',
+    type: 'button',
+    'aria-label': '打开 AI 助手',
+    title: '打开 AI 助手',
+  });
+  btn.append(icon('sparkles'), el('span', { text: 'AI 助手' }));
+  btn.onclick = () => {
+    if (onClick) onClick();
+    else void import('./AiAssistant').then((m) => m.openAssistantPanel());
+  };
+  return btn;
+}
+
 /** ---------- Snackbar ---------- */
 const toastTimers = new Map<HTMLElement, number[]>();
 export function toast(msg: string, ms = 2200): void {
@@ -408,6 +424,9 @@ export function progressRing(value: number, total: number): HTMLElement {
 
   const defs = document.createElementNS(ns, 'defs');
   const gradientId = `ring_grad_${Math.random().toString(36).substring(2, 8)}`;
+  const glowId = `ring_glow_${Math.random().toString(36).substring(2, 8)}`;
+
+  // 柔和天蓝 -> 明亮紫罗兰 -> 深邃群青蓝多段高质感渐变
   const linearGrad = document.createElementNS(ns, 'linearGradient');
   linearGrad.setAttribute('id', gradientId);
   linearGrad.setAttribute('x1', '0%');
@@ -417,52 +436,86 @@ export function progressRing(value: number, total: number): HTMLElement {
 
   const stop1 = document.createElementNS(ns, 'stop');
   stop1.setAttribute('offset', '0%');
-  stop1.setAttribute('stop-color', '#818cf8');
+  stop1.setAttribute('stop-color', '#93c5fd');
+
   const stop2 = document.createElementNS(ns, 'stop');
-  stop2.setAttribute('offset', '50%');
-  stop2.setAttribute('stop-color', '#c084fc');
+  stop2.setAttribute('offset', '40%');
+  stop2.setAttribute('stop-color', '#818cf8');
+
   const stop3 = document.createElementNS(ns, 'stop');
   stop3.setAttribute('offset', '100%');
-  stop3.setAttribute('stop-color', '#38bdf8');
+  stop3.setAttribute('stop-color', '#4f46e5');
+
   linearGrad.append(stop1, stop2, stop3);
-  defs.append(linearGrad);
+
+  // 弥散光晕滤镜
+  const filter = document.createElementNS(ns, 'filter');
+  filter.setAttribute('id', glowId);
+  filter.setAttribute('x', '-30%');
+  filter.setAttribute('y', '-30%');
+  filter.setAttribute('width', '160%');
+  filter.setAttribute('height', '160%');
+
+  const blur = document.createElementNS(ns, 'feGaussianBlur');
+  blur.setAttribute('stdDeviation', '4');
+  blur.setAttribute('result', 'blur');
+  filter.append(blur);
+
+  defs.append(linearGrad, filter);
   svg.append(defs);
 
+  // 背景底环
   const track = document.createElementNS(ns, 'circle');
   track.setAttribute('class', 'ring-bg');
   track.setAttribute('cx', '50');
   track.setAttribute('cy', '50');
-  track.setAttribute('r', '40');
+  track.setAttribute('r', '38');
   track.setAttribute('pathLength', '100');
   svg.append(track);
 
-  const fg = document.createElementNS(ns, 'circle');
-  fg.setAttribute('class', 'ring-fg');
-  fg.setAttribute('cx', '50');
-  fg.setAttribute('cy', '50');
-  fg.setAttribute('r', '40');
-  fg.setAttribute('pathLength', '100');
-  fg.setAttribute('stroke', `url(#${gradientId})`);
-  fg.setAttribute('stroke-linecap', 'round');
-  fg.setAttribute('stroke-dasharray', `${percent} 100`);
-  fg.setAttribute('stroke-dashoffset', '0');
-  svg.append(fg);
+  // 底部弥散光晕弧（仅当有进度时展示）
+  if (percent > 0) {
+    const glow = document.createElementNS(ns, 'circle');
+    glow.setAttribute('class', 'ring-glow');
+    glow.setAttribute('cx', '50');
+    glow.setAttribute('cy', '50');
+    glow.setAttribute('r', '38');
+    glow.setAttribute('pathLength', '100');
+    glow.setAttribute('stroke', `url(#${gradientId})`);
+    glow.setAttribute('stroke-linecap', 'round');
+    glow.setAttribute('stroke-dasharray', `${percent} 100`);
+    glow.setAttribute('stroke-dashoffset', '0');
+    glow.setAttribute('filter', `url(#${glowId})`);
+    svg.append(glow);
+  }
 
+  // 活跃前景进度弧
+  if (percent > 0) {
+    const fg = document.createElementNS(ns, 'circle');
+    fg.setAttribute('class', 'ring-fg');
+    fg.setAttribute('cx', '50');
+    fg.setAttribute('cy', '50');
+    fg.setAttribute('r', '38');
+    fg.setAttribute('pathLength', '100');
+    fg.setAttribute('stroke', `url(#${gradientId})`);
+    fg.setAttribute('stroke-linecap', 'round');
+    fg.setAttribute('stroke-dasharray', `${percent} 100`);
+    fg.setAttribute('stroke-dashoffset', '0');
+    svg.append(fg);
+  }
+
+  // 中心大字号百分比排版
   const label = el('div', { class: 'ring-label' });
   label.setAttribute('aria-hidden', 'true');
   if (safeTotal === 0) {
-    label.append(
-      el('span', { class: 'ring-value', text: '—' }),
-      el('span', { class: 'ring-caption', text: '无安排' }),
-    );
+    label.append(el('span', { class: 'ring-empty', text: '—' }));
   } else {
-    label.append(
-      el('span', { class: 'ring-value', text: `${percent}%` }),
-      el('span', {
-        class: 'ring-caption',
-        text: ratio >= 1 ? '已完成' : `已服 ${safeValue}/${safeTotal}`,
-      }),
+    const group = el('div', { class: 'ring-center-content' });
+    group.append(
+      el('span', { class: 'ring-num ring-value', text: String(percent) }),
+      el('span', { class: 'ring-unit', text: '%' })
     );
+    label.append(group);
   }
 
   wrap.append(svg, label);

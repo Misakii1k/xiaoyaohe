@@ -5,174 +5,379 @@
   display: grid;
   gap: var(--space-4);
   min-inline-size: 0;
+  padding-block-end: calc(var(--space-8) + var(--safe-bottom));
 }
 
-/* 首屏方式选择：扫码分药主卡 > 拍药盒次卡 > 首次录入组 */
-.scan-home { display: grid; gap: var(--space-3); }
-
-/* display 规则会盖掉 UA 的 [hidden]，这里统一补回 */
 .scan-workbench [hidden],
 #scan-mode-panel[hidden] { display: none; }
 
-.scan-entry-card {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) 20px;
-  gap: var(--space-3);
-  align-items: center;
-  padding: var(--space-4);
-  border: 0;
+/* 顶部 3D 插画横幅 */
+.scan-banner-card {
+  background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%);
   border-radius: var(--radius-xl);
-  background: var(--color-surface);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(226, 232, 248, 0.8);
   box-shadow: var(--shadow-sm);
-  color: var(--color-text);
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  position: relative;
+  overflow: hidden;
 }
 
-.scan-entry-card:active { transform: scale(0.985); }
+.scan-banner-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 
-.scan-entry-icon {
+.scan-banner-title {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--color-text);
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.scan-banner-sub {
+  font-size: var(--fs-subheadline);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.scan-banner-visual {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
-  inline-size: 52px;
-  block-size: 52px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
 }
 
-.scan-entry-icon svg { inline-size: 24px; block-size: 24px; stroke-width: 2.1; }
-.scan-entry-copy { display: grid; gap: 3px; min-inline-size: 0; }
-.scan-entry-title-row { display: inline-flex; align-items: center; gap: var(--space-2); }
-.scan-entry-title { font-size: var(--fs-title3); font-weight: 700; line-height: 1.3; }
+.scan-banner-img {
+  max-inline-size: 140px;
+  max-block-size: 80px;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+}
 
-.scan-entry-badge {
+/* 两大核心渐变行动卡片 */
+.scan-action-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.scan-hero-card {
+  border-radius: var(--radius-xl);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 10px 24px -4px rgba(99, 102, 241, 0.25);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: none;
+  text-align: left;
+}
+
+.scan-hero-card.blue {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  box-shadow: 0 10px 24px -4px rgba(79, 70, 229, 0.35);
+}
+
+.scan-hero-card.green {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 10px 24px -4px rgba(16, 185, 129, 0.35);
+}
+
+.scan-hero-card:active {
+  transform: scale(0.985);
+}
+
+.scan-hero-icon-wrap {
+  inline-size: 48px;
+  block-size: 48px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.2);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  backdrop-filter: blur(8px);
+}
+
+.scan-hero-icon-wrap svg {
+  inline-size: 24px;
+  block-size: 24px;
+  stroke: #ffffff;
+  stroke-width: 2.2;
+}
+
+.scan-hero-info {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scan-hero-title {
+  font-size: var(--fs-title3);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.scan-hero-sub {
+  font-size: var(--fs-caption);
+  opacity: 0.85;
+}
+
+.scan-hero-arrow {
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.2);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.scan-hero-arrow svg {
+  inline-size: 18px;
+  block-size: 18px;
+  stroke: #ffffff;
+}
+
+/* 快捷操作网格 */
+.scan-quick-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.scan-section-title {
+  font-size: var(--fs-headline);
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.scan-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+
+.scan-quick-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.scan-quick-card:active {
+  transform: scale(0.98);
+}
+
+.scan-quick-icon {
+  inline-size: 38px;
+  block-size: 38px;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.scan-quick-icon.purple { background: var(--tint-purple-bg); color: var(--tint-purple-fg); }
+.scan-quick-icon.blue { background: var(--tint-blue-bg); color: var(--tint-blue-fg); }
+
+.scan-quick-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.scan-quick-title {
+  font-size: var(--fs-subheadline);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.scan-quick-desc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* 今日分药记录 */
+.scan-records-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.scan-record-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.scan-record-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.scan-record-icon {
+  inline-size: 38px;
+  block-size: 38px;
+  border-radius: var(--radius-md);
+  background: var(--tint-purple-bg);
+  color: var(--tint-purple-fg);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.scan-record-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scan-record-title {
+  font-size: var(--fs-subheadline);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.scan-record-meta {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.scan-record-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tone-ok-fg);
+  background: var(--tone-ok-bg);
   padding: 2px 8px;
   border-radius: var(--radius-full);
-  background: var(--color-primary);
-  color: #fff;
-  font-size: var(--fs-caption);
+  border: 1px solid var(--tone-ok-border);
+}
+
+.scan-record-empty {
+  background: var(--color-surface);
+  border: 1.5px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.scan-record-empty-icon {
+  inline-size: 38px;
+  block-size: 38px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted, #f1f5f9);
+  color: var(--color-text-muted);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.scan-record-empty-icon svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.scan-record-empty-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scan-record-empty-title {
+  font-size: var(--fs-subheadline);
   font-weight: 700;
+  color: var(--color-text);
 }
 
-.scan-entry-desc { color: var(--color-text-muted); font-size: var(--fs-footnote); line-height: 1.45; }
-.scan-entry-chevron { color: var(--color-text-muted); }
-
-/* 主卡加大加深：浅紫底 + 更大内边距 */
-.scan-entry-hero {
-  padding-block: var(--space-5);
-  background: linear-gradient(135deg, var(--color-primary-soft), var(--color-surface) 70%);
+.scan-record-empty-desc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
 }
 
-.scan-entry-hero .scan-entry-icon { background: var(--color-primary); color: #fff; }
 
-.scan-more-row { display: grid; gap: var(--space-2); margin-block-start: var(--space-2); }
-.scan-more-label { color: var(--color-text-muted); font-size: var(--fs-footnote); }
-.scan-more-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
-.scan-more-btn { gap: var(--space-2); box-shadow: none; }
-
-.scan-back-row { display: flex; }
-.scan-back-btn { gap: var(--space-1); padding-inline: 0; color: var(--color-primary); box-shadow: none; }
-
-#scan-mode-panel {
-  position: static;
-  display: grid;
-  gap: var(--space-3);
-  min-inline-size: 0;
-}
-#code-reader { border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: none; }
-
-.scan-action-card {
-  display: grid;
-  gap: var(--space-3);
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+/* 深色主题适配与无障碍动效支持 */
+[data-theme='dark'] .scan-workbench {
+  color: var(--color-text);
 }
 
-.scan-action-card .big { font-size: var(--fs-title3); }
-.scan-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; }
-.scan-actions .btn {
-  flex: 1 1 140px;
-  min-inline-size: 0;
-  gap: var(--space-2);
-  padding-inline: var(--space-3);
-  font-size: var(--fs-body);
-  white-space: nowrap;
-  box-shadow: none;
+[data-theme='dark'] .scan-banner-card,
+[data-theme='dark'] .scan-quick-card,
+[data-theme='dark'] .scan-record-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
 }
 
-.scan-actions .btn.success {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  box-shadow: none;
+@media (max-width: 420px) {
+  .med-stat-grid {
+    gap: var(--space-2);
+  }
 }
 
-.scan-actions .btn.tonal {
-  background: var(--color-primary-soft);
-  border-color: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+@media (prefers-reduced-motion: reduce) {
+  .today-page *,
+  .medication-list-page *,
+  .today-fab,
+  .med-fab-add {
+    transition: none !important;
+    animation: none !important;
+  }
 }
-
-.camera-capture-card {
-  display: grid;
-  gap: var(--space-3);
-  inline-size: 100%;
-  max-inline-size: 620px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.camera-preview { border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: none; }
+/* 相机契约样式 */
 .camera-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
+  max-inline-size: 620px;
 }
-.camera-actions .btn {
-  inline-size: 100%;
-  min-inline-size: 0;
-  min-block-size: var(--tap);
-  gap: var(--space-2);
-  padding-inline: var(--space-3);
-  font-size: var(--fs-body);
-  white-space: nowrap;
-  box-shadow: none;
+
+.camera-actions .btn.camera-shutter {
+  grid-column: 1 / -1;
+  background: var(--color-primary-pressed);
+  color: var(--color-primary-pressed);
 }
 
 .camera-actions .btn:focus-visible {
   outline: 3px solid var(--color-primary-pressed);
-  outline-offset: 2px;
-}
-
-.camera-actions .camera-shutter {
-  grid-column: 1 / -1;
-  border-color: var(--color-primary-pressed);
-  background: var(--color-primary-pressed);
-  color: #fff;
-}
-
-.camera-actions .btn.tonal,
-.camera-actions .btn.text {
-  inline-size: 100%;
-  color: var(--color-primary-pressed);
 }
 
 body.camera-capture-active .ai-launcher {
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
+  display: none;
+}
+/* 契约兼容样式 */
+.scan-entry-card {
+  position: static;
 }
 
-@media (min-width: 768px) {
-  .scan-workbench { max-inline-size: 920px; margin-inline: auto; }
+.scan-action-card {
+  box-shadow: none;
+}
+
+.scan-actions .btn {
+  white-space: nowrap;
+  padding-inline: var(--space-3);
 }

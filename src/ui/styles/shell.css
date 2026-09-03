@@ -8,24 +8,56 @@
 }
 
 .app-shell {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   block-size: 100vh;
   block-size: 100dvh;
   min-block-size: 100vh;
   min-block-size: 100dvh;
   max-inline-size: 840px;
   margin-inline: auto;
+  overflow: hidden;
+  box-sizing: border-box;
   background: var(--color-bg-mesh);
   background-attachment: fixed;
 }
 
-/* 悬浮玻璃条（底栏 / 操作坞）共用：离屏留缝 + 内容安全区。 */
-.app-shell > .tabbar.app-navigation,
+.app-shell > .app-header {
+  flex: 0 0 auto;
+  z-index: 2;
+}
+
+.app-shell > .app-main {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 1;
+}
+
+/* 原生通栏底栏（iOS 18 / 微信原生质感）：满宽贴底 + 0.5px 精致顶边线 + 超薄毛玻璃 */
+.app-shell > .tabbar.app-navigation {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  inline-size: 100%;
+  max-inline-size: 840px;
+  margin-inline: auto;
+  margin-block: 0;
+  z-index: 10;
+  pointer-events: auto;
+}
+
 .app-shell > .action-dock {
-  --float-gap: 6px;
-  margin-inline: calc(10px + var(--safe-left)) calc(10px + var(--safe-right));
-  margin-block-end: calc(var(--float-gap) + var(--safe-bottom));
+  position: absolute;
+  inset-inline: calc(12px + var(--safe-left)) calc(12px + var(--safe-right));
+  inset-block-end: calc(64px + var(--safe-bottom));
+  max-inline-size: 816px;
+  margin-inline: auto;
+  margin-block: 0;
+  z-index: 9;
+  pointer-events: auto;
 }
 
 /* 双参考图融和：顶栏保持大号粗标题，高透水凝玻璃面 */
@@ -72,6 +104,53 @@
   background: var(--color-surface);
 }
 
+.topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.topbar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--color-text);
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.topbar-pill:active {
+  transform: scale(0.95);
+}
+
+.topbar-ai-pill {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);
+  color: var(--color-primary);
+}
+
+.topbar-ai-pill svg {
+  inline-size: 16px;
+  block-size: 16px;
+  stroke: var(--color-primary);
+}
+
+.topbar-ai-pill:hover,
+.topbar-ai-pill:active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(168, 85, 247, 0.22) 100%);
+  border-color: var(--color-primary);
+}
+
 .app-main {
   min-block-size: 0;
   overflow: auto;
@@ -85,7 +164,8 @@
 .page {
   inline-size: 100%;
   min-inline-size: 0;
-  padding: var(--space-4) max(var(--space-4), var(--safe-right)) calc(var(--space-6) + var(--safe-bottom)) max(var(--space-4), var(--safe-left));
+  box-sizing: border-box;
+  padding: var(--space-4) max(var(--space-4), var(--safe-right)) calc(64px + var(--safe-bottom) + var(--space-3)) max(var(--space-4), var(--safe-left));
 }
 
 .action-dock {
@@ -103,48 +183,62 @@
 
 .action-dock:empty { display: none; }
 
-/* 悬浮胶囊底栏：贴近酷安式的扁条，safe-area 已由外层 margin 承担 */
+/* 极简原生通栏底栏（iOS 18 / 微信原生质感）：满宽贴底 + 0.5px 精致顶边线 + 超薄毛玻璃 */
 .tabbar.app-navigation {
-  position: relative;
-  inset: auto;
   transform: none;
-  inline-size: auto;
-  max-inline-size: none;
-  min-block-size: 54px;
+  inline-size: 100%;
+  min-block-size: calc(52px + var(--safe-bottom));
   height: auto;
-  margin-block-start: 0;
-  padding: 3px var(--space-1) 3px;
-  border: 0;
-  border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: var(--shadow-md);
+  margin: 0;
+  padding-block-start: 6px;
+  padding-block-end: calc(6px + var(--safe-bottom));
+  padding-inline: max(8px, var(--safe-left)) max(8px, var(--safe-right));
+  border-top: 1px solid rgba(226, 232, 248, 0.85);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
 }
 
-.tabbar.app-navigation::after { display: none; }
+[data-theme='dark'] .tabbar.app-navigation {
+  background: rgba(22, 23, 30, 0.88);
+  border-top-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.tabbar.app-navigation::after,
+.tabbar.app-navigation::before { display: none !important; }
 
 .tabbar.app-navigation a {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  gap: 2px;
+  justify-content: center;
+  gap: 3px;
   min-inline-size: 0;
-  min-block-size: 46px;
-  padding: 3px 2px;
-  border-radius: var(--radius-md);
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
+  flex: 1;
+  min-block-size: 44px;
+  padding: 2px 0;
+  border-radius: var(--radius-sm);
+  color: #8e8e93;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.1px;
   text-decoration: none;
-  transition: color 0.2s ease, transform 0.2s ease;
+  transition: color 0.15s ease, transform 0.15s ease;
 }
 
 .tabbar.app-navigation a.active {
   color: var(--color-primary);
-  background: transparent;
+  font-weight: 700;
 }
 
 .tabbar.app-navigation a .ic {
@@ -152,44 +246,37 @@
   place-items: center;
   inline-size: 24px;
   block-size: 24px;
+  border-radius: 0;
   background: transparent;
   box-shadow: none;
-}
-.tabbar.app-navigation a .ic svg { inline-size: 22px; block-size: 22px; }
-.tabbar.app-navigation a.active .ic { background: transparent; box-shadow: none; }
-.tabbar.app-navigation a.active .ic svg { stroke-width: 2.3; stroke: var(--color-primary); }
-
-/* 中央扫描项：横向胶囊主按钮，凸出底栏顶部 */
-.tabbar.app-navigation a[href='#/scan'] {
-  justify-content: flex-start;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.15s ease;
 }
 
-.tabbar.app-navigation a[href='#/scan'] .ic {
-  display: grid;
-  place-items: center;
-  inline-size: 58px;
-  block-size: 42px;
-  margin-block-start: -16px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary-gradient);
-  color: #ffffff;
-  box-shadow:
-    0 10px 22px rgba(99, 102, 241, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.28);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+.tabbar.app-navigation a .ic svg {
+  inline-size: 22px;
+  block-size: 22px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  transition: stroke-width 0.15s ease;
 }
 
-.tabbar.app-navigation a[href='#/scan'] .ic svg { inline-size: 24px; block-size: 24px; stroke: #ffffff; }
-
-.tabbar.app-navigation a[href='#/scan']:active .ic {
-  transform: scale(0.94);
-  box-shadow: 0 5px 12px rgba(23, 116, 91, 0.28);
+.tabbar.app-navigation a.active .ic {
+  background: transparent;
+  color: var(--color-primary);
+  transform: scale(1.06);
 }
 
-.tabbar.app-navigation a[href='#/scan'].active .ic {
-  background: linear-gradient(160deg, #21b486 0%, #17745b 100%);
-  color: #ffffff;
+.tabbar.app-navigation a.active .ic svg {
+  stroke-width: 2.3;
+}
+
+.tabbar.app-navigation a:active .ic {
+  transform: scale(0.92);
+}
+
+.tabbar.app-navigation a.active .ic svg {
+  stroke-width: 2.4;
+  stroke: var(--color-primary);
 }
 
 .toast {
@@ -274,24 +361,24 @@
 }
 
 @media (orientation: landscape) and (max-height: 599px) {
-  .app-shell:has(.history-page) .topbar {
+  .app-shell .topbar {
     min-block-size: calc(52px + var(--safe-top));
     padding-block-start: calc(var(--safe-top) + var(--space-1));
   }
 
-  .app-shell:has(.history-page) .topbar h1 {
+  .app-shell .topbar h1 {
     font-size: var(--fs-title2);
   }
 
-  .app-shell:has(.history-page) .page {
+  .app-shell .page {
     padding-block-start: var(--space-2);
   }
 
-  .app-shell:has(.history-page) .tabbar.app-navigation {
-    min-block-size: calc(58px + var(--safe-bottom));
+  .app-shell .tabbar.app-navigation {
+    min-block-size: calc(50px + var(--safe-bottom));
   }
 
-  .app-shell:has(.history-page) .tabbar.app-navigation a {
-    min-block-size: 50px;
+  .app-shell .tabbar.app-navigation a {
+    min-block-size: 44px;
   }
 }

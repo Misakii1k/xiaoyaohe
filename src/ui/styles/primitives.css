@@ -805,3 +805,224 @@ input[type='datetime-local']:not(.ui-picker-native) {
     transform: translateY(0) scale(1);
   }
 }
+
+/* ============================================================
+   3D 拟态插画与组件样式 (3D Visuals & Assets)
+   ============================================================ */
+.asset-3d-svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 14px rgba(99, 102, 241, 0.12));
+}
+
+.banner-3d-svg {
+  display: block;
+  inline-size: 120px;
+  block-size: 90px;
+  object-fit: contain;
+}
+
+.user-avatar-3d {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: var(--radius-full);
+}
+
+.stat-3d-icon {
+  display: block;
+  inline-size: 32px;
+  block-size: 32px;
+  object-fit: contain;
+}
+
+/* ============================================================
+   服药打卡沉浸式弹窗 (Take Medication Modal)
+   ============================================================ */
+.take-med-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: overlayFadeIn 0.25s ease forwards;
+}
+
+.take-med-overlay.closing {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.take-med-sheet {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-4) var(--space-5) calc(var(--space-6) + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-block-size: min(90dvh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: sheetSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.12);
+}
+
+.take-med-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-block-size: 40px;
+}
+
+.take-med-back-btn,
+.take-med-skip-btn {
+  background: none;
+  border: none;
+  font-size: var(--fs-body);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+}
+
+.take-med-title {
+  font-size: var(--fs-title3);
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.take-med-hero-card {
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  padding: var(--space-5) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.take-med-time {
+  font-size: 36px;
+  font-weight: 900;
+  color: var(--color-text);
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.take-med-timesub {
+  font-size: var(--fs-subheadline);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.take-med-3d-visual {
+  inline-size: 130px;
+  block-size: 130px;
+  margin-top: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.take-med-card {
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  border: 1px solid var(--color-border);
+}
+
+.take-med-thumb {
+  inline-size: 64px;
+  block-size: 64px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.take-med-thumb img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.take-med-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.take-med-name {
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.take-med-meta {
+  font-size: var(--fs-subheadline);
+  color: var(--color-text-muted);
+}
+
+.take-med-badge {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.take-med-footer {
+  margin-top: var(--space-2);
+}
+
+.take-med-primary-btn {
+  inline-size: 100%;
+  min-block-size: 54px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #ffffff;
+  font-size: var(--fs-title3);
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 10px 24px -4px rgba(79, 70, 229, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.take-med-primary-btn:active {
+  transform: scale(0.98);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+[data-theme='dark'] .take-med-sheet {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+

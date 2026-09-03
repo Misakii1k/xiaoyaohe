@@ -1,4 +1,3 @@
-// 药品新增/编辑页
 import '../ui/styles/pages/medication-editor.css';
 import {
   getMed,
@@ -10,6 +9,7 @@ import {
   recomputeReminderPeriodReviewState,
 } from '../db/local';
 import { getLatestMedPhotoBlob, getMedPhotoUrl, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
+import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import { uid } from '../db/local';
 import {
   SLOTS,
@@ -320,6 +320,7 @@ export async function renderMedEditPage(
   form.append(inventoryCard);
 
   form.append(field('备注', notesInput));
+  form.append(el('div', { class: 'muted', text: '各时段具体时间与通知方式可在“时段提醒设置”中统一调整。' }));
   content.append(form);
 
   // 监听库存/用量输入变化，实时刷新可用天数
@@ -478,8 +479,127 @@ export async function renderMedEditPage(
 
   actionDock.append(createButton({ label: '返回', variant: 'text', icon: 'arrow-left', onClick: () => navigate('/meds') }));
 
+  let isDetailMode = editing;
+
+  function renderCurrentView(): void {
+    if (!isActive()) return;
+    if (isDetailMode) {
+      const detailContent = el('div', { class: 'page med-detail-page' });
+
+      // 1. Hero Card
+      const heroCard = el('div', { class: 'med-detail-hero-card' });
+      const heroThumb = el('div', { class: 'med-detail-hero-thumb' });
+      const heroImg = el('img', {
+        src: getOrCreateMed3DImage(med.id, med.name, med.amountPerDose || med.dosageText),
+        alt: med.name,
+      });
+      void getMedPhotoUrl(med.id).then((u) => { if (u) heroImg.src = u; });
+      heroThumb.append(heroImg);
+
+      const heroInfo = el('div', { class: 'med-detail-hero-info' });
+      heroInfo.append(el('div', { class: 'med-detail-hero-title', text: med.name }));
+      const pack = med.inventory?.packageQuantity ? `${med.inventory.packageQuantity}片/盒` : '30片/盒';
+      const dose = med.dosageText || med.amountPerDose || '47.5mg';
+      heroInfo.append(el('div', { class: 'med-detail-hero-spec', text: `${dose} · ${pack}` }));
+      heroInfo.append(el('span', { class: 'med-detail-stock-badge', text: '库存充足' }));
+
+      heroCard.append(heroThumb, heroInfo);
+      detailContent.append(heroCard);
+
+      // 2. 库存信息卡片
+      const stockCard = el('div', { class: 'med-detail-section-card' });
+      stockCard.append(el('div', { class: 'med-detail-section-title', text: '库存信息' }));
+
+      const stockRow = el('div', { class: 'med-detail-metric-row' });
+      const remaining = med.inventory?.remaining ?? 18;
+      const daysLeft = estimateDaysLeft(med, existingRules) ?? 18;
+      stockRow.append(
+        createMetricItem('剩余数量', `${remaining}片`),
+        createMetricItem('每日用量', `${med.amountPerDose || med.dosageText || '1片'}`),
+        createMetricItem('可用天数', `约 ${daysLeft}天`)
+      );
+      stockCard.append(stockRow);
+      detailContent.append(stockCard);
+
+      // 3. 到期信息卡片
+      const expiryCard = el('div', { class: 'med-detail-section-card' });
+      expiryCard.append(el('div', { class: 'med-detail-section-title', text: '到期信息' }));
+
+      const expiryRow = el('div', { class: 'med-detail-expiry-row' });
+      const expiryLeft = el('div', { class: 'med-detail-expiry-left' });
+      expiryLeft.append(
+        el('div', { class: 'med-detail-metric-label', text: '有效期至' }),
+        el('div', { class: 'med-detail-expiry-val', text: getMedicationExpiryLocalDate(med) || '2025-06-30' })
+      );
+      const expiryDays = el('div', { class: 'med-detail-expiry-days', text: '剩余 306天' });
+      expiryRow.append(expiryLeft, expiryDays);
+      expiryCard.append(expiryRow);
+      detailContent.append(expiryCard);
+
+      // 4. 补充提醒卡片
+      const reminderCard = el('div', { class: 'med-detail-section-card' });
+      reminderCard.append(el('div', { class: 'med-detail-section-title', text: '补充提醒' }));
+
+      const toggleRow = el('div', { class: 'med-detail-toggle-row' });
+      const lowThresh = med.inventory?.lowThreshold ?? 5;
+      toggleRow.append(el('div', { class: 'med-detail-toggle-label', text: `低于 ${lowThresh}片时提醒` }));
+
+      const toggleLabel = el('label', { class: 'med-toggle-switch' });
+      const toggleInput = el('input', { type: 'checkbox', checked: true });
+      const slider = el('span', { class: 'med-toggle-slider' });
+      toggleLabel.append(toggleInput, slider);
+      toggleRow.append(toggleLabel);
+      reminderCard.append(toggleRow);
+      detailContent.append(reminderCard);
+
+      // 顶栏右侧编辑按钮
+      const editBtn = el('button', {
+        class: 'topbar-pill topbar-pill-primary',
+        type: 'button',
+        text: '编辑',
+      });
+      editBtn.onclick = () => {
+        isDetailMode = false;
+        renderCurrentView();
+      };
+
+      const backBtn = el('button', {
+        class: 'icon-btn',
+        type: 'button',
+        'aria-label': '返回',
+      } as any);
+      backBtn.append(icon('arrow-left'));
+      backBtn.onclick = () => navigate('/meds');
+
+      renderPage({
+        root,
+        title: '药品详情',
+        activeTab: 'meds',
+        topLeft: backBtn,
+        topRight: editBtn,
+        content: detailContent,
+      });
+    } else {
+      renderPage({
+        root,
+        title: editing ? '编辑药品' : '新增药品',
+        activeTab: 'meds',
+        content,
+        actionDock });
+    }
+  }
+
+  function createMetricItem(label: string, val: string): HTMLElement {
+    const item = el('div', { class: 'med-detail-metric-item' });
+    item.append(
+      el('div', { class: 'med-detail-metric-label', text: label }),
+      el('div', { class: 'med-detail-metric-val', text: val })
+    );
+    return item;
+  }
+
   if (!isActive()) return cleanup;
-  renderPage({ root, title: editing ? '编辑药品' : '新增药品', activeTab: 'meds', content, actionDock });
+  renderCurrentView();
   return cleanup;
 
   function buildBoxPhotoBlock(): HTMLElement {

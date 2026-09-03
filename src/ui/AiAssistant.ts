@@ -57,6 +57,7 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 const history: AssistantExchange[] = [];
 let mounted = false;
+let globalOpenPanel: (() => void) | null = null;
 
 async function fileToAttachment(file: File): Promise<AssistantAttachment> {
   if (file.size > MAX_FILE_BYTES) {
@@ -376,6 +377,8 @@ export function mountGlobalAssistant(): void {
     }
     setTimeout(() => input.focus(), 320);
   }
+
+  globalOpenPanel = openPanel;
 
   function closePanel(): void {
     busy?.abort();
@@ -837,4 +840,12 @@ export function mountGlobalAssistant(): void {
       });
     }, 0);
   }
+}
+
+export function openAssistantPanel(): void {
+  if (!globalOpenPanel) {
+    mountGlobalAssistant();
+  }
+  const opener = globalOpenPanel as (() => void) | null;
+  opener?.();
 }

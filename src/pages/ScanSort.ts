@@ -9,6 +9,7 @@ import {
   augmentIdentity,
   findMedByPhotoHash,
 } from '../features/identify';
+import { pillboxBannerImg, getPillboxMachine3dSvg, render3dMedia } from '../ui/assets3d';
 import { formatExpiry, type ProductKey } from '../features/gs1';
 import {
   deleteRule,
@@ -20,6 +21,7 @@ import {
   putRule,
   recordPreDeduction,
   uid,
+  listRecentInventoryOperations,
 } from '../db/local';
 import { getMedPhotoUrls, saveMedPhoto } from '../features/medPhotos';
 import { sendLowStockReminderIfDue } from '../features/inventoryReminder';
@@ -35,8 +37,9 @@ import {
   type Medication,
   type ReminderRule,
   type Slot,
+  type InventoryOperationLog,
 } from '../db/schema';
-import { el, renderPage, toast, slotTag, icon, banner, confirmDialog, field } from '../ui/components';
+import { el, renderPage, toast, slotTag, icon, banner, confirmDialog, field, topbarAiPill } from '../ui/components';
 import { navigate } from '../router';
 import {
   identifyByBlob,
@@ -50,7 +53,7 @@ import { setPendingPrefill } from '../ai/pendingPrefill';
 import { setPendingMedicationBatch } from '../ai/pendingMedicationBatch';
 import { openMedOnboardWizard } from '../ui/MedOnboardWizard';
 import { openSortWizard, type SortWizardEntry, type SortWizardItem } from '../ui/SortWizard';
-import { isMedicationExpiredOn, projectScheduleDate, toLocalDate } from '../domain/medicationSchedule';
+import { isMedicationExpiredOn, projectScheduleDate, toLocalDate, localDayBounds } from '../domain/medicationSchedule';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { applyExplicitDose, createMedicationDraft } from '../domain/medicationDraft';
 
@@ -183,112 +186,179 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     });
   };
 
-  renderPage({ root, title: '分药', activeTab: 'scan', content });
+  renderPage({ root, title: '分药', activeTab: 'scan', topRight: topbarAiPill(), content });
   renderHome();
 
   function isOperationCurrent(operation: number, expectedMode: ScanMode): boolean {
     return !disposed && mode === expectedMode && operation === operationSequence;
   }
 
-  /** 首屏方式选择卡组：录过药主推「按顺序分药」，第一次用主推拍药单/口述录入 */
-  function buildHome(hasMeds: boolean): void {
-    const entryCard = (
-      cls: string,
-      iconName: Parameters<typeof icon>[0],
-      title: string,
-      desc: string,
-      badge: string | null,
-      onClick: () => void,
-    ): HTMLButtonElement => {
-      const card = el('button', { class: `scan-entry-card ${cls}`, type: 'button' } as any) as HTMLButtonElement;
-      const iconWrap = el('span', { class: 'scan-entry-icon', 'aria-hidden': 'true' } as any);
-      iconWrap.append(icon(iconName));
-      card.append(iconWrap);
-      const copy = el('span', { class: 'scan-entry-copy' });
-      const titleRow = el('span', { class: 'scan-entry-title-row' });
-      titleRow.append(el('span', { class: 'scan-entry-title', html: title }));
-      if (badge) titleRow.append(el('span', { class: 'scan-entry-badge', html: badge }));
-      copy.append(titleRow);
-      copy.append(el('span', { class: 'scan-entry-desc', html: desc }));
-      card.append(copy);
-      card.append(icon('chevron-right', 'scan-entry-chevron'));
-      card.onclick = onClick;
-      return card;
-    };
-    const moreBtn = (
-      iconName: Parameters<typeof icon>[0],
-      label: string,
-      onClick: () => void,
-    ): HTMLButtonElement => {
-      const button = el('button', { class: 'btn tonal scan-more-btn', type: 'button' } as any) as HTMLButtonElement;
-      button.append(icon(iconName));
-      button.append(el('span', { html: label }));
-      button.onclick = onClick;
-      return button;
-    };
-
+  function buildHome(
+    _hasMeds: boolean,
+    allMeds: Medication[] = [],
+    recentLogs: InventoryOperationLog[] = [],
+  ): void {
     home.replaceChildren();
-    const more = el('div', { class: 'scan-more-row' });
-    const moreBtns = el('div', { class: 'scan-more-actions' });
 
-    if (hasMeds) {
-      home.append(
-        entryCard(
-          'scan-entry-hero',
-          'pillbox',
-          '开始分药',
-          '一盒一盒带您放：看照片认药，放哪格、放几粒都写清楚',
-          '日常用',
-          () => void startSortWizard(),
-        ),
-        entryCard(
-          'scan-entry-secondary',
-          'scan',
-          '扫一扫认药',
-          '拿不准手里这盒是什么？对准条码马上告诉您',
-          null,
-          () => void enterMode('code'),
-        ),
-      );
-      more.append(el('span', { class: 'scan-more-label', html: '要加新药，或认不出手里这盒？' }));
-      moreBtns.append(
-        moreBtn('sparkles', '拍药单录入', () => void enterMode('sheet', () => void openSheetCamera())),
-        moreBtn('camera', '拍药盒识别', () => void enterMode('smart', () => void openSmartCamera())),
-        moreBtn('plus', '手动添加', () => navigate('/meds/new')),
-      );
+    // 1. 顶部 3D 横幅
+    const bannerCard = el('div', { class: 'scan-banner-card' });
+    const bannerLeft = el('div', { class: 'scan-banner-left' });
+    bannerLeft.append(
+      el('h2', { class: 'scan-banner-title', text: '分药助手' }),
+      el('div', { class: 'scan-banner-sub', text: '轻松管理每日用药' })
+    );
+    const bannerVisual = el('div', { class: 'scan-banner-visual' });
+    bannerVisual.append(render3dMedia(pillboxBannerImg, getPillboxMachine3dSvg, '智能分药机', 'scan-banner-img'));
+    bannerCard.append(bannerLeft, bannerVisual);
+    home.append(bannerCard);
+
+    // 2. 两大核心行动卡片
+    const actionCards = el('div', { class: 'scan-action-cards' });
+
+    // 开始分药
+    const sortCard = el('button', {
+      class: 'scan-hero-card blue',
+      type: 'button',
+    } as any);
+    const sortIcon = el('div', { class: 'scan-hero-icon-wrap' });
+    sortIcon.append(icon('pillbox'));
+    const sortInfo = el('div', { class: 'scan-hero-info' });
+    sortInfo.append(
+      el('div', { class: 'scan-hero-title', text: '开始分药' }),
+      el('div', { class: 'scan-hero-sub', text: '按时间分装药品' })
+    );
+    const sortArrow = el('div', { class: 'scan-hero-arrow' });
+    sortArrow.append(icon('chevron-right'));
+    sortCard.append(sortIcon, sortInfo, sortArrow);
+    sortCard.onclick = () => void startSortWizard();
+
+    // 扫一扫认药
+    const scanCard = el('button', {
+      class: 'scan-hero-card green',
+      type: 'button',
+    } as any);
+    const scanIcon = el('div', { class: 'scan-hero-icon-wrap' });
+    scanIcon.append(icon('scan'));
+    const scanInfo = el('div', { class: 'scan-hero-info' });
+    scanInfo.append(
+      el('div', { class: 'scan-hero-title', text: '扫一扫认药' }),
+      el('div', { class: 'scan-hero-sub', text: '识别药品信息' })
+    );
+    const scanArrow = el('div', { class: 'scan-hero-arrow' });
+    scanArrow.append(icon('chevron-right'));
+    scanCard.append(scanIcon, scanInfo, scanArrow);
+    scanCard.onclick = () => void enterMode('code');
+
+    actionCards.append(sortCard, scanCard);
+    home.append(actionCards);
+
+    // 3. 快捷操作
+    const quickSection = el('div', { class: 'scan-quick-section' });
+    quickSection.append(el('h3', { class: 'scan-section-title', text: '快捷操作' }));
+
+    const quickGrid = el('div', { class: 'scan-quick-grid' });
+
+    const sheetQuick = el('div', { class: 'scan-quick-card' });
+    const sheetIcon = el('div', { class: 'scan-quick-icon purple' });
+    sheetIcon.append(icon('camera'));
+    const sheetInfo = el('div', { class: 'scan-quick-info' });
+    sheetInfo.append(
+      el('div', { class: 'scan-quick-title', text: '拍单录入' }),
+      el('div', { class: 'scan-quick-desc', text: '识别处方单' })
+    );
+    sheetQuick.append(sheetIcon, sheetInfo);
+    sheetQuick.onclick = () => void enterMode('sheet', () => void openSheetCamera());
+
+    const smartQuick = el('div', { class: 'scan-quick-card' });
+    const smartIcon = el('div', { class: 'scan-quick-icon blue' });
+    smartIcon.append(icon('box'));
+    const smartInfo = el('div', { class: 'scan-quick-info' });
+    smartInfo.append(
+      el('div', { class: 'scan-quick-title', text: '拍药盒识别' }),
+      el('div', { class: 'scan-quick-desc', text: '智能识别药盒' })
+    );
+    smartQuick.append(smartIcon, smartInfo);
+    smartQuick.onclick = () => void enterMode('smart', () => void openSmartCamera());
+
+    quickGrid.append(sheetQuick, smartQuick);
+    quickSection.append(quickGrid);
+    home.append(quickSection);
+
+    // 4. 今日分药记录 (对接真实数据库记录)
+    const recordsSection = el('div', { class: 'scan-records-section' });
+    recordsSection.append(el('h3', { class: 'scan-section-title', text: '今日分药记录' }));
+
+    const todayDate = toLocalDate(new Date());
+    const { start, end } = localDayBounds(todayDate);
+    const todayLogs = recentLogs.filter(
+      (log) => log.source === 'wizard' && log.timestamp >= start && log.timestamp <= end,
+    );
+
+    if (todayLogs.length > 0) {
+      const medById = new Map(allMeds.map((m) => [m.id, m]));
+      for (const log of todayLogs) {
+        const med = medById.get(log.medId);
+        const medName = log.medName || med?.name || '药品';
+        const unit = med?.inventory?.unit || '份';
+        const count = Math.abs(log.delta);
+        const timeStr = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        recordsSection.append(
+          createRecordCard(
+            `${medName} (分装 ${count} ${unit})`,
+            `${todayDate} ${timeStr} · ${log.sourceNote || '分药向导完成'}`,
+          ),
+        );
+      }
     } else {
-      home.append(
-        entryCard(
-          'scan-entry-hero',
-          'sparkles',
-          '拍药单，一次录完',
-          '把医生开的药单拍下来，AI 帮您把药名、时段都填好',
-          '第一步',
-          () => void enterMode('sheet', () => void openSheetCamera()),
-        ),
+      const emptyCard = el('div', { class: 'scan-record-empty' });
+      const emptyIcon = el('div', { class: 'scan-record-empty-icon' });
+      emptyIcon.append(icon('pillbox'));
+      const emptyInfo = el('div', { class: 'scan-record-empty-info' });
+      emptyInfo.append(
+        el('div', { class: 'scan-record-empty-title', text: '今日暂无分药记录' }),
+        el('div', { class: 'scan-record-empty-desc', text: '点击上方「开始分药」即可按时段将药品分装入盒' }),
       );
-      more.append(el('span', { class: 'scan-more-label', html: '其他方式' }));
-      moreBtns.append(
-        moreBtn('camera', '拍药盒识别', () => void enterMode('smart', () => void openSmartCamera())),
-        moreBtn('scan', '扫条码认药', () => void enterMode('code')),
-        moreBtn('plus', '手动添加', () => navigate('/meds/new')),
-      );
+      emptyCard.append(emptyIcon, emptyInfo);
+      recordsSection.append(emptyCard);
     }
-    more.append(moreBtns);
-    home.append(more);
+
+    home.append(recordsSection);
+  }
+
+  function createRecordCard(title: string, meta: string): HTMLElement {
+    const card = el('div', { class: 'scan-record-card' });
+    const left = el('div', { class: 'scan-record-left' });
+    const iconWrap = el('div', { class: 'scan-record-icon' });
+    iconWrap.append(icon('pillbox'));
+    const info = el('div', { class: 'scan-record-info' });
+    info.append(
+      el('div', { class: 'scan-record-title', text: title }),
+      el('div', { class: 'scan-record-meta', text: meta })
+    );
+    left.append(iconWrap, info);
+
+    const badge = el('span', { class: 'scan-record-badge', text: '已完成' });
+    card.append(left, badge);
+    return card;
   }
 
   /** 首屏形态跟着数据走：录过药和第一次用看到的不一样 */
   async function refreshHome(): Promise<void> {
     const current = ++homeSequence;
     let hasMeds = false;
+    let meds: Medication[] = [];
+    let recentLogs: InventoryOperationLog[] = [];
     try {
-      hasMeds = (await listMeds()).length > 0;
+      [meds, recentLogs] = await Promise.all([
+        listMeds(),
+        listRecentInventoryOperations(50),
+      ]);
+      hasMeds = meds.length > 0;
     } catch {
       /* 读不到就按第一次用展示 */
     }
     if (disposed || current !== homeSequence) return;
-    buildHome(hasMeds);
+    buildHome(hasMeds, meds, recentLogs);
   }
 
   /** 按顺序分药：把今天的服药安排按药分组，弹卡一盒一盒带着放 */
@@ -382,6 +452,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
             toast(`库存扣减失败：${failed} 个时段`);
           }
           for (const message of lowStockMessages) toast(message);
+          void refreshHome();
         },
       });
     } finally {

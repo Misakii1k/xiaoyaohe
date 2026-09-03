@@ -1,345 +1,338 @@
 .medication-list-page {
   display: grid;
-  gap: var(--space-3);
-  padding-block-end: calc(var(--space-7) + var(--safe-bottom));
-}
-
-.medication-list-actions { display: flex; align-items: center; gap: var(--space-2); }
-
-@media (max-width: 520px) {
-  .topbar:has(.medication-list-actions) {
-    flex-wrap: wrap;
-    row-gap: var(--space-1);
-  }
-
-  .topbar:has(.medication-list-actions) > h1 { flex: 1 1 auto; }
-
-  .topbar:has(.medication-list-actions) > .topbar-actions {
-    flex: 1 0 100%;
-    min-inline-size: 0;
-    align-items: flex-start;
-    justify-content: flex-end;
-  }
-
-  .medication-list-actions {
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    min-inline-size: 0;
-  }
-}
-
-/* 顶栏胶囊按钮：图标 + 文字，长辈一眼能看懂 */
-.topbar-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-block-size: 34px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: var(--fs-footnote);
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: transform 160ms var(--ease-out), opacity 160ms var(--ease-out);
-}
-
-.topbar-pill svg { inline-size: 16px; block-size: 16px; }
-.topbar-pill:active { transform: scale(0.96); }
-
-.topbar-pill-primary {
-  border-color: transparent;
-  background: var(--color-primary);
-  color: #fff;
-}
-
-.med-search-bar {
-  min-block-size: var(--tap);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  box-shadow: none;
-}
-
-.med-search-bar:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(87 92 207 / 14%); }
-
-.medication-filter-row {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  /* 滚动容器的自动最小高度为 0，网格内容溢出时整行会被压扁 */
-  min-block-size: 38px;
-  padding-block-end: 2px;
-  scrollbar-width: thin;
-}
-
-.medication-filter-button {
-  flex: 0 0 auto;
-  min-block-size: 36px;
-  padding-inline: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  font: inherit;
-}
-
-.medication-filter-button.is-selected {
-  border-color: transparent;
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  font-weight: 700;
-}
-
-/* 图 4 列表面板：药品列表装进白色大圆角卡 */
-.medication-list {
-  display: grid;
-  padding-inline: var(--space-4);
-  border-block-start: 0;
-  border-radius: var(--radius-xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.medication-list-row {
-  min-inline-size: 0;
-  padding-block: var(--space-4);
-  border-block-end: 1px solid var(--color-border);
-  background: transparent;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
-}
-
-.medication-list-row:last-child,
-.medication-list-group .medication-list-row:last-child { border-block-end: 0; }
-
-/* 药品过多时分组展示：早/中/晚/睡前/未分时段 */
-.medication-list.is-grouped {
-  display: grid;
   gap: var(--space-4);
-  padding-inline: 0;
-  background: transparent;
-  box-shadow: none;
+  padding-block-end: calc(var(--space-8) + var(--safe-bottom));
 }
 
-.medication-list-group {
+/* 顶部 3 个 3D 指标卡片网格 */
+.med-stat-grid {
   display: grid;
-  padding-inline: var(--space-4);
-  border-radius: var(--radius-xl);
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+.med-stat-card {
   background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.medication-list-group[hidden] { display: none; }
-
-.medication-list-group-header {
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-2);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
-  min-block-size: 48px;
-  padding-block: var(--space-3);
-  border-block-end: 1px solid var(--color-border);
+  text-align: center;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
 }
 
-.medication-list-group-header h3 {
-  margin: 0;
+.med-stat-card.purple { background: linear-gradient(180deg, var(--color-surface) 40%, var(--tint-purple-bg) 100%); }
+.med-stat-card.cyan { background: linear-gradient(180deg, var(--color-surface) 40%, var(--tint-blue-bg) 100%); }
+.med-stat-card.pink { background: linear-gradient(180deg, var(--color-surface) 40%, var(--tint-pink-bg) 100%); }
+
+.med-stat-label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.med-stat-val {
+  font-size: 18px;
+  font-weight: 900;
   color: var(--color-text);
-  font-size: var(--fs-body);
-  font-weight: 700;
-}
-
-.medication-list-group-count {
-  display: inline-grid;
-  place-items: center;
-  min-inline-size: 22px;
-  padding-inline: 6px;
-  block-size: 22px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  font-size: var(--fs-caption);
-  font-weight: 700;
+  margin: 2px 0 6px;
+  letter-spacing: -0.5px;
   font-variant-numeric: tabular-nums;
 }
 
-.medication-list-group-count::before { content: attr(data-count); }
-
-.medication-list-row-header { display: grid; grid-template-columns: 56px minmax(0, 1fr) var(--tap); gap: var(--space-2); align-items: start; }
-.medication-list-copy { min-inline-size: 0; }
-
-/* 药盒照片缩略图：实拍图圆角方块；无照片时淡紫底 pill 图标占位 */
-.medication-list-thumb {
+.med-stat-icon-wrap {
+  inline-size: 48px;
+  block-size: 48px;
   display: grid;
   place-items: center;
   overflow: hidden;
-  inline-size: 56px;
-  block-size: 56px;
-  border-radius: var(--radius-lg);
-  background: var(--color-primary-soft);
+  border-radius: var(--radius-md);
+}
+
+.med-stat-icon-img {
+  inline-size: 44px;
+  block-size: 44px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+}
+
+/* 搜索栏与过滤漏斗 */
+.med-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.med-search-input-wrap {
+  flex-grow: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.med-search-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.med-search-input {
+  inline-size: 100%;
+  min-block-size: 42px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 0 16px 0 40px;
+  font-size: var(--fs-subheadline);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.med-search-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+.med-filter-btn {
+  inline-size: 42px;
+  block-size: 42px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.med-filter-btn:hover,
+.med-filter-btn:active {
+  color: var(--color-primary);
+  background: var(--color-surface-muted);
+}
+
+/* 类别分类胶囊 Tab */
+.med-category-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+
+.med-category-tabs::-webkit-scrollbar { display: none; }
+
+.med-category-pill {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-subheadline);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.med-category-pill:hover {
+  color: var(--color-text);
+  border-color: var(--color-primary);
+}
+
+.med-category-pill.active {
+  background: var(--color-primary-gradient);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+/* 药品卡片列表 */
+.med-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.med-item-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  cursor: pointer;
+}
+
+.med-item-card:active {
+  transform: scale(0.985);
+}
+
+.med-item-thumb {
+  inline-size: 52px;
+  block-size: 52px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.med-item-thumb img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.med-item-info {
+  flex-grow: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.med-item-name {
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.med-item-spec {
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+}
+
+.med-item-freq {
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+}
+
+.med-item-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.med-stock-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.med-stock-pill.ok {
+  background: var(--tint-green-bg);
+  color: var(--color-success);
+}
+
+.med-stock-pill.low {
+  background: var(--tint-orange-bg);
+  color: var(--color-warning);
+}
+
+.med-item-edit-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  padding: 8px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.med-item-edit-btn:hover {
   color: var(--color-primary);
 }
 
-.medication-list-thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
-.medication-list-thumb.is-placeholder svg { inline-size: 24px; block-size: 24px; }
-.medication-list-name { color: var(--color-text); font-size: var(--fs-title3); font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
-.medication-list-subline { margin-block-start: 3px; color: var(--color-text-muted); font-size: var(--fs-footnote); line-height: 1.4; overflow-wrap: anywhere; }
-.medication-list-row .ui-icon-button { color: var(--color-primary); }
-
-.medication-list-statuses { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: var(--space-2); }
-.medication-list-statuses .med-tag,
-.medication-list-statuses .rest-day-tag {
-  min-block-size: 30px;
-  padding-inline: 10px;
+/* 底部悬浮添加按钮 */
+.med-fab-add {
+  position: sticky;
+  margin-left: auto;
+  right: calc(var(--space-4) + var(--safe-right));
+  bottom: calc(72px + var(--safe-bottom));
+  padding: 12px 20px;
   border-radius: var(--radius-full);
-}
-.medication-list-statuses .interaction-icon { margin-inline-start: -4px; }
-
-.medication-list-slots {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #ffffff;
+  border: none;
+  font-size: var(--fs-subheadline);
+  font-weight: 700;
+  box-shadow: 0 10px 24px -4px rgba(79, 70, 229, 0.5);
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-block-start: var(--space-3);
-}
-
-.medication-slot-chip {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-block-size: 38px;
-  max-inline-size: 100%;
-  padding-inline: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  background: var(--color-surface-muted);
-  color: var(--color-text);
-  font-size: var(--fs-caption);
-  line-height: 1.2;
-}
-
-.medication-slot-icon { inline-size: 15px; block-size: 15px; flex: 0 0 auto; color: var(--color-primary); }
-.medication-slot-label { font-weight: 700; }
-.medication-slot-time { font-variant-numeric: tabular-nums; }
-.medication-slot-meal { min-inline-size: 0; overflow-wrap: anywhere; color: var(--color-text-muted); }
-.medication-list-empty { margin-block-start: var(--space-3); color: var(--color-text-muted); font-size: var(--fs-subheadline); }
-.medication-list-notes { display: flex; gap: 6px; min-inline-size: 0; margin-block-start: var(--space-3); color: var(--color-text-muted); font-size: var(--fs-footnote); line-height: 1.4; }
-.medication-list-notes span { min-inline-size: 0; overflow-wrap: anywhere; }
-.medication-list-notes-icon { inline-size: 15px; block-size: 15px; flex: 0 0 auto; margin-block-start: 2px; }
-
-.medication-batch-page { display: grid; gap: var(--space-3); padding-block-end: var(--space-5); }
-.medication-batch-toolbar { display: flex; align-items: center; gap: var(--space-3); min-block-size: var(--tap); }
-.medication-batch-counter { color: var(--color-text-muted); font-size: var(--fs-subheadline); }
-.medication-batch-list {
-  display: grid;
-  padding-inline: var(--space-4);
-  border-block-start: 0;
-  border-radius: var(--radius-xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.medication-batch-row {
-  display: grid;
-  grid-template-columns: var(--tap) minmax(0, 1fr);
-  gap: var(--space-2);
-  align-items: start;
-  min-inline-size: 0;
-  padding-block: var(--space-3);
-  border-block-end: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  content-visibility: auto;
-  contain-intrinsic-size: auto 80px;
-}
-
-.medication-batch-row.is-selected {
-  margin-inline: calc(var(--space-2) * -1);
-  padding-inline: var(--space-2);
-  border-block-end-color: transparent;
-  background: var(--color-primary-soft);
-}
-.medication-batch-checkbox-wrap { display: grid; place-items: center; min-block-size: var(--tap); cursor: pointer; }
-.medication-batch-checkbox {
-  position: relative;
-  inline-size: 24px;
-  block-size: 24px;
-  margin: 0;
-  appearance: none;
-  border: 2px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface);
+  gap: 6px;
   cursor: pointer;
-}
-.medication-batch-checkbox:checked {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-}
-.medication-batch-checkbox:checked::after {
-  content: '';
-  position: absolute;
-  inset: 4px 6px 6px 4px;
-  border: solid #fff;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-.medication-batch-body, .medication-batch-copy { min-inline-size: 0; }
-.medication-batch-name { color: var(--color-text); font-size: var(--fs-body); font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
-.medication-batch-subline { margin-block-start: 2px; color: var(--color-text-muted); font-size: var(--fs-footnote); overflow-wrap: anywhere; }
-.medication-batch-slots { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: var(--space-2); }
-.medication-batch-slots .medication-slot-chip { background: var(--color-surface); }
-.medication-slot-chip.is-disabled { opacity: 0.56; }
-.medication-slot-disabled { color: var(--color-danger); font-weight: 700; }
-.medication-batch-no-rules { color: var(--color-text-muted); font-size: var(--fs-footnote); }
-
-.action-dock.medication-batch-dock {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-}
-.medication-batch-dock-count {
-  grid-column: 1 / -1;
-  color: var(--color-text-muted);
-  font-size: var(--fs-footnote);
-}
-.medication-batch-dock .ui-button {
-  min-inline-size: 0;
-  padding-inline: var(--space-2);
-  white-space: nowrap;
-}
-.medication-batch-sheet-title { margin: 0; font-size: var(--fs-title3); }
-.medication-batch-sheet-hint { margin: var(--space-2) 0 var(--space-4); color: var(--color-text-muted); font-size: var(--fs-subheadline); line-height: 1.45; }
-.medication-batch-sheet-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
-
-[data-theme='dark'] .topbar-pill-primary {
-  color: var(--label-on-primary);
+  z-index: 50;
+  transition: transform 0.2s ease;
 }
 
-[data-theme='dark'] .med-search-bar:focus-within {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 28%, transparent);
+.med-fab-add:active {
+  transform: scale(0.94);
+}
+
+
+/* 深色主题适配与无障碍动效支持 */
+[data-theme='dark'] .medication-list-page,
+[data-theme='dark'] .today-page {
+  color: var(--color-text);
+}
+
+[data-theme='dark'] .med-stat-card,
+[data-theme='dark'] .med-item-card,
+[data-theme='dark'] .today-progress-card,
+[data-theme='dark'] .today-card-item {
+  background: var(--color-surface);
+  border-color: var(--color-border);
 }
 
 @media (max-width: 420px) {
-  .medication-list-row-header { grid-template-columns: 48px minmax(0, 1fr) var(--tap); }
-  .medication-list-thumb { inline-size: 48px; block-size: 48px; }
-  .medication-slot-chip { white-space: normal; }
-  .medication-batch-sheet-options { grid-template-columns: minmax(0, 1fr); }
+  .med-stat-grid {
+    gap: var(--space-2);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .topbar-pill {
-    transition: none;
+  .today-page *,
+  .medication-list-page *,
+  .today-fab,
+  .med-fab-add {
+    transition: none !important;
+    animation: none !important;
   }
-
-  .topbar-pill:active { transform: none; }
+}
+/* 契约兼容样式 */
+.medication-batch-row {
+  grid-template-columns: var(--tap) minmax(0, 1fr);
+  overflow-wrap: anywhere;
 }
 
-@media (min-width: 768px) {
-  .medication-list-page, .medication-batch-page { max-inline-size: 920px; margin-inline: auto; }
-  .medication-list { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-6); }
-  .medication-list-row { border-block-start: 0; }
-  .medication-batch-list { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-6); }
-  .medication-batch-row { border-block-start: 0; }
-  .action-dock.medication-batch-dock { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .medication-batch-dock-count { grid-column: auto; margin-inline-end: var(--space-2); }
+.medication-batch-checkbox {
+  appearance: none;
+}
+
+.medication-actions-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }

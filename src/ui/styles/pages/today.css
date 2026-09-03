@@ -1,379 +1,518 @@
+.page.today-page,
 .today-page {
   display: grid;
-  gap: var(--space-5);
-  padding-block-end: calc(var(--space-7) + var(--safe-bottom));
-}
-
-/* 图 4 Overview 卡：白色大圆角摘要卡 */
-.today-summary {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-4);
+  padding-top: calc(var(--safe-top) + var(--space-2));
+  padding-block-start: calc(var(--safe-top) + var(--space-2));
+  padding-block-end: calc(var(--space-8) + var(--safe-bottom));
+}
+
+/* 顶部问候栏 */
+.today-header-row {
+  display: flex;
   align-items: center;
-  overflow: hidden;
-  padding: var(--space-5);
-  border-block-end: 0;
-  border-radius: var(--radius-xl);
-  background:
-    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--color-primary) 10%, transparent) 0%, transparent 52%),
-    var(--color-surface);
-  box-shadow: var(--shadow-sm);
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-1);
 }
 
-.today-summary-copy { min-inline-size: 0; }
-.today-summary-date { color: var(--color-text-muted); font-size: var(--fs-footnote); }
-.today-summary-title { margin: var(--space-1) 0 var(--space-4); font-size: var(--fs-title2); font-weight: 800; letter-spacing: -0.4px; line-height: 1.3; }
-
-/* 大百分比环：无外层徽章壳，粗轨 + 中心 % */
-.today-summary-progress {
-  display: grid;
-  place-items: center;
-  align-self: center;
-  inline-size: 112px;
-  block-size: 112px;
-  margin: 0;
-  background: transparent;
-  box-shadow: none;
-  border-radius: 0;
-}
-
-.today-summary-progress .progress-ring {
-  position: relative;
-  inline-size: 112px;
-  block-size: 112px;
-  flex: 0 0 112px;
-  filter: none;
-}
-.today-summary-progress .progress-ring svg {
-  inline-size: 100%;
-  block-size: 100%;
-  transform: rotate(-90deg);
-  overflow: visible;
-}
-.today-summary-progress .ring-bg {
-  fill: none;
-  stroke: color-mix(in srgb, var(--color-primary) 12%, #e8e8f0);
-  stroke-width: 10.5;
-  stroke-linecap: round;
-}
-.today-summary-progress .ring-fg {
-  fill: none;
-  stroke: var(--color-primary);
-  stroke-width: 10.5;
-  stroke-linecap: round;
-  transition: stroke-dasharray 420ms cubic-bezier(0.22, 1, 0.36, 1);
-  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--color-primary) 18%, transparent));
-}
-.today-summary-progress .progress-ring.is-done .ring-fg {
-  stroke: var(--color-success);
-  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--color-success) 18%, transparent));
-}
-.today-summary-progress .progress-ring.is-empty .ring-fg,
-.today-summary-progress .progress-ring.is-pending .ring-fg {
-  stroke: transparent;
-  filter: none;
-}
-.today-summary-progress .progress-ring.is-empty .ring-bg {
-  stroke: color-mix(in srgb, var(--color-text-muted) 18%, #ececf2);
-}
-.today-summary-progress .ring-label {
-  position: absolute;
-  inset: 0;
+.today-header-left {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   gap: 2px;
-  pointer-events: none;
-  text-align: center;
-  line-height: 1.05;
-}
-.today-summary-progress .ring-value {
-  color: var(--color-ink-purple);
-  font-size: 22px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.6px;
-}
-.today-summary-progress .ring-caption {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0;
-  max-inline-size: 4.8em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.today-summary-progress .progress-ring.is-done .ring-value {
-  color: var(--color-success);
-}
-.today-summary-progress .progress-ring.is-empty .ring-value {
-  color: var(--color-text-muted);
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: 0;
 }
 
-.today-summary-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-}
-
-.today-summary-stat { display: grid; gap: 1px; min-inline-size: 48px; }
-.today-summary-stat-label { color: var(--color-text-muted); font-size: var(--fs-caption); }
-.today-summary-stat-value { display: inline-flex; align-items: center; gap: 5px; color: var(--color-text); font-size: var(--fs-body); font-variant-numeric: tabular-nums; }
-.today-summary-stat-value .status-badge { inline-size: 5px; min-block-size: 5px; padding: 0; border-radius: 50%; }
-
-/* 窄屏下统计项避免参差不齐的 flex 换行，改用对齐的两列网格 */
-@media (max-width: 360px) {
-  .today-summary-stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-2) var(--space-3);
-  }
-  .today-summary-stat { min-inline-size: 0; }
-}
-
-.today-schedule { display: grid; gap: var(--space-4); }
-
-/* 每个服药时段一张白卡 */
-.today-slot {
-  min-inline-size: 0;
-  border-block-end: 0;
-  padding: var(--space-4) var(--space-4) var(--space-4);
-  border-radius: var(--radius-xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.today-slot-header { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; padding-block-end: var(--space-2); }
-.today-slot-header .slot-tag { flex: 0 0 auto; }
-.today-slot-time { color: var(--color-text); font-size: var(--fs-title3); font-weight: 700; font-variant-numeric: tabular-nums; }
-.today-slot-spacer { flex: 1 1 auto; min-inline-size: 0; }
-.today-slot-header .status-badge { flex: 0 0 auto; }
-
-.today-medication-list { border-block-start: 1px solid var(--color-border); }
-.today-medication-row {
-  display: grid;
-  grid-template-columns: 8px 44px minmax(0, 1fr) auto;
-  gap: var(--space-2);
-  align-items: center;
-  min-inline-size: 0;
-  padding-block: var(--space-3);
-  border-block-end: 1px solid var(--color-border);
-}
-
-.today-medication-marker { inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--color-primary); }
-
-/* 药盒照片缩略图：让长辈按盒子外观对药 */
-.today-medication-thumb {
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  inline-size: 44px;
-  block-size: 44px;
-  border-radius: var(--radius-md);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-}
-
-.today-medication-thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
-.today-medication-thumb.is-placeholder svg { inline-size: 20px; block-size: 20px; }
-.today-medication-copy { min-inline-size: 0; }
-.today-medication-name { color: var(--color-text); font-size: var(--fs-body); font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
-.today-medication-meta { margin-block-start: 2px; color: var(--color-text-muted); font-size: var(--fs-footnote); line-height: 1.35; overflow-wrap: anywhere; }
-.today-medication-status { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; min-inline-size: 0; }
-.today-medication-taken .today-medication-marker { background: var(--color-success); }
-.today-medication-skipped .today-medication-marker { background: var(--color-warning); }
-.today-medication-row.is-expired { margin-inline: -4px; padding-inline: 4px; background: #fff4f4; }
-.today-medication-row.is-expired .today-medication-marker { background: var(--color-danger); }
-.today-medication-row.is-rest-day { opacity: 0.68; }
-.today-medication-row.notification-target { outline: 3px solid var(--color-primary); outline-offset: 2px; scroll-margin-block: var(--space-6); }
-
-.today-slot-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-block-start: var(--space-3); }
-.today-slot-actions .ui-button { flex: 1 1 152px; min-inline-size: 0; text-align: center; }
-.today-slot-actions .ui-button-text { flex: 0 0 auto; }
-.today-slot-empty { color: var(--color-text-muted); font-size: var(--fs-subheadline); }
-
-.today-adherence {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-5);
-  border-radius: var(--radius-xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-}
-.today-adherence h2 { margin: 0; font-size: var(--fs-title3); }
-
-/* 近 7 天：宽轨柱 + 底色轨道，空日不再是「小胶囊」 */
-.today-adherence .adherence-chart {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
-  align-items: end;
-  height: auto;
-  min-height: 0;
-  padding-block: 2px 0;
-}
-.today-adherence .adherence-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.today-adherence .adherence-bar-wrap {
-  width: 100%;
-  height: 96px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background:
-    repeating-linear-gradient(
-      to top,
-      transparent 0 23px,
-      color-mix(in srgb, var(--color-text-muted) 10%, transparent) 23px 24px
-    );
-  border-radius: 12px;
-}
-.today-adherence .adherence-track {
-  position: relative;
-  width: clamp(14px, 42%, 28px);
-  height: 100%;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-text-muted) 12%, var(--color-surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-muted) 8%, transparent);
-  overflow: hidden;
-}
-.today-adherence .adherence-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  height: var(--adherence-fill, 0%);
-  min-height: 0;
-  border-radius: 999px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 88%, white) 0%, var(--color-primary) 100%);
-  transition: height 360ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-/* 二元着色：完成日 = 品牌渐变，未完成日 = 警示色 */
-.today-adherence .adherence-bar.complete {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 82%, white) 0%, var(--color-primary) 100%);
-}
-.today-adherence .adherence-bar.miss {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-danger, #ff3b30) 70%, white) 0%, var(--color-danger, #ff3b30) 100%);
-  opacity: 0.85;
-}
-.today-adherence .adherence-bar.ok {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-success) 78%, white) 0%, var(--color-success) 100%);
-}
-.today-adherence .adherence-bar.warn {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent-coral) 78%, white) 0%, var(--color-accent-coral) 100%);
-}
-.today-adherence .adherence-bar.empty {
-  display: none;
-}
-.today-adherence .adherence-col.is-empty .adherence-track {
-  background:
-    repeating-linear-gradient(
-      -28deg,
-      color-mix(in srgb, var(--color-text-muted) 8%, var(--color-surface)) 0 4px,
-      color-mix(in srgb, var(--color-text-muted) 14%, var(--color-surface)) 4px 8px
-    );
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-muted) 10%, transparent);
-}
-.today-adherence .adherence-col.is-today .adherence-track {
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 28%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
-}
-.today-adherence .adherence-label {
-  font-size: 11px;
-  line-height: 1.2;
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.today-adherence .adherence-label.is-today {
-  color: var(--color-primary);
-  font-weight: 700;
-}
-.today-adherence .adherence-pct {
+.today-header-title {
+  font-size: 28px;
+  font-weight: 900;
   color: var(--color-text);
-  font-weight: 700;
-  font-size: 11px;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-  min-height: 1.2em;
-}
-.today-adherence .adherence-pct.is-empty {
-  color: var(--color-text-muted);
-  font-weight: 600;
-  opacity: 0.72;
-}
-.today-adherence .adherence-summary {
   margin: 0;
-  text-align: start;
-  font-size: var(--fs-footnote, 12px);
-  line-height: 1.45;
+  letter-spacing: -0.5px;
 }
 
-/* P3 Task 10.1：进入完整历史的入口链接 */
-.today-adherence-link {
+.today-header-date {
+  font-size: var(--fs-subheadline);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.today-header-actions {
   display: inline-flex;
   align-items: center;
-  margin-top: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  color: var(--color-primary);
-  text-decoration: none;
-  border-radius: var(--radius-md);
-  transition: background 120ms ease;
-}
-.today-adherence-link:hover,
-.today-adherence-link:focus-visible {
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-}
-.today-adherence-link:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  gap: var(--space-2);
 }
 
-[data-theme='dark'] .today-medication-row.is-expired {
-  background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
+.today-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 38px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);
+  color: var(--color-primary);
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.today-ai-btn svg {
+  inline-size: 16px;
+  block-size: 16px;
+  stroke: var(--color-primary);
+}
+
+.today-ai-btn:active {
+  transform: scale(0.95);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(168, 85, 247, 0.22) 100%);
+}
+
+.today-header-avatar-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  inline-size: 40px;
+  block-size: 40px;
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+  transition: transform 0.2s ease;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.today-header-avatar-btn:active {
+  transform: scale(0.92);
+}
+
+.today-header-avatar-img,
+.today-avatar-img {
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  display: block;
+}
+
+.today-header-avatar-btn svg {
+  inline-size: 40px;
+  block-size: 40px;
+  display: block;
+}
+
+.app-shell:has(.today-page) > .topbar {
+  display: none;
+}
+
+.today-header-avatar-btn:active {
+  transform: scale(0.92);
+}
+
+/* 今日用药进度卡片 */
+.today-progress-card {
+  position: relative;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: 18px 20px 16px;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.today-progress-title {
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.2px;
+}
+
+.today-progress-body {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 28px;
+  padding: 2px 0 4px;
+}
+
+.today-progress-ring-wrap {
+  flex-shrink: 0;
+  inline-size: 104px;
+  block-size: 104px;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.today-progress-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-grow: 1;
+}
+
+.today-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.today-legend-dot {
+  inline-size: 18px;
+  block-size: 18px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.today-legend-inner {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+}
+
+.today-legend-dot.taken {
+  background: var(--tint-purple-bg);
+}
+.today-legend-dot.taken .today-legend-inner {
+  background: var(--color-primary);
+  box-shadow: 0 0 6px rgba(99, 102, 241, 0.45);
+}
+
+.today-legend-dot.pending {
+  background: var(--tint-green-bg);
+}
+.today-legend-dot.pending .today-legend-inner {
+  background: var(--color-success);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.45);
+}
+
+.today-legend-dot.skipped {
+  background: var(--color-surface-muted);
+}
+.today-legend-dot.skipped .today-legend-inner {
+  background: var(--color-text-muted);
+}
+
+.today-legend-text {
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.today-legend-count {
+  font-weight: 700;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  min-inline-size: 16px;
+  display: inline-block;
+  text-align: end;
+  margin: 0 2px;
+}
+
+.today-progress-encourage {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* 计划时段与时段筛选 */
+.today-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-2);
+}
+
+.today-section-title {
+  font-size: var(--fs-headline);
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.today-filter-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0;
+  scrollbar-width: none;
+}
+
+.today-filter-tabs::-webkit-scrollbar { display: none; }
+
+.today-filter-pill {
+  border: 1px solid rgba(226, 232, 248, 0.8);
+  background: #ffffff;
+  color: var(--color-text-muted);
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-subheadline);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.today-filter-pill.active {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+/* 药品列表卡片 */
+.today-time-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.today-time-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.today-time-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-headline);
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.today-time-status-pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+}
+
+.today-time-status-pill.pending {
+  background: var(--tint-orange-bg);
+  color: var(--color-warning);
+  border: 1px solid rgba(249, 115, 22, 0.25);
+}
+
+.today-time-status-pill.taken {
+  background: var(--tint-green-bg);
+  color: var(--color-success);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.today-card-item {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  cursor: pointer;
+}
+
+.today-card-item:active {
+  transform: scale(0.985);
+}
+
+.today-card-thumb {
+  inline-size: 52px;
+  block-size: 52px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.today-card-thumb img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.today-card-info {
+  flex-grow: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.today-card-name {
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.today-card-meta {
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+}
+
+.today-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.today-stock-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.today-stock-tag.ok {
+  background: var(--tint-green-bg);
+  color: var(--color-success);
+}
+
+.today-stock-tag.low {
+  background: var(--tint-orange-bg);
+  color: var(--color-warning);
+}
+
+/* 圆形打卡 Radio 按钮（扩大触控热区至 >= 44px） */
+.today-radio-btn {
+  position: relative;
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-border);
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+
+.today-radio-btn::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border-radius: var(--radius-full);
+}
+
+.today-radio-btn.taken {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: #ffffff;
+}
+
+.today-radio-btn.taken svg {
+  inline-size: 16px;
+  block-size: 16px;
+  stroke-width: 3;
+}
+
+.today-radio-btn:not(.taken):hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+/* 空状态引导卡片 */
+.today-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 20px;
+  gap: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.04);
+}
+
+.today-empty-title {
+  font-size: var(--fs-title2);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.today-empty-sub {
+  font-size: var(--fs-body);
+  color: var(--color-text-muted);
+  max-inline-size: 300px;
+  line-height: 1.5;
+}
+
+.today-fab {
+  display: none !important;
+}
+/* 契约兼容样式 */
+.today-summary-progress {
+  inline-size: 112px;
+  block-size: 112px;
+}
+
+.today-medication-name {
+  overflow-wrap: anywhere;
+}
+
+.today-slot-actions {
+  min-inline-size: 0;
+  scroll-margin-block: var(--space-4);
 }
 
 @media (max-width: 420px) {
-  .today-summary {
-    grid-template-columns: minmax(0, 1fr) 96px;
-    padding: var(--space-4);
-  }
-
   .today-summary-progress,
-  .today-summary-progress .progress-ring {
+  .today-progress-ring-wrap {
     inline-size: 96px;
     block-size: 96px;
   }
-
-  .today-summary-progress .progress-ring { flex-basis: 96px; }
-  .today-medication-row { grid-template-columns: 8px 40px minmax(0, 1fr); }
-  .today-medication-status { grid-column: 2 / -1; justify-content: flex-start; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .today-summary-progress .ring-fg,
-  .today-adherence .adherence-bar,
-  .today-adherence-link {
-    transition: none;
+
+/* 深色主题适配与无障碍动效支持 */
+[data-theme='dark'] .medication-list-page,
+[data-theme='dark'] .today-page {
+  color: var(--color-text);
+}
+
+[data-theme='dark'] .med-stat-card,
+[data-theme='dark'] .med-item-card,
+[data-theme='dark'] .today-progress-card,
+[data-theme='dark'] .today-card-item {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+@media (max-width: 420px) {
+  .med-stat-grid {
+    gap: var(--space-2);
   }
 }
 
-@media (min-width: 768px) {
-  .today-page { max-inline-size: 920px; margin-inline: auto; }
-  .today-schedule { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
+@media (prefers-reduced-motion: reduce) {
+  .today-page *,
+  .medication-list-page *,
+  .today-fab,
+  .med-fab-add {
+    transition: none !important;
+    animation: none !important;
+  }
 }

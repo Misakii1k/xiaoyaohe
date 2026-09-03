@@ -42,6 +42,10 @@ import lockSvg from '@tabler/icons/icons/outline/lock.svg?raw';
 import devicesSvg from '@tabler/icons/icons/outline/devices.svg?raw';
 import expandSvg from '@tabler/icons/icons/outline/arrows-maximize.svg?raw';
 import contractSvg from '@tabler/icons/icons/outline/arrows-minimize.svg?raw';
+import homeSvg from '@tabler/icons/icons/outline/home.svg?raw';
+import userSvg from '@tabler/icons/icons/outline/user.svg?raw';
+import searchSvg from '@tabler/icons/icons/outline/search.svg?raw';
+import filterSvg from '@tabler/icons/icons/outline/filter.svg?raw';
 
 export type AppIconName =
   | 'pill'
@@ -87,6 +91,10 @@ export type AppIconName =
   | 'close'
   | 'expand'
   | 'contract'
+  | 'home'
+  | 'user'
+  | 'search'
+  | 'filter'
   | 'dots';
 
 export const iconRegistry: Readonly<Record<AppIconName, string>> = {
@@ -133,5 +141,9 @@ export const iconRegistry: Readonly<Record<AppIconName, string>> = {
   close: closeSvg,
   expand: expandSvg,
   contract: contractSvg,
+  home: homeSvg,
+  user: userSvg,
+  search: searchSvg,
+  filter: filterSvg,
   dots: dotsSvg,
 };

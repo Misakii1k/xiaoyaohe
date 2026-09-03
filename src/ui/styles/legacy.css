@@ -8,27 +8,27 @@
 :root {
   color-scheme: light;
 
-  /* ---- iOS 系统色（System Colors）---- */
-  --ios-blue: #007aff;
-  --ios-green: #34c759;
-  --ios-red: #ff3b30;
-  --ios-orange: #ff9500;
-  --ios-yellow: #ffcc00;
-  --ios-purple: #af52de;
-  --ios-pink: #ff2d55;
-  --ios-indigo: #5856d6;
+  /* ---- iOS 系统色（统一对齐全站紫罗兰与语义色体系） ---- */
+  --ios-blue: var(--color-primary, #6366f1);
+  --ios-green: var(--color-success, #10b981);
+  --ios-red: var(--color-danger, #ef4444);
+  --ios-orange: var(--color-warning, #f59e0b);
+  --ios-yellow: #facc15;
+  --ios-purple: #8b5cf6;
+  --ios-pink: #ec4899;
+  --ios-indigo: var(--color-primary, #6366f1);
 
-  /* ---- 品牌色（iOS 系统蓝） ---- */
-  --brand: #007aff;
-  --brand-deep: #0064d6;
-  --brand-soft: #9fcbff;
+  /* ---- 品牌色（紫罗兰主色系） ---- */
+  --brand: var(--color-primary, #6366f1);
+  --brand-deep: var(--color-primary-pressed, #4f46e5);
+  --brand-soft: var(--color-primary-soft, #eef0ff);
 
   /* ---- Liquid Glass 材质 token（浅色版：更白、更通透） ---- */
   --glass-thin: rgba(255, 255, 255, 0.72);
   --glass-regular: rgba(255, 255, 255, 0.86);
   --glass-thick: rgba(255, 255, 255, 0.94);
 
-  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-border: var(--color-border, rgba(226, 232, 248, 0.8));
   --glass-border-strong: rgba(255, 255, 255, 0.85);
   --glass-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.75);
   --glass-highlight-strong: inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
@@ -37,7 +37,7 @@
   --shadow-sm: 0 4px 12px rgba(20, 30, 50, 0.05);
   --shadow-md: 0 8px 24px rgba(20, 30, 50, 0.08);
   --shadow-lg: 0 16px 40px rgba(20, 30, 50, 0.10);
-  --shadow-fab: 0 12px 32px rgba(0, 122, 255, 0.30);
+  --shadow-fab: 0 12px 32px rgba(99, 102, 241, 0.30);
 
   /* iOS 26 HIG 推荐 blur 半径：iPhone ≤ 40px */
   --glass-blur: 24px;
@@ -866,93 +866,106 @@ textarea {
 /* ============ Progress Ring ============ */
 .progress-ring {
   position: relative;
-  width: 80px;
-  height: 80px;
-  flex: 0 0 80px;
-  filter: drop-shadow(0 4px 12px rgba(0, 122, 255, 0.22));
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: 112px;
+  max-block-size: 112px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
 }
+
+.progress-ring::before {
+  content: '';
+  position: absolute;
+  inset: 6%;
+  border-radius: var(--radius-full);
+  background: radial-gradient(circle at 65% 65%, rgba(99, 102, 241, 0.14) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .progress-ring svg {
-  width: 100%;
-  height: 100%;
+  inline-size: 100%;
+  block-size: 100%;
   transform: rotate(-90deg);
+  overflow: visible;
+  z-index: 1;
 }
+
 .progress-ring .ring-bg {
   fill: none;
-  stroke: rgba(60, 60, 67, 0.14);
-  stroke-width: 8;
+  stroke: #edf0fc;
+  stroke-width: 10;
 }
+
+[data-theme='dark'] .progress-ring .ring-bg {
+  stroke: rgba(99, 102, 241, 0.2);
+}
+
+.progress-ring .ring-glow {
+  fill: none;
+  stroke-width: 13;
+  stroke-linecap: round;
+  opacity: 0.55;
+  transition: stroke-dasharray var(--dur-slow) var(--ease-out);
+}
+
 .progress-ring .ring-fg {
   fill: none;
-  stroke: var(--brand);
-  stroke-width: 8;
+  stroke-width: 10;
   stroke-linecap: round;
-  transition: stroke-dashoffset var(--dur-slow) var(--ease-out);
+  filter: drop-shadow(0 4px 10px rgba(79, 70, 229, 0.3));
+  transition: stroke-dasharray var(--dur-slow) var(--ease-out);
 }
+
 .progress-ring .ring-label {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--fs-title3);
-  font-weight: 700;
-  color: var(--brand-deep);
-  letter-spacing: 0;
-}
-
-/* ============ Tab Bar：浮动玻璃胶囊 + 液态滑动指示器 ============ */
-.tabbar {
-  position: fixed;
-  left: 16px;
-  right: 16px;
-  bottom: calc(20px + var(--safe-bottom));
-  margin: 0 auto;
-  max-width: 420px;
-  display: flex;
-  justify-content: space-around;
-  align-items: stretch;
-  height: 72px;
-  background: var(--glass-thick);
-  backdrop-filter: blur(var(--glass-blur-heavy)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur-heavy)) saturate(var(--glass-saturate));
-  border: 0.5px solid var(--glass-border-strong);
-  border-radius: var(--radius-xl);
-  box-shadow:
-    var(--shadow-xl),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  z-index: 20;
-  padding: 6px;
-  animation: none;
-}
-
-/* 滑动激活指示器 —— 用 :has() 检测当前激活 tab 的 nth-child，translateX 平滑切换 */
-.tabbar::after {
-  content: '';
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  width: calc((100% - 12px) / 4);
-  height: calc(100% - 12px);
-  background: linear-gradient(
-    180deg,
-    rgba(0, 122, 255, 0.20) 0%,
-    rgba(0, 122, 255, 0.14) 100%
-  );
-  border-radius: calc(var(--radius-xl) - 8px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 2px 8px rgba(0, 122, 255, 0.20);
-  transition: transform 520ms var(--ease-spring),
-    width 420ms var(--ease-out);
-  will-change: transform, opacity;
+  z-index: 2;
   pointer-events: none;
-  z-index: 0;
-  transform: translateX(0);
 }
-.tabbar:has(a:nth-child(1).active)::after { transform: translateX(0%); }
-.tabbar:has(a:nth-child(2).active)::after { transform: translateX(100%); }
-.tabbar:has(a:nth-child(3).active)::after { transform: translateX(200%); }
-.tabbar:has(a:nth-child(4).active)::after { transform: translateX(300%); }
+
+.progress-ring .ring-center-content {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  transform: translateY(1px);
+}
+
+.progress-ring .ring-num,
+.progress-ring .ring-value {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--color-text, #1e202e);
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-sans);
+}
+
+.progress-ring .ring-unit {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-text, #1e202e);
+  margin-left: 1px;
+  font-family: var(--font-sans);
+}
+
+.progress-ring .ring-empty {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+/* ============ Tab Bar：由 shell.css 统一接管 ============ */
+.tabbar::after {
+  display: none !important;
+}
 
 @keyframes tabbar-enter {
   from {

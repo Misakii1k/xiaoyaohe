@@ -1,27 +1,6 @@
-/* 全局小助手：右下角悬浮入口 + 底部聊天面板（挂 body，不随路由销毁） */
-.ai-root [hidden] { display: none !important; }
-
-/* 悬浮入口：停在底栏上方；按住可以整颗拖走，别挡住页面按钮 */
+/* 废除右下角悬浮球，入口迁移至顶栏与页面问候区 */
 .ai-launcher {
-  position: fixed;
-  z-index: 80;
-  inset-block-end: calc(74px + var(--safe-bottom));
-  inset-inline-end: max(var(--space-4), var(--safe-right));
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-block-size: 44px;
-  padding: 0 var(--space-4);
-  border: 0;
-  border-radius: var(--radius-full);
-  background: var(--color-primary);
-  color: #fff;
-  font: inherit;
-  font-size: var(--fs-footnote);
-  font-weight: 700;
-  box-shadow: 0 6px 16px rgb(87 92 207 / 32%), 0 2px 6px rgb(40 42 66 / 12%);
-  cursor: pointer;
-  transition: transform 200ms var(--ease-out), opacity 200ms var(--ease-out);
+  display: none !important;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -47,6 +26,11 @@
 /* 320px 窄屏继续抬高悬浮入口，避免遮挡页面底部操作按钮 / 撤销按钮 */
 @media (max-width: 360px) {
   .ai-launcher { inset-block-end: calc(128px + var(--safe-bottom)); }
+}
+
+/* 当页面含有右下角浮动添加按钮（.today-fab / .med-fab-add）时，小助手自动上移避让 */
+body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
+  inset-block-end: calc(136px + var(--safe-bottom));
 }
 
 .ai-panel-backdrop {

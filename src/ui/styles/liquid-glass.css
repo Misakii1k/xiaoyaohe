@@ -129,35 +129,32 @@
     brightness(var(--lg-brightness));
 }
 
-/* 扫描 FAB：主色渐变之上叠加顶部流光与内缘受光，玻璃感主按钮 */
-:root[data-liquid='on'] .tabbar.app-navigation a[href='#/scan'] .ic {
-  position: relative;
-  box-shadow:
-    0 8px 20px rgba(99, 102, 241, 0.35),
-    0 2px 6px rgba(99, 102, 241, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    inset 0 -6px 14px rgba(15, 15, 60, 0.18);
-}
 
-:root[data-liquid='on'] .tabbar.app-navigation a[href='#/scan'] .ic::after {
-  content: '';
-  position: absolute;
-  inset: 1px;
-  border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(
-    155deg,
-    rgba(255, 255, 255, 0.50) 0%,
-    rgba(255, 255, 255, 0.08) 38%,
-    rgba(255, 255, 255, 0) 60%
-  );
-}
 
 /* ============ 悬浮条：基底 + 边缘折射环带 ============ */
 
-:root[data-liquid='on'] .tabbar.app-navigation,
+:root[data-liquid='on'] .tabbar.app-navigation {
+  isolation: isolate;
+  border-top: 1px solid rgba(255, 255, 255, 0.45);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  border-radius: 0;
+  background:
+    var(--lg-fill) padding-box,
+    var(--lg-tint);
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.03);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  backdrop-filter:
+    blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
+}
+
+:root[data-theme='dark'][data-liquid='on'] .tabbar.app-navigation {
+  border-top-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.3);
+}
+
 :root[data-liquid='on'] .action-dock {
-  position: relative;
   isolation: isolate;
   border: 1px solid transparent;
   background:
@@ -171,103 +168,13 @@
     blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
 }
 
-/* 选中项「液态玻璃泡」：包住图标+文字的透明凸透镜，上下凸出底栏（酷安式） */
-:root[data-liquid='on'] .tabbar.app-navigation a {
-  position: relative;
-  z-index: 0;
-}
-
+/* 底部导航栏与主界面统一为精简胶囊风格，禁用溢出液态气泡与形变 */
 :root[data-liquid='on'] .tabbar.app-navigation a.active::before {
-  content: '';
-  position: absolute;
-  inset: -9px -3px;
-  z-index: -1;
-  border-radius: 999px;
-  pointer-events: none;
-  /* 玻璃感来自边缘而非填充：近透明填充 + 强边框光 + 下方投影浮起 */
-  background: linear-gradient(
-    155deg,
-    rgba(255, 255, 255, 0.20),
-    rgba(255, 255, 255, 0.05) 42%,
-    rgba(255, 255, 255, 0.02) 68%,
-    rgba(255, 255, 255, 0.14)
-  );
-  box-shadow:
-    inset 0 0 0 1.5px rgba(255, 255, 255, 0.62),
-    inset 0 2px 2px rgba(255, 255, 255, 0.9),
-    inset 0 -2px 6px rgba(255, 255, 255, 0.28),
-    inset 0 -10px 18px rgba(30, 32, 46, 0.06),
-    0 8px 22px rgba(30, 32, 46, 0.16),
-    0 2px 6px rgba(30, 32, 46, 0.08);
-  -webkit-backdrop-filter: blur(1px) saturate(1.3);
-  backdrop-filter:
-    url('#medbox-lens-bubble') blur(1px) saturate(1.3) brightness(1.05);
+  display: none !important;
 }
 
-:root[data-liquid='on'] .tabbar.app-navigation a.active .ic,
-:root[data-liquid='on'] .tabbar.app-navigation a.active span:not(.ic) {
-  position: relative;
-  z-index: 1;
-}
-
-/* 扫描 FAB：品牌渐变玻璃胶囊（凸出），叠加顶部流光 */
-:root[data-liquid='on'] .tabbar.app-navigation a[href='#/scan'] .ic {
-  position: relative;
-  overflow: hidden;
-}
-
-:root[data-liquid='on'] .tabbar.app-navigation a[href='#/scan'] .ic::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(
-    165deg,
-    rgba(255, 255, 255, 0.55) 0%,
-    rgba(255, 255, 255, 0.10) 42%,
-    rgba(255, 255, 255, 0) 62%
-  );
-}
-
-/* 边缘细环带：先放大位移折射，再用遮罩只留边缘 ~18px。
-   整条背景仍是上面那条普通厚玻璃——环带不支持时只是少了折射，不影响材质。 */
-:root[data-liquid='on'] .tabbar.app-navigation::before,
-:root[data-liquid='on'] .action-dock::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-  -webkit-backdrop-filter: url('#medbox-lens-edge');
-  backdrop-filter: url('#medbox-lens-edge');
-  --lg-band: 18px;
-  -webkit-mask-image:
-    linear-gradient(to right, #000 0, transparent var(--lg-band), transparent calc(100% - var(--lg-band)), #000),
-    linear-gradient(to bottom, #000 0, transparent var(--lg-band), transparent calc(100% - var(--lg-band)), #000);
-  mask-image:
-    linear-gradient(to right, #000 0, transparent var(--lg-band), transparent calc(100% - var(--lg-band)), #000),
-    linear-gradient(to bottom, #000 0, transparent var(--lg-band), transparent calc(100% - var(--lg-band)), #000);
-}
-
-/* 活跃态导航项加一个玻璃泡高亮，替代原平涂 primary-soft 的层次感 */
-:root[data-liquid='on'] .tabbar.app-navigation a.active:not([href='#/scan']) {
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.65),
-    rgba(255, 255, 255, 0.25)
-  );
-  box-shadow: var(--lg-inner-top), inset 0 0 0 1px rgba(255, 255, 255, 0.4);
-}
-
-:root[data-theme='dark'][data-liquid='on'] .tabbar.app-navigation a.active:not([href='#/scan']) {
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.14),
-    rgba(255, 255, 255, 0.05)
-  );
-  box-shadow: var(--lg-inner-top), inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+:root[data-liquid='on'] .tabbar.app-navigation::before {
+  display: none !important;
 }
 
 /* ============ 平板侧栏模式（≥768×600）：只升材质，不改几何 ============ */

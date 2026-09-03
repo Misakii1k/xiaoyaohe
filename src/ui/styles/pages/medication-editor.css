@@ -225,3 +225,245 @@
   .box-photo-crop-actions { grid-template-columns: 1fr 1fr; }
   .box-photo-crop-actions .ui-button-text { grid-column: 1 / -1; }
 }
+/* 药品详情卡片视图 (Screen 7 Med Detail) */
+.med-detail-page {
+  display: grid;
+  gap: var(--space-4);
+  padding-block-end: calc(var(--space-8) + var(--safe-bottom));
+}
+
+/* 顶部 Hero 药品总览卡 */
+.med-detail-hero-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--space-4) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.med-detail-hero-thumb {
+  inline-size: 72px;
+  block-size: 72px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.med-detail-hero-thumb img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.med-detail-hero-info {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.med-detail-hero-title {
+  font-size: var(--fs-title3);
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.med-detail-hero-spec {
+  font-size: var(--fs-subheadline);
+  color: var(--color-text-muted);
+}
+
+.med-detail-stock-badge {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--tone-ok-bg);
+  color: var(--tone-ok-fg);
+}
+
+/* 结构化信息卡片 */
+.med-detail-section-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.med-detail-section-title {
+  font-size: var(--fs-headline);
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.med-detail-metric-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.med-detail-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.med-detail-metric-label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.med-detail-metric-val {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--color-text);
+  letter-spacing: -0.5px;
+}
+
+/* 到期信息卡 */
+.med-detail-expiry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.med-detail-expiry-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.med-detail-expiry-val {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.med-detail-expiry-days {
+  font-size: var(--fs-subheadline);
+  color: var(--tone-ok-fg);
+  font-weight: 700;
+}
+
+/* 补充提醒开关 */
+.med-detail-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.med-detail-toggle-label {
+  font-size: var(--fs-subheadline);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.med-toggle-switch {
+  position: relative;
+  display: inline-block;
+  inline-size: 48px;
+  block-size: 26px;
+}
+
+.med-toggle-switch input {
+  opacity: 0;
+  inline-size: 0;
+  block-size: 0;
+}
+
+.med-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: var(--color-border);
+  transition: 0.3s;
+  border-radius: 26px;
+}
+
+.med-toggle-slider:before {
+  position: absolute;
+  content: "";
+  block-size: 20px;
+  inline-size: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.med-toggle-switch input:checked + .med-toggle-slider {
+  background-color: var(--color-primary);
+}
+
+.med-toggle-switch input:checked + .med-toggle-slider:before {
+  transform: translateX(22px);
+}
+/* 3D 现代医疗卡片风格增强 */
+.medication-draft-card {
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.06);
+  padding: var(--space-4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.medication-draft-card:hover {
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.1);
+}
+
+.medication-field > input,
+.medication-field > textarea {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--fs-body);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.medication-field > input:focus,
+.medication-field > textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+.medication-slot-buttons button {
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.medication-slot-buttons button.is-selected {
+  background: var(--color-primary-gradient);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
+/* 深色主题适配与无障碍动效支持 */
+[data-theme='dark'] .med-detail-hero-card,
+[data-theme='dark'] .med-detail-section-card,
+[data-theme='dark'] .medication-draft-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}

@@ -1,6 +1,17 @@
-// Android 设置页：系统提醒、AI、局域网家庭同步、本地备份和应用信息。
-// 主要配置使用折叠面板，默认收起并在标题行显示当前状态。
 import '../ui/styles/pages/settings.css';
+import { openAvatarPicker } from '../ui/AvatarPicker';
+import { getAvatarById, getActiveAvatarId } from '../ui/avatars';
+import {
+  statNotebookImg,
+  statPillboxImg,
+  statTargetImg,
+  getUserAvatar3dSvg,
+  getStatLog3dSvg,
+  getStatBox3dSvg,
+  getStatRate3dSvg,
+  parseSvg,
+  render3dMedia,
+} from '../ui/assets3d';
 import {
   listLogs,
   listMeds,
@@ -15,7 +26,7 @@ import {
   type ReminderPeriodSetting,
   type MedicationReminderMode,
 } from '../db/schema';
-import { confirmDialog, el, renderPage, toast, icon, field, type IconName } from '../ui/components';
+import { confirmDialog, el, renderPage, toast, icon, field, type IconName, topbarAiPill } from '../ui/components';
 import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
 import { openBottomSheet } from '../ui/primitives/BottomSheet';
 import QRCode from 'qrcode';
@@ -85,7 +96,6 @@ import {
   installApk,
   isApkDistributionAvailable,
   LOCAL_APP_VERSION,
-  LOCAL_APP_VERSION_CODE,
 } from '../sync/lan/apkTransport';
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations, openAppSettings } from '../features/keepAlive';
 import {
@@ -116,6 +126,94 @@ export async function renderSettingsPage(
   if (signal?.aborted) return;
 
   const content = el('div', { class: 'page page-light settings-page' });
+  content.classList.add('profile-page');
+
+  // 计算真实管理天数
+  let daysManaging = 0;
+  const timestamps: number[] = [];
+  for (const log of logs) {
+    if (log.ackAt) timestamps.push(log.ackAt);
+    else if (log.dueAt) timestamps.push(log.dueAt);
+    else if (log.updatedAt) timestamps.push(log.updatedAt);
+  }
+  for (const med of meds) {
+    if (med.createdAt) timestamps.push(med.createdAt);
+    else if (med.updatedAt) timestamps.push(med.updatedAt);
+  }
+  if (timestamps.length > 0) {
+    const earliest = Math.min(...timestamps);
+    const diffMs = Math.max(0, Date.now() - earliest);
+    daysManaging = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  }
+
+  const activeRulesCount = rules.filter((rule) => rule.enabled && !rule.deleted).length;
+
+  // 1. 用户信息卡片 (真实统计与可换头像)
+  const profileHero = el('div', { class: 'profile-hero-card' });
+  const userRow = el('div', { class: 'profile-user-row' });
+  const avatarWrap = el('button', {
+    class: 'profile-avatar-wrap',
+    type: 'button',
+    'aria-label': '更换头像',
+    title: '点击更换头像',
+  } as any);
+
+  function renderAvatar(): void {
+    const item = getAvatarById(getActiveAvatarId());
+    avatarWrap.style.backgroundColor = item.bgColor;
+    const avatarEl = item.imgUrl
+      ? el('img', { class: 'profile-avatar-img', src: item.imgUrl, alt: item.name })
+      : parseSvg(getUserAvatar3dSvg());
+    const editBadge = el('div', { class: 'profile-avatar-edit-badge' });
+    editBadge.append(icon('camera'));
+    avatarWrap.replaceChildren(avatarEl, editBadge);
+  }
+  renderAvatar();
+
+  avatarWrap.onclick = () => {
+    openAvatarPicker(() => {
+      renderAvatar();
+    });
+  };
+
+  const userInfo = el('div', { class: 'profile-user-info' });
+  userInfo.append(
+    el('div', { class: 'profile-user-name', text: '小药盒用户' }),
+    el('div', {
+      class: 'profile-user-sub',
+      text: daysManaging > 0 ? `用药管理第 ${daysManaging} 天` : '开启科学用药管理',
+    })
+  );
+  userRow.append(avatarWrap, userInfo);
+
+  const streakBadge = el('div', { class: 'profile-streak-badge' });
+  streakBadge.append(icon(logs.length > 0 ? 'sparkles' : 'shield'));
+  streakBadge.append(el('span', {
+    text: logs.length > 0 ? `已记录 ${logs.length} 次服药` : '本地安全离线存储',
+  }));
+
+  profileHero.append(userRow, streakBadge);
+  content.append(profileHero);
+
+  // 2. 我的数据 1x3 真实数据统计栏 (全真实对接，点击跳转)
+  const statsSection = el('div', { class: 'profile-stats-section' });
+  statsSection.append(el('h2', { class: 'profile-section-title', text: '我的数据' }));
+
+  const statsGrid = el('div', { class: 'profile-stats-grid' });
+  statsGrid.append(
+    createProfileStatCard('全部药品', `${meds.length} 种`, '在库管理', statPillboxImg, getStatBox3dSvg, () => {
+      location.hash = '#/meds';
+    }),
+    createProfileStatCard('用药计划', `${activeRulesCount} 条`, '今日待服', statNotebookImg, getStatLog3dSvg, () => {
+      location.hash = '#/today';
+    }),
+    createProfileStatCard('打卡记录', `${logs.length} 次`, '历史日历', statTargetImg, getStatRate3dSvg, () => {
+      location.hash = '#/history';
+    })
+  );
+  statsSection.append(statsGrid);
+  content.append(statsSection);
+
   if (secretInitialization.some((result) => result.status === 'rejected')) {
     content.append(el('div', {
       class: 'settings-storage-warning',
@@ -126,33 +224,41 @@ export async function renderSettingsPage(
     } as any));
   }
 
-  content.append(renderReminderPanel());
-  content.append(renderAppearancePanel());
-  content.append(renderPeriodSettingsPanel());
-  content.append(renderKeepAlivePanel());
-  const llmPanel = renderLlmPanel();
-  content.append(llmPanel.element);
-  content.append(renderAiConsentPanel());
-  const lanSyncPanel = renderLanSyncSettingsPanel(signal);
-  content.append(lanSyncPanel.element);
-  const appUpdatePanel = renderAppUpdatePanel();
-  content.append(appUpdatePanel.element);
+  // 3. 分组 1：用药提醒与外观
+  const reminderAppearanceGroup = createSettingsGroup('提醒与外观', 'bell', [
+    renderReminderPanel(),
+    renderPeriodSettingsPanel(),
+    renderAppearancePanel(),
+    renderKeepAlivePanel(),
+  ]);
+  content.append(reminderAppearanceGroup);
 
+  // 4. 分组 2：数据与家庭同步
+  const lanSyncPanel = renderLanSyncSettingsPanel(signal);
+  const appUpdatePanel = renderAppUpdatePanel();
   const backupCard = renderBackupCard(root, signal, {
     meds: meds.length,
     rules: rules.length,
     logs: logs.length,
   });
-  content.append(backupCard.element);
-  content.append(renderDiagnosticsPanel());
+  const dataSyncGroup = createSettingsGroup('数据与家庭同步', 'cloud', [
+    lanSyncPanel.element,
+    backupCard.element,
+    appUpdatePanel.element,
+  ]);
+  content.append(dataSyncGroup);
 
-  const about = el('section', { class: 'settings-about' });
-  about.append(el('h2', { text: '关于' }));
-  about.append(el('div', {
-    class: 'muted',
-    html: `小药盒 v${__APP_VERSION__}（本地优先版）。吃药提醒、药品管理和库存记录可离线使用；AI 与常见相互作用提示仅供参考，不替代医嘱。`,
-  }));
-  content.append(about);
+  // 5. 分组 3：AI 智能助手与诊断
+  const llmPanel = renderLlmPanel();
+  const aiDiagnosticsGroup = createSettingsGroup('智能助手与高级', 'sparkles', [
+    llmPanel.element,
+    renderAiConsentPanel(),
+    renderDiagnosticsPanel(),
+  ]);
+  content.append(aiDiagnosticsGroup);
+
+  // 6. 分组 4：关于小药盒
+  content.append(renderAboutSection());
 
   settingsPageCleanupByRoot.get(root)?.();
   let cleaned = false;
@@ -171,8 +277,101 @@ export async function renderSettingsPage(
   settingsPageCleanupByRoot.set(root, cleanup);
   signal?.addEventListener('abort', cleanup, { once: true });
 
-  renderPage({ root, title: '设置', activeTab: 'settings', content });
+  renderPage({ root, title: '我的', activeTab: 'settings', topRight: topbarAiPill(), content });
   return cleanup;
+}
+
+function renderAboutSection(): HTMLElement {
+  const aboutSection = el('section', { class: 'settings-group-section settings-about-section' });
+  const aboutHead = el('div', { class: 'settings-group-header' });
+  aboutHead.append(icon('info', 'settings-group-icon'));
+  aboutHead.append(el('h2', { class: 'settings-group-title', text: '关于小药盒' }));
+  aboutSection.append(aboutHead);
+
+  const aboutCard = el('div', { class: 'settings-group-card settings-about-card' });
+
+  const brandRow = el('div', { class: 'settings-about-brand-row' });
+  const logo = el('div', { class: 'settings-about-logo' });
+  logo.append(icon('pill'));
+  const titleWrap = el('div', { class: 'settings-about-title-wrap' });
+  titleWrap.append(
+    el('div', { class: 'settings-about-app-name', text: '小药盒 · 家庭健康用药管家' }),
+    el('div', { class: 'settings-about-version', text: `版本 v${__APP_VERSION__} (正式版)` }),
+  );
+  brandRow.append(logo, titleWrap);
+
+  const intro = el('div', {
+    class: 'settings-about-intro',
+    text: '小药盒是一款专为家庭日常用药打造的健康管理工具。吃药提醒、药品管理与库存记录均安全保存在本机，纯净无广告，用心守护全家健康。',
+  });
+
+  const highlights = el('div', { class: 'settings-about-highlights' }, [
+    el('div', { class: 'settings-about-hl-item', text: '✔ 定时提醒与智能补服' }),
+    el('div', { class: 'settings-about-hl-item', text: '✔ 药箱余量预警防断药' }),
+    el('div', { class: 'settings-about-hl-item', text: '✔ 本地数据隐私安全守护' }),
+    el('div', { class: 'settings-about-hl-item', text: '✔ 亲情面对面免流同步' }),
+  ]);
+
+  const disclaimer = el('div', {
+    class: 'settings-about-disclaimer muted',
+    text: '健康声明：小药盒所有提醒与助手建议仅作为日常健康辅助参考，不构成任何医疗处方或临床诊断建议。如有身体不适，请遵从专业医嘱。',
+  });
+
+  aboutCard.append(brandRow, intro, highlights, disclaimer);
+  aboutSection.append(aboutCard);
+  return aboutSection;
+}
+
+function createProfileStatCard(
+  label: string,
+  val: string,
+  sub: string,
+  img: string,
+  svgFn: () => string,
+  onClick?: () => void,
+): HTMLElement {
+  const card = el('button', {
+    class: 'profile-stat-card',
+    type: 'button',
+  } as any);
+  const info = el('div', { class: 'profile-stat-info' });
+  info.append(
+    el('div', { class: 'profile-stat-label', text: label }),
+    el('div', { class: 'profile-stat-val', text: val })
+  );
+  if (sub) {
+    info.append(el('div', { class: 'profile-stat-sub', text: sub }));
+  }
+  const iconWrap = el('div', { class: 'profile-stat-icon' });
+  if (img) {
+    iconWrap.append(render3dMedia(img, svgFn, label, 'profile-stat-icon-img'));
+  } else {
+    iconWrap.append(parseSvg(svgFn()));
+  }
+  card.append(info, iconWrap);
+  if (onClick) {
+    card.onclick = onClick;
+  }
+  return card;
+}
+
+function createSettingsGroup(
+  title: string,
+  iconName: IconName,
+  items: HTMLElement[],
+): HTMLElement {
+  const section = el('section', { class: 'settings-group-section' });
+  const head = el('div', { class: 'settings-group-header' });
+  head.append(icon(iconName, 'settings-group-icon'));
+  head.append(el('h2', { class: 'settings-group-title', text: title }));
+  section.append(head);
+
+  const card = el('div', { class: 'settings-group-card' });
+  for (const item of items) {
+    card.append(item);
+  }
+  section.append(card);
+  return section;
 }
 
 export interface BackupImportRouteOperations {
@@ -255,54 +454,69 @@ function renderBackupCard(
   signal?: AbortSignal,
   counts?: { meds: number; rules: number; logs: number },
 ): SettingsRenderPart {
-  const io = el('section', { class: 'settings-section settings-data-card' });
-  io.append(el('h2', { text: '本地数据与备份' }));
-  if (counts) {
-    io.append(el('div', {
-      class: 'muted',
-      html: `本机现有 ${counts.meds} 种药品、${counts.rules} 条提醒规则、${counts.logs} 条服药记录。`,
-    }));
-  }
-  io.append(el('div', {
-    class: 'muted',
-    html: '备份会完整包含以上数据。导入时按 id + 更新时间合并，不会清空本地数据。',
-  }));
+  let fileInput: HTMLInputElement;
+  let exportBtn: HTMLElement;
+  let importBtn: HTMLElement;
 
-  const exportBtn = el('button', { class: 'btn tonal mt-3', html: '导出数据（JSON）' });
-  exportBtn.onclick = async () => {
-    if (signal?.aborted) return;
-    const data = await buildBackup();
-    if (signal?.aborted) return;
-    downloadJson(data, `xiaoyaohe-backup-${new Date().toISOString().slice(0, 10)}.json`);
-  };
+  const countSummary = counts ? `${counts.meds} 药 · ${counts.logs} 记录` : '就绪';
 
-  const importBtn = el('button', { class: 'btn mt-3', html: '导入备份' });
-  const fileInput = el('input', {
-    type: 'file',
-    accept: 'application/json,.json',
-    style: 'display:none',
+  const element = panel({
+    title: '本地数据与备份',
+    iconName: 'box',
+    chip: { text: countSummary, tone: 'ok' },
+    renderBody: (body) => {
+      body.classList.add('settings-backup-panel-body');
+      if (counts) {
+        body.append(el('div', {
+          class: 'muted settings-backup-summary',
+          text: `本机现有 ${counts.meds} 种药品、${counts.rules} 条提醒规则、${counts.logs} 条服药记录。`,
+        }));
+      }
+      body.append(el('div', {
+        class: 'muted settings-backup-note',
+        text: '备份会完整包含以上数据。导入时按 ID 与更新时间合并，不会清空本地数据。',
+      }));
+
+      exportBtn = el('button', { class: 'btn tonal', type: 'button', text: '导出备份文件' });
+      exportBtn.onclick = async () => {
+        if (signal?.aborted) return;
+        const data = await buildBackup();
+        if (signal?.aborted) return;
+        downloadJson(data, `xiaoyaohe-backup-${new Date().toISOString().slice(0, 10)}.json`);
+      };
+
+      importBtn = el('button', { class: 'btn', type: 'button', text: '从备份恢复数据' });
+      fileInput = el('input', {
+        type: 'file',
+        accept: 'application/json,.json',
+        style: 'display:none',
+      });
+      importBtn.onclick = () => {
+        if (!signal?.aborted) fileInput.click();
+      };
+      fileInput.onchange = async () => {
+        if (signal?.aborted) return;
+        const file = fileInput.files?.[0];
+        fileInput.value = '';
+        if (!file) return;
+        await importBackupFileForRoute(root, file, signal);
+      };
+
+      const row = el('div', { class: 'btn-row backup-actions', style: 'margin-block-start: var(--space-3);' });
+      row.append(exportBtn, importBtn);
+      body.append(row, fileInput);
+    },
   });
-  importBtn.onclick = () => {
-    if (!signal?.aborted) fileInput.click();
-  };
-  fileInput.onchange = async () => {
-    if (signal?.aborted) return;
-    const file = fileInput.files?.[0];
-    fileInput.value = '';
-    if (!file) return;
-    await importBackupFileForRoute(root, file, signal);
-  };
 
-  const row = el('div', { class: 'btn-row backup-actions' });
-  row.append(exportBtn, importBtn);
-  io.append(row, fileInput);
   return {
-    element: io,
+    element,
     cleanup: () => {
-      exportBtn.onclick = null;
-      importBtn.onclick = null;
-      fileInput.onchange = null;
-      fileInput.value = '';
+      if (exportBtn) exportBtn.onclick = null;
+      if (importBtn) importBtn.onclick = null;
+      if (fileInput) {
+        fileInput.onchange = null;
+        fileInput.value = '';
+      }
     },
   };
 }
@@ -417,7 +631,7 @@ function panel(opts: PanelOpts): HTMLElement {
   });
   right.append(chip);
   const chevron = el('span', { class: 'panel-chevron' });
-  chevron.append(icon('arrow-left'));
+  chevron.append(icon('chevron-right'));
   right.append(chevron);
   head.append(right);
 
@@ -1097,7 +1311,7 @@ function buildAppUpdateBody(
 
   // 当前版本信息
   const versionInfo = el('div', { class: 'settings-hint' }, [
-    el('span', { html: `当前版本：<b>v${LOCAL_APP_VERSION}</b>（versionCode ${LOCAL_APP_VERSION_CODE}）` }),
+    el('span', { html: `当前版本：<b>v${LOCAL_APP_VERSION}</b>（正式版）` }),
   ]);
   body.append(versionInfo);
 
@@ -1118,7 +1332,7 @@ function buildAppUpdateBody(
 
   // 发现可用更新：显示版本、来源、操作按钮
   body.append(el('div', { class: 'banner info mt-3' }, [
-    el('span', { html: `发现新版本 <b>v${update.version}</b>（versionCode ${update.versionCode}）。` }),
+    el('span', { html: `发现新版本 <b>v${update.version}</b>` }),
     el('br'),
     el('span', { html: `来源：${update.peerHost}（局域网内已升级设备）。` }),
   ]));
@@ -1391,9 +1605,9 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     el('div', {
       class: 'settings-hint',
       html:
-        '· 接口需兼容 OpenAI /chat/completions 协议。\n' +
-        `· 最多 ${MAX_LLM_PROVIDERS} 家服务商，列表顺序就是自动切换的优先级。\n` +
-        `· 默认模型 ${DEFAULT_LLM_CONFIG.model}，也可换成其他兼容模型。\n` +
+        '· 支持 DeepSeek、智谱等主流 AI 服务商；\n' +
+        `· 最多可添加 ${MAX_LLM_PROVIDERS} 家服务商，自动按列表顺序智能故障转移；\n` +
+        `· 当前推荐模型 ${DEFAULT_LLM_CONFIG.model}；\n` +
         (isNativeSecretStore()
           ? '· 密钥保存在这台手机的系统安全存储中。'
           : '· 网页版没有系统安全存储可用，密钥在浏览器里是明文保存的。'),

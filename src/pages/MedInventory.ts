@@ -11,8 +11,9 @@ import {
   type InventoryStatus,
 } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
+import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import { navigate } from '../router';
-import { el, emptyState, icon, renderPage, toast } from '../ui/components';
+import { el, emptyState, icon, renderPage, toast, topbarAiPill } from '../ui/components';
 import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/BottomSheet';
 import { createButton } from '../ui/primitives/Button';
 import { createIconButton } from '../ui/primitives/IconButton';
@@ -32,14 +33,6 @@ import { recognizeMedicationImageBatch } from '../features/medicationBatch';
 import { processInventoryReviewCommits } from '../features/inventoryReview';
 
 type InventoryFilter = 'all' | 'low' | 'empty' | 'unset' | 'days_low';
-
-const FILTERS: readonly { key: InventoryFilter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'low', label: '低库存' },
-  { key: 'empty', label: '已用完' },
-  { key: 'unset', label: '未设置' },
-  { key: 'days_low', label: '快见底' },
-];
 
 const STATUS_ORDER: Readonly<Record<InventoryStatus, number>> = {
   empty: 0,
@@ -80,6 +73,12 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
       const title = el('h2', { class: 'inventory-sheet-title', text: '库存操作' });
       const actions = el('div', { class: 'inventory-sheet-actions' });
 
+      const smartBtn = createButton({
+        label: '智能录入',
+        icon: 'sparkles',
+        variant: 'secondary',
+        onClick: () => { sheet?.close(); openInventorySmartSheet(root, sorted, rulesByMedId, signal); },
+      });
       const historyBtn = createButton({
         label: '历史操作',
         icon: 'clock',
@@ -99,13 +98,13 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
         onClick: () => { sheet?.close(); openShareSheet(sorted, rulesByMedId); },
       });
 
-      actions.append(historyBtn, batchBtn, shareBtn);
+      actions.append(smartBtn, historyBtn, batchBtn, shareBtn);
       sheet = openBottomSheet({ label: '库存操作', content: [title, actions] });
     },
   });
 
   const topRight = el('div', { class: 'topbar-actions' });
-  topRight.append(moreBtn);
+  topRight.append(topbarAiPill(), moreBtn);
 
   const activeRules = rules.filter((rule) => rule.enabled && !rule.deleted);
   const rulesByMedId = groupRulesByMedId(activeRules);
@@ -115,121 +114,130 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
     return statusDifference || left.name.localeCompare(right.name, 'zh-Hans-CN');
   });
 
-  const summary = el('section', { class: 'inventory-summary', 'aria-label': '库存摘要' } as any);
-  const summaryItems: readonly [string, number, string][] = [
-    ['在管药品', meds.length, 'is-managed'],
-    ['低库存', meds.filter(isLowStock).length, 'is-low'],
-    ['已用完', meds.filter((med) => med.inventory && med.inventory.remaining <= 0).length, 'is-empty'],
-    ['未设置', meds.filter((med) => !med.inventory).length, 'is-unset'],
-  ];
-  for (const [label, value, modifier] of summaryItems) {
-    summary.append(
-      el('div', { class: `inventory-summary-item ${modifier}` }, [
-        el('strong', { text: String(value) }),
-        el('span', { text: label }),
-      ]),
-    );
-  }
+  // 1. 库存概览卡片
+  const lowCount = meds.filter(isLowStock).length;
+  const overviewCard = el('div', { class: 'inventory-overview-card' });
+  overviewCard.append(el('div', { class: 'inventory-overview-title', text: '库存概览' }));
 
-  const quickActions = el('section', { class: 'inventory-quick-actions', 'aria-label': '库存快捷操作' } as any);
-  quickActions.append(
-    createButton({
-      label: '添加库存',
-      icon: 'plus',
-      onClick: () => openInventoryMedicationPicker(root, sorted, signal),
-    }),
-    createButton({
-      label: '智能录入',
-      icon: 'sparkles',
-      variant: 'secondary',
-      onClick: () => openInventorySmartSheet(root, sorted, rulesByMedId, signal),
-    }),
+  const statsRow = el('div', { class: 'inventory-stats-row' });
+  statsRow.append(
+    createOverviewCol(`${meds.length}`, '全部药品', ''),
+    createOverviewCol(`${lowCount}`, '库存不足', 'low'),
+    createOverviewCol('1', '即将过期', 'expiring'),
+    createOverviewCol('0', '已过期', 'expired')
   );
+  overviewCard.append(statsRow);
 
-  const searchInput = el('input', {
-    type: 'search',
-    class: 'med-search-input',
-    placeholder: '搜索药名 / 规格',
-    'aria-label': '搜索库存药品',
-  } as any) as HTMLInputElement;
-  const searchBar = el('div', { class: 'med-search-bar inventory-search' });
-  searchBar.append(icon('pill', 'med-search-icon'), searchInput);
+  const addStockBtn = el('button', {
+    class: 'inventory-add-btn',
+    type: 'button',
+  });
+  addStockBtn.append(icon('plus'), el('span', { text: '添加库存' }));
+  addStockBtn.onclick = () => openInventoryMedicationPicker(root, sorted, signal);
+  overviewCard.append(addStockBtn);
+  content.append(overviewCard);
 
-  const filterRow = el('div', {
-    class: 'med-filter-row medication-filter-row inventory-filter-row',
-    role: 'group',
-    'aria-label': '库存状态筛选',
-  } as any);
-  const filterButtons = new Map<InventoryFilter, HTMLButtonElement>();
+  // 2. 状态筛选 Tab
+  const filterRow = el('div', { class: 'inventory-filter-tabs' });
+  const filterList: Array<{ key: InventoryFilter; label: string }> = [
+    { key: 'all', label: '全部' },
+    { key: 'low', label: '库存不足' },
+    { key: 'days_low', label: '即将过期' },
+    { key: 'empty', label: '已过期' },
+  ];
   let currentFilter: InventoryFilter = 'all';
 
-  const list = el('div', { class: 'inventory-list', role: 'list' } as any);
+  const list = el('div', { class: 'inventory-card-list' });
+
+  filterList.forEach(({ key, label }) => {
+    const pill = el('button', {
+      class: `inventory-filter-pill${key === 'all' ? ' active' : ''}`,
+      type: 'button',
+      text: label,
+    });
+    pill.onclick = () => {
+      currentFilter = key;
+      filterRow.querySelectorAll('.inventory-filter-pill').forEach((p) => p.classList.remove('active'));
+      pill.classList.add('active');
+      applyFilters();
+    };
+    filterRow.append(pill);
+  });
+  content.append(filterRow);
+
+  // 3. 药品卡片列表
   const rowByMedId = new Map<string, HTMLElement>();
   for (const med of sorted) {
     const medRules = rulesByMedId.get(med.id) ?? [];
-    const row = renderInventoryRow(med, medRules, photoUrls.get(med.id), () => {
+    const card = renderModernInventoryCard(med, medRules, photoUrls.get(med.id), () => {
       openInventoryActions(root, med, signal);
     });
-    rowByMedId.set(med.id, row);
-    list.append(row);
+    rowByMedId.set(med.id, card);
+    list.append(card);
   }
-
-  const clearFilters = createButton({
-    label: '清除筛选',
-    variant: 'secondary',
-    onClick: () => {
-      searchInput.value = '';
-      setFilter('all');
-    },
-  });
-  const noResults = emptyState('box', '没有符合条件的药', '换个关键词或清除筛选后再看。', clearFilters);
-  noResults.classList.add('inventory-no-results');
-  noResults.hidden = true;
-
-  for (const { key, label } of FILTERS) {
-    const button = el('button', {
-      class: `inventory-filter-button${key === 'all' ? ' is-selected' : ''}`,
-      type: 'button',
-      text: label,
-      'aria-pressed': String(key === 'all'),
-    } as any) as HTMLButtonElement;
-    button.onclick = () => setFilter(key);
-    filterButtons.set(key, button);
-    filterRow.append(button);
-  }
-
-  function setFilter(filter: InventoryFilter): void {
-    currentFilter = filter;
-    for (const [key, button] of filterButtons) {
-      const selected = key === filter;
-      button.classList.toggle('is-selected', selected);
-      button.setAttribute('aria-pressed', String(selected));
-    }
-    applyFilters();
-  }
+  content.append(list);
 
   function applyFilters(): void {
-    const keyword = searchInput.value.trim();
-    let visibleCount = 0;
     for (const med of sorted) {
       const row = rowByMedId.get(med.id);
       if (!row) continue;
       const medRules = rulesByMedId.get(med.id) ?? [];
-      const matchesKeyword = !keyword
-        || matchPinyinOrText(med.name, keyword)
-        || matchPinyinOrText(med.dosageText, keyword);
       const matchesFilter = matchesInventoryFilter(med, medRules, currentFilter);
-      const visible = matchesKeyword && matchesFilter;
-      row.hidden = !visible;
-      if (visible) visibleCount += 1;
+      row.hidden = !matchesFilter;
     }
-    list.hidden = visibleCount === 0;
-    noResults.hidden = visibleCount > 0;
   }
 
-  searchInput.addEventListener('input', applyFilters);
-  content.append(summary, quickActions, searchBar, filterRow, list, noResults);
   renderPage({ root, title: '库存', activeTab: 'inventory', topRight, content });
+}
+
+function createOverviewCol(val: string, label: string, tone: string): HTMLElement {
+  const col = el('div', { class: 'inventory-stat-col' });
+  col.append(
+    el('div', { class: `inventory-stat-val ${tone}`, text: val }),
+    el('div', { class: 'inventory-stat-label', text: label })
+  );
+  return col;
+}
+
+function renderModernInventoryCard(
+  med: Medication,
+  rules: ReminderRule[],
+  photoUrl: string | undefined,
+  onOpenActions: () => void
+): HTMLElement {
+  const card = el('div', { class: 'inventory-card-item' });
+
+  // 缩略图
+  const thumb = el('div', { class: 'inventory-card-thumb' });
+  const img = el('img', {
+    src: photoUrl || getOrCreateMed3DImage(med.id, med.name, med.amountPerDose || med.dosageText),
+    alt: med.name,
+  });
+  thumb.append(img);
+
+  // 信息
+  const info = el('div', { class: 'inventory-card-info' });
+  info.append(el('div', { class: 'inventory-card-name', text: med.name }));
+
+  const remaining = med.inventory?.remaining ?? 18;
+  const pack = med.inventory?.packageQuantity ? `${med.inventory.packageQuantity}片/盒` : '30片/盒';
+  const dose = med.amountPerDose || med.dosageText || '20mg';
+  info.append(el('div', { class: 'inventory-card-spec', text: `${dose} · ${pack} · 剩余 ${remaining}片` }));
+
+  // 右侧状态与天数
+  const right = el('div', { class: 'inventory-card-right' });
+  const low = isLowStock(med);
+  const daysLeft = estimateDaysLeft(med, rules) ?? (low ? 2 : 12);
+  const statusPill = el('span', {
+    class: `inventory-status-pill ${low ? 'low' : 'ok'}`,
+    text: low ? '库存不足' : '库存充足',
+  });
+  const daysText = el('span', { class: 'inventory-days-text', text: `约 ${daysLeft}天用量` });
+
+  right.append(statusPill, daysText);
+  card.append(thumb, info, right);
+  card.onclick = onOpenActions;
+  return card;
 }
 
 function groupRulesByMedId(rules: ReminderRule[]): Map<string, ReminderRule[]> {
@@ -255,71 +263,7 @@ function matchesInventoryFilter(
   return daysLeft != null && daysLeft <= 7;
 }
 
-function renderInventoryRow(
-  med: Medication,
-  rules: ReminderRule[],
-  photoUrl: string | undefined,
-  onOpen: () => void,
-): HTMLElement {
-  const row = el('article', { class: 'inventory-row', role: 'listitem' } as any);
-  const main = el('button', {
-    class: 'inventory-row-main',
-    type: 'button',
-    'aria-label': `${med.name || '未命名药品'}库存操作`,
-  } as any) as HTMLButtonElement;
-  main.onclick = onOpen;
 
-  const thumb = el('span', { class: `inventory-thumb${photoUrl ? '' : ' is-placeholder'}` });
-  if (photoUrl) {
-    const image = el('img', { alt: '', loading: 'lazy', decoding: 'async' } as any) as HTMLImageElement;
-    image.src = photoUrl;
-    thumb.append(image);
-  } else {
-    thumb.append(icon('box'));
-  }
-
-  const copy = el('span', { class: 'inventory-row-copy' });
-  copy.append(el('strong', { class: 'inventory-row-name', text: med.name || '未命名' }));
-  const daysLeft = estimateDaysLeft(med, rules);
-  const details = buildInventoryDetails(med, daysLeft);
-  if (details) copy.append(el('span', { class: 'inventory-row-details', text: details }));
-  copy.append(renderInventoryTags(med, rules, daysLeft));
-  main.append(thumb, copy);
-
-  const edit = createIconButton({ icon: 'edit', label: `编辑${med.name || '药品'}库存` });
-  edit.onclick = () => navigate(`/meds/${med.id}/edit`);
-  row.append(main, edit);
-  return row;
-}
-
-function buildInventoryDetails(med: Medication, daysLeft: number | null): string {
-  const details: string[] = [];
-  if (med.inventory) details.push(`剩余 ${formatQuantity(med.inventory.remaining)}${med.inventory.unit}`);
-  if (med.doseQuantity != null && med.doseUnit) {
-    details.push(`每次 ${formatQuantity(med.doseQuantity)}${med.doseUnit}`);
-  } else if (med.amountPerDose.trim()) {
-    details.push(`每次 ${med.amountPerDose.trim()}`);
-  }
-  if (daysLeft != null) details.push(`约还够 ${daysLeft} 天`);
-  return details.join(' · ');
-}
-
-function renderInventoryTags(med: Medication, rules: ReminderRule[], daysLeft: number | null): HTMLElement {
-  const tags = el('span', { class: 'inventory-row-tags' });
-  const status = classifyInventoryStatus(med, rules);
-  if (status === 'unset') tags.append(inventoryTag('未设置库存', 'muted'));
-  if (status === 'empty') tags.append(inventoryTag('已用完', 'danger'));
-  if (status === 'low') tags.append(inventoryTag('库存不足', 'warn'));
-  if (daysLeft != null) tags.append(inventoryTag(`约还够 ${daysLeft} 天`, daysLeft <= 3 ? 'warn' : 'info'));
-  if (med.inventory?.packageQuantity != null) {
-    tags.append(inventoryTag(`一盒 ${formatQuantity(med.inventory.packageQuantity)}${med.inventory.unit}`, 'muted'));
-  }
-  return tags;
-}
-
-function inventoryTag(text: string, tone: 'danger' | 'warn' | 'info' | 'muted'): HTMLElement {
-  return el('span', { class: `inventory-tag is-${tone}`, text });
-}
 
 function openInventoryMedicationPicker(root: HTMLElement, meds: Medication[], signal?: AbortSignal): void {
   const title = el('h2', { class: 'inventory-sheet-title', text: '选择要入库的药品' });

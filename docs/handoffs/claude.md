@@ -2,11 +2,22 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-08-28
+Updated: 2026-09-01
 Status: active
 Latest version: `0.9.10` (Android `versionCode: 29`)
 
 ## Summary of Accomplished Work
+
+### 7. 全面屏前端 UI 深度适配 + 模拟器视觉验收（0.9.10 增强）
+
+针对全面屏在 Android 15/16 挖孔屏、iPhone 灵动岛、暗色夜间模式、紧凑小屏及横屏模式下的前端 UI 进行了全链路审查与真机模拟器验收：
+
+- **今日页状态栏避让**：修复 `.topbar` 隐藏后 `.page.today-page` 缺少顶部安全区 padding 的缺陷，添加 `padding-top: calc(var(--safe-top) + var(--space-2))`，避免日期与个人中心头像被摄像头挖孔和状态栏图标遮挡。
+- **全站深色夜间模式卡片 Token 化**：清除 `inventory.css`、`scanner.css`、`settings.css`、`med-history.css`、`medication-editor.css`、`med-wizard.css` 中的硬编码 `#ffffff`，统一收敛至设计 Token `var(--color-surface)` / `var(--color-border)` / `var(--color-surface-muted)`，并在暗色主题下补齐边框与微底色。
+- **服药打卡弹窗（TakeMedModal）**：增加 `max-block-size: min(90dvh, 720px)` 与局部滚动，接入 `registerRouteTransitionCleanup`、`makeAppInert` 与 `restoreAppAfterLastDialog` 焦点生命周期。
+- **横屏模式通用紧凑化**：将横屏设备（高度 < 600px）下的顶栏（52px）与底栏（50px）紧凑高度规则扩展至所有页面。
+- **模拟器视觉验收测试套件**：编写 `scripts/ui-audit/ui-audit-fullscreen-acceptance.mjs`，生成 47 张高保真设备渲染截图及报告 `output/fullscreen-acceptance/index.html`，各项指标 100% 通过。
+- **发布打包**：运行 Web 构建与 Gradle 编译，成功产出 `release/xiaoyaohe-0.9.10-android-release.apk` 与 `release/xiaoyaohe-0.9.10-SHA256SUMS.txt`。
 
 ### 6. 模拟器视觉验收 + 底栏玻璃泡 / 占位 / 图标三修（0.9.10）
 
@@ -93,3 +104,10 @@ Latest version: `0.9.10` (Android `versionCode: 29`)
 - **原生构建**：`:app:assembleDebug`、`:app:testDebugUnitTest`、`:app:compileDebugKotlin` 全部 BUILD SUCCESSFUL（Kotlin+Compose 混编）。
 - **正式版 APK 产物**：`release/xiaoyaohe-0.9.8-android-release.apk`（10.35MB，较 0.9.7 的 5.99MB +4.36MB——Compose/Kotlin 引入的固有体积成本；后续可用 minifyEnabled+R8 收缩，见 handoff 第 4 节风险说明）。
 - **SHA-256**: `e56981819d6dee81803ac6acc19348ce3e4611d1be6727f4a21000340fe52052`（已写入 release/SHA256SUMS.txt）。
+
+## 2026-09-03 工作区整理（0.9.11 基线落库）+ 图标安全区修复
+
+- 0.9.11 的全部未提交改动（UI 平权重构、Gemini 3D 头像库、去代码化文案、versionCode 30、图标/闪屏、handoff 文档）已分批提交至 `workspace/claude`；`.gitignore` 补充 `release/` 整目录与 `scripts/_*` 调试残留。验证门：typecheck 0 错误、vitest 429/429 全绿。
+- **缺陷修复**：0.9.11 期间 `gen-icons.mjs` 的 `adaptiveForeground` 被改为直接缩放 `design/brand/master/app-icon-foreground.png`，但该素材的紫色渐变背景未抠除（外环 100% 不透明），`tests/iconAssets.test.ts` 安全区断言失败，并回退了 0.9.10 的 66/108 防裁切修复。已还原为 HEAD 的透明画布合成逻辑，重新生成全部 32 个图标资源，测试转绿。
+- **遗留**：`release/xiaoyaohe-0.9.11-android-release.apk` 仍含修复前的图标，下次发版重建时自动带上；「主体抠图式自适应前景」列为后续优化项（需先产出真正透明底的抠图素材）。
+- 后端全面审计计划见 `docs/plans/2026-09-03-backend-audit.md`（含 server/ 处置决策点：ASR 代理在 main 上仍保留、工作分支已删，待用户确认是否仍有部署）。
