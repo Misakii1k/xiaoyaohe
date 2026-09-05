@@ -135,6 +135,12 @@ export const tools: ToolDefinition[] = [
             page.renderMedBatchAddPage(root, context.signal)),
       },
       {
+        path: '/meds/create',
+        handler: (_p, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/MedEdit'), (page) =>
+            page.renderMedEditPage(root, null, context.signal)),
+      },
+      {
         path: '/meds/batch',
         handler: (_p, root, context) =>
           runLazyRoute(context.signal, () => import('../pages/MedBatchAdd'), (page) =>

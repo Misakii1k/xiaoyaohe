@@ -81,4 +81,16 @@ describe('inventory page helpers', () => {
     expect(inventoryStyles).toContain('.inventory-filter-button');
     expect(inventoryStyles).toContain('.inventory-filter-button.is-selected');
   });
+
+  it('includes quick presets, dynamic preview, and expiry management in the inventory add sheet', () => {
+    const page = readFileSync(join(root, 'src/pages/MedInventory.ts'), 'utf8');
+    expect(page).toContain('inventory-presets-row');
+    expect(page).toContain('+1盒');
+    expect(page).toContain('inventory-add-preview-card');
+    expect(page).toContain('getMedicationExpiryLocalDate');
+    expect(page).toContain('expiringCount');
+    expect(page).toContain('expiredCount');
+    expect(page).not.toContain("createOverviewCol('1', '即将过期'");
+    expect(page).not.toContain("createOverviewCol('0', '已过期'");
+  });
 });

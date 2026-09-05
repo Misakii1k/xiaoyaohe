@@ -166,7 +166,8 @@ function runCleanupSafely(cleanup: RouteCleanup | null): void {
 
 function announceNavigation(): void {
   requestAnimationFrame(() => {
-    const heading = rootEl.querySelector<HTMLElement>('h1');
+    const headings = Array.from(rootEl.querySelectorAll<HTMLElement>('h1'));
+    const heading = headings.find((h) => h.offsetParent !== null || h.getClientRects().length > 0) ?? headings[0];
     if (!heading) return;
     heading.tabIndex = -1;
     heading.focus({ preventScroll: true });

@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { getAlarmScanVerifyPreference, isAlarmScanVerifyEnabled } from './alarmScanVerify';
+import { getAlarmScanExpectedToken, isAlarmScanVerifyEnabled } from './alarmScanVerify';
 import type { ScheduledReminderNotification } from './reminderTransport';
 
 export type FullScreenAlarmCapability = 'granted' | 'denied' | 'unavailable';
@@ -51,7 +51,7 @@ export async function reconcileNativeMedicationAlarms(
 ): Promise<number> {
   if (!nativeMedicationAlarmAvailable()) return 0;
   const scanVerify = isAlarmScanVerifyEnabled();
-  const scanToken = scanVerify ? `medbox-unlock:${getAlarmScanVerifyPreference().token}` : undefined;
+  const scanToken = scanVerify ? getAlarmScanExpectedToken() : undefined;
   const native = notifications.flatMap((notification): NativeAlarmNotification[] => {
     // Android 用药提醒统一走原生 AlarmManager + 通知通道，避免与 LocalNotifications 双轨漏响。
     // 组载荷（V2）用 data.mode，旧单药载荷用 data.reminderMode，两者都识别。
@@ -119,7 +119,7 @@ export async function fireNativeMedicationAlarmNow(
   if (!nativeMedicationAlarmAvailable()) return;
   const scanVerify = isAlarmScanVerifyEnabled();
   const scanToken = scanVerify
-    ? `medbox-unlock:${getAlarmScanVerifyPreference().token}`
+    ? getAlarmScanExpectedToken()
     : undefined;
   await plugin.fireNow({
     mode,

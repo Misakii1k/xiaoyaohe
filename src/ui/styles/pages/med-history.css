@@ -14,6 +14,7 @@
   gap: var(--space-3);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
+  animation: microFadeUp 240ms var(--ease-smooth) 60ms both;
 }
 
 .calendar-month-header {
@@ -41,24 +42,124 @@
   color: var(--color-text);
 }
 
+/* 统计卡片 (连续服药与依从率) */
+.history-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.history-stat-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s var(--ease-spring);
+  animation: microFadeUp 220ms var(--ease-smooth) both;
+}
+
+.history-stat-card:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.history-stat-card:nth-child(2) {
+  animation-delay: 35ms;
+}
+
+.history-stat-card:active {
+  transform: scale(0.98);
+}
+
+.history-stat-icon {
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.history-stat-card.streak .history-stat-icon {
+  background: var(--tint-orange-bg);
+  color: var(--color-warning);
+}
+
+.history-stat-card.adherence .history-stat-icon {
+  background: var(--tint-blue-bg);
+  color: var(--color-primary);
+}
+
+.history-stat-icon svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.history-stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.history-stat-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.history-stat-value {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.history-stat-num {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--color-text);
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-stat-unit {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.history-stat-meta {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 日历星期与日期网格 */
-.calendar-weekdays {
+.calendar-weekdays,
+.calendar-week-header {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   text-align: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-text-muted);
   padding-bottom: 4px;
 }
 
-.calendar-grid {
+.calendar-grid,
+.calendar-days-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 6px;
 }
 
-.calendar-cell {
+.calendar-cell,
+.calendar-day-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -68,26 +169,40 @@
   cursor: pointer;
   position: relative;
   transition: all 0.2s ease;
+  background: transparent;
+  border: 1px solid transparent;
 }
 
-.calendar-cell:active {
+.calendar-cell:active,
+.calendar-day-cell:active {
   transform: scale(0.92);
 }
 
-.calendar-cell.is-selected {
+.calendar-cell.is-selected,
+.calendar-cell.selected,
+.calendar-day-cell.selected {
   background: linear-gradient(135deg, #6366f1, #4f46e5);
   color: #ffffff;
   box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
 }
 
-.calendar-cell.is-other-month {
+.calendar-cell.today,
+.calendar-cell.is-today,
+.calendar-day-cell.today {
+  border-color: var(--color-primary);
+}
+
+.calendar-cell.is-other-month,
+.calendar-day-cell.empty {
   opacity: 0.3;
 }
 
-.calendar-cell-day {
+.calendar-cell-day,
+.calendar-day-num {
   font-size: var(--fs-subheadline);
   font-weight: 700;
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .calendar-dots {
@@ -98,17 +213,25 @@
   min-block-size: 4px;
 }
 
-.calendar-dot {
+.calendar-dot,
+.calendar-adherence-dot {
   inline-size: 4px;
   block-size: 4px;
   border-radius: var(--radius-full);
 }
 
-.calendar-dot.green { background: #10b981; }
-.calendar-dot.orange { background: #f59e0b; }
-.calendar-dot.gray { background: #cbd5e1; }
+.calendar-dot.green,
+.calendar-adherence-dot.all-taken { background: #10b981; }
+.calendar-dot.orange,
+.calendar-adherence-dot.partial { background: #f59e0b; }
+.calendar-dot.missed,
+.calendar-adherence-dot.missed { background: #f97316; }
+.calendar-dot.gray,
+.calendar-adherence-dot.pending { background: #cbd5e1; }
 
-.calendar-cell.is-selected .calendar-dot {
+.calendar-cell.is-selected .calendar-dot,
+.calendar-cell.selected .calendar-dot,
+.calendar-day-cell.selected .calendar-adherence-dot {
   background: #ffffff;
 }
 
@@ -135,6 +258,18 @@
   gap: var(--space-3);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
+  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s ease;
+  animation: microFadeUp 220ms var(--ease-smooth) backwards;
+}
+
+.history-plan-item:nth-of-type(1) { animation-delay: 80ms; }
+.history-plan-item:nth-of-type(2) { animation-delay: 115ms; }
+.history-plan-item:nth-of-type(3) { animation-delay: 150ms; }
+.history-plan-item:nth-of-type(4) { animation-delay: 185ms; }
+.history-plan-item:nth-of-type(n + 5) { animation-delay: 220ms; }
+
+.history-plan-item:active {
+  transform: scale(0.985);
 }
 
 .history-plan-time-badge {
@@ -151,7 +286,7 @@
 }
 
 .history-plan-slot {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--color-text-muted);
 }
 
@@ -163,27 +298,114 @@
   flex-shrink: 0;
 }
 
+.history-plan-timeline-dot.taken { background: #10b981; }
+.history-plan-timeline-dot.skipped { background: #94a3b8; }
+.history-plan-timeline-dot.missed { background: #f59e0b; }
+.history-plan-timeline-dot.pending { background: #6366f1; }
+
 .history-plan-info {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  min-inline-size: 0;
 }
 
 .history-plan-name {
   font-size: var(--fs-subheadline);
   font-weight: 700;
   color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 
 .history-plan-meta {
-  font-size: 11px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.history-plan-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.history-status-badge {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+
+.history-status-badge.taken {
+  background: var(--tint-green-bg);
+  color: var(--color-success);
+}
+
+.history-status-badge.skipped {
+  background: var(--color-surface-muted);
   color: var(--color-text-muted);
 }
 
+.history-status-badge.missed {
+  background: var(--tint-orange-bg);
+  color: var(--color-warning);
+}
+
+.history-status-badge.pending {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.history-plan-time-compare {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.history-plan-action-btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.history-plan-action-btn:active {
+  transform: scale(0.95);
+}
+
+.history-plan-action-btn.taken {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+
+.history-plan-action-btn.missed,
+.history-plan-action-btn.skipped,
+.history-plan-action-btn.pending {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(79, 70, 229, 0.16) 100%);
+  color: var(--color-primary);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
 .history-radio-circle {
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: 24px;
+  block-size: 24px;
   border-radius: var(--radius-full);
   border: 2px solid var(--color-border);
   background: transparent;
@@ -191,18 +413,30 @@
   place-items: center;
   flex-shrink: 0;
   cursor: pointer;
+  transition: transform 0.18s var(--ease-spring), background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.history-radio-circle:active {
+  transform: scale(0.88);
 }
 
 .history-radio-circle.taken {
   background: #10b981;
   border-color: #10b981;
   color: #ffffff;
+  animation: checkmarkPop 260ms var(--ease-spring) forwards;
 }
 
 .history-radio-circle.taken svg {
   inline-size: 14px;
   block-size: 14px;
   stroke-width: 3;
+}
+
+.history-radio-circle.taken svg path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: checkmarkDraw 240ms var(--ease-smooth) forwards;
 }
 
 

@@ -13,6 +13,10 @@ export function setPendingMedicationBatch(
   pendingPhotos = items.map((_, index) => photos[index]);
 }
 
+export function hasPendingMedicationBatch(): boolean {
+  return pending.length > 0;
+}
+
 export function takePendingMedicationBatch(): PrescriptionItemDraft[] {
   const result = pending;
   pending = [];

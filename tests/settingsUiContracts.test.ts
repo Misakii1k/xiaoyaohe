@@ -121,4 +121,24 @@ describe('settings information architecture contracts', () => {
     // 只认真正的加解密调用，不误伤解释「为什么不这么做」的注释
     expect(secretStore).not.toMatch(/encrypt|crypto\.subtle/i);
   });
+
+  it('does not leak unparsed HTML tags or raw machine format codes into user-facing settings UI', () => {
+    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const lanPanel = readFileSync(join(root, 'src/sync/lan/settingsPanel.ts'), 'utf8');
+
+    // No raw HTML tags embedded in string literals passed to el(...)
+    expect(settings).not.toContain('<b>条形码</b>');
+    expect(settings).not.toContain('<b>生活中的任意二维码</b>');
+    expect(settings).not.toContain('<b>截图保存并打印</b>');
+    expect(settings).not.toContain('<b>[${format}]</b>');
+    expect(settings).not.toContain('<code>${scannedCode}</code>');
+    expect(settings).not.toContain('<b>v${LOCAL_APP_VERSION}</b>');
+    expect(settings).not.toContain('<b>v${update.version}</b>');
+
+    expect(lanPanel).not.toContain('<strong>${escapeHtml(peer.deviceName)}</strong>');
+
+    // Friendly barcode formatting helpers are present
+    expect(settings).toContain('function formatBarcodeTypeLabel(format?: string)');
+    expect(settings).toContain('function formatCustomScanCodeSummary(customLabel?: string, token?: string)');
+  });
 });

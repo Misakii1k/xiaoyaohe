@@ -1,6 +1,6 @@
 .medication-batch-page {
   gap: var(--space-4);
-  padding-block-end: var(--space-5);
+  padding-block-end: calc(96px + var(--safe-bottom));
 }
 
 .medication-batch-intro h2 { margin: 0; font-size: var(--fs-title2); }
@@ -281,7 +281,7 @@
 .med-detail-stock-badge {
   align-self: flex-start;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 4px;
@@ -321,7 +321,7 @@
 }
 
 .med-detail-metric-label {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--color-text-muted);
 }
 
@@ -330,6 +330,7 @@
   font-weight: 900;
   color: var(--color-text);
   letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 到期信息卡 */
@@ -464,6 +465,171 @@
 [data-theme='dark'] .med-detail-hero-card,
 [data-theme='dark'] .med-detail-section-card,
 [data-theme='dark'] .medication-draft-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+/* 药品向导模式步骤指示条 */
+.med-wizard-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 10px 14px;
+  margin-block-end: var(--space-3);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.med-wizard-step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-family: inherit;
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.med-wizard-step-num {
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  border: 1.5px solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+  transition: all 0.2s ease;
+}
+
+.med-wizard-step-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: start;
+}
+
+.med-wizard-step-title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.med-wizard-step-item.is-current {
+  color: var(--color-primary);
+}
+
+.med-wizard-step-item.is-current .med-wizard-step-num {
+  background: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+}
+
+.med-wizard-step-item.is-done {
+  color: var(--color-text);
+}
+
+.med-wizard-step-item.is-done .med-wizard-step-num {
+  background: var(--tint-green-bg);
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.med-wizard-step-divider {
+  flex: 1 1 8px;
+  block-size: 2px;
+  background: var(--color-border);
+  margin-inline: 4px;
+  border-radius: 1px;
+}
+
+.med-wizard-step-divider.is-done {
+  background: var(--color-primary);
+}
+
+.med-wizard-step-content[hidden] {
+  display: none !important;
+}
+
+.medication-edit-page {
+  display: grid;
+  gap: var(--space-4);
+  padding-block-end: calc(96px + var(--safe-bottom));
+  touch-action: pan-y pinch-zoom;
+}
+
+.med-wizard-step-content {
+  display: grid;
+  gap: var(--space-4);
+  animation: med-step-fade-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+
+.med-wizard-step-content.slide-from-right {
+  animation: stepSlideFromRight 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.med-wizard-step-content.slide-from-left {
+  animation: stepSlideFromLeft 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.med-wizard-step-content.step-shake {
+  animation: stepShake 0.3s ease-in-out;
+}
+
+@keyframes stepSlideFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes stepSlideFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes stepShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+@keyframes med-step-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[data-theme='dark'] .med-wizard-steps {
   background: var(--color-surface);
   border-color: var(--color-border);
 }

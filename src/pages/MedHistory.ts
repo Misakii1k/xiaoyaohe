@@ -32,6 +32,7 @@ import {
   renderPage,
   toast,
   banner,
+  animateCountUp,
 } from '../ui/components';
 
 /** 时间区间预设 */
@@ -265,13 +266,29 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
   const lastDay = new Date(currentYear, currentMonth, 0).getDate();
   const monthEnd: LocalDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}` as LocalDate;
 
+  if (selectedDate < monthStart || selectedDate > monthEnd) {
+    const todayObj = new Date();
+    if (currentYear === todayObj.getFullYear() && currentMonth === todayObj.getMonth() + 1) {
+      selectedDate = today;
+    } else {
+      selectedDate = monthStart;
+    }
+  }
+
   const { start } = localDayBounds(monthStart);
   const { end } = localDayBounds(monthEnd);
+
+  const streakStart = addLocalDays(today, -89);
+  const { start: streakLogStart } = localDayBounds(streakStart);
+  const { end: streakLogEnd } = localDayBounds(today);
+
+  const queryStart = Math.min(start, streakLogStart);
+  const queryEnd = Math.max(end, streakLogEnd);
 
   const [meds, revisions, logs] = await Promise.all([
     listMeds(),
     listScheduleRevisions(),
-    listLogsByRange(start, end),
+    listLogsByRange(queryStart, queryEnd),
   ]);
   if (signal?.aborted) return;
   const medById = new Map(meds.map((m) => [m.id, m]));
@@ -279,8 +296,57 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
   const monthOccurrences = generateOccurrences(revisions, monthStart, monthEnd).filter((o) =>
     medById.has(o.medId)
   );
+  const streakOccurrences = generateOccurrences(revisions, streakStart, today).filter((o) =>
+    medById.has(o.medId)
+  );
 
   const content = el('div', { class: 'page history-page' });
+
+  // 0. 当月连续服药天数与依从率统计卡片
+  const streakDayGroups = groupOccurrencesByDate(streakOccurrences, logs, medById, Date.now());
+  const streak = computeStreak(streakDayGroups, today, Date.now());
+  const monthAdh = calculateAdherence(monthOccurrences, logs, Date.now());
+  const adherencePct = monthAdh.due > 0 ? Math.round(monthAdh.adherenceRate * 100) : 100;
+
+  const statsGrid = el('div', { class: 'history-stats-grid' });
+  const streakCard = el('div', { class: 'history-stat-card streak' });
+  const streakIcon = el('div', { class: 'history-stat-icon' });
+  streakIcon.append(icon('sparkles'));
+  const streakInfo = el('div', { class: 'history-stat-info' });
+  const streakVal = el('div', { class: 'history-stat-value' });
+  const streakNum = el('span', { class: 'history-stat-num', text: String(streak) });
+  streakVal.append(
+    streakNum,
+    el('span', { class: 'history-stat-unit', text: '天' })
+  );
+  if (streak > 0) {
+    animateCountUp(streakNum, streak, 400);
+  }
+  streakInfo.append(
+    el('div', { class: 'history-stat-title', text: '连续服药' }),
+    streakVal,
+    el('div', { class: 'history-stat-meta', text: streak > 0 ? '保持良好习惯' : '今日待开始' })
+  );
+  streakCard.append(streakIcon, streakInfo);
+
+  const adhCard = el('div', { class: 'history-stat-card adherence' });
+  const adhIcon = el('div', { class: 'history-stat-icon' });
+  adhIcon.append(icon('calendar'));
+  const adhInfo = el('div', { class: 'history-stat-info' });
+  const adhVal = el('div', { class: 'history-stat-value' });
+  const adhNum = el('span', { class: 'history-stat-num', text: `${adherencePct}%` });
+  adhVal.append(adhNum);
+  if (adherencePct > 0) {
+    animateCountUp(adhNum, adherencePct, 450, '%');
+  }
+  adhInfo.append(
+    el('div', { class: 'history-stat-title', text: '当月依从率' }),
+    adhVal,
+    el('div', { class: 'history-stat-meta', text: `应服 ${monthAdh.due} 次 · 已服 ${monthAdh.taken} 次` })
+  );
+  adhCard.append(adhIcon, adhInfo);
+  statsGrid.append(streakCard, adhCard);
+  content.append(statsGrid);
 
   // 1. 日历卡片
   const calCard = el('div', { class: 'calendar-card' });
@@ -294,6 +360,12 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
       currentMonth = 12;
     } else {
       currentMonth--;
+    }
+    const todayObj = new Date();
+    if (currentYear === todayObj.getFullYear() && currentMonth === todayObj.getMonth() + 1) {
+      selectedDate = today;
+    } else {
+      selectedDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01` as LocalDate;
     }
     void renderMedHistoryPage(root, signal);
   };
@@ -311,6 +383,12 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
     } else {
       currentMonth++;
     }
+    const todayObj = new Date();
+    if (currentYear === todayObj.getFullYear() && currentMonth === todayObj.getMonth() + 1) {
+      selectedDate = today;
+    } else {
+      selectedDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01` as LocalDate;
+    }
     void renderMedHistoryPage(root, signal);
   };
 
@@ -318,19 +396,19 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
   calCard.append(monthHeader);
 
   // 星期表头
-  const weekGrid = el('div', { class: 'calendar-week-header' });
+  const weekGrid = el('div', { class: 'calendar-weekdays' });
   ['日', '一', '二', '三', '四', '五', '六'].forEach((d) => {
     weekGrid.append(el('div', { class: 'calendar-week-cell', text: d }));
   });
   calCard.append(weekGrid);
 
   // 日期网格
-  const daysGrid = el('div', { class: 'calendar-days-grid' });
+  const daysGrid = el('div', { class: 'calendar-grid' });
   const firstDayOfWeek = new Date(currentYear, currentMonth - 1, 1).getDay();
 
   // 空白占位
   for (let i = 0; i < firstDayOfWeek; i++) {
-    daysGrid.append(el('div', { class: 'calendar-day-cell empty' }));
+    daysGrid.append(el('div', { class: 'calendar-cell is-other-month empty' }));
   }
 
   // 每日数据
@@ -340,24 +418,26 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
     const isToday = dateStr === today;
 
     const dayCell = el('button', {
-      class: `calendar-day-cell${isSelected ? ' selected' : ''}${isToday ? ' today' : ''}`,
+      class: `calendar-cell${isSelected ? ' is-selected selected' : ''}${isToday ? ' today is-today' : ''}`,
       type: 'button',
     });
 
-    dayCell.append(el('span', { class: 'calendar-day-num', text: String(day) }));
+    dayCell.append(el('span', { class: 'calendar-cell-day calendar-day-num', text: String(day) }));
 
     // 依从性小圆点
     const dayOccs = monthOccurrences.filter((o) => o.localDate === dateStr);
+    const dotsWrap = el('div', { class: 'calendar-dots' });
     if (dayOccs.length > 0) {
       const adh = calculateAdherence(dayOccs, logs, Date.now());
-      let dotType = 'pending';
+      let dotColor = 'gray';
       if (adh.due > 0) {
-        if (adh.adherenceRate === 1) dotType = 'all-taken';
-        else if (adh.taken > 0) dotType = 'partial';
-        else if (dateStr < today) dotType = 'missed';
+        if (adh.adherenceRate === 1) dotColor = 'green';
+        else if (adh.taken > 0) dotColor = 'orange';
+        else if (dateStr < today) dotColor = 'missed';
       }
-      dayCell.append(el('span', { class: `calendar-adherence-dot ${dotType}` }));
+      dotsWrap.append(el('span', { class: `calendar-dot ${dotColor}` }));
     }
+    dayCell.append(dotsWrap);
 
     dayCell.onclick = () => {
       selectedDate = dateStr;
@@ -387,19 +467,29 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
 
       const log = findLogForOccurrence(occ, logs);
       const isTaken = log?.status === 'taken';
+      const isSkipped = log?.status === 'skipped';
+      const isMissed = !log && occ.dueAt < Date.now();
+      const statusClass = isTaken ? 'taken' : isSkipped ? 'skipped' : isMissed ? 'missed' : 'pending';
+      const statusLabel = isTaken ? '已服' : isSkipped ? '跳过' : isMissed ? '漏服' : '待服';
 
       const itemCard = el('div', { class: 'history-plan-item' });
 
       // 时间标识
       const timeBadge = el('div', { class: 'history-plan-time-badge' });
       const rev = revisions.find((r) => r.medId === occ.medId && r.slot === occ.slot);
-      const timeStr = rev?.timeLocal || '08:00';
+      const timeStr = rev?.timeLocal || occ.timeLocal || '08:00';
+      let actualTimeStr: string | undefined;
+      if (log?.ackAt) {
+        const d = new Date(log.ackAt);
+        actualTimeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      }
+
       timeBadge.append(
-        el('div', { class: 'history-plan-time', text: timeStr }),
-        el('div', { class: 'history-plan-slot', text: SLOT_LABEL[occ.slot] || '用药' })
+        el('div', { class: 'history-plan-time', text: actualTimeStr || timeStr }),
+        el('div', { class: 'history-plan-slot', text: actualTimeStr ? `计划 ${timeStr}` : (SLOT_LABEL[occ.slot] || '用药') })
       );
 
-      const timelineDot = el('div', { class: 'history-plan-timeline-dot' });
+      const timelineDot = el('div', { class: `history-plan-timeline-dot ${statusClass}` });
 
       // 药品信息
       const info = el('div', { class: 'history-plan-info' });
@@ -408,25 +498,59 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
       const meal = formatMealRels([...(occ.mealRels || [])]);
       info.append(el('div', { class: 'history-plan-meta', text: `${dose}${meal ? ' · ' + meal : ''}` }));
 
-      // 打卡圆圈
+      const statusRow = el('div', { class: 'history-plan-status-row' });
+      statusRow.append(el('span', { class: `history-status-badge ${statusClass}`, text: statusLabel }));
+      if (actualTimeStr) {
+        statusRow.append(el('span', { class: 'history-plan-time-compare', text: `实际打卡 ${actualTimeStr} (计划 ${timeStr})` }));
+      } else {
+        statusRow.append(el('span', { class: 'history-plan-time-compare', text: `计划 ${timeStr} · ${SLOT_LABEL[occ.slot] || '时段'}` }));
+      }
+      info.append(statusRow);
+
+      // 操作区域 (按钮 + 圆形打卡圈)
+      const actionsWrap = el('div', { class: 'history-plan-actions' });
+      const actionBtn = el('button', {
+        class: `history-plan-action-btn ${statusClass}`,
+        type: 'button',
+        text: isTaken ? '撤销' : isMissed ? '补卡' : isSkipped ? '补卡' : '打卡',
+      });
+
+      const handleAction = async () => {
+        try {
+          if (isTaken) {
+            await setOccurrenceAction(occ, undefined);
+            toast('已撤销打卡');
+          } else {
+            const result = await setOccurrenceAction(occ, 'taken');
+            toast(isMissed || isSkipped ? '补卡成功' : '打卡成功');
+            if (result?.lowStock && result?.lowStockMessage) {
+              toast(result.lowStockMessage);
+            }
+          }
+          void renderMedHistoryPage(root, signal);
+        } catch (error) {
+          if (error instanceof MedicationIntakeError) {
+            toast(error.message);
+          } else {
+            toast('操作失败');
+          }
+        }
+      };
+
+      actionBtn.onclick = handleAction;
+
       const radio = el('button', {
         class: `history-radio-circle${isTaken ? ' taken' : ''}`,
         type: 'button',
+        'aria-label': isTaken ? '点击撤销打卡' : '点击打卡',
       } as any);
       if (isTaken) {
         radio.append(icon('check'));
       }
-      radio.onclick = async () => {
-        try {
-          await setOccurrenceAction(occ, isTaken ? undefined : 'taken');
-          toast(isTaken ? '已撤销打卡' : '打卡成功');
-          void renderMedHistoryPage(root, signal);
-        } catch {
-          toast('操作失败');
-        }
-      };
+      radio.onclick = handleAction;
 
-      itemCard.append(timeBadge, timelineDot, info, radio);
+      actionsWrap.append(actionBtn, radio);
+      itemCard.append(timeBadge, timelineDot, info, actionsWrap);
       planSection.append(itemCard);
     }
   }

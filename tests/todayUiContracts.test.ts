@@ -40,4 +40,14 @@ describe('today page compact fullscreen contracts', () => {
     expect(page).toContain('closeNotificationsByTag(item.occurrence.legacyLogId)');
     expect(page).not.toContain("item.occurrence.id + '_care'");
   });
+
+  it('provides slot-level batch intake button for pending items and clears notifications', () => {
+    const page = source('src/pages/Today.ts');
+
+    expect(page).toContain('today-batch-take-btn');
+    expect(page).toContain('setOccurrenceActions');
+    expect(page).toContain("class: 'today-time-status-pill taken'");
+    expect(page).toContain('pendingItems.length > 0');
+    expect(page).not.toContain("i.log?.status !== 'taken'");
+  });
 });

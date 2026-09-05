@@ -4,6 +4,7 @@ import {
   listLogsByDay,
   listScheduleRevisions,
   setOccurrenceAction,
+  setOccurrenceActions,
 } from '../db/local';
 import {
   formatMealRels,
@@ -234,7 +235,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   }
 
   if (!signal?.aborted) {
-    renderPage({ root, title: '今日', activeTab: 'today', content });
+    renderPage({ root, title: '今天', activeTab: 'today', content });
   }
 }
 
@@ -265,7 +266,9 @@ function renderSlotGroup(
 ): HTMLElement {
   const container = el('div', { class: 'today-time-group today-slot' });
 
-  const allTaken = group.items.every((i) => i.log?.status === 'taken');
+  const activeGroupItems = group.items.filter((i) => i.occurrence && !i.isRest);
+  const pendingItems = activeGroupItems.filter((i) => !i.log || i.log.status === 'pending');
+  const allTaken = activeGroupItems.length > 0 && activeGroupItems.every((i) => i.log?.status === 'taken');
   const slotName = SLOT_LABEL[group.slot] || '用药时段';
 
   const header = el('div', { class: 'today-time-header today-slot-actions' });
@@ -273,12 +276,51 @@ function renderSlotGroup(
   tag.append(icon(group.slot === 'morning' ? 'sun' : group.slot === 'noon' ? 'sun-high' : group.slot === 'evening' ? 'sunset' : 'moon'));
   tag.append(el('span', { text: `${group.earliestTime} ${slotName}` }));
 
-  const statusPill = el('span', {
-    class: `today-time-status-pill ${allTaken ? 'taken' : 'pending'}`,
-    text: allTaken ? '已服用' : '待服用',
-  });
-
-  header.append(tag, statusPill);
+  if (allTaken) {
+    const statusPill = el('span', {
+      class: 'today-time-status-pill taken',
+      text: '已全部服用',
+    });
+    header.append(tag, statusPill);
+  } else if (pendingItems.length > 0) {
+    const batchBtn = el('button', {
+      class: 'today-batch-take-btn',
+      type: 'button',
+      'aria-label': `${slotName}一键打卡`,
+    } as any);
+    batchBtn.append(icon('check'), el('span', { text: '一键打卡' }));
+    batchBtn.onclick = async (e) => {
+      e.stopPropagation();
+      if (pendingItems.length === 0) return;
+      const pendingOccurrences = pendingItems.map((i) => i.occurrence!);
+      try {
+        const results = await setOccurrenceActions(pendingOccurrences, 'taken');
+        for (const occ of pendingOccurrences) {
+          closeNotificationsByTag(occ.id);
+          closeNotificationsByTag(occ.legacyLogId);
+        }
+        for (const res of results) {
+          if (res.lowStock && res.lowStockMessage) {
+            toast(res.lowStockMessage);
+          }
+        }
+        toast(`已完成${slotName}一键打卡`);
+        onRefresh();
+      } catch {
+        toast('一键打卡失败');
+      }
+    };
+    header.append(tag, batchBtn);
+  } else {
+    const allHandled = activeGroupItems.length > 0 && activeGroupItems.every((i) => i.log?.status === 'taken' || i.log?.status === 'skipped');
+    if (allHandled) {
+      const statusPill = el('span', {
+        class: 'today-time-status-pill taken',
+        text: '已全部处理',
+      });
+      header.append(tag, statusPill);
+    }
+  }
   container.append(header);
 
   for (const item of group.items) {

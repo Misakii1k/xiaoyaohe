@@ -128,7 +128,7 @@ export async function renderMedEditPage(
   const selectedDays = new Set<number>(med.daysOfWeek);
   const timeInputs = new Map<Slot, HTMLInputElement>();
 
-  const content = el('div', { class: 'page' });
+  const content = el('div', { class: 'page medication-edit-page' });
   const form = el('div', { class: 'card' });
 
   const nameInput = el('input', { type: 'text', value: med.name, placeholder: '例如：阿司匹林肠溶片' });
@@ -205,19 +205,12 @@ export async function renderMedEditPage(
     rows: 2,
   } as any) as HTMLTextAreaElement;
 
-  form.append(buildBoxPhotoBlock());
-  form.append(buildAiPhotoBlock());
-  form.append(buildNluBlock());
-  form.append(field('药名', nameInput));
-  form.append(field('规格', dosageInput));
-  form.append(field('原医嘱用量', amountInput));
-  const structuredDose = el('div', { class: 'dose-structure-grid' });
-  structuredDose.append(field('每次剂量数值', doseQuantityInput));
-  structuredDose.append(field('剂量单位', doseUnitInput));
-  form.append(structuredDose);
-  const doseReview = el('div', { class: 'dose-review' });
-  form.append(doseReview);
-  form.append(field('过期日期（可选）', expiryDatePicker.root));
+  const step1 = el('div', { class: 'med-wizard-step-content med-step-1' });
+  step1.append(buildBoxPhotoBlock());
+  step1.append(buildAiPhotoBlock());
+  step1.append(buildNluBlock());
+  step1.append(field('药名', nameInput));
+  step1.append(field('规格', dosageInput));
 
   for (const s of SLOTS) {
     const chip = el('button', {
@@ -241,9 +234,18 @@ export async function renderMedEditPage(
     };
     slotChips.append(chip);
   }
-  form.append(field('服药时段（可多选）', slotChips));
-  form.append(scheduleWrap);
-  form.append(reminderHint);
+
+  const step2 = el('div', { class: 'med-wizard-step-content med-step-2' });
+  step2.append(field('原医嘱用量', amountInput));
+  const structuredDose = el('div', { class: 'dose-structure-grid' });
+  structuredDose.append(field('每次剂量数值', doseQuantityInput));
+  structuredDose.append(field('剂量单位', doseUnitInput));
+  step2.append(structuredDose);
+  const doseReview = el('div', { class: 'dose-review' });
+  step2.append(doseReview);
+  step2.append(field('服药时段（可多选）', slotChips));
+  step2.append(scheduleWrap);
+  step2.append(reminderHint);
   renderScheduleControls();
 
   for (let d = 0; d < 7; d++) {
@@ -262,7 +264,7 @@ export async function renderMedEditPage(
     };
     dayChips.append(chip);
   }
-  form.append(field('服药星期（不选 = 每天）', dayChips));
+  step2.append(field('服药星期（不选 = 每天）', dayChips));
 
   // 周期用药配置（吃 N 天停 M 天）
   const existingCycleRule = existingRules.find((r) => r.cycle);
@@ -306,7 +308,6 @@ export async function renderMedEditPage(
     cycleEnabled = cycleCheckbox.checked;
     setCycleInputsVisibility();
   };
-  form.append(cycleCard);
 
   const inventoryCard = el('div', { class: 'sub-card inventory-editor' });
   inventoryCard.append(el('div', { class: 'section-title', html: '剩余药量' }));
@@ -317,11 +318,66 @@ export async function renderMedEditPage(
   inventoryCard.append(field('剩多少时提醒买药', lowThresholdInput));
   inventoryCard.append(daysLeftHint);
   inventoryCard.append(field('来源说明', inventorySourceInput));
-  form.append(inventoryCard);
 
-  form.append(field('备注', notesInput));
-  form.append(el('div', { class: 'muted', text: '各时段具体时间与通知方式可在“时段提醒设置”中统一调整。' }));
-  content.append(form);
+  const step3 = el('div', { class: 'med-wizard-step-content med-step-3' });
+  step3.append(inventoryCard);
+  step3.append(field('过期日期（可选）', expiryDatePicker.root));
+  step3.append(cycleCard);
+  step3.append(field('备注', notesInput));
+  step3.append(el('div', { class: 'muted', text: '各时段具体时间与通知方式可在“时段提醒设置”中统一调整。' }));
+
+  form.append(step1, step2, step3);
+
+  let currentStep: 1 | 2 | 3 = 1;
+
+  const stepIndicator = el('div', { class: 'med-wizard-steps', role: 'tablist', 'aria-label': '药品录入步骤' });
+  const stepsConfig = [
+    { num: 1 as const, title: '基本信息' },
+    { num: 2 as const, title: '用药计划' },
+    { num: 3 as const, title: '库存备注' },
+  ];
+
+  const stepBtns: HTMLElement[] = [];
+  const stepDividers: HTMLElement[] = [];
+
+  stepsConfig.forEach((step, idx) => {
+    if (idx > 0) {
+      const divider = el('div', { class: 'med-wizard-step-divider' });
+      stepDividers.push(divider);
+      stepIndicator.append(divider);
+    }
+    const btn = el('button', {
+      class: `med-wizard-step-item${step.num === 1 ? ' is-current' : ''}`,
+      type: 'button',
+      role: 'tab',
+      'aria-selected': String(step.num === 1),
+    });
+    const numEl = el('span', { class: 'med-wizard-step-num', text: String(step.num) });
+    const infoEl = el('div', { class: 'med-wizard-step-info' });
+    infoEl.append(el('span', { class: 'med-wizard-step-title', text: step.title }));
+    btn.append(numEl, infoEl);
+
+    btn.onclick = () => {
+      if (editing) {
+        goToStep(step.num, step.num > currentStep ? 'next' : 'prev');
+      } else {
+        if (step.num === 1) {
+          goToStep(1, 'prev');
+        } else if (step.num === 2) {
+          if (validateCurrentStep(1)) goToStep(2, 'next');
+        } else if (step.num === 3) {
+          if (validateCurrentStep(1) && validateCurrentStep(2)) {
+            goToStep(3, 'next');
+          }
+        }
+      }
+    };
+
+    stepBtns.push(btn);
+    stepIndicator.append(btn);
+  });
+
+  content.append(stepIndicator, form);
 
   // 监听库存/用量输入变化，实时刷新可用天数
   for (const inp of [remainingInput, doseQuantityInput, doseUnitInput, unitInput]) {
@@ -344,7 +400,9 @@ export async function renderMedEditPage(
     if (!isActive() || saveBtn.hasAttribute('disabled')) return;
     const name = nameInput.value.trim();
     if (!name) {
+      goToStep(1);
       toast('请填写药名');
+      nameInput.focus();
       return;
     }
     med.name = name;
@@ -353,6 +411,7 @@ export async function renderMedEditPage(
     const doseQuantity = readPositiveNumber(doseQuantityInput.value);
     const doseUnit = doseUnitInput.value.trim();
     if ((doseQuantity == null) !== !doseUnit) {
+      goToStep(2);
       toast('请同时填写每次剂量数值和单位');
       (doseQuantity == null ? doseQuantityInput : doseUnitInput).focus();
       return;
@@ -388,6 +447,7 @@ export async function renderMedEditPage(
     // 相互作用检查：合并新药名 + 现有药品名（排除自身）
     const cycle = readCycle();
     if (cycleEnabled && !cycle) {
+      goToStep(3);
       toast('请填写有效的周期天数');
       activeDaysInput.focus();
       return;
@@ -396,6 +456,7 @@ export async function renderMedEditPage(
       ? cycleStartInput.value
       : undefined;
     if (cycleEnabled && !cycleStartDate) {
+      goToStep(3);
       toast('请选择本周期首个服药日');
       cycleStartInput.focus();
       return;
@@ -458,7 +519,61 @@ export async function renderMedEditPage(
       if (isActive()) saveBtn.removeAttribute('disabled');
     }
   };
-  const actionDock = createActionDock([saveBtn]);
+  function validateCurrentStep(step: 1 | 2 | 3): boolean {
+    if (step === 1) {
+      if (!nameInput.value.trim()) {
+        toast('请先填写药名');
+        triggerStepShake(1);
+        nameInput.focus();
+        return false;
+      }
+      return true;
+    } else if (step === 2) {
+      const doseQuantity = readPositiveNumber(doseQuantityInput.value);
+      const doseUnit = doseUnitInput.value.trim();
+      if ((doseQuantity == null) !== !doseUnit) {
+        toast('请同时填写每次剂量数值和单位');
+        triggerStepShake(2);
+        (doseQuantity == null ? doseQuantityInput : doseUnitInput).focus();
+        return false;
+      }
+      return true;
+    }
+    return true;
+  }
+
+  function triggerStepShake(stepNum: 1 | 2 | 3): void {
+    const stepEl = stepNum === 1 ? step1 : stepNum === 2 ? step2 : step3;
+    stepEl.classList.remove('step-shake');
+    void stepEl.offsetWidth;
+    stepEl.classList.add('step-shake');
+    setTimeout(() => stepEl.classList.remove('step-shake'), 350);
+  }
+
+  const prevBtn = createButton({
+    label: '上一步',
+    variant: 'secondary',
+    icon: 'arrow-left',
+    onClick: () => {
+      if (currentStep > 1) {
+        goToStep((currentStep - 1) as 1 | 2 | 3, 'prev');
+      }
+    },
+  });
+
+  const nextBtn = createButton({
+    label: '下一步',
+    icon: 'chevron-right',
+    onClick: () => {
+      if (currentStep === 1) {
+        if (validateCurrentStep(1)) goToStep(2, 'next');
+      } else if (currentStep === 2) {
+        if (validateCurrentStep(2)) goToStep(3, 'next');
+      }
+    },
+  });
+
+  const actionDock = createActionDock([prevBtn, nextBtn, saveBtn]);
   actionDock.classList.add('medication-editor-dock');
 
   if (editing) {
@@ -479,7 +594,99 @@ export async function renderMedEditPage(
 
   actionDock.append(createButton({ label: '返回', variant: 'text', icon: 'arrow-left', onClick: () => navigate('/meds') }));
 
-  let isDetailMode = editing;
+  function goToStep(s: 1 | 2 | 3, direction?: 'next' | 'prev'): void {
+    const dir = direction ?? (s > currentStep ? 'next' : 'prev');
+    currentStep = s;
+    updateStepUI(dir);
+    const mainEl = content.closest('.app-main');
+    if (mainEl) mainEl.scrollTop = 0;
+  }
+
+  function updateStepUI(direction?: 'next' | 'prev'): void {
+    const steps = [step1, step2, step3];
+    steps.forEach((st, idx) => {
+      const isTarget = idx + 1 === currentStep;
+      st.hidden = !isTarget;
+      st.classList.remove('slide-from-right', 'slide-from-left');
+      if (isTarget && direction) {
+        st.classList.add(direction === 'next' ? 'slide-from-right' : 'slide-from-left');
+      }
+    });
+
+    stepBtns.forEach((btn, idx) => {
+      const num = (idx + 1) as 1 | 2 | 3;
+      btn.classList.toggle('is-current', num === currentStep);
+      btn.classList.toggle('is-done', num < currentStep);
+      btn.setAttribute('aria-selected', String(num === currentStep));
+      const numEl = btn.querySelector('.med-wizard-step-num');
+      if (numEl) {
+        numEl.textContent = num < currentStep ? '✓' : String(num);
+      }
+    });
+
+    stepDividers.forEach((div, idx) => {
+      div.classList.toggle('is-done', idx + 1 < currentStep);
+    });
+
+    prevBtn.hidden = currentStep === 1;
+    nextBtn.hidden = currentStep === 3;
+    const saveSpan = saveBtn.querySelector('span');
+    if (saveSpan) {
+      saveSpan.textContent = currentStep === 3 && !editing ? '完成保存' : '保存';
+    }
+    saveBtn.hidden = !editing && currentStep !== 3;
+  }
+
+  // 左右滑动手势（Swipe Gestures）
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchStartTime = 0;
+
+  content.addEventListener('touchstart', (e: TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    touchStartTime = Date.now();
+  }, { passive: true });
+
+  content.addEventListener('touchend', (e: TouchEvent) => {
+    if (e.changedTouches.length !== 1) return;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    const touchEndX = touch.clientX;
+    const touchEndY = touch.clientY;
+    const deltaX = touchEndX - touchStartX;
+    const deltaY = touchEndY - touchStartY;
+    const duration = Date.now() - touchStartTime;
+
+    if (duration > 500) return;
+    if (Math.abs(deltaX) < 48 || Math.abs(deltaX) < Math.abs(deltaY) * 1.5) return;
+
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.closest('.box-photo-crop-stage'))) {
+      return;
+    }
+
+    if (deltaX < -48) {
+      // 向左滑 -> 下一步（带校验）
+      if (currentStep === 1) {
+        if (validateCurrentStep(1)) goToStep(2, 'next');
+      } else if (currentStep === 2) {
+        if (validateCurrentStep(2)) goToStep(3, 'next');
+      }
+    } else if (deltaX > 48) {
+      // 向右滑 -> 上一步（无阻碍返回）
+      if (currentStep === 3) {
+        goToStep(2, 'prev');
+      } else if (currentStep === 2) {
+        goToStep(1, 'prev');
+      }
+    }
+  }, { passive: true });
+
+  let isDetailMode = false;
 
   function renderCurrentView(): void {
     if (!isActive()) return;
@@ -560,6 +767,7 @@ export async function renderMedEditPage(
       });
       editBtn.onclick = () => {
         isDetailMode = false;
+        goToStep(1);
         renderCurrentView();
       };
 
@@ -580,10 +788,23 @@ export async function renderMedEditPage(
         content: detailContent,
       });
     } else {
+      updateStepUI();
+      const backBtn = el('button', {
+        class: 'icon-btn',
+        type: 'button',
+        'aria-label': '返回',
+      } as any);
+      backBtn.append(icon('arrow-left'));
+      backBtn.onclick = () => {
+        navigate('/meds');
+      };
+
       renderPage({
         root,
         title: editing ? '编辑药品' : '新增药品',
         activeTab: 'meds',
+        topLeft: backBtn,
+        showTabbar: false,
         content,
         actionDock });
     }

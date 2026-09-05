@@ -911,12 +911,20 @@ textarea {
   transition: stroke-dasharray var(--dur-slow) var(--ease-out);
 }
 
+.progress-ring .ring-glow.ring-glow-animated {
+  animation: ringSweep 450ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 .progress-ring .ring-fg {
   fill: none;
   stroke-width: 10;
   stroke-linecap: round;
   filter: drop-shadow(0 4px 10px rgba(79, 70, 229, 0.3));
   transition: stroke-dasharray var(--dur-slow) var(--ease-out);
+}
+
+.progress-ring .ring-fg.ring-fg-animated {
+  animation: ringSweep 450ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .progress-ring .ring-label {
@@ -1050,40 +1058,43 @@ textarea {
   100% { opacity: 1; transform: translateY(0); }
 }
 
-/* ============ Toast：iOS 暗色玻璃 ============ */
+/* ============ Toast：深色高对比度黑曜石玻璃胶囊 ============ */
 .toast {
   position: fixed;
-  left: 50%;
-  bottom: calc(112px + var(--safe-bottom));
-  transform: translate(-50%, 16px);
-  background: rgba(28, 28, 30, 0.84);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  color: #ffffff;
-  padding: 14px 22px;
+  inset-inline: 0;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: min(calc(100% - 32px), 480px);
+  bottom: calc(76px + var(--safe-bottom));
+  background: rgba(22, 23, 28, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: #ffffff !important;
+  padding: 10px 20px;
   border-radius: var(--radius-full);
   font-size: var(--fs-subheadline);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0;
-  z-index: 100;
-  max-width: calc(100% - 32px);
-  text-align: left;
+  z-index: 9999;
+  text-align: center;
   opacity: 0;
-  transform: translate(-50%, 16px) scale(0.86);
-  border: 0.5px solid rgba(255, 255, 255, 0.15);
+  transform: translateY(12px) scale(0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  transition: transform 520ms var(--ease-spring),
-    opacity 260ms var(--ease-out);
+    0 12px 32px rgba(0, 0, 0, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: transform 220ms var(--ease-spring),
+    opacity 220ms var(--ease-out);
   will-change: transform, opacity;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 .toast.show {
-  transform: translate(-50%, 0) scale(1);
+  transform: translateY(0) scale(1);
   opacity: 1;
 }
 .toast.hide {
-  transform: translate(-50%, 8px) scale(0.94);
+  transform: translateY(-8px) scale(0.96);
   opacity: 0;
 }
 

@@ -277,7 +277,14 @@
   flex-direction: column;
   gap: var(--space-3);
   margin-top: var(--space-2);
+  animation: microFadeUp 220ms var(--ease-smooth) backwards;
 }
+
+.today-time-group:nth-child(1) { animation-delay: 0ms; }
+.today-time-group:nth-child(2) { animation-delay: 35ms; }
+.today-time-group:nth-child(3) { animation-delay: 70ms; }
+.today-time-group:nth-child(4) { animation-delay: 105ms; }
+.today-time-group:nth-child(n + 5) { animation-delay: 140ms; }
 
 .today-time-header {
   display: flex;
@@ -296,9 +303,9 @@
 }
 
 .today-time-status-pill {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 2px 10px;
+  padding: 3px 10px;
   border-radius: var(--radius-full);
 }
 
@@ -314,6 +321,34 @@
   border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
+.today-batch-take-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-block-size: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(79, 70, 229, 0.16) 100%);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.12);
+  transition: transform 0.18s var(--ease-spring), background 0.18s ease;
+}
+
+.today-batch-take-btn svg {
+  inline-size: 14px;
+  block-size: 14px;
+  stroke: var(--color-primary);
+}
+
+.today-batch-take-btn:active {
+  transform: scale(0.95);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(79, 70, 229, 0.26) 100%);
+}
+
 .today-card-item {
   background: var(--color-surface);
   border-radius: var(--radius-xl);
@@ -323,7 +358,7 @@
   gap: var(--space-3);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s ease;
   cursor: pointer;
 }
 
@@ -377,10 +412,11 @@
 }
 
 .today-stock-tag {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 .today-stock-tag.ok {
@@ -406,7 +442,11 @@
   place-items: center;
   padding: 0;
   flex-shrink: 0;
-  transition: all 0.18s ease;
+  transition: border-color 0.2s var(--ease-smooth), background-color 0.2s var(--ease-smooth), transform 0.2s var(--ease-spring);
+}
+
+.today-radio-btn:active {
+  transform: scale(0.88);
 }
 
 .today-radio-btn::after {
@@ -420,12 +460,19 @@
   background: var(--color-success);
   border-color: var(--color-success);
   color: #ffffff;
+  animation: checkmarkPop 260ms var(--ease-spring) forwards;
 }
 
 .today-radio-btn.taken svg {
   inline-size: 16px;
   block-size: 16px;
   stroke-width: 3;
+}
+
+.today-radio-btn.taken svg path {
+  stroke-dasharray: 28;
+  stroke-dashoffset: 28;
+  animation: checkmarkDraw 240ms var(--ease-smooth) forwards;
 }
 
 .today-radio-btn:not(.taken):hover {

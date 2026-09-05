@@ -452,6 +452,9 @@ final class MedicationAlarmContract {
             data.put("occurrenceId", occurrenceId);
             itemPayload.put("data", data);
             queueAction(context, actionId, itemPayload);
+            Intent open = new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            context.startActivity(open);
         } catch (JSONException ignored) {}
     }
 
@@ -463,5 +466,50 @@ final class MedicationAlarmContract {
 
     private static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    /** 标准化条码内容，去除 BOM、换行符、控制符及常见 AIM 标识前缀 */
+    public static String normalizeScanToken(String token) {
+        if (token == null) return "";
+        String s = token.trim()
+            .replace("\r", "")
+            .replace("\n", "")
+            .replace("\uFEFF", "")
+            .replace("\u001D", "")
+            .replace("\u0000", "");
+        // 移除条码 AIM 标识符前缀（如 ]Q1, ]C1, ]e0 等）
+        if (s.startsWith("]") && s.length() >= 3) {
+            char second = s.charAt(1);
+            if ((second >= 'A' && second <= 'Z') || (second >= 'a' && second <= 'z')) {
+                s = s.substring(3).trim();
+            }
+        }
+        return s;
+    }
+
+    /** 智能比对已绑定的码与扫描到的码（支持 URL 结尾斜线容错、大小写容错、EAN-13/UPC-A 容错等） */
+    public static boolean isTokenMatch(String scanned, String expected) {
+        String s1 = normalizeScanToken(scanned);
+        String s2 = normalizeScanToken(expected);
+        if (s1.isEmpty() || s2.isEmpty()) return false;
+        if (s1.equals(s2)) return true;
+        if (s1.equalsIgnoreCase(s2)) return true;
+
+        // UPC-A (12位) 与 EAN-13 (13位带前导0) 互通容错
+        if (s1.length() == 13 && s1.startsWith("0") && s1.substring(1).equals(s2)) return true;
+        if (s2.length() == 13 && s2.startsWith("0") && s2.substring(1).equals(s1)) return true;
+
+        // URL 容错：忽略末尾斜杠
+        String clean1 = s1.endsWith("/") ? s1.replaceAll("/+$", "") : s1;
+        String clean2 = s2.endsWith("/") ? s2.replaceAll("/+$", "") : s2;
+        if (clean1.equals(clean2)) return true;
+        if (clean1.equalsIgnoreCase(clean2)) return true;
+
+        // URL 协议前缀容错 (http vs https)
+        String noProto1 = clean1.replaceFirst("^https?://", "");
+        String noProto2 = clean2.replaceFirst("^https?://", "");
+        if (!noProto1.isEmpty() && noProto1.equalsIgnoreCase(noProto2)) return true;
+
+        return false;
     }
 }

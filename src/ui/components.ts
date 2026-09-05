@@ -399,6 +399,37 @@ export function emptyState(
   return wrap;
 }
 
+/**
+ * 高性能数字滚动递增动效（CountUp）
+ * 基于 requestAnimationFrame 与三次缓动曲线，严格支持 prefers-reduced-motion
+ */
+export function animateCountUp(
+  targetEl: HTMLElement,
+  targetValue: number,
+  durationMs = 400,
+  suffix = '',
+): void {
+  if (typeof window === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+    targetEl.textContent = `${targetValue}${suffix}`;
+    return;
+  }
+  const startTime = performance.now();
+  const startVal = 0;
+  const update = (now: number) => {
+    const elapsed = now - startTime;
+    const progress = Math.min(1, elapsed / durationMs);
+    const ease = 1 - Math.pow(1 - progress, 3);
+    const current = Math.round(startVal + (targetValue - startVal) * ease);
+    targetEl.textContent = `${current}${suffix}`;
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    } else {
+      targetEl.textContent = `${targetValue}${suffix}`;
+    }
+  };
+  requestAnimationFrame(update);
+}
+
 /** ---------- 进度环（大百分比仪表盘） ---------- */
 export function progressRing(value: number, total: number): HTMLElement {
   const safeTotal = Math.max(0, total);
@@ -476,7 +507,7 @@ export function progressRing(value: number, total: number): HTMLElement {
   // 底部弥散光晕弧（仅当有进度时展示）
   if (percent > 0) {
     const glow = document.createElementNS(ns, 'circle');
-    glow.setAttribute('class', 'ring-glow');
+    glow.setAttribute('class', 'ring-glow ring-glow-animated');
     glow.setAttribute('cx', '50');
     glow.setAttribute('cy', '50');
     glow.setAttribute('r', '38');
@@ -492,7 +523,7 @@ export function progressRing(value: number, total: number): HTMLElement {
   // 活跃前景进度弧
   if (percent > 0) {
     const fg = document.createElementNS(ns, 'circle');
-    fg.setAttribute('class', 'ring-fg');
+    fg.setAttribute('class', 'ring-fg ring-fg-animated');
     fg.setAttribute('cx', '50');
     fg.setAttribute('cy', '50');
     fg.setAttribute('r', '38');
@@ -511,11 +542,15 @@ export function progressRing(value: number, total: number): HTMLElement {
     label.append(el('span', { class: 'ring-empty', text: '—' }));
   } else {
     const group = el('div', { class: 'ring-center-content' });
+    const numEl = el('span', { class: 'ring-num ring-value', text: String(percent) });
     group.append(
-      el('span', { class: 'ring-num ring-value', text: String(percent) }),
+      numEl,
       el('span', { class: 'ring-unit', text: '%' })
     );
     label.append(group);
+    if (percent > 0) {
+      animateCountUp(numEl, percent, 450);
+    }
   }
 
   wrap.append(svg, label);

@@ -39,6 +39,7 @@ import {
 } from './medicationReminderPlan';
 import type { ScheduledReminderNotification } from './reminderTransport';
 import { triggerReminderVibration } from './reminderVibration';
+import { replayPendingMedicationReminderActions } from './reminderActions';
 
 const TICK_MS = 60_000;
 const NAVIGATION_RECONCILE_THROTTLE_MS = 2 * 60_000;
@@ -186,6 +187,9 @@ interface DueReminderGroup {
 
 async function runTick(): Promise<void> {
   if (getPermission() !== 'granted') return;
+  // 原生端后台或定时唤醒时，优先把 SharedPreferences 中未处理的原生打卡动作补收入库，
+  // 确保随后的 buildMedicationReminderPlan 能基于最新服药状态计算，避免旧闹钟重复提醒。
+  await replayPendingMedicationReminderActions().catch(() => 0);
   if (!isAppNotificationsEnabled()) {
     // 关掉应用内开关时两端都要清空已下发的排期，否则系统闹钟／SW 计划会继续响。
     const result = await reconcileScheduledNotifications([]);

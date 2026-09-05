@@ -1,6 +1,8 @@
 import '../ui/styles/pages/medications.css';
 import {
   listMeds,
+  listRules,
+  putRule,
   softDeleteMed,
 } from '../db/local';
 import {
@@ -9,8 +11,20 @@ import {
   icon,
   toast,
   banner,
+  confirmDialog,
   topbarAiPill,
+  topbarPill,
+  SLOT_ICON,
 } from '../ui/components';
+import {
+  SLOTS,
+  SLOT_LABEL,
+  SLOT_DEFAULT_TIME,
+  type ReminderRule,
+  type Slot,
+} from '../db/schema';
+import { createButton } from '../ui/primitives/Button';
+import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { navigate } from '../router';
 import { isLowStock } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
@@ -202,19 +216,271 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     type: 'button',
   });
   fabAdd.append(icon('plus'), el('span', { text: '添加药品' }));
-  fabAdd.onclick = () => navigate('/meds/new');
+  fabAdd.onclick = () => navigate('/meds/create');
   content.append(fabAdd);
 
   if (!signal?.aborted) {
     const dock = createActionDock();
+    const topRight = el('div', { class: 'topbar-actions medication-list-actions' });
+    const batchBtn = topbarPill({
+      icon: 'list',
+      label: '批量管理',
+      onClick: () => {
+        void enterBatchMode(root, signal);
+      },
+    });
+    topRight.append(batchBtn, topbarAiPill());
+
     renderPage({
       root,
       title: '药品',
       activeTab: 'meds',
-      topRight: topbarAiPill(),
+      topRight,
       content,
       actionDock: dock,
     });
+  }
+}
+
+async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<void> {
+  const [meds, rules] = await Promise.all([listMeds(), listRules()]);
+  if (signal?.aborted) return;
+  if (meds.length === 0) {
+    toast('暂无药品可管理');
+    return;
+  }
+
+  const medRulesMap = new Map<string, ReminderRule[]>();
+  for (const m of meds) {
+    medRulesMap.set(m.id, rules.filter((r) => r.medId === m.id && !r.deleted));
+  }
+
+  const selected = new Set<string>();
+  const cancelBtn = topbarPill({
+    icon: 'arrow-left',
+    label: '退出批量',
+    onClick: () => {
+      if (!signal?.aborted) void renderMedListPage(root, signal);
+    },
+  });
+  const topRight = el('div', { class: 'topbar-actions medication-list-actions' });
+  topRight.append(cancelBtn);
+
+  const content = el('div', { class: 'page medication-batch-page' });
+  const toolbar = el('div', { class: 'medication-batch-toolbar' });
+  const selectAllBtn = createButton({ label: '全选', variant: 'text' });
+  const counterLabel = el('span', { class: 'medication-batch-counter', text: '已选 0 种' });
+  selectAllBtn.onclick = () => {
+    if (selected.size === meds.length) {
+      selected.clear();
+    } else {
+      for (const m of meds) selected.add(m.id);
+    }
+    refreshSelectionState();
+  };
+  toolbar.append(selectAllBtn, counterLabel);
+  content.append(toolbar);
+
+  const grid = el('div', {
+    class: 'medication-batch-list',
+    role: 'listbox',
+    'aria-label': '批量选择药品',
+    'aria-multiselectable': 'true',
+  } as any);
+  const checkboxByMedId = new Map<string, HTMLInputElement>();
+  const rowByMedId = new Map<string, HTMLElement>();
+  let batchMedNameSeq = 0;
+  for (const m of meds) {
+    const card = el('article', {
+      class: 'medication-batch-row',
+      role: 'option',
+      'aria-selected': 'false',
+    } as any);
+    const checkboxWrap = el('label', { class: 'medication-batch-checkbox-wrap' });
+    const medNameId = `med-batch-name-${++batchMedNameSeq}`;
+    const cb = el('input', {
+      type: 'checkbox',
+      class: 'medication-batch-checkbox',
+      'aria-labelledby': medNameId,
+    } as any) as HTMLInputElement;
+    cb.onchange = () => {
+      if (cb.checked) selected.add(m.id); else selected.delete(m.id);
+      refreshSelectionState();
+    };
+    checkboxWrap.append(cb);
+    checkboxByMedId.set(m.id, cb);
+    rowByMedId.set(m.id, card);
+    card.append(checkboxWrap);
+
+    const body = el('div', { class: 'medication-batch-body' });
+    const titleWrap = el('div', { class: 'medication-batch-copy' });
+    titleWrap.append(el('div', { id: medNameId, class: 'medication-batch-name', text: m.name || '未命名' }));
+    const sub = [m.amountPerDose, m.dosageText].filter(Boolean).join(' · ');
+    if (sub) titleWrap.append(el('div', { class: 'medication-batch-subline', text: sub }));
+    body.append(titleWrap);
+
+    const slotsRow = el('div', { class: 'medication-batch-slots' });
+    const medRules = medRulesMap.get(m.id) ?? [];
+    for (const s of SLOTS) {
+      const rule = medRules.find((r) => r.slot === s);
+      if (!rule) continue;
+      const time = rule.timeLocal || SLOT_DEFAULT_TIME[s];
+      const chipEl = el('span', { class: 'medication-slot-chip slot-' + s + (rule.enabled ? '' : ' is-disabled') });
+      chipEl.append(icon(SLOT_ICON[s], 'medication-slot-icon'));
+      chipEl.append(el('span', { class: 'medication-slot-label', text: SLOT_LABEL[s] }));
+      chipEl.append(el('span', { class: 'medication-slot-time', text: time }));
+      if (!rule.enabled) chipEl.append(el('span', { class: 'medication-slot-disabled', text: '已禁用' }));
+      slotsRow.append(chipEl);
+    }
+    if (slotsRow.childElementCount === 0) {
+      slotsRow.append(el('span', { class: 'medication-batch-no-rules', text: '无提醒规则' }));
+    }
+    body.append(slotsRow);
+    card.append(body);
+    grid.append(card);
+  }
+  content.append(grid);
+
+  const dock = createActionDock();
+  dock.classList.add('medication-batch-dock');
+  const dockCounter = el('span', { class: 'medication-batch-dock-count', text: '已选 0 种' });
+  const enableButton = createButton({ label: '启用', variant: 'secondary', onClick: () => void setRulesForSelected(true) });
+  const disableButton = createButton({ label: '禁用', variant: 'secondary', onClick: () => void setRulesForSelected(false) });
+  const slotButton = createButton({ label: '修改时段', variant: 'secondary', icon: 'clock', onClick: openSlotMenu });
+  const deleteButton = createButton({ label: '删除所选', variant: 'danger', icon: 'trash', onClick: () => void deleteSelected() });
+  dock.append(dockCounter, enableButton, disableButton, slotButton, deleteButton);
+
+  renderPage({ root, title: '批量管理', activeTab: 'meds', topRight, content, actionDock: dock });
+
+  function refreshSelectionState(): void {
+    for (const [id, cb] of checkboxByMedId) {
+      const isSelected = selected.has(id);
+      cb.checked = isSelected;
+      const row = rowByMedId.get(id);
+      row?.classList.toggle('is-selected', isSelected);
+      row?.setAttribute('aria-selected', String(isSelected));
+    }
+    const text = `已选 ${selected.size} 种`;
+    const selSpan = selectAllBtn.querySelector('span');
+    if (selSpan) selSpan.textContent = selected.size === meds.length ? '取消全选' : '全选';
+    counterLabel.textContent = text;
+    dockCounter.textContent = text;
+  }
+
+  async function setRulesForSelected(enabled: boolean): Promise<void> {
+    if (signal?.aborted) return;
+    if (selected.size === 0) {
+      toast('请先选择药品');
+      return;
+    }
+    const updates: Array<{ id: string; enabled: boolean }> = [];
+    for (const medId of selected) {
+      const rs = medRulesMap.get(medId) ?? [];
+      for (const r of rs) updates.push({ id: r.id, enabled });
+    }
+    if (updates.length === 0) {
+      toast('选中的这些药还没设过提醒时间');
+      return;
+    }
+    await commitBatchRuleUpdatesForRoute(updates, signal!, () => {
+      toast(`已${enabled ? '启用' : '禁用'} ${updates.length} 条提醒`);
+      return renderMedListPage(root, signal);
+    }, {
+      updateRules: async (ups) => {
+        for (const u of ups) {
+          const rule = rules.find((r) => r.id === u.id);
+          if (rule) {
+            rule.enabled = u.enabled;
+            await putRule(rule);
+          }
+        }
+      },
+      reschedule: async () => {
+        await rescheduleMedicationReminders();
+      },
+    });
+  }
+
+  async function deleteSelected(): Promise<void> {
+    if (signal?.aborted) return;
+    if (selected.size === 0) {
+      toast('请先选择药品');
+      return;
+    }
+    const count = selected.size;
+    if (!(await confirmDialog(`确定删除已选的 ${count} 种药品及其提醒吗？\n此操作不能恢复。`, '删除所选', true))) {
+      return;
+    }
+    deleteButton.disabled = true;
+    try {
+      for (const medId of selected) await softDeleteMed(medId);
+      await rescheduleMedicationReminders().catch(() => undefined);
+      if (signal?.aborted) return;
+      toast(`已删除 ${count} 种药品`);
+      await renderMedListPage(root, signal);
+    } catch {
+      toast('删除失败，请稍后重试');
+    } finally {
+      deleteButton.disabled = false;
+    }
+  }
+
+  async function setSlotForSelected(slot: Slot, enabled: boolean): Promise<void> {
+    if (signal?.aborted) return;
+    if (selected.size === 0) {
+      toast('请先选择药品');
+      return;
+    }
+    const updates: Array<{ id: string; enabled: boolean }> = [];
+    for (const medId of selected) {
+      const rs = medRulesMap.get(medId) ?? [];
+      for (const r of rs) {
+        if (r.slot === slot) updates.push({ id: r.id, enabled });
+      }
+    }
+    if (updates.length === 0) {
+      toast(`所选药品没有「${SLOT_LABEL[slot]}」提醒`);
+      return;
+    }
+    await commitBatchRuleUpdatesForRoute(updates, signal!, () => {
+      toast(`已${enabled ? '启用' : '禁用'} ${updates.length} 条「${SLOT_LABEL[slot]}」提醒`);
+      return renderMedListPage(root, signal);
+    }, {
+      updateRules: async (ups) => {
+        for (const u of ups) {
+          const rule = rules.find((r) => r.id === u.id);
+          if (rule) {
+            rule.enabled = u.enabled;
+            await putRule(rule);
+          }
+        }
+      },
+      reschedule: async () => {
+        await rescheduleMedicationReminders();
+      },
+    });
+  }
+
+  function openSlotMenu(): void {
+    if (selected.size === 0) {
+      toast('请先选择药品');
+      return;
+    }
+    const title = el('h2', { class: 'medication-batch-sheet-title', text: '启用提醒时段' });
+    const hint = el('p', { class: 'medication-batch-sheet-hint', text: '仅启用所选药品已经设置的时段和提醒时间。' });
+    const options = el('div', { class: 'medication-batch-sheet-options' });
+    let sheet: ReturnType<typeof openBottomSheet> | undefined;
+    for (const slot of SLOTS) {
+      options.append(createButton({
+        label: SLOT_LABEL[slot],
+        variant: 'secondary',
+        onClick: () => {
+          sheet?.close();
+          void setSlotForSelected(slot, true);
+        },
+      }));
+    }
+    sheet = openBottomSheet({ label: '选择要启用的提醒时段', content: [title, hint, options] });
   }
 }
 

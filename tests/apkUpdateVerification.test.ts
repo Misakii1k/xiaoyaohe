@@ -16,6 +16,8 @@ const nativePlugin = {
   verifyApk: vi.fn(),
   installApk: vi.fn(),
   deleteApk: vi.fn(),
+  probePeer: vi.fn(),
+  scanSubnet: vi.fn(),
 };
 
 vi.mock('@capacitor/core', () => ({
@@ -28,7 +30,7 @@ vi.mock('@capacitor/core', () => ({
 
 vi.mock('../src/features/notifier', () => ({ showNotification: vi.fn() }));
 
-const { downloadUpdate } = await import('../src/sync/lan/apkTransport');
+const { downloadUpdate, installApk, deleteApk, scanLanForUpdates } = await import('../src/sync/lan/apkTransport');
 
 const UPDATE = {
   version: '0.9.4',
@@ -77,5 +79,99 @@ describe('局域网 APK 更新的安装前校验', () => {
 
     await expect(downloadUpdate(UPDATE)).rejects.toThrow(/下载更新失败/);
     expect(nativePlugin.verifyApk).not.toHaveBeenCalled();
+  });
+
+  it('调用 installApk 时将 expectedVersionCode 传递给原生层以防止篡改', async () => {
+    nativePlugin.installApk.mockResolvedValue(undefined);
+
+    await installApk('/cache/medbox-update-23.apk', 23);
+    expect(nativePlugin.installApk).toHaveBeenCalledWith({
+      apkPath: '/cache/medbox-update-23.apk',
+      expectedVersionCode: 23,
+    });
+  });
+
+  it('调用 deleteApk 时调用原生层安全删除', async () => {
+    nativePlugin.deleteApk.mockResolvedValue({ deleted: true });
+
+    await deleteApk('/cache/medbox-update-23.apk');
+    expect(nativePlugin.deleteApk).toHaveBeenCalledWith({
+      apkPath: '/cache/medbox-update-23.apk',
+    });
+  });
+
+  describe('主动扫描局域网获取新版本 (scanLanForUpdates)', () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it('当同子网设备有更高版本时，成功发现并记录到 localStorage', async () => {
+      nativePlugin.scanSubnet.mockResolvedValue({ peers: [{ host: '192.168.1.120' }] });
+      nativePlugin.probePeer.mockResolvedValue({ reachable: true });
+      nativePlugin.download.mockResolvedValue({ bytes: 2048, destPath: 'medbox-update-probe.apk' });
+      nativePlugin.verifyApk.mockResolvedValue({
+        packageName: 'com.medbox.app',
+        versionCode: 35,
+        versionName: '0.9.12',
+      });
+      nativePlugin.deleteApk.mockResolvedValue({ deleted: true });
+
+      const update = await scanLanForUpdates();
+
+      expect(update).not.toBeNull();
+      expect(update?.version).toBe('0.9.12');
+      expect(update?.versionCode).toBe(35);
+      expect(update?.peerHost).toBe('192.168.1.120');
+      expect(update?.peerPort).toBe(38473);
+
+      // 验证 probe 临时包已自动删除
+      expect(nativePlugin.deleteApk).toHaveBeenCalledWith({ apkPath: 'medbox-update-probe.apk' });
+
+      // 验证 localStorage 已记录可用更新
+      const saved = localStorage.getItem('medbox.lan-sync.available-update.v1');
+      expect(saved).not.toBeNull();
+      const parsed = JSON.parse(saved!);
+      expect(parsed.versionCode).toBe(35);
+    });
+
+    it('当探测到的版本不高于本机版本时，删除 probe 且返回 null', async () => {
+      nativePlugin.scanSubnet.mockResolvedValue({ peers: [{ host: '192.168.1.120' }] });
+      nativePlugin.probePeer.mockResolvedValue({ reachable: true });
+      nativePlugin.download.mockResolvedValue({ bytes: 2048, destPath: 'medbox-update-probe.apk' });
+      nativePlugin.verifyApk.mockResolvedValue({
+        packageName: 'com.medbox.app',
+        versionCode: 0, // 测试环境 LOCAL_APP_VERSION_CODE 为 0
+        versionName: '0.0.0',
+      });
+      nativePlugin.deleteApk.mockResolvedValue({ deleted: true });
+
+      const update = await scanLanForUpdates();
+
+      expect(update).toBeNull();
+      expect(nativePlugin.deleteApk).toHaveBeenCalledWith({ apkPath: 'medbox-update-probe.apk' });
+      expect(localStorage.getItem('medbox.lan-sync.available-update.v1')).toBeNull();
+    });
+
+    it('当探测包签名验证失败时，删除坏包并跳过该设备', async () => {
+      nativePlugin.scanSubnet.mockResolvedValue({ peers: [{ host: '192.168.1.120' }] });
+      nativePlugin.probePeer.mockResolvedValue({ reachable: true });
+      nativePlugin.download.mockResolvedValue({ bytes: 2048, destPath: 'medbox-update-probe.apk' });
+      nativePlugin.verifyApk.mockRejectedValue(new Error('签名不匹配'));
+      nativePlugin.deleteApk.mockResolvedValue({ deleted: true });
+
+      const update = await scanLanForUpdates();
+
+      expect(update).toBeNull();
+      expect(nativePlugin.deleteApk).toHaveBeenCalledWith({ apkPath: 'medbox-update-probe.apk' });
+    });
+
+    it('无候选设备时直接返回 null', async () => {
+      nativePlugin.scanSubnet.mockResolvedValue({ peers: [] });
+
+      const update = await scanLanForUpdates();
+
+      expect(update).toBeNull();
+      expect(nativePlugin.download).not.toHaveBeenCalled();
+    });
   });
 });

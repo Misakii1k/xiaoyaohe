@@ -155,6 +155,8 @@ const joinPayloadSchema = z.object({
     maxClock: z.number().int().nonnegative(),
   }).optional(),
   autoIdentity: autoIdentitySchema.optional(),
+  /** 加入端告知的本机 IPv4 地址，用于主机端记录更新分发源 IP */
+  clientHost: z.string().min(7).max(45).optional(),
   /** 加入端运行的应用版本（如 "0.9.1"），用于主机端 APK 更新发现。 */
   appVersion: z.string().max(40).optional(),
   /** 加入端 Android versionCode，用于版本比较。 */
@@ -301,6 +303,7 @@ export async function joinLanSyncHost(
         },
         ...(extras ? { extras } : {}),
         ...(localAuto ? { autoIdentity: localAuto } : {}),
+        ...(localHost ? { clientHost: localHost } : {}),
         // 把本机应用版本公告给主机端，便于主机端发现可用更新。
         ...(LOCAL_APP_VERSION ? { appVersion: LOCAL_APP_VERSION } : {}),
         ...(LOCAL_APP_VERSION_CODE ? { versionCode: LOCAL_APP_VERSION_CODE } : {}),
@@ -463,9 +466,11 @@ async function runHostSession(
         0,
         '对方未提供库存摘要',
       );
-    // 加入端公告的应用版本更高时，记录可用更新。主机端用 invitation.host 暂作 fallback。
-    // 一般主机端不需要主动升级，所以这里只是兜底记录，主机端的版本判断通常不重要。
-    recordPeerVersion(invitation.host, joinPayload);
+    // 加入端公告的应用版本更高时，记录可用更新。优先使用加入端的实际 IP，绝不能误用主机本机 IP（invitation.host）。
+    const peerHost = joinPayload.clientHost || joinPayload.autoIdentity?.host;
+    if (peerHost) {
+      recordPeerVersion(peerHost, joinPayload);
+    }
     const recommended = recommendLanPolicy(localSummary, remoteSummary);
     let policy: LanSyncPolicy = recommended;
     if (choosePolicy) {

@@ -2,11 +2,210 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-01
+Updated: 2026-09-05
 Status: active
-Latest version: `0.9.10` (Android `versionCode: 29`)
+Latest version: `0.9.11` (Android `versionCode: 30`)
 
 ## Summary of Accomplished Work
+
+### 16. 全屏闹钟生活二维码/条形码解锁识别引擎重构与就地试验闭环 (0.9.11)
+
+针对用户反馈的「选择生活中的二维码后，在全屏闹钟解锁试验情况下无法正常识别解锁」问题，深入底层排查 Android CameraX + ZXing 条码识别管线与解锁闭环，完成彻底重构：
+
+1. **核心缺陷与根因定位**：
+   - **PlanarYUVLuminanceSource 不支持旋转导致每帧被静默抛弃（致命根因）**：ZXing 的 `PlanarYUVLuminanceSource.isRotateSupported()` 硬编码为 `false`，调用 `rotateCounterClockwise()` 会直接抛出 `java.lang.UnsupportedOperationException: This luminance source does not support rotation by 90 degrees`。原代码在 `analyzeBarcodeFrame` 内包裹了 `try ... catch (ignored: Throwable)`，导致相机的每一帧图像在刚刚准备旋转时就直接抛异常崩溃并被静默丢弃，条码解码器实际上从未执行过任何解码！
+   - **分析分辨率不足**：`ImageAnalysis.Builder()` 未配置 targetResolution，CameraX 默认采用 640x480 分辨率，在近距离拍摄密集生活二维码时，每个模块像素过低；
+   - **缺乏反色与反光容错**：生活场景中，许多用户使用暗黑模式手机屏幕展示二维码（白条黑底），或在光滑药盒覆膜上扫码（严重反光、对比度低）。ZXing 默认单一 `HybridBinarizer` 无法解码反色码与低对比度条码；
+   - **全图背景干扰**：背景中的其它条码或文字干扰全局阈值；
+   - **字符串匹配严苛**：条码可能包含 UTF-8 BOM（`\uFEFF`）、AIM 标识符前缀（如 `]Q1`、`]C1`）、控制字符（`\u001D`），或 URL 末尾多斜杠、大小写差异，纯 `raw == expectedToken` 严苛相等极易误判不匹配；
+   - **解锁反馈 bug**：原 `vibrateUnlock()` 误调用了警报循环震动模式，导致解锁后持续震动，且未及时停止警报铃声；错误提示永久停留在屏幕上。
+2. **系统级重构与能力升级**：
+   - **物理内存矩阵旋转（绝不调用 rotateCounterClockwise）**：
+     - 在构建 `PlanarYUVLuminanceSource` 之前，直接对 Y 平面字节数组进行物理像素矩阵顺时针重映射（90°: `rotatedData[x * height + (height - 1 - y)] = data[y * width + x]`；180°: 逆序；270°: 逆时针 90°）；
+     - 使用直立的宽高构造 `PlanarYUVLuminanceSource`，彻底规避 `UnsupportedOperationException` 异常，同时若旋转图未识别且存在旋转，使用未旋转原图兜底。
+   - **分辨率与对焦优化**：
+     - 配置 `ImageAnalysis.Builder().setTargetResolution(Size(1280, 720))`，大幅提升密集码采样精度；
+     - 增加相机中心自动对焦与 `previewView` 点击触摸对焦（`FocusMeteringAction`）；
+   - **多级二值化与局部取景框裁剪**：
+     - 构建 `decodeLuminance` 管线：默认 `HybridBinarizer` → `HybridBinarizer(source.invert())`（暗黑反色）→ `GlobalHistogramBinarizer`（反光与低对比度）；
+     - 全图未解码时自动裁剪中央 72% 取景框聚焦解码；
+   - **智能容错条码比对（`isTokenMatch`）**：
+     - 自动滤除 BOM、AIM 标识前缀与控制符；
+     - 智能兼容 URL 结尾斜线、协议与大小写差异；
+   - **交互与就地验证闭环**：
+     - `vibrateUnlock()` 解锁即刻停止警报响铃，消除持续警报震动，改为清脆短震；
+     - `ScannerOverlay` 错误提示 2.5 秒自动重置淡出；
+     - 设置页 `Settings.ts` 在绑定生活码后，操作行直接增加「试验扫码解锁」按钮，用户点击即可立即拉起全屏闹钟实测扫码解除。
+3. **全绿验证门**：
+   - Android 编译与单元测试：`./gradlew.bat compileDebugSources` 与 `./gradlew.bat test` 177 个任务全部通过；
+   - `npm run typecheck` (0 errors)；
+   - `npm run test` (76 个测试套件，448 个测试 100% 通过)；
+   - `npm run build:web` 成功构建。
+
+### 15. 根除前端内部码与字面量 HTML 标签外显 (0.9.11)
+
+针对用户反馈的扫码绑定弹窗出现 `<b>条形码</b>`、`<code>https://...</code>`、`<br>` 以及内部机器识别码 `[qr_code]` 外显的问题，进行了彻底治理与架构规范化：
+
+1. **问题根因定位**：
+   - 基础组件工厂 `src/ui/components.ts` 的 `el(...)` 为了彻底杜绝 XSS 注入风险，特意不使用 `innerHTML`，而是统一通过 `node.textContent = String(content)` 赋值；
+   - 业务层在 `Settings.ts` 与 `settingsPanel.ts` 的部分文案中直接写入了 `<b>`、`<code>`、`<br>` 标签字符串，导致浏览器以字面量形式直接将 HTML 源码呈现给用户。
+2. **机器识别码本地化与提示结构化**：
+   - **格式转换器**：引入 `formatBarcodeTypeLabel`，将 `qr_code`、`ean_13`、`code_128`、`data_matrix` 等机器枚举自动转换为用户易懂的“二维码”、“商品条形码 (EAN-13)”等中文标签，消除了生硬的 `[qr_code]`；
+   - **结构化识别反馈 DOM**：在 `openBindCustomCodeSheet` 的 `handleResult` 中重构渲染逻辑，改为由类型徽标胶囊、等宽弱底长文本预览卡片（自适应换行与限高）以及清晰提问构成的规范 DOM 树；
+   - **设置项摘要优化**：新增 `formatCustomScanCodeSummary`，将已绑定的生活码摘要（如 `QR_CODE: https://...`）转换为安全截断的友好格式（如 `已绑定生活码（二维码 · 尾号 ...8923）`）。
+3. **全局遗留 HTML 字符串清理**：
+   - `openUnlockQrSheet` 与 `openBindCustomCodeSheet` 引导文本改用语义化 `strong` 与段落 DOM；
+   - 设置页当前版本与发现新版本 `<b>v...</b>` 规范为标准 DOM 节点；
+   - `settingsPanel.ts` 已配对设备列表设备名与地址改用规范子节点。
+4. **全绿验证门**：
+   - 新增契约测试：`tests/settingsUiContracts.test.ts` 断言设置页与同步面板绝无裸露 HTML 标签与机器枚举；
+   - `npm run typecheck` (0 errors)；
+   - `npm run test` (76 个测试套件，448 个测试 100% 通过)；
+   - Playwright E2E（16 个测试全部通过）；
+   - `npm run build:web` 成功构建。
+
+### 14. AI 服务商移动端卡片布局重构与状态胶囊体系 (0.9.11)
+
+针对用户反馈的「AI 服务商」面板布局拥挤、名称被严重截断、操作按钮超出屏幕右边缘、状态文本裸露附着等问题，进行了系统级排版与架构重构：
+
+1. **清晰三层卡片结构设计（`Settings.ts` & `settings.css`）**：
+   - **顶层 Header**：左侧展示优先级序号徽标（`#1`、`#2`）与加粗服务商名称，名称拥有独立弹性空间，不再被 4 个按钮挤扁；右侧独立容纳「当前」激活状态胶囊与带圆点的独立状态胶囊（翠绿 `已连接`、砖红 `不通`、琥珀 `未填密钥`、灰色 `未检测`），支持高对比度深色模式；
+   - **中层 Meta**：端点域名（等宽代码字体）与模型名称清晰分开（中置 `·` 分隔符），排版整齐规范；
+   - **底层 Actions 操作坞**：在卡片底部以淡色虚线独立开辟操作区，左侧放置优先级调整按键（`↑ 上移`），右侧放置快捷操作群（`设为当前`、`编辑`、`删除`），彻底消除横向溢出与截断。
+2. **严格保留所有架构契约与状态流**：
+   - 维持 `tests/settingsUiContracts.test.ts` 契约（`provider.id === set.activeId`、`if (provider.id !== set.activeId)`、`const latest = getLlmProviderSet();`、`await persistProviderSet`、`renderList()` 等）；
+   - 保留激活/降级、上移排序、编辑弹窗和删除弹窗所有核心交互。
+3. **全绿验证门**：
+   - `npm run typecheck` (0 errors)
+   - `npm run test` (76 个测试套件，447 个测试 100% 通过)
+   - Playwright E2E（36 个测试跨 4 种视口完全通过）
+   - `npm run build:web` 构建无异常。
+
+### 13. 药品录入向导、沉浸全屏布局与滑动切换手感体系 (0.9.11)
+
+针对用户反馈的「点击添加药物之后的效果，包括无法滑动、底部遮挡等问题」进行系统化排查与彻底重构：
+
+1. **直观优雅的单药 3 步向导录入体验**：
+   - 将药品列表页（`/meds`）的底部添加 FAB 按钮指向新独立的向导新建路由 `/#/meds/create`（`MedEdit` 新建模式），彻底替代先前直接进入粗糙批量草稿页的困惑交互；
+   - 保持 `/#/meds/new` 路由完整指向批量添加（`MedBatchAdd`），使既有批量功能与 E2E 自动化测试 100% 稳定运行。
+2. **全屏沉浸式页面布局与彻底解决滚动遮挡**：
+   - 药品向导模式（`MedEdit`）配置 `showTabbar: false` 隐藏通用底部导航，顶栏提供规范的返回左箭头（`topLeft: backBtn`）；
+   - 在 `shell.css` 中为全屏无 Tabbar 状态定制操作坞贴底样式 `.app-shell:not(:has(.tabbar.app-navigation)) > .action-dock { inset-block-end: calc(16px + var(--safe-bottom)); }`；
+   - 页面容器 `.medication-edit-page` 增加充分的安全内边距（`padding-block-end: calc(96px + var(--safe-bottom))`），表单字段与输入框可完全滚动展示，底栏「上一步/下一步/完成保存」与「返回」按钮贴底固定且绝不遮挡任何内容。
+3. **原生级左右滑动手势（Swipe Gestures）与方向性平移动效**：
+   - 在向导表单容器内实现精准触控手势侦测（`touchstart` / `touchend`），以 48px 阈值与横纵比判定过滤误触，在用户输入或使用裁剪框时自动避让；
+   - 前进向左滑严格联动步骤校验：若 Step 1 未填药名，阻断滑动并触发药名框微震动提示（`step-shake` 350ms）并自动聚焦；Step 2 若剂量数值与单位不完整同样阻断提示；
+   - 后退向右滑无阻碍平滑返回上一步；
+   - 步骤切换伴随方向性平移入场动效（前进右滑入 `.slide-from-right`，后退左滑入 `.slide-from-left`，200ms 高刷收敛，尊重 reduced-motion）。
+4. **全套布局契约与回归修复**：
+   - 修正 `MedEdit.ts` 中编辑态初始化行为，使 `/#/meds/:id/edit` 直接渲染向导编辑态（`title: '编辑药品'`），修复历史测试契约；
+   - 恢复 `MedList.ts` 顶栏「批量管理」入口及 `enterBatchMode`，恢复多选框 `24x24px` 尺寸，使 Playwright 选择与批量时段管理测试全数恢复；
+   - 修复 `shell.css` 中移动端 `.tabbar.app-navigation` 从脱离文档流的 `position: absolute` 回归文档流 `position: relative; flex: 0 0 auto`，消除 `.app-main` 穿透至屏幕底部导致主视口超出导航栏上边缘（568px vs 512px）的视口越界缺陷；
+   - 优化 `router.ts` 导航后焦点机制，筛选首个可见 `h1`，避免在今日页顶栏被隐藏时尝试聚焦隐藏元素而失败。
+5. **全绿验证门**：
+   - `npm run typecheck` (0 errors)
+   - `npm run test` (76 个测试套件，447 个测试 100% 通过)
+   - Playwright E2E（36 个测试跨 4 个视口全部通过）
+   - `npm run build:web` 构建成功。
+
+### 12. 全链路高质感微动效与物理弹簧手感体系 (0.9.11)
+
+遵循 **克制极简原生风（Subtle & Clean）** 与 **物理弹簧手感（Spring Physics）** 原则，全面搭建小药盒交互动效体系：
+
+1. **核心打卡动效（克制原生风）**：
+   - 弃用彩带粒子等廉价视觉污染，使用 iOS 原生风格的 SVG 对勾动态画线（`checkmarkDraw` 240ms）+ 弹性果冻微震回弹（`checkmarkPop` 260ms，`cubic-bezier(0.175, 0.885, 0.32, 1.275)`）+ 柔和色彩渐变过渡；
+   - 覆盖今日页圆形打卡按键（`.today-radio-btn`）与历史页打卡按键（`.history-radio-circle`）。
+2. **列表与卡片错峰轻盈微浮现（Staggered Micro-Fade-Up）**：
+   - 全局抽象 `microFadeUp` 关键帧（8px 微位移 + 柔和透明度淡入，220ms 敏捷收敛）；
+   - 依次覆盖今日时段组（`.today-time-group` 35ms 阶梯错峰）、药品库卡片（`.med-item-card` 35ms 阶梯错峰）、库存列表（`.inventory-card-item` 35ms 阶梯错峰）以及历史页指标卡与明细列表（`.history-stat-card`, `.history-plan-item`）；
+   - 切换页面与过滤筛选时具备自然流畅的空气流动感。
+3. **数据与统计指标动态滚进（CountUp）与环形扫掠**：
+   - 实现轻量高性能原生 `animateCountUp` 引擎（基于 `requestAnimationFrame` 与三次缓动曲线）；
+   - 今日仪表盘进度环配备 `ringSweep` 平滑展开与底部柔光环，中心百分比轻快滚进；
+   - 历史页「连续服药天数」与「当月依从率」指标同步启用动态滚进。
+4. **触压物理弹簧回弹反馈（Touch & Press Physics）**：
+   - 为今日卡片、药品卡片、库存卡片、历史卡片注入 GPU 硬件加速的物理弹簧（`:active { transform: scale(0.985); }`）；
+   - 核心操作按钮（一键打卡、服药弹窗「✓ 已服用」主按钮）注入 0.95~0.96 触感微缩；
+   - 筛选胶囊与 Tab 注入弹性点击手感。
+5. **无障碍一键降级与极致性能保障**：
+   - 全局注入 `@media (prefers-reduced-motion: reduce)` 规则，所有动效强制 0.01ms 降级；
+   - `animateCountUp` 严格尊重无障碍模式，直接呈现实时目标值；
+   - 动效完全限定在 GPU 合成层属性（`transform`, `opacity`, `stroke-dashoffset`），零 Layout 抖动与零重排重绘，保障 60/120fps 高刷。
+6. **全绿验证门**：
+   - `npm run typecheck` (0 errors)
+   - `npm run test` (76 个测试套件，447 个测试全部通过)
+   - `npm run build:web` (0 errors)
+
+### 11. 库存管理页面与全套弹层系统化重构与视觉升级 (0.9.11)
+
+针对「选择要入库的药品」弹层缺少 CSS 样式（原生按钮边框突兀、文字折行错乱、缺少层级与呼吸感）以及库存管理各弹层风格不统一的问题，进行了系统化视觉重构与交互升级：
+
+1. **「选择入库药品」抽屉重构（`MedInventory.ts` & `inventory.css`）**：
+   - 彻底清除原生 `<button>` 灰底与黑粗框样式，重构为微拟物药盒卡片（`display: flex; align-items: center; gap: 12px; border-radius: var(--radius-lg);`），包含 3D/实拍缩略图、主副文案区、库存量/未设库存状态胶囊徽标与右侧指示箭头；
+   - 弹层头部升级为吸顶 Header，新增常驻「+ 录入新药品」快捷跳转入口；
+   - 增加带搜索图标与一键清空按钮的吸顶搜索框，支持拼音首字母与药名模糊即时过滤，支持平滑内部独立滚动；
+   - 增加图文一体的空状态展示区，并带有「新建该药品并入库」一键引导。
+2. **「给药品添加库存」表单抽屉升级**：
+   - 新增加减步进器（`-` / `+` 按钮），搭配大字号数值居中输入；
+   - 优化 `+1盒`、`+10`、`+20`、`+30` 常用预设胶囊反馈与微动效；
+   - 强化实时动态预测卡片视觉层级与高对比度色彩表现。
+3. **「单药库存操作」抽屉升级为分区层级化面板**：
+   - 顶部提供包含药品缩略图、规格、当前剩余量与警戒线的概览卡片；
+   - 核心动作区分列「添加库存」与快捷「补整盒」按钮；
+   - 消除直接塞在动作列表里的裸露输入框，重构为独立的「校准剩余数量」步进器卡片；
+   - 底部妥善安置「标记用完」与「编辑药品详情」次要操作。
+4. **主页面即时搜索栏与次级菜单磁贴升级**：
+   - 主页面筛选 Tab 下方新增即时搜索栏，与 Tab 筛选联动并支持空状态插画；
+   - 将「更多操作」抽屉从普通列表升级为 2x2 图标功能磁贴宫格（智能录入、历史操作、批量预扣、分享清单）。
+5. **深色主题与无障碍全面覆盖**：
+   - 适配 `[data-theme='dark']` 下所有弹层背景色、输入框底色、边框与徽标对比度；
+   - 测试全量通过：`npm run typecheck` (0 errors)、`npm run test` (76 个套件，447 个测试全部通过)、`npm run build:web` 顺利构建。
+
+### 10. 宽屏/PC端响应式布局破损根治与排版自适应优化 (0.9.11)
+
+针对桌面端/平板宽屏（`≥768px` 且 `≥600px`）下导航栏拉伸覆盖全屏的严重视觉缺陷，以及宽屏下卡片排版进行了全套优化：
+
+1. **宽屏网格布局修复与侧栏流式重置**：
+   - 修复 `src/ui/styles/shell.css` 中大屏媒体查询（`@media (min-width: 768px) and (min-height: 600px)`）下 `.app-shell` 遗漏 `display: grid` 导致的布局坍塌；
+   - 重置 `.tabbar.app-navigation` 从移动端绝对定位（`position: absolute; inset-inline: 0; inset-block-end: 0;`）回归常规文档流（`position: static; inset: auto; inline-size: 100%;`），并挂载至 `grid-column: 1; grid-row: 1 / span 3;`，彻底根除大屏下导航栏拉伸覆盖全屏的白色遮罩 Bug；
+   - 侧栏菜单项升级为 14px 桌面行级布局，增加 hover 柔光背景与 active 选中高亮；
+   - `.topbar`、`.app-main`、`.action-dock` 完整映射至第 2 列网格，主内容容器限制 `max-inline-size: 960px` 居中且清除移动端 64px 垫高，防止 2K/4K 屏幕下卡片过度横向拉伸。
+2. **设置页与弹窗组件大屏排版自适应**：
+   - `src/ui/styles/pages/settings.css` 中「我的数据」统计卡片与设置折叠面板在大屏下自适应为 2 列栅格并排排布，大幅提升横向空间利用率；
+   - `src/ui/styles/primitives.css` 中模态弹窗与 BottomSheet 在大屏下约束为 `max-inline-size: 560px` 屏幕居中。
+3. **架构契约与测试全绿**：
+   - `tests/uiArchitectureContracts.test.ts` 新增大屏网格布局与样式重置规则的架构契约测试；
+   - `npm run typecheck` (0 errors)、`npm run test` (76 suites, 443 tests passed 100%)、`npm run build:web` 构建零报错。
+
+### 9. 扫码解除强制提醒生活码绑定扩展 + 局域网新版本获取与探测修复 (0.9.11)
+
+针对用户在日常使用中的两大痛点，进行了全链路功能扩展与缺陷修复：
+
+1. **扫码解除强制提醒支持现实生活条码/二维码（免打印）**：
+   - **双模式支持**：在 `src/features/alarmScanVerify.ts` 中引入 `AlarmScanVerifyMode = 'generated' | 'custom'`。除原有系统生成的 32 位随机字符专属二维码（`medbox-unlock:<token>`）外，新增支持用户通过手机相机或相册直接扫描现实生活中的条形码/二维码（如药盒自带的 EAN-13 商品条形码、日用品包装码等）进行绑定；
+   - **原生全格式扫码解锁**：在 `MedicationAlarmActivity.kt` 中将原先仅支持二维码的 `QRCodeReader` 升级为 `com.google.zxing.MultiFormatReader`，配置支持 `QR_CODE`, `DATA_MATRIX`, `EAN_13`, `EAN_8`, `CODE_128`, `CODE_39`, `UPC_A`, `UPC_E`, `ITF` 等主流一维条形码与二维码，并动态根据绑定模式展示界面提示文案；
+   - **设置页绑定交互**：在 `Settings.ts` 中新增「扫描已有码绑定」BottomSheet 弹层，集成全格式相机取景器与图片识别，识别后预览条码类型与内容，点击「确认绑定」即时生效；在专属二维码弹窗中亦增加「改为扫描生活中的码」快捷切换入口。
+2. **局域网设备老版本获取最新版本更新修复**：
+   - **主机记录对端 IP 反向 Bug 修复**：在 `src/sync/lan/session.ts` 中，修复了原有实现误将 `invitation.host`（主机本机自身 IP）记录为对端分发源 IP 的问题，改为由加入端在 `joinPayload` 中上报真实 `clientHost`，主机正确记录加入端 IP 为更新源；
+   - **常驻开启 APK 分发服务**：在 `src/main.ts` 初始化期自动调用 `startServingInstalledApk()`，监听 38473 端口；在 `autoSync.ts` 中解耦自动同步开关与 APK 服务生命周期，确保关闭 30 分钟数据同步时不会误停 APK 分发；
+   - **局域网主动扫描探测新版本**：
+     - 在 `ApkDistributionPlugin.java` 中新增 `@PluginMethod probePeer` 与并发子网探测 `@PluginMethod scanSubnet`，并发快速探测 `/24` 子网内开放 38473 端口并响应 `MBAPK001` magic 头的设备；
+     - 在 `src/sync/lan/apkTransport.ts` 中实现 `scanLanForUpdates()`，优先检查已知配对设备，结合子网并发扫描发现候选源，通过沙箱临时包验签比对版本，发现新版本后自动存入 localStorage 并广播更新通知；
+     - 在 `Settings.ts` 应用更新面板增加「检查局域网更新」按钮，带有动态扫描指示与即时更新结果。
+
+### 8. 本地后端与底层服务审查及安全加固 + 前后端桥接修复 (0.9.11)
+
+对小药盒「本地后端与底层服务」（数据持久化、局域网加密通信协议、Android 原生后台守护及 AI 密钥安全）及前端 WebView 与原生插件的桥接机制进行了全面代码审计与健壮性加固：
+
+- **前后端打卡动作桥接闭环修复**：
+  - 在 `MedicationAlarmContract.java` 的 `queueOccurrenceAction` 中补充对 `MainActivity` 的唤醒启动意图（带 `FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP`），解决全屏提醒单药行点击「已服/跳过」后 WebView 无法感知的问题；
+  - 在 `src/features/reminderScheduler.ts` 的 `runTick()` 函数入口处前置调用 `replayPendingMedicationReminderActions()`，使常驻后台保活运行的调度器每次计算新计划前均优先消化 SharedPreferences 中累积的原生打卡动作，确保本地 IndexedDB 记录与原生排程状态强一致，彻底根除闹钟重复响起的桥接脱节隐患。
+- **WebView Insets 注入脚本加固**：在 `MainActivity.java` 的 `installInsetsBridge` 脚本中包裹 `if(document.documentElement){...}` 判空保护，防御冷启动首帧时因 DOM 尚未挂载导致的控制台 null 访问异常。
+- **APK 局域网分发传输 IP 白名单校验**：在 `ApkDistributionPlugin.java` 的 `download()` 路径中引入严格的局域网私有/链路本地 IPv4 地址过滤（`LocalIpv4Address.parse(host)`），拒绝向公网 IP 或域名建立明文 socket，杜绝 SSRF 与盲连内网未授权端口。
+- **APK 缓存路径沙箱化与路径穿越拦截**：在 `ApkDistributionPlugin.java` 的 `resolveStoragePath()` 中增加对包含 `..` 路径穿越特征的防御拦截，并结合 `canonicalPath` 严格校验目标路径必须隶属于应用的 `cacheDir` 范围；在 `download()`, `verifyApk()`, `installApk()`, `deleteApk()` 中全面推行此沙箱校验，彻底消除外部文件被破坏或任意文件删除风险。
+- **KeepAliveService API 规范升级**：将 `KeepAliveService.java` 中过时的 `stopForeground(true)` 升级为现代兼容模式（API 24+ 使用 `STOP_FOREGROUND_REMOVE`）。
+- **同步原生版本断言**：修复了 `AppConfigurationTest.java` 中遗留的旧版号判定，同步为 `0.9.11` 与 `versionCode 30`。
+- **自动化测试扩充**：在 `tests/apkUpdateVerification.test.ts` 中补充了 `installApk` 与 `deleteApk` 的安全边界行为测试；TypeScript 静态检查、Vitest 75 套件 431 个单元测试、Gradle 原生测试（`gradlew.bat testDebugUnitTest`）以及 Web 构建全量通过。
 
 ### 7. 全面屏前端 UI 深度适配 + 模拟器视觉验收（0.9.10 增强）
 

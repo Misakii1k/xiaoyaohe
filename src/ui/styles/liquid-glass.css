@@ -73,8 +73,7 @@
 /* ============ 通用厚玻璃基底（弹层类） ============ */
 
 :root[data-liquid='on'] .bottom-sheet,
-:root[data-liquid='on'] .overlay > *,
-:root[data-liquid='on'] .toast {
+:root[data-liquid='on'] .overlay > * {
   border: 1px solid transparent;
   background:
     var(--lg-sheen) padding-box,
@@ -96,14 +95,25 @@
     blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
 }
 
-/* Toast 面积小，直接整面引用折射滤镜；不支持的引擎回退上一行普通毛玻璃 */
+/* Toast 提示常驻深色高对比度黑曜石玻璃胶囊，杜绝浅色模式下纯白白字不可见 */
 :root[data-liquid='on'] .toast {
+  background: rgba(22, 23, 28, 0.92) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36), 0 2px 8px rgba(0, 0, 0, 0.18) !important;
   -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
   backdrop-filter:
     blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
   backdrop-filter:
     url('#medbox-lens') blur(var(--lg-blur)) saturate(var(--lg-saturate))
     brightness(var(--lg-brightness));
+}
+
+:root[data-theme='dark'][data-liquid='on'] .toast {
+  background: rgba(18, 19, 24, 0.95) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5) !important;
 }
 
 /* 底部抽屉从纯白面板升级为玻璃面后，拖动把手加深一点保证可感知 */

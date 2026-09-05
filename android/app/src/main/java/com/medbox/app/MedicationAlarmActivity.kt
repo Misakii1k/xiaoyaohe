@@ -77,11 +77,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import android.util.Log
+import android.util.Size
+import android.view.MotionEvent
+import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
+import com.google.zxing.LuminanceSource
+import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.Result
+import com.google.zxing.common.GlobalHistogramBinarizer
 import com.google.zxing.common.HybridBinarizer
-import com.google.zxing.qrcode.QRCodeReader
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -133,6 +142,10 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        cameraPermissionGranted.value = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
         // 锁屏全屏：点亮屏幕 + 显示在锁屏之上
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -294,13 +307,12 @@ class MedicationAlarmActivity : ComponentActivity() {
         }
     }
 
-    /** 扫码成功后的短振动反馈 */
+    /** 扫码成功后的短振动与停止警报反馈 */
     private fun vibrateUnlock() {
         try {
+            ringtone?.takeIf { it.isPlaying }?.stop()
             vibrator?.cancel()
             vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 60, 80, 60), -1))
-            val pattern = longArrayOf(0, 700, 250, 700, 250, 700)
-            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
         } catch (ignored: Throwable) {
         }
     }
@@ -482,7 +494,8 @@ class MedicationAlarmActivity : ComponentActivity() {
         onStartScan: () -> Unit,
     ) {
         if (locked) {
-            ScanLockedCard(onStartScan)
+            val expectedToken = MedicationAlarmContract.scanTokenOf(payload)
+            ScanLockedCard(expectedToken, onStartScan)
             return
         }
 
@@ -524,7 +537,8 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     /** 锁定态卡片：锁定说明 + 扫码主 CTA（渐变填充） */
     @Composable
-    private fun ScanLockedCard(onStartScan: () -> Unit) {
+    private fun ScanLockedCard(expectedToken: String, onStartScan: () -> Unit) {
+        val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
                 .background(Color.White.copy(alpha = 0.72f))
@@ -539,11 +553,15 @@ class MedicationAlarmActivity : ComponentActivity() {
             )
             Spacer(Modifier.height(6.dp))
             BasicText(
-                "起身走到贴有解锁二维码的地方\n扫描配对码后才能完成服药",
+                if (isCustom) "起身找到已绑定的药盒或物品\n扫描其条形码或二维码后才能完成服药"
+                else "起身走到贴有解锁二维码的地方\n扫描配对码后才能完成服药",
                 style = TextStyle(fontSize = 14.sp, color = InkSoft, textAlign = TextAlign.Center, lineHeight = 21.sp),
             )
             Spacer(Modifier.height(18.dp))
-            PrimaryGradientButton(label = "扫描解锁二维码", onClick = onStartScan)
+            PrimaryGradientButton(
+                label = if (isCustom) "扫描绑定条码/二维码" else "扫描解锁二维码",
+                onClick = onStartScan
+            )
         }
     }
 
@@ -557,6 +575,13 @@ class MedicationAlarmActivity : ComponentActivity() {
     ) {
         val cameraPermissionGranted = cameraPermissionGranted.value
         val scanFeedback = remember { mutableStateOf<String?>(null) }
+
+        LaunchedEffect(scanFeedback.value) {
+            if (scanFeedback.value != null) {
+                delay(2500)
+                scanFeedback.value = null
+            }
+        }
 
         Box(Modifier.fillMaxSize()) {
             if (cameraPermissionGranted) {
@@ -620,8 +645,9 @@ class MedicationAlarmActivity : ComponentActivity() {
                 } else {
                     ViewfinderFrame(Modifier.size(244.dp))
                     Spacer(Modifier.height(18.dp))
+                    val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
                     BasicText(
-                        scanFeedback.value ?: "请对准贴好的解锁二维码",
+                        scanFeedback.value ?: if (isCustom) "请对准已绑定的条形码或二维码" else "请对准贴好的解锁二维码",
                         style = TextStyle(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -700,6 +726,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                     val preview = Preview.Builder().build()
                         .also { it.setSurfaceProvider(previewView.surfaceProvider) }
                     val analysis = ImageAnalysis.Builder()
+                        .setTargetResolution(Size(1280, 720))
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
                         .also {
@@ -709,12 +736,40 @@ class MedicationAlarmActivity : ComponentActivity() {
                         }
 
                     cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
+                    val camera = cameraProvider.bindToLifecycle(
                         this@MedicationAlarmActivity,
                         CameraSelector.DEFAULT_BACK_CAMERA,
                         preview,
                         analysis,
                     )
+
+                    // 自动中心对焦
+                    try {
+                        val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
+                        val centerPoint = factory.createPoint(0.5f, 0.5f)
+                        val action = FocusMeteringAction.Builder(centerPoint, FocusMeteringAction.FLAG_AF).build()
+                        camera.cameraControl.startFocusAndMetering(action)
+                    } catch (ignored: Throwable) {
+                    }
+
+                    // 触摸对焦支持
+                    previewView.setOnTouchListener { v, event ->
+                        when (event.action) {
+                            MotionEvent.ACTION_DOWN -> true
+                            MotionEvent.ACTION_UP -> {
+                                try {
+                                    val viewFactory = previewView.meteringPointFactory
+                                    val point = viewFactory.createPoint(event.x, event.y)
+                                    val touchAction = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF).build()
+                                    camera.cameraControl.startFocusAndMetering(touchAction)
+                                    v.performClick()
+                                } catch (ignored: Throwable) {
+                                }
+                                true
+                            }
+                            else -> false
+                        }
+                    }
                 } catch (ignored: Throwable) {
                 }
             }, ContextCompat.getMainExecutor(context))
@@ -739,13 +794,13 @@ class MedicationAlarmActivity : ComponentActivity() {
         onMismatch: () -> Unit,
     ) {
         try {
-            val media = proxy.image
-            if (media == null) return
+            val media = proxy.image ?: return
 
             val width = proxy.width
             val height = proxy.height
             val rowStride = proxy.planes[0].rowStride
             val buffer = proxy.planes[0].buffer
+            buffer.rewind()
 
             // 处理 rowStride > width 的对齐填充：逐行拷贝有效像素
             val data = ByteArray(width * height)
@@ -760,30 +815,156 @@ class MedicationAlarmActivity : ComponentActivity() {
                 }
             }
 
-            var source: com.google.zxing.LuminanceSource =
-                PlanarYUVLuminanceSource(data, width, height, 0, 0, width, height, false)
-            when (proxy.imageInfo.rotationDegrees) {
-                90 -> source = source.rotateCounterClockwise()
-                180 -> source = source.rotateCounterClockwise().rotateCounterClockwise()
-                270 -> source = source.rotateCounterClockwise().rotateCounterClockwise().rotateCounterClockwise()
+            // CameraX rotationDegrees 是使画面直立所需的顺时针角度。
+            // 注意：ZXing 的 PlanarYUVLuminanceSource 不支持 rotateCounterClockwise()（会抛出 UnsupportedOperationException）！
+            // 因此必须在构建 LuminanceSource 之前直接对灰度像素数组进行物理旋转。
+            val rotation = proxy.imageInfo.rotationDegrees
+            val rotatedData: ByteArray
+            val rotatedWidth: Int
+            val rotatedHeight: Int
+
+            when (rotation) {
+                90 -> {
+                    // 顺时针旋转 90 度：新宽度为原 height，新高度为原 width
+                    rotatedWidth = height
+                    rotatedHeight = width
+                    rotatedData = ByteArray(width * height)
+                    for (y in 0 until height) {
+                        val yOffset = y * width
+                        for (x in 0 until width) {
+                            rotatedData[x * height + (height - 1 - y)] = data[yOffset + x]
+                        }
+                    }
+                }
+                180 -> {
+                    // 顺时针旋转 180 度
+                    rotatedWidth = width
+                    rotatedHeight = height
+                    rotatedData = ByteArray(width * height)
+                    val total = width * height
+                    for (i in 0 until total) {
+                        rotatedData[total - 1 - i] = data[i]
+                    }
+                }
+                270 -> {
+                    // 顺时针旋转 270 度（逆时针 90 度）
+                    rotatedWidth = height
+                    rotatedHeight = width
+                    rotatedData = ByteArray(width * height)
+                    for (y in 0 until height) {
+                        val yOffset = y * width
+                        for (x in 0 until width) {
+                            rotatedData[(width - 1 - x) * height + y] = data[yOffset + x]
+                        }
+                    }
+                }
+                else -> {
+                    rotatedWidth = width
+                    rotatedHeight = height
+                    rotatedData = data
+                }
             }
 
-            val result = try {
-                QRCodeReader().decode(BinaryBitmap(HybridBinarizer(source)), mapOf(DecodeHintType.TRY_HARDER to true))
-            } catch (ignored: Exception) {
-                null // NotFoundException 等：本帧无 QR
+            val source: LuminanceSource =
+                PlanarYUVLuminanceSource(rotatedData, rotatedWidth, rotatedHeight, 0, 0, rotatedWidth, rotatedHeight, false)
+
+            val hints = mapOf(
+                DecodeHintType.TRY_HARDER to true,
+                DecodeHintType.POSSIBLE_FORMATS to listOf(
+                    BarcodeFormat.QR_CODE,
+                    BarcodeFormat.DATA_MATRIX,
+                    BarcodeFormat.AZTEC,
+                    BarcodeFormat.PDF_417,
+                    BarcodeFormat.EAN_13,
+                    BarcodeFormat.EAN_8,
+                    BarcodeFormat.CODE_128,
+                    BarcodeFormat.CODE_39,
+                    BarcodeFormat.UPC_A,
+                    BarcodeFormat.UPC_E,
+                    BarcodeFormat.ITF
+                )
+            )
+            val reader = MultiFormatReader().apply { setHints(hints) }
+
+            var raw = decodeLuminance(source, reader)
+
+            // 全图未识别时，尝试裁剪中央取景框区域（排除背景干扰与反光，提高局部对比度）
+            if (raw == null && source.isCropSupported) {
+                try {
+                    val cropW = (source.width * 0.72).toInt()
+                    val cropH = (source.height * 0.72).toInt()
+                    val cropLeft = (source.width - cropW) / 2
+                    val cropTop = (source.height - cropH) / 2
+                    val croppedSource = source.crop(cropLeft, cropTop, cropW, cropH)
+                    raw = decodeLuminance(croppedSource, reader)
+                } catch (ignored: Throwable) {
+                }
             }
-            val raw = result?.text?.trim()
+
+            // 若旋转图仍未识别且存在旋转，使用未旋转原图再试一次（防止某些机型传感器旋转角度异常）
+            if (raw == null && rotation != 0) {
+                try {
+                    val rawSource: LuminanceSource =
+                        PlanarYUVLuminanceSource(data, width, height, 0, 0, width, height, false)
+                    raw = decodeLuminance(rawSource, reader)
+                    if (raw == null && rawSource.isCropSupported) {
+                        val cropW = (width * 0.72).toInt()
+                        val cropH = (height * 0.72).toInt()
+                        raw = decodeLuminance(rawSource.crop((width - cropW) / 2, (height - cropH) / 2, cropW, cropH), reader)
+                    }
+                } catch (ignored: Throwable) {
+                }
+            }
+
+            val scannedText = raw?.trim()
             when {
-                raw == null -> Unit
-                raw == expectedToken.trim() -> runOnUiThread { onMatched() }
-                else -> runOnUiThread { onMismatch() }
+                scannedText == null -> Unit
+                MedicationAlarmContract.isTokenMatch(scannedText, expectedToken) -> {
+                    Log.i("MedicationAlarm", "Scan matched! Scanned=[$scannedText], Expected=[$expectedToken]")
+                    runOnUiThread { onMatched() }
+                }
+                else -> {
+                    Log.w("MedicationAlarm", "Scan mismatch! Scanned=[$scannedText], Expected=[$expectedToken]")
+                    runOnUiThread { onMismatch() }
+                }
             }
-        } catch (ignored: Throwable) {
-            // 单帧异常直接丢弃
+        } catch (t: Throwable) {
+            Log.e("MedicationAlarm", "Frame analysis failed: ${t.message}", t)
         } finally {
             proxy.close()
         }
+    }
+
+    /** 结合多种二值化策略（默认混合、黑底白码反色、全局直方图），最大化提升生活环境条码与二维码识别率 */
+    private fun decodeLuminance(source: LuminanceSource, reader: MultiFormatReader): String? {
+        // 1. 默认混合二值化器
+        try {
+            val result = reader.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
+            return result.text
+        } catch (ignored: Exception) {
+        } finally {
+            reader.reset()
+        }
+
+        // 2. 反色解码（支持手机暗黑模式屏幕、黑底白字包装）
+        try {
+            val result = reader.decodeWithState(BinaryBitmap(HybridBinarizer(source.invert())))
+            return result.text
+        } catch (ignored: Exception) {
+        } finally {
+            reader.reset()
+        }
+
+        // 3. 全局直方图二值化（针对药盒反光、低对比度条码）
+        try {
+            val result = reader.decodeWithState(BinaryBitmap(GlobalHistogramBinarizer(source)))
+            return result.text
+        } catch (ignored: Exception) {
+        } finally {
+            reader.reset()
+        }
+
+        return null
     }
 
     // ------------------------------ 装饰层 ------------------------------

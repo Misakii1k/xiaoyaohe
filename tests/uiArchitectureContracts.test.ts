@@ -145,4 +145,46 @@ describe('0.7.0 UI architecture contracts', () => {
     expect(shell).toMatch(/\.app-main \{ grid-column: 2; grid-row: 2; \}/);
     expect(shell).not.toContain('grid-row: 2 / span 2');
   });
+
+  it('enforces wide-screen desktop grid layout and reset rules', () => {
+    const shell = source('src/ui/styles/shell.css');
+    const primitives = source('src/ui/styles/primitives.css');
+    const settings = source('src/ui/styles/pages/settings.css');
+
+    // Shell grid contracts
+    expect(shell).toContain('grid-template-columns: 220px minmax(0, 1fr)');
+    expect(shell).toContain('grid-template-rows: auto minmax(0, 1fr) auto');
+    expect(shell).toContain('height: 100dvh');
+
+    // Sidebar navigation reset
+    expect(shell).toMatch(/\.app-shell > \.tabbar\.app-navigation,\s*\.tabbar\.app-navigation\s*\{[\s\S]*?position:\s*static;[\s\S]*?inset:\s*auto;/);
+    expect(shell).toContain('grid-column: 1');
+    expect(shell).toContain('grid-row: 1 / span 3');
+
+    // Desktop page constraint
+    expect(shell).toMatch(/\.page\s*\{[\s\S]*?max-inline-size:\s*960px;[\s\S]*?margin-inline:\s*auto;/);
+
+    // Bottom sheet dialog modal constraint
+    expect(primitives).toMatch(/\.bottom-sheet\s*\{[\s\S]*?max-inline-size:\s*560px;[\s\S]*?border-radius:\s*var\(--radius-xl\);/);
+
+    // Settings adaptive 2-column grid
+    expect(settings).toMatch(/\.settings-group-card:not\(\.settings-about-card\)\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+    expect(settings).toContain('.profile-stats-grid');
+  });
+
+  it('enforces high-contrast dark capsule styling for toasts to prevent pure-white display', () => {
+    const liquid = source('src/ui/styles/liquid-glass.css');
+    const primitives = source('src/ui/styles/primitives.css');
+
+    // Must NOT group .toast into light translucent fill
+    expect(liquid).not.toMatch(/:root\[data-liquid='on'\][^{}]*?\.toast[^{}]*?\{[^}]*?var\(--lg-fill\)/);
+
+    // Liquid glass must explicitly specify dark background and white text for toast
+    expect(liquid).toMatch(/:root\[data-liquid='on'\] \.toast\s*\{[\s\S]*?background:\s*rgba\(22,\s*23,\s*28,[\s\S]*?color:\s*#ffffff !important;/);
+
+    // Primitives must center toast and enforce dark high contrast
+    expect(primitives).toMatch(/\.toast\s*\{[\s\S]*?inset-inline:\s*0;[\s\S]*?margin-inline:\s*auto;[\s\S]*?background:\s*rgba\(22,\s*23,\s*28,[\s\S]*?color:\s*#ffffff !important;/);
+  });
 });
+
+

@@ -12,10 +12,19 @@
 const STORAGE_KEY = 'medbox.alarm-scan-verify.v1';
 const TOKEN_PREFIX = 'medbox-unlock:';
 
+export type AlarmScanVerifyMode = 'generated' | 'custom';
+
 export interface AlarmScanVerifyPreference {
   enabled: boolean;
-  /** 无前缀的裸随机串；native 端比对完整 `prefix + token` */
+  /** 解锁码类型：'generated' 为系统专属二维码，'custom' 为生活中的已有条码或二维码 */
+  mode?: AlarmScanVerifyMode;
+  /**
+   * 当 mode === 'generated' 时，为无前缀的裸随机串；比对时加 TOKEN_PREFIX。
+   * 当 mode === 'custom' 时，为扫描到的原始条形码或二维码串。
+   */
   token: string;
+  /** 仅 custom 模式下记录，用于在设置界面展示给用户确认（如 "EAN_13: 6901234567890"） */
+  customLabel?: string;
 }
 
 function randomToken(): string {
@@ -32,7 +41,7 @@ function randomToken(): string {
 }
 
 function isValid(value: Partial<AlarmScanVerifyPreference> | null): value is AlarmScanVerifyPreference {
-  return !!value && typeof value.token === 'string' && value.token.length >= 24
+  return !!value && typeof value.token === 'string' && value.token.length > 0
     && typeof value.enabled === 'boolean';
 }
 
@@ -41,12 +50,19 @@ export function getAlarmScanVerifyPreference(): AlarmScanVerifyPreference {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<AlarmScanVerifyPreference>;
-      if (isValid(parsed)) return parsed;
+      if (isValid(parsed)) {
+        return {
+          enabled: parsed.enabled,
+          mode: parsed.mode ?? 'generated',
+          token: parsed.token,
+          customLabel: parsed.customLabel,
+        };
+      }
     }
   } catch {
     /* 解析失败按未配置处理 */
   }
-  return { enabled: false, token: '' };
+  return { enabled: false, mode: 'generated', token: '' };
 }
 
 export function setAlarmScanVerifyPreference(preference: AlarmScanVerifyPreference): void {
@@ -62,26 +78,55 @@ export function isAlarmScanVerifyEnabled(): boolean {
   return preference.enabled && preference.token.length > 0;
 }
 
-/** 开启并生成新 token；返回可用于 QRCode 的完整码内容（带前缀）。 */
-export function enableAlarmScanVerify(): string {
+/** 获取闹钟界面摄像头扫码时比对的期望完整字符串。 */
+export function getAlarmScanExpectedToken(): string {
+  const preference = getAlarmScanVerifyPreference();
+  if (!preference.enabled || !preference.token) return '';
+  if (preference.mode === 'custom') {
+    return preference.token.trim();
+  }
+  return `${TOKEN_PREFIX}${preference.token.trim()}`;
+}
+
+/** 开启并生成/保留专属二维码 token；返回可用于 QRCode 的完整码内容（带前缀）。 */
+export function enableAlarmScanVerify(mode: AlarmScanVerifyMode = 'generated'): string {
   const current = getAlarmScanVerifyPreference();
-  const token = current.token || randomToken();
-  setAlarmScanVerifyPreference({ enabled: true, token });
+  if (mode === 'custom' && current.token) {
+    setAlarmScanVerifyPreference({ ...current, enabled: true, mode: 'custom' });
+    return current.token;
+  }
+  const token = (current.mode === 'generated' && current.token) ? current.token : randomToken();
+  setAlarmScanVerifyPreference({ enabled: true, mode: 'generated', token, customLabel: undefined });
   return `${TOKEN_PREFIX}${token}`;
+}
+
+/** 绑定生活中的已有二维码/条形码作为解锁条件。 */
+export function bindCustomAlarmScanCode(code: string, format?: string): void {
+  const trimmed = code.trim();
+  if (!trimmed) throw new Error('条形码/二维码内容不能为空');
+  const label = format ? `${format.toUpperCase()}: ${trimmed}` : trimmed;
+  setAlarmScanVerifyPreference({
+    enabled: true,
+    mode: 'custom',
+    token: trimmed,
+    customLabel: label,
+  });
 }
 
 export function disableAlarmScanVerify(): void {
   const current = getAlarmScanVerifyPreference();
-  setAlarmScanVerifyPreference({ enabled: false, token: current.token });
+  setAlarmScanVerifyPreference({ ...current, enabled: false });
 }
 
-/** 重置令牌：旧二维码作废，需重新打印粘贴。返回新的完整码内容。 */
+/** 重置令牌：旧专属二维码作废，需重新打印粘贴。返回新的完整码内容。 */
 export function rotateAlarmScanToken(): string {
-  setAlarmScanVerifyPreference({ enabled: true, token: randomToken() });
-  return `${TOKEN_PREFIX}${getAlarmScanVerifyPreference().token}`;
+  const token = randomToken();
+  setAlarmScanVerifyPreference({ enabled: true, mode: 'generated', token, customLabel: undefined });
+  return `${TOKEN_PREFIX}${token}`;
 }
 
-/** 当前是否已生成过 token（决定能否直接查看二维码）。 */
+/** 当前是否已设置过 token（决定能否直接查看或使用）。 */
 export function hasAlarmScanToken(): boolean {
   return getAlarmScanVerifyPreference().token.length > 0;
 }
+

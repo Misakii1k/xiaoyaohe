@@ -69,12 +69,14 @@ public class MainActivity extends BridgeActivity {
                 float density = getResources().getDisplayMetrics().density;
                 // 顶部不注入：历史布局已按「无顶部 inset」设计（insetsHandling=disable 的沉浸态），
                 // 注入 cutout/状态栏高度会让顶栏凭空变高；只兜底左右与底部导航条。
-                String js = "document.documentElement.style.setProperty('--safe-area-inset-bottom','"
+                String js = "if(document.documentElement){" +
+                    "document.documentElement.style.setProperty('--safe-area-inset-bottom','"
                     + (bottom / density) + "px');" +
                     "document.documentElement.style.setProperty('--safe-area-inset-left','"
                     + (left / density) + "px');" +
                     "document.documentElement.style.setProperty('--safe-area-inset-right','"
-                    + (right / density) + "px');";
+                    + (right / density) + "px');" +
+                    "}";
                 webView.evaluateJavascript(js, null);
             } catch (Throwable ignored) {
                 /* insets 兜底失败不影响主流程 */

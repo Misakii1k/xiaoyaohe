@@ -19,7 +19,7 @@ import {
   type KnownPeer,
 } from './knownPeers';
 import { isLanSyncAvailable } from './nativeTransport';
-import { notifyIfUpdateAvailable, startServingInstalledApk, stopServingApk } from './apkTransport';
+import { notifyIfUpdateAvailable, startServingInstalledApk } from './apkTransport';
 import { reportSilentFailure } from '../../app/diagnostics';
 
 const AUTO_KEY = 'medbox.lan-sync.auto.v1';
@@ -98,7 +98,6 @@ export function stopAutoSync(): void {
   const close = hostClose;
   hostClose = null;
   if (close) void close().catch(() => undefined);
-  void stopServingApk().catch(() => undefined);
 }
 
 /**

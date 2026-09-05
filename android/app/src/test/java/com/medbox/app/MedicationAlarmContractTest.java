@@ -128,4 +128,37 @@ public class MedicationAlarmContractTest {
         JSONArray remaining = MedicationAlarmContract.filterActions(actions, new JSONArray().put("ack-9"));
         assertEquals(2, remaining.length());
     }
+
+    @Test
+    public void tokenMatchHandlesVariousFormatsAndTolerances() {
+        // 精确匹配
+        assertTrue(MedicationAlarmContract.isTokenMatch("medbox-unlock:v1:abc", "medbox-unlock:v1:abc"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("6901234567890", "6901234567890"));
+
+        // 大小写不敏感
+        assertTrue(MedicationAlarmContract.isTokenMatch("HTTPS://EXAMPLE.COM/ABC", "https://example.com/abc"));
+
+        // 结尾斜杠容错
+        assertTrue(MedicationAlarmContract.isTokenMatch("https://weixin.qq.com/r/abc/", "https://weixin.qq.com/r/abc"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("https://weixin.qq.com/r/abc", "https://weixin.qq.com/r/abc/"));
+
+        // URL 协议容错 (http vs https)
+        assertTrue(MedicationAlarmContract.isTokenMatch("http://example.com/foo", "https://example.com/foo/"));
+
+        // 空白、换行与 BOM 过滤
+        assertTrue(MedicationAlarmContract.isTokenMatch("  \uFEFF6901234567890\r\n  ", "6901234567890"));
+
+        // 条码 AIM 标识前缀过滤（如 ]Q1 代表 QR Code）
+        assertTrue(MedicationAlarmContract.isTokenMatch("]Q1https://example.com", "https://example.com"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("]C16901234567890", "6901234567890"));
+
+        // UPC-A (12位) 与 EAN-13 (13位带前导0) 容错
+        assertTrue(MedicationAlarmContract.isTokenMatch("0123456789012", "123456789012"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("123456789012", "0123456789012"));
+
+        // 不匹配
+        assertFalse(MedicationAlarmContract.isTokenMatch("12345", "67890"));
+        assertFalse(MedicationAlarmContract.isTokenMatch("", "67890"));
+        assertFalse(MedicationAlarmContract.isTokenMatch("12345", ""));
+    }
 }

@@ -42,6 +42,7 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
     { cleanupRetiredCloudSyncStorage },
     { cleanupRetiredWorkStorage },
     { startAutoSync },
+    { isApkDistributionAvailable, startServingInstalledApk },
   ] = await Promise.all([
     import('./router'),
     import('./app/moduleRegistry'),
@@ -56,6 +57,7 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
     import('./sync/retiredCloudStorage'),
     import('./sync/retiredWorkStorage'),
     import('./sync/lan/autoSync'),
+    import('./sync/lan/apkTransport'),
   ]);
   const { route, setNotFound, startRouter, navigate } = router;
   const {
@@ -115,6 +117,13 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
   } catch (cause) {
     reportSilentFailure('lan.auto-start', cause);
     /* 自动同步启动失败不挡首屏 */
+  }
+
+  // 局域网 APK 分发：在 Android App 启动时自动在 38473 端口对外分发本机 APK，供同局域网设备获取更新
+  if (isApkDistributionAvailable()) {
+    void startServingInstalledApk().catch((cause) => {
+      reportSilentFailure('lan.apk-serve-start', cause);
+    });
   }
 
   for (const [legacyPath, currentPath] of Object.entries(compatibilityRedirects)) {

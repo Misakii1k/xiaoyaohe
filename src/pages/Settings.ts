@@ -58,12 +58,14 @@ import {
 } from '../features/notifier';
 import { fireNativeMedicationAlarmNow, nativeMedicationAlarmAvailable } from '../features/nativeMedicationAlarm';
 import {
+  bindCustomAlarmScanCode,
   disableAlarmScanVerify,
   enableAlarmScanVerify,
   getAlarmScanVerifyPreference,
   hasAlarmScanToken,
   rotateAlarmScanToken,
 } from '../features/alarmScanVerify';
+import { startScan, scanCodeFromImage, type Scanner } from '../features/scanner';
 import {
   isAppNotificationsEnabled,
   setAppNotificationsEnabled,
@@ -95,6 +97,7 @@ import {
   getAvailableUpdate,
   installApk,
   isApkDistributionAvailable,
+  scanLanForUpdates,
   LOCAL_APP_VERSION,
 } from '../sync/lan/apkTransport';
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations, openAppSettings } from '../features/keepAlive';
@@ -760,6 +763,40 @@ function renderReminderPanel(): HTMLElement {
   return p;
 }
 
+function formatBarcodeTypeLabel(format?: string): string {
+  if (!format) return '条形码 / 二维码';
+  const f = format.toLowerCase();
+  if (f.includes('qr')) return '二维码';
+  if (f.includes('ean_13') || f.includes('ean13')) return '商品条形码 (EAN-13)';
+  if (f.includes('ean_8') || f.includes('ean8')) return '商品条形码 (EAN-8)';
+  if (f.includes('code_128') || f.includes('code128')) return '条形码 (Code 128)';
+  if (f.includes('code_39') || f.includes('code39')) return '条形码 (Code 39)';
+  if (f.includes('upc')) return '商品条形码 (UPC)';
+  if (f.includes('data_matrix') || f.includes('datamatrix')) return 'Data Matrix 码';
+  if (f.includes('itf')) return 'ITF 条形码';
+  return '条形码 / 二维码';
+}
+
+function formatCustomScanCodeSummary(customLabel?: string, token?: string): string {
+  const raw = (customLabel || token || '').trim();
+  if (!raw) return '已绑定生活码';
+  const colonIdx = raw.indexOf(':');
+  if (colonIdx > 0 && colonIdx < 16) {
+    const formatPart = raw.slice(0, colonIdx).trim();
+    const tokenPart = raw.slice(colonIdx + 1).trim();
+    const friendlyType = formatBarcodeTypeLabel(formatPart);
+    if (tokenPart.length > 20) {
+      const tail = tokenPart.slice(-6);
+      return `已绑定生活码（${friendlyType} · 尾号 ...${tail}）`;
+    }
+    return `已绑定生活码（${friendlyType} · ${tokenPart}）`;
+  }
+  if (raw.length > 24) {
+    return `已绑定生活码（尾号 ...${raw.slice(-6)}）`;
+  }
+  return `已绑定生活码（${raw}）`;
+}
+
 function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   const native = isNativeReminderPlatform();
   if (!notificationsSupported()) {
@@ -950,12 +987,15 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     const scanPref = getAlarmScanVerifyPreference();
     const scanRow = el('label', { class: 'settings-toggle-row mt-3' });
     const scanCopy = el('div', { class: 'settings-toggle-copy' });
+    const isCustom = scanPref.mode === 'custom';
     scanCopy.append(
       el('div', { class: 'settings-toggle-title', text: '扫码解除强制提醒' }),
       el('div', {
         class: 'settings-toggle-desc',
         text: scanPref.enabled
-          ? '已开启：全屏提醒必须扫描配对二维码后才能操作'
+          ? (isCustom
+              ? `已开启：${formatCustomScanCodeSummary(scanPref.customLabel, scanPref.token)}`
+              : '已开启：全屏提醒必须扫描专属二维码后才能操作')
           : '关闭：提醒到点可直接点击完成或贪睡',
       }),
     );
@@ -967,9 +1007,15 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     scanToggle.checked = scanPref.enabled;
     scanToggle.onchange = async () => {
       if (scanToggle.checked) {
-        enableAlarmScanVerify();
-        toast('已开启，请查看解锁二维码');
-        openUnlockQrSheet(rerender);
+        if (scanPref.mode === 'custom' && scanPref.token) {
+          enableAlarmScanVerify('custom');
+          toast('已开启扫码验证（已绑定生活码）');
+          await rescheduleMedicationReminders().catch(() => {});
+        } else {
+          enableAlarmScanVerify('generated');
+          toast('已开启，请查看专属二维码或扫描已有码绑定');
+          openUnlockQrSheet(rerender);
+        }
       } else {
         disableAlarmScanVerify();
         toast('已关闭扫码验证');
@@ -982,9 +1028,29 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
 
     if (scanPref.enabled && hasAlarmScanToken()) {
       const qrRow = el('div', { class: 'btn-row mt-3' });
-      const showQrBtn = el('button', { class: 'btn tonal', html: '查看解锁二维码' });
-      showQrBtn.onclick = () => openUnlockQrSheet(rerender);
-      qrRow.append(showQrBtn);
+      const testUnlockBtn = el('button', { class: 'btn tonal', html: '试验扫码解锁' });
+      testUnlockBtn.onclick = async () => {
+        try {
+          await fireNativeMedicationAlarmNow('fullscreen-short');
+          toast('已触发全屏提醒，请体验扫码解锁');
+        } catch {
+          toast('触发失败，请先允许全屏权限');
+        }
+      };
+
+      if (isCustom) {
+        const rebindBtn = el('button', { class: 'btn tonal', html: '重新扫码绑定' });
+        rebindBtn.onclick = () => openBindCustomCodeSheet(rerender);
+        const switchQrBtn = el('button', { class: 'btn tonal', html: '切换为专属二维码' });
+        switchQrBtn.onclick = () => openUnlockQrSheet(rerender);
+        qrRow.append(rebindBtn, switchQrBtn, testUnlockBtn);
+      } else {
+        const showQrBtn = el('button', { class: 'btn tonal', html: '查看专属二维码' });
+        showQrBtn.onclick = () => openUnlockQrSheet(rerender);
+        const bindCustomBtn = el('button', { class: 'btn tonal', html: '扫描生活中的码绑定' });
+        bindCustomBtn.onclick = () => openBindCustomCodeSheet(rerender);
+        qrRow.append(showQrBtn, bindCustomBtn, testUnlockBtn);
+      }
       body.append(qrRow);
     }
   }
@@ -1007,10 +1073,11 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   );
 }
 
-/** ---------------- 扫码解除：解锁二维码 Sheet ---------------- */
+/** ---------------- 扫码解除：专属二维码 Sheet ---------------- */
 function openUnlockQrSheet(rerender: () => void): void {
-  const tokenValue = enableAlarmScanVerify();
-  const title = el('h3', { class: 'lan-sync-sheet-title', text: '强制提醒解锁码' });
+  const tokenValue = enableAlarmScanVerify('generated');
+  void rescheduleMedicationReminders().catch(() => {});
+  const title = el('h3', { class: 'lan-sync-sheet-title', text: '强制提醒专属二维码' });
   const canvas = document.createElement('canvas');
   canvas.className = 'lan-sync-qr';
   canvas.setAttribute('aria-label', '强制提醒解锁二维码');
@@ -1020,12 +1087,21 @@ function openUnlockQrSheet(rerender: () => void): void {
     errorCorrectionLevel: 'M',
     color: { dark: '#151918', light: '#ffffff' },
   });
-  const hint = el('div', {
-    class: 'settings-hint',
-    html: '把这个二维码<b>截图保存并打印</b>，贴到药箱、冰箱门或卫生间等远离床的位置。\n\n' +
-      '开启后，全屏用药提醒必须走到这里扫到这个码，才会出现「已服用 / 贪睡 / 跳过」按钮。',
-  });
-  const rotateBtn = el('button', { class: 'btn tonal', html: '重新生成（旧码作废）' });
+  const hint = el('div', { class: 'settings-hint' });
+  const hintP1 = el('p', { class: 'mb-1' });
+  hintP1.append(
+    '把这个专属二维码',
+    el('strong', { text: '截图保存并打印' }),
+    '，贴到药箱、冰箱门或远离床的位置。全屏用药提醒必须扫描此码才能解锁操作。',
+  );
+  const hintP2 = el('p', { class: 'muted text-xs mt-2' });
+  hintP2.append(
+    '💡 ',
+    el('strong', { text: '没有打印机？' }),
+    '您也可以直接点击下方按钮，绑定药盒或生活物品上的已有条码/二维码。',
+  );
+  hint.append(hintP1, hintP2);
+  const rotateBtn = el('button', { class: 'btn tonal', html: '重新生成' });
   rotateBtn.onclick = async () => {
     const confirmed = await confirmDialog(
       '重新生成解锁码？旧二维码将立即作废；已贴出去的打印件需要替换，否则将无法解除提醒。',
@@ -1034,18 +1110,163 @@ function openUnlockQrSheet(rerender: () => void): void {
     );
     if (!confirmed) return;
     rotateAlarmScanToken();
-    toast('已生成新的解锁码');
+    toast('已生成新的专属码');
     sheet.close();
     rerender();
     openUnlockQrSheet(rerender);
   };
+  const switchCustomBtn = el('button', { class: 'btn tonal', html: '改为扫描生活中的码' });
+  switchCustomBtn.onclick = () => {
+    sheet.close();
+    openBindCustomCodeSheet(rerender);
+  };
   const closeBtn = el('button', { class: 'btn', html: '完成' });
   let sheet!: ReturnType<typeof openBottomSheet>;
   sheet = openBottomSheet({
-    label: '强制提醒解锁二维码',
-    content: [title, canvas, hint, el('div', { class: 'btn-row mt-3' }, [rotateBtn, closeBtn])],
+    label: '强制提醒专属二维码',
+    content: [title, canvas, hint, el('div', { class: 'btn-row mt-3' }, [rotateBtn, switchCustomBtn, closeBtn])],
     initialFocus: closeBtn,
   });
+}
+
+/** ---------------- 扫码解除：扫描生活中的已有码绑定 Sheet ---------------- */
+function openBindCustomCodeSheet(rerender: () => void): void {
+  const title = el('h3', { class: 'lan-sync-sheet-title', text: '扫描生活中的已有码绑定' });
+  const hint = el('div', { class: 'settings-hint' });
+  const hintP1 = el('p', { class: 'mb-1' });
+  hintP1.append(
+    '将镜头对准药盒包装上的',
+    el('strong', { text: '条形码' }),
+    '（如常见药盒 EAN-13 条码）或',
+    el('strong', { text: '生活中的任意二维码' }),
+    '。',
+  );
+  const hintP2 = el('p', { class: 'muted text-xs' });
+  hintP2.textContent = '绑定后，闹钟提醒响起时只需扫描该码即可解除，无需打印。';
+  hint.append(hintP1, hintP2);
+
+  const scannerContainerId = `custom-unlock-scanner-${Date.now()}`;
+  const scannerHost = el('div', {
+    id: scannerContainerId,
+    style: 'width: 100%; min-height: 240px; background: #000; border-radius: 16px; overflow: hidden; position: relative;',
+  });
+
+  const statusBox = el('div', { class: 'banner info mt-3', hidden: true });
+  const actionRow = el('div', { class: 'btn-row mt-3' });
+  const cancelBtn = el('button', { class: 'btn tonal', html: '取消' });
+  const fileLabel = el('label', { class: 'btn tonal' });
+  fileLabel.append(el('span', { text: '相册选图' }));
+  const fileInput = el('input', { type: 'file', accept: 'image/*', style: 'display: none;' }) as HTMLInputElement;
+  fileLabel.append(fileInput);
+
+  actionRow.append(fileLabel, cancelBtn);
+
+  let scanner: Scanner | null = null;
+  let scannedCode: string | null = null;
+  let scannedFormat: string | null = null;
+
+  const handleResult = (raw: string, format: string) => {
+    scannedCode = raw.trim();
+    scannedFormat = format;
+    statusBox.hidden = false;
+    statusBox.className = 'banner ok mt-3';
+    statusBox.replaceChildren();
+
+    const resultHead = el('div', {
+      style: 'font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;',
+    });
+    resultHead.append(
+      '已识别到：',
+      el('span', {
+        class: 'chip-pill chip-pill-active',
+        style: 'font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 999px;',
+        text: formatBarcodeTypeLabel(format),
+      }),
+    );
+
+    const codePreview = el('div', {
+      class: 'code-preview mt-2',
+      style: 'font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; line-height: 1.4; word-break: break-all; background: rgba(0, 0, 0, 0.05); padding: 8px 10px; border-radius: 8px; max-height: 72px; overflow-y: auto;',
+      text: scannedCode,
+    });
+
+    const confirmPrompt = el('div', {
+      class: 'muted text-xs mt-2',
+      text: '确认将该码绑定为提醒解除条件？',
+    });
+
+    statusBox.append(resultHead, codePreview, confirmPrompt);
+
+    actionRow.replaceChildren();
+    const confirmBtn = el('button', { class: 'btn', html: '确认绑定' });
+    confirmBtn.onclick = async () => {
+      if (!scannedCode) return;
+      bindCustomAlarmScanCode(scannedCode, scannedFormat || undefined);
+      toast('已成功绑定！闹钟提醒时扫此码即可解除', 3200);
+      await rescheduleMedicationReminders().catch(() => {});
+      sheet.close();
+      rerender();
+    };
+
+    const rescanBtn = el('button', { class: 'btn tonal', html: '重新扫码' });
+    rescanBtn.onclick = () => {
+      scannedCode = null;
+      statusBox.hidden = true;
+      actionRow.replaceChildren(fileLabel, cancelBtn);
+      void scanner?.resume();
+    };
+
+    actionRow.append(confirmBtn, rescanBtn);
+  };
+
+  fileInput.onchange = async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    try {
+      const res = await scanCodeFromImage(file);
+      if (res && res.raw) {
+        handleResult(res.raw, res.format);
+      } else {
+        toast('图片中未能识别到有效的条码或二维码，请重试');
+      }
+    } catch {
+      toast('读取图片失败');
+    }
+  };
+
+  let sheet!: ReturnType<typeof openBottomSheet>;
+  sheet = openBottomSheet({
+    label: '扫描生活中的已有码绑定',
+    content: [title, hint, scannerHost, statusBox, actionRow],
+    initialFocus: cancelBtn,
+    onClose: () => {
+      void scanner?.stop().catch(() => {});
+    },
+  });
+
+  cancelBtn.onclick = () => {
+    sheet.close();
+  };
+
+  setTimeout(() => {
+    void startScan({
+      containerId: scannerContainerId,
+      onScan: (res) => {
+        handleResult(res.raw, res.format);
+      },
+      onError: (msg) => {
+        statusBox.hidden = false;
+        statusBox.className = 'banner warn mt-3';
+        statusBox.textContent = `相机提示：${msg}`;
+      },
+    }).then((s) => {
+      scanner = s;
+    }).catch(() => {
+      statusBox.hidden = false;
+      statusBox.className = 'banner warn mt-3';
+      statusBox.textContent = '无法启动相机，您也可以点击下方从相册选图识别。';
+    });
+  }, 100);
 }
 
 /** ---------------- 时段提醒设置面板：按时段聚合的整体提醒 ---------------- */
@@ -1310,9 +1531,12 @@ function buildAppUpdateBody(
   body.replaceChildren();
 
   // 当前版本信息
-  const versionInfo = el('div', { class: 'settings-hint' }, [
-    el('span', { html: `当前版本：<b>v${LOCAL_APP_VERSION}</b>（正式版）` }),
-  ]);
+  const versionInfo = el('div', { class: 'settings-hint' });
+  versionInfo.append(
+    '当前版本：',
+    el('strong', { text: `v${LOCAL_APP_VERSION}` }),
+    '（正式版）',
+  );
   body.append(versionInfo);
 
   if (!available) {
@@ -1325,27 +1549,77 @@ function buildAppUpdateBody(
   const update = getAvailableUpdate();
   if (!update) {
     body.append(el('div', { class: 'settings-hint mt-3' }, [
-      el('span', { html: '其他设备升级后，会在同步时自动通知本机更新。' }),
+      el('span', { html: '同一局域网（Wi-Fi）内有设备升级后，可点击下方按钮主动扫描探测新版本，或在同步时自动接收更新。' }),
     ]));
+    const row = el('div', { class: 'btn-row mt-3' });
+    const checkBtn = el('button', { class: 'btn tonal', html: '检查局域网更新' });
+    checkBtn.onclick = async () => {
+      checkBtn.disabled = true;
+      checkBtn.textContent = '正在扫描局域网...';
+      try {
+        const found = await scanLanForUpdates();
+        if (found) {
+          toast(`发现新版本 v${found.version}！`, 3000);
+          setChip(panelEl, { text: `可更新 v${found.version}`, tone: 'info' });
+          buildAppUpdateBody(body, panelEl, available);
+        } else {
+          toast('未在局域网内发现新版本（当前已是最新或暂未检测到已升级设备）', 3500);
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : '未知错误';
+        toast(`检查失败：${msg}`, 3500);
+      } finally {
+        checkBtn.disabled = false;
+        checkBtn.textContent = '检查局域网更新';
+      }
+    };
+    row.append(checkBtn);
+    body.append(row);
     return;
   }
 
   // 发现可用更新：显示版本、来源、操作按钮
-  body.append(el('div', { class: 'banner info mt-3' }, [
-    el('span', { html: `发现新版本 <b>v${update.version}</b>` }),
-    el('br'),
-    el('span', { html: `来源：${update.peerHost}（局域网内已升级设备）。` }),
-  ]));
+  const updateBanner = el('div', { class: 'banner info mt-3' });
+  const updateTitle = el('div');
+  updateTitle.append('发现新版本 ', el('strong', { text: `v${update.version}` }));
+  const updateSource = el('div', {
+    class: 'muted text-xs mt-1',
+    text: `来源：${update.peerHost}（局域网内已升级设备）。`,
+  });
+  updateBanner.append(updateTitle, updateSource);
+  body.append(updateBanner);
 
   const row = el('div', { class: 'btn-row mt-3' });
   const downloadBtn = el('button', { class: 'btn', html: '下载并安装' });
+  const recheckBtn = el('button', { class: 'btn tonal', html: '重新扫描' });
   const skipBtn = el('button', { class: 'btn tonal', html: '本次跳过' });
+
+  recheckBtn.onclick = async () => {
+    recheckBtn.disabled = true;
+    recheckBtn.textContent = '扫描中...';
+    try {
+      const found = await scanLanForUpdates();
+      if (found) {
+        toast(`已刷新版本：v${found.version}`, 3000);
+        setChip(panelEl, { text: `可更新 v${found.version}`, tone: 'info' });
+      } else {
+        toast('局域网暂无更新版本');
+      }
+    } catch {
+      toast('扫描失败');
+    } finally {
+      recheckBtn.disabled = false;
+      recheckBtn.textContent = '重新扫描';
+      buildAppUpdateBody(body, panelEl, available);
+    }
+  };
 
   downloadBtn.onclick = async () => {
     if (downloadBtn.getAttribute('aria-busy') === 'true') return;
     downloadBtn.setAttribute('aria-busy', 'true');
     downloadBtn.textContent = '下载中...';
     downloadBtn.disabled = true;
+    recheckBtn.disabled = true;
     skipBtn.disabled = true;
     try {
       const apkPath = await downloadUpdate(update);
@@ -1360,6 +1634,7 @@ function buildAppUpdateBody(
       downloadBtn.removeAttribute('aria-busy');
       downloadBtn.textContent = '下载并安装';
       downloadBtn.disabled = false;
+      recheckBtn.disabled = false;
       skipBtn.disabled = false;
     }
   };
@@ -1371,7 +1646,7 @@ function buildAppUpdateBody(
     buildAppUpdateBody(body, panelEl, available);
   };
 
-  row.append(downloadBtn, skipBtn);
+  row.append(downloadBtn, recheckBtn, skipBtn);
   body.append(row);
 }
 
@@ -1493,20 +1768,59 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
     listWrap.replaceChildren();
 
     set.providers.forEach((provider, index) => {
-      const row = el('div', { class: 'llm-provider-row' });
+      const row = el('div', { class: `llm-provider-row${provider.id === set.activeId ? ' is-active' : ''}` });
       const head = el('div', { class: 'llm-provider-head' });
       const title = el('div', { class: 'llm-provider-title' });
+      const rankBadge = el('span', { class: 'llm-provider-rank', text: `#${index + 1}` });
       title.append(
+        rankBadge,
         el('span', { class: 'llm-provider-name', text: provider.label }),
-        provider.id === set.activeId
-          ? el('span', { class: 'llm-provider-badge', text: '当前' })
-          : el('span', {}),
       );
       head.append(title);
 
+      const badges = el('div', { class: 'llm-provider-badges' });
+      if (provider.id === set.activeId) {
+        badges.append(el('span', { class: 'llm-provider-badge', text: '当前' }));
+      }
+
+      const host = hostOf(provider.baseUrl);
+      const health = getLlmHealth(provider.id);
+      let statusText = '未检测';
+      let statusCls = 'pending';
+      if (!provider.apiKey) {
+        statusText = '未填密钥';
+        statusCls = 'warn';
+      } else if (health.state === 'ok') {
+        statusText = '已连接';
+        statusCls = 'ok';
+      } else if (health.state === 'error') {
+        statusText = '不通';
+        statusCls = 'error';
+      }
+
+      const statusBadge = el('span', { class: `llm-provider-status ${statusCls}` });
+      statusBadge.append(
+        el('span', { class: 'llm-status-dot' }),
+        el('span', { class: 'llm-status-text', text: statusText }),
+      );
+      badges.append(statusBadge);
+      head.append(badges);
+      row.append(head);
+
+      const meta = el('div', { class: 'llm-provider-meta' });
+      meta.append(
+        el('span', { class: 'llm-meta-host', text: host }),
+        el('span', { class: 'llm-meta-sep', text: '·' }),
+        el('span', { class: 'llm-meta-model', text: provider.model }),
+      );
+      row.append(meta);
+
       const actions = el('div', { class: 'llm-provider-actions' });
+      const actionsLeft = el('div', { class: 'llm-actions-left' });
+      const actionsRight = el('div', { class: 'llm-actions-right' });
+
       if (index > 0) {
-        const up = el('button', { class: 'btn text small', type: 'button', html: '↑' });
+        const up = el('button', { class: 'btn tonal small', type: 'button', html: '↑ 上移' });
         up.title = '优先级上移';
         up.onclick = () => void runProviderMutation(async () => {
           const latest = getLlmProviderSet();
@@ -1519,23 +1833,26 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
           next[currentIndex] = upper;
           await persistAndRender(next, latest.activeId, latest.failover);
         });
-        actions.append(up);
+        actionsLeft.append(up);
       }
-      const edit = el('button', { class: 'btn text small', type: 'button', html: '编辑' });
+
+      if (provider.id !== set.activeId) {
+        const activate = el('button', { class: 'btn tonal small llm-activate-btn', type: 'button', html: '设为当前' });
+        activate.onclick = () => void runProviderMutation(async () => {
+          const latest = getLlmProviderSet();
+          await persistAndRender(latest.providers, provider.id, latest.failover);
+        });
+        actionsRight.append(activate);
+      }
+
+      const edit = el('button', { class: 'btn tonal small', type: 'button', html: '编辑' });
       edit.onclick = () => void openLlmProviderEditor(provider, async (draft) => {
         const latest = getLlmProviderSet();
         const next = latest.providers.map((item) => (item.id === draft.id ? draft : item));
         await persistAndRender(next, latest.activeId, latest.failover);
       });
-      actions.append(edit);
-      if (provider.id !== set.activeId) {
-        const activate = el('button', { class: 'btn text small', type: 'button', html: '设为当前' });
-        activate.onclick = () => void runProviderMutation(async () => {
-          const latest = getLlmProviderSet();
-          await persistAndRender(latest.providers, provider.id, latest.failover);
-        });
-        actions.append(activate);
-      }
+      actionsRight.append(edit);
+
       if (set.providers.length > 1) {
         const remove = el('button', { class: 'btn text small danger-text', type: 'button', html: '删除' });
         remove.onclick = async () => {
@@ -1547,20 +1864,11 @@ function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) => void)
             await persistAndRender(next, latest.activeId === provider.id ? next[0]!.id : latest.activeId, latest.failover);
           });
         };
-        actions.append(remove);
+        actionsRight.append(remove);
       }
-      head.append(actions);
-      row.append(head);
 
-      const host = hostOf(provider.baseUrl);
-      const health = getLlmHealth(provider.id);
-      const status = provider.apiKey
-        ? health.state === 'ok' ? '已连接' : health.state === 'error' ? '不通' : '未检测'
-        : '未填密钥';
-      row.append(el('div', { class: 'llm-provider-meta' }, [
-        `${host} · ${provider.model}`,
-        el('span', { class: 'llm-provider-status', text: status }),
-      ]));
+      actions.append(actionsLeft, actionsRight);
+      row.append(actions);
       listWrap.append(row);
     });
 

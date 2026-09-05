@@ -12,6 +12,7 @@ import android.webkit.MimeTypeMap;
 
 import androidx.core.content.FileProvider;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -28,6 +29,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -152,6 +154,15 @@ public final class ApkDistributionPlugin extends Plugin {
             call.reject("destPath is required", "INVALID_PATH");
             return;
         }
+
+        final Inet4Address address;
+        try {
+            address = LocalIpv4Address.parse(host);
+        } catch (UnknownHostException error) {
+            call.reject("Host must be a private or link-local IPv4 address", "INVALID_HOST");
+            return;
+        }
+
         // 相对路径解析到 cacheDir，让 TS 层无需关心原生路径细节
         File dest = resolveStoragePath(destPath);
         if (dest == null) {
@@ -159,10 +170,11 @@ public final class ApkDistributionPlugin extends Plugin {
             return;
         }
         final String absolutePath = dest.getAbsolutePath();
+        final String canonicalHost = address.getHostAddress();
 
         ioExecutor.execute(() -> {
             try {
-                long bytes = doDownload(host, port, absolutePath);
+                long bytes = doDownload(canonicalHost, port, absolutePath);
                 JSObject result = new JSObject();
                 result.put("bytes", bytes);
                 result.put("destPath", absolutePath);
@@ -170,6 +182,135 @@ public final class ApkDistributionPlugin extends Plugin {
             } catch (Exception error) {
                 call.reject("APK download failed: " + error.getMessage(), "DOWNLOAD_FAILED");
             }
+        });
+    }
+
+    /** 快速探测指定 IP 的 38473 端口是否在对外分发有效 APK（通过校验前 8 字节 MAGIC）。 */
+    @PluginMethod
+    public void probePeer(PluginCall call) {
+        String host = call.getString("host");
+        Integer port = call.getInt("port", APK_PORT);
+        int timeoutMs = call.getInt("timeoutMs", 1500);
+
+        if (host == null || host.isEmpty()) {
+            call.reject("host is required", "INVALID_HOST");
+            return;
+        }
+
+        final Inet4Address address;
+        try {
+            address = LocalIpv4Address.parse(host);
+        } catch (UnknownHostException error) {
+            call.reject("Host must be a private or link-local IPv4 address", "INVALID_HOST");
+            return;
+        }
+
+        final String canonicalHost = address.getHostAddress();
+        ioExecutor.execute(() -> {
+            boolean reachable = false;
+            try (Socket socket = new Socket()) {
+                socket.connect(new InetSocketAddress(canonicalHost, port != null ? port : APK_PORT), timeoutMs);
+                socket.setSoTimeout(timeoutMs);
+                InputStream in = socket.getInputStream();
+                byte[] magic = readN(in, MAGIC.length);
+                boolean matches = true;
+                for (int i = 0; i < MAGIC.length; i++) {
+                    if (magic[i] != MAGIC[i]) {
+                        matches = false;
+                        break;
+                    }
+                }
+                reachable = matches;
+            } catch (IOException ignored) {
+                reachable = false;
+            }
+            JSObject result = new JSObject();
+            result.put("reachable", reachable);
+            result.put("host", canonicalHost);
+            result.put("port", port != null ? port : APK_PORT);
+            call.resolve(result);
+        });
+    }
+
+    /**
+     * 并发快速扫描本机所在 /24 子网的所有 IP（排除本机），探测是否有设备在 38473 分发 APK。
+     * 返回所有可达的分发源列表 [{ host: string, port: number }]。
+     */
+    @PluginMethod
+    public void scanSubnet(PluginCall call) {
+        final int targetPort = call.getInt("port", APK_PORT);
+        final int timeoutMs = call.getInt("timeoutMs", 1000);
+
+        final Inet4Address localAddress;
+        try {
+            localAddress = LocalIpv4Address.select();
+        } catch (Exception error) {
+            JSObject result = new JSObject();
+            result.put("peers", new JSArray());
+            call.resolve(result);
+            return;
+        }
+
+        byte[] raw = localAddress.getAddress();
+        int b0 = raw[0] & 0xFF;
+        int b1 = raw[1] & 0xFF;
+        int b2 = raw[2] & 0xFF;
+        int selfLast = raw[3] & 0xFF;
+        String prefix = b0 + "." + b1 + "." + b2 + ".";
+
+        ioExecutor.execute(() -> {
+            java.util.List<JSObject> foundPeers = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(254);
+
+            for (int i = 1; i <= 254; i++) {
+                final int hostIndex = i;
+                if (hostIndex == selfLast) {
+                    latch.countDown();
+                    continue;
+                }
+                final String targetIp = prefix + hostIndex;
+                try {
+                    ioExecutor.execute(() -> {
+                        try (Socket socket = new Socket()) {
+                            socket.connect(new InetSocketAddress(targetIp, targetPort), timeoutMs);
+                            socket.setSoTimeout(timeoutMs);
+                            InputStream in = socket.getInputStream();
+                            byte[] magic = readN(in, MAGIC.length);
+                            boolean matches = true;
+                            for (int m = 0; m < MAGIC.length; m++) {
+                                if (magic[m] != MAGIC[m]) {
+                                    matches = false;
+                                    break;
+                                }
+                            }
+                            if (matches) {
+                                JSObject peer = new JSObject();
+                                peer.put("host", targetIp);
+                                peer.put("port", targetPort);
+                                foundPeers.add(peer);
+                            }
+                        } catch (Throwable ignored) {
+                        } finally {
+                            latch.countDown();
+                        }
+                    });
+                } catch (RejectedExecutionException error) {
+                    latch.countDown();
+                }
+            }
+
+            try {
+                latch.await(3500, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException ignored) {
+            }
+
+            JSArray peersArray = new JSArray();
+            for (JSObject peer : foundPeers) {
+                peersArray.put(peer);
+            }
+            JSObject result = new JSObject();
+            result.put("peers", peersArray);
+            call.resolve(result);
         });
     }
 
@@ -184,9 +325,9 @@ public final class ApkDistributionPlugin extends Plugin {
             call.reject("apkPath is required", "INVALID_PATH");
             return;
         }
-        File apk = new File(apkPath);
-        if (!apk.exists() || !apk.isFile()) {
-            call.reject("APK file does not exist: " + apkPath, "FILE_NOT_FOUND");
+        File apk = resolveStoragePath(apkPath);
+        if (apk == null || !apk.exists() || !apk.isFile()) {
+            call.reject("APK file does not exist or is outside cache directory: " + apkPath, "FILE_NOT_FOUND");
             return;
         }
         Integer expectedVersionCode = call.getInt("expectedVersionCode");
@@ -210,9 +351,9 @@ public final class ApkDistributionPlugin extends Plugin {
             call.reject("apkPath is required", "INVALID_PATH");
             return;
         }
-        File apk = new File(apkPath);
-        if (!apk.exists() || !apk.isFile()) {
-            call.reject("APK file does not exist: " + apkPath, "FILE_NOT_FOUND");
+        File apk = resolveStoragePath(apkPath);
+        if (apk == null || !apk.exists() || !apk.isFile()) {
+            call.reject("APK file does not exist or is outside cache directory: " + apkPath, "FILE_NOT_FOUND");
             return;
         }
 
@@ -248,7 +389,11 @@ public final class ApkDistributionPlugin extends Plugin {
             call.reject("apkPath is required", "INVALID_PATH");
             return;
         }
-        File apk = new File(apkPath);
+        File apk = resolveStoragePath(apkPath);
+        if (apk == null) {
+            call.reject("Invalid APK path: must be within application cache directory", "INVALID_PATH");
+            return;
+        }
         boolean deleted = apk.exists() && apk.delete();
         JSObject result = new JSObject();
         result.put("deleted", deleted);
@@ -460,20 +605,26 @@ public final class ApkDistributionPlugin extends Plugin {
 
     /**
      * 把 destPath 解析为 File。
-     * - 绝对路径直接使用。
-     * - 相对路径（如 "medbox-update-20.apk"）解析到 getContext().getCacheDir()，
-     *   让 TS 层无需关心原生路径细节，且 FileProvider 已配置 cache-path 可共享。
+     * - 相对路径（如 "medbox-update-20.apk"）解析到 getContext().getCacheDir()。
+     * - 无论是相对路径还是绝对路径，均强制防御路径穿越（禁止包含 ".."），
+     *   并通过 canonicalPath 严格限定在应用 cacheDir 内，防止任意文件操作。
      */
     private File resolveStoragePath(String destPath) {
-        if (destPath == null || destPath.isEmpty()) return null;
-        File f = new File(destPath);
-        if (f.isAbsolute()) return f;
+        if (destPath == null || destPath.isEmpty() || destPath.contains("..")) return null;
         try {
             Context context = getContext();
             if (context == null) return null;
             File cacheDir = context.getCacheDir();
             if (cacheDir == null) return null;
-            return new File(cacheDir, destPath);
+
+            File f = new File(destPath);
+            File target = f.isAbsolute() ? f : new File(cacheDir, destPath);
+            String canonicalTarget = target.getCanonicalPath();
+            String canonicalCache = cacheDir.getCanonicalPath();
+            if (!canonicalTarget.equals(canonicalCache) && !canonicalTarget.startsWith(canonicalCache + File.separator)) {
+                return null;
+            }
+            return target;
         } catch (Exception error) {
             return null;
         }

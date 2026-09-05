@@ -165,10 +165,12 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     }));
     for (const peer of peers) {
       const row = el('div', { class: 'lan-sync-peer-row' });
-      row.append(el('div', {
-        class: 'lan-sync-peer-info',
-        html: `<strong>${escapeHtml(peer.deviceName)}</strong><span class="muted">${escapeHtml(peer.host)}:${peer.port}</span>`,
-      }));
+      const peerInfo = el('div', { class: 'lan-sync-peer-info' });
+      peerInfo.append(
+        el('strong', { text: peer.deviceName }),
+        el('span', { class: 'muted', text: `${peer.host}:${peer.port}` }),
+      );
+      row.append(peerInfo);
       const forget = el('button', { class: 'btn text', type: 'button', text: '忘记' });
       forget.onclick = () => {
         forgetPeer(peer.deviceId);
@@ -593,14 +595,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '资料没有传完，请重新同步。';
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 function deviceCard(title: string, summary: LanDeviceSummary, recommended: boolean): HTMLElement {
   const card = el('div', {

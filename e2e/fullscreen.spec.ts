@@ -5,10 +5,10 @@ const primaryRoutes = [
   { path: '/#/today', heading: '今天', name: 'today' },
   { path: '/#/meds', heading: '药品', name: 'medications' },
   { path: '/#/meds/inventory', heading: '库存', name: 'inventory' },
-  { path: '/#/history', heading: '服药历史', name: 'history' },
+  { path: '/#/history', heading: '用药日历', name: 'history' },
   { path: '/#/meds/new', heading: '新增药品', name: 'medication-batch' },
   { path: '/#/scan', heading: '分药', name: 'scanner' },
-  { path: '/#/settings', heading: '设置', name: 'settings' },
+  { path: '/#/settings', heading: '我的', name: 'settings' },
 ] as const;
 
 test.describe('fullscreen visual matrix', () => {

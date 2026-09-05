@@ -70,6 +70,7 @@
 
   --font-sans: 'MiSans', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-mono: 'SF Mono', 'SFMono-Regular', 'Menlo', 'Consolas', 'Source Code Pro', ui-monospace, monospace;
+  --fs-caption-sm: 13px;
   --fs-caption: 14px;
   --fs-footnote: 14px;
   --fs-subheadline: 14px;
@@ -167,10 +168,10 @@
   --color-surface-solid: #202128;
   --color-surface-glass: rgba(32, 33, 40, 0.78);
   --color-surface-muted: rgba(45, 46, 56, 0.85);
-  --color-text: #eceef5;
-  --color-text-muted: #9a9eb2;
-  --color-border: rgba(58, 60, 74, 0.8);
-  --color-border-glass: rgba(255, 255, 255, 0.16);
+  --color-text: #f3f4fa;
+  --color-text-muted: #a4a8bc;
+  --color-border: rgba(68, 71, 88, 0.85);
+  --color-border-glass: rgba(255, 255, 255, 0.18);
 
   --color-primary: #8b90e8;
   --color-primary-pressed: #6f74d8;

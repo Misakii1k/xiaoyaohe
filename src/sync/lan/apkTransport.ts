@@ -9,6 +9,7 @@
 // 与 LanSync 协议完全解耦：APK 走独立 TCP 端口，不受单会话锁限制。
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { showNotification } from '../../features/notifier';
+import { listKnownPeers } from './knownPeers';
 
 /** 本机版本号（构建期注入；测试环境 fallback 到 0）。 */
 export const LOCAL_APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -40,6 +41,8 @@ interface ApkDistributionPlugin {
   startServer(options: { apkPath: string }): Promise<{ port: number; apkPath: string }>;
   stopServer(): Promise<void>;
   download(options: { host: string; port: number; destPath: string }): Promise<{ bytes: number; destPath: string }>;
+  probePeer?(options: { host: string; port?: number; timeoutMs?: number }): Promise<{ reachable: boolean; host: string; port: number }>;
+  scanSubnet?(options?: { port?: number; timeoutMs?: number }): Promise<{ peers: Array<{ host: string; port: number }> }>;
   verifyApk(options: { apkPath: string; expectedVersionCode?: number }): Promise<{
     packageName: string;
     versionCode: number;
@@ -289,4 +292,100 @@ async function resolveApkCachePath(versionCode: number): Promise<string> {
   // 由 ApkDistributionPlugin 在原生侧若 destPath 为相对路径则解析到 cacheDir。
   // 这里使用一个明确约定的相对文件名，原生 Plugin 用 getContext().getCacheDir() 拼接。
   return `medbox-update-${versionCode}.apk`;
+}
+
+/**
+ * 主动扫描局域网内的设备以发现可用新版本。
+ * 优先级：
+ * 1. 已配对过的已知设备列表（已知对方 IP 且通信过）；
+ * 2. 同子网（/24）并发轻量探测（若原生提供 scanSubnet）。
+ *
+ * 发现新版本后会自动写入 localStorage 并派发 medbox:app-update-changed 事件，返回发现的更新；
+ * 若未发现新版本则返回 null。
+ */
+export async function scanLanForUpdates(): Promise<AvailableUpdate | null> {
+  if (!isApkDistributionAvailable()) {
+    throw new Error('当前环境不支持局域网更新（仅 Android 原生 App 支持）');
+  }
+
+  const candidateHosts = new Set<string>();
+
+  // 1. 收集已配对设备
+  try {
+    const peers = listKnownPeers();
+    for (const p of peers) {
+      if (p.host) candidateHosts.add(p.host);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // 2. 原生并发子网扫描
+  if (typeof plugin.scanSubnet === 'function') {
+    try {
+      const res = await plugin.scanSubnet({ port: APK_DISTRIBUTION_PORT, timeoutMs: 1000 });
+      if (res && Array.isArray(res.peers)) {
+        for (const p of res.peers) {
+          if (p.host) candidateHosts.add(p.host);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (candidateHosts.size === 0) {
+    return null;
+  }
+
+  // 3. 逐个候选源探测
+  for (const host of candidateHosts) {
+    try {
+      if (typeof plugin.probePeer === 'function') {
+        const probe = await plugin.probePeer({ host, port: APK_DISTRIBUTION_PORT, timeoutMs: 1200 });
+        if (!probe.reachable) continue;
+      }
+
+      // 临时拉取 APK 并直接验证版本
+      const probeDestPath = 'medbox-update-probe.apk';
+      await plugin.download({
+        host,
+        port: APK_DISTRIBUTION_PORT,
+        destPath: probeDestPath,
+      });
+
+      let archive: { packageName: string; versionCode: number; versionName: string };
+      try {
+        archive = await plugin.verifyApk({ apkPath: probeDestPath });
+      } catch {
+        await deleteApk(probeDestPath);
+        continue;
+      }
+
+      // 如果版本高于当前版本，说明找到了有效更新
+      if (archive.versionCode > LOCAL_APP_VERSION_CODE) {
+        await deleteApk(probeDestPath);
+        const update: AvailableUpdate = {
+          version: archive.versionName,
+          versionCode: archive.versionCode,
+          peerHost: host,
+          peerPort: APK_DISTRIBUTION_PORT,
+          discoveredAt: Date.now(),
+        };
+        try {
+          localStorage.setItem(AVAILABLE_UPDATE_KEY, JSON.stringify(update));
+        } catch {
+          /* ignore */
+        }
+        dispatchUpdateChanged();
+        return update;
+      } else {
+        await deleteApk(probeDestPath);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }

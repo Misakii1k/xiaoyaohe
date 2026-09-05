@@ -25,6 +25,20 @@ describe('medication batch editor progressive disclosure', () => {
     expect(page).toContain("variant: 'danger'");
     expect(page).toContain('actionDock });');
   });
+
+  it('structures the medication editor into a 3-step wizard workflow', () => {
+    const page = source('src/pages/MedEdit.ts');
+
+    expect(page).toContain('med-wizard-steps');
+    expect(page).toContain('med-step-1');
+    expect(page).toContain('med-step-2');
+    expect(page).toContain('med-step-3');
+    expect(page).toContain("'基本信息'");
+    expect(page).toContain("'用药计划'");
+    expect(page).toContain("'库存备注'");
+    expect(page).toContain("'上一步'");
+    expect(page).toContain("'下一步'");
+  });
 });
 
 describe('medication editor period-level reminder contract', () => {
