@@ -2,8 +2,16 @@
 
 Updated: 2026-09-06
 Integration branch: `main`
-Product version: `0.9.12`
+Product version: `0.9.13`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Always-Fullscreen Reminder + Unswipeable Alarm Page 2026-09-06 (workspace/claude)
+
+- **到点自动全屏（`MedicationAlarmContract.showNotification`）**：所有提醒方式（含默认 strong）到点一律自动全屏接管——fullScreenIntent + notify-first 后主动 startActivity + AlarmRingService 前台服务三重兜底；提醒通知一律常驻（不可划掉）。mode 只决定全屏页自动收起策略（不收起 / 60 秒 / 10 秒）。
+- **多任务不可划杀（`AndroidManifest.xml`）**：全屏服药页增加独立 `taskAffinity="com.medbox.app.alarm"`——不再寄生主任务，最近任务里不可见、随应用卡片划掉也不会被移除；配合常驻 KeepAliveService 前台服务保活进程。
+- **发布脚本修复**：release.mjs instrumentation 步骤改为真实存在的 `:app:connectedAndroidTest`（原 `connectedReleaseAndroidTest` 在 AGP 下不存在，发布链必挂）；根 `android/build.gradle` force kotlin-stdlib-jdk7/jdk8 至 1.8.22 消除插件模块 androidTest 重复类——`npm run release` 端到端首次全链路跑通。
+- **文案同步**：提醒方式标签更名（全屏提醒 · 不自动收起 / 10 秒收起 / 60 秒收起），相关 AI 工具描述、设置页提示与 e2e/单测断言同步。
+- **验证门与产物**：typecheck 0 错误；vitest 79 套件 461 全过；Playwright 56 全过；release 端到端含模拟器 instrumentation（app 模块 1/1 通过）与 94 个内嵌资产校验。产物 `release/xiaoyaohe-0.9.13-android-release.apk`（18,627,667 字节，较 0.9.12 +80 字节；SHA256 `34d76d04…5dadc`），已复制至用户桌面。待真机验证：前台其他应用 / 后台 / 锁屏三态自动全屏与多任务划杀保护。
 
 ## Scan-Unlock Auto-Take + Assistant History/Model Prefs + Batch Page Fixes 2026-09-06 (workspace/claude)
 

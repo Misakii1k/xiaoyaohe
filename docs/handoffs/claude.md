@@ -4,9 +4,23 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-06
 Status: active
-Latest version: `0.9.12` (Android `versionCode: 31`)
+Latest version: `0.9.13` (Android `versionCode: 32`)
 
 ## Summary of Accomplished Work
+
+### 20. 提醒到点必全屏 + 多任务不可划杀 (0.9.13)
+
+1. **全模式到点自动全屏（`MedicationAlarmContract.showNotification`）**：
+   - 移除 `wantsFullScreen = !"strong".equals(mode)` 的模式门槛——**任何提醒方式到点一律自动全屏接管**（前台任意页面 / 后台 / 锁屏 / 灭屏）：fullScreenIntent + notify-first 后借 BAL 窗口主动 `startActivity` + `AlarmRingService` 前台服务兜底，三重路径；
+   - 提醒通知改为一律 `setOngoing(true)`（下拉不可划掉）；全屏路径走 CHANNEL_ALARM（更长振动模式）；全屏意图权限被拒时降级 CHANNEL_STRONG heads-up（仍带操作按钮）；mode 现在只决定全屏页自动收起策略（strong 不收起 / persistent 60s / short 10s）；删除失去引用的 `vibrateStrong`。
+2. **多任务不可划杀（`AndroidManifest.xml`）**：`MedicationAlarmActivity` 增加 `android:taskAffinity="com.medbox.app.alarm"`——全屏页此前寄生在主应用任务里，用户在最近任务划掉应用卡片会连提醒页一起移除（正是"上滑强杀"的根源）；独立任务 + 既有 `excludeFromRecents` 使提醒页彻底不进多任务、也无法随主任务划掉；进程侧由常驻 `KeepAliveService` 前台服务保活。
+3. **文案同步**：`MEDICATION_REMINDER_MODE_LABEL` 更名为「全屏提醒 · 不自动收起 / 10 秒收起 / 60 秒收起」；`update_reminder_period_settings` 工具描述、权限降级提示、Settings 测试按钮 toast、`fireNativeMedicationAlarmNow` 测试载荷同步新语义；`reminder-periods.spec.ts` 与 `tests/assistantToolsExtended.test.ts` 断言同步。
+4. **发布脚本修复（0.9.12 遗留）**：`scripts/release.mjs` instrumentation 步骤由不存在的 `connectedReleaseAndroidTest`（AGP 仅为 testable 变体生成 connected 任务）改为 `:app:connectedAndroidTest`；根 `android/build.gradle` 增加 `subprojects.configurations.all.resolutionStrategy.force` 把 kotlin-stdlib-jdk7/jdk8 抬到 1.8.22（1.8 起为空壳构件），消除 `capacitor-cordova-android-plugins` androidTest 类路径的重复类失败——**`npm run release` 端到端首次全链路跑通**（含模拟器 instrumentation）。教训：Windows Git Bash 下 heredoc python 的 `io.open().write()` 未显式 close 导致两次补丁静默未落盘，务必用编辑工具或显式 close。
+5. **全绿验证门与 Release 打包产物**：
+   - `npm run typecheck`（0 errors）；`npm run test`（79 套件 461 测试全过）；`npx playwright test`（56 全过，release 门禁内含）；`build:web` + `cap sync` 成功；
+   - `npm run release -- --skip-install --android-variant release` 端到端成功：`:app:connectedAndroidTest`（模拟器 ldj_test35，1/1 通过）+ 94 个内嵌资产校验（aggregate `6c9e7fb6…0bd3`）；
+   - 发布产物：`medbox/release/xiaoyaohe-0.9.13-android-release.apk`（18,627,667 字节，较 0.9.12 +80 字节；SHA256 `34d76d04bf29817161e053d6a4f5242c6d5b687c8c3bbf2a977b6f6feab5dadc`），APK 与 SHA256SUMS 已复制至 `C:\Users\87850\Desktop\`。
+6. **待真机验证**：到点自动全屏在前台其他应用 / 后台 / 锁屏三种状态下的表现；多任务划杀保护；若 OEM「一键清理」仍可终止，建议用户加入电池优化白名单。
 
 ### 19. 扫码解锁直达已服用 + 小助手历史/模型偏好 + 批量页修复 (0.9.12)
 
