@@ -227,6 +227,23 @@
   line-height: 1.55;
 }
 
+/* 提醒测试 2x2 宫格：舒展排列，单行完整展示按钮文案 */
+.settings-test-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+.settings-test-grid .btn {
+  inline-size: 100%;
+  white-space: nowrap;
+  padding-inline: var(--space-2);
+  font-size: var(--fs-footnote);
+  min-block-size: 40px;
+  justify-content: center;
+}
+
 /* 时段提醒设置：4 个时段行 + 编辑器 */
 .period-setting-list { display: grid; gap: var(--space-2); margin-block-start: var(--space-3); }
 .period-setting-row {

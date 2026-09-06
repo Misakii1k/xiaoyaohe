@@ -500,7 +500,7 @@ export function progressRing(value: number, total: number): HTMLElement {
   track.setAttribute('class', 'ring-bg');
   track.setAttribute('cx', '50');
   track.setAttribute('cy', '50');
-  track.setAttribute('r', '38');
+  track.setAttribute('r', '40');
   track.setAttribute('pathLength', '100');
   svg.append(track);
 
@@ -510,7 +510,7 @@ export function progressRing(value: number, total: number): HTMLElement {
     glow.setAttribute('class', 'ring-glow ring-glow-animated');
     glow.setAttribute('cx', '50');
     glow.setAttribute('cy', '50');
-    glow.setAttribute('r', '38');
+    glow.setAttribute('r', '40');
     glow.setAttribute('pathLength', '100');
     glow.setAttribute('stroke', `url(#${gradientId})`);
     glow.setAttribute('stroke-linecap', 'round');
@@ -526,7 +526,7 @@ export function progressRing(value: number, total: number): HTMLElement {
     fg.setAttribute('class', 'ring-fg ring-fg-animated');
     fg.setAttribute('cx', '50');
     fg.setAttribute('cy', '50');
-    fg.setAttribute('r', '38');
+    fg.setAttribute('r', '40');
     fg.setAttribute('pathLength', '100');
     fg.setAttribute('stroke', `url(#${gradientId})`);
     fg.setAttribute('stroke-linecap', 'round');

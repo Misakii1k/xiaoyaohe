@@ -9,8 +9,11 @@ import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.view.KeyEvent
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -204,6 +207,36 @@ class MedicationAlarmActivity : ComponentActivity() {
 
         val locked = requireScan && !scanUnlocked.value
 
+        // 返回手势/按键拦截加固：
+        // 1. 取景器开启时：返回仅收起取景器；
+        // 2. 扫码锁定态：严禁退出，提示必须扫码并短震警告；
+        // 3. 非锁定态：返回手势自动转为「10分钟后提醒（贪睡）」，杜绝随手划掉漏服。
+        BackHandler(enabled = true) {
+            if (showScanner.value) {
+                showScanner.value = false
+                scanFeedback.value = null
+            } else if (locked) {
+                val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
+                val msg = if (isCustom) "强制提醒：请扫描已绑定的药盒或物品条码解除" else "强制提醒：请扫描专属解锁二维码解除"
+                scanFeedback.value = msg
+                try {
+                    vibrator?.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
+                } catch (ignored: Throwable) {
+                }
+                Toast.makeText(this@MedicationAlarmActivity, msg, Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MedicationAlarmActivity, "已延后 10 分钟提醒", Toast.LENGTH_SHORT).show()
+                act(MedicationAlarmContract.ACTION_SNOOZE)
+            }
+        }
+
+        LaunchedEffect(scanFeedback.value) {
+            if (scanFeedback.value != null) {
+                delay(3000)
+                scanFeedback.value = null
+            }
+        }
+
         // 自动关闭倒计时：strong 且未要求扫码时不自动关；进入取景器暂停计数
         val autoCloseSeconds: Int? = when {
             requireScan -> null
@@ -272,6 +305,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                     backdrop = backdrop,
                     groupPayload = data != null && "reminder-group" == data.optString("kind"),
                     locked = locked,
+                    scanFeedback = scanFeedback.value,
                     secondsLeft = if (autoCloseSeconds != null) secondsLeft.value else -1,
                     onStartScan = {
                         scanFeedback.value = null
@@ -309,9 +343,8 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     /** 扫码成功后的短振动与停止警报反馈 */
     private fun vibrateUnlock() {
+        silenceAlert()
         try {
-            ringtone?.takeIf { it.isPlaying }?.stop()
-            vibrator?.cancel()
             vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 60, 80, 60), -1))
         } catch (ignored: Throwable) {
         }
@@ -490,12 +523,13 @@ class MedicationAlarmActivity : ComponentActivity() {
         backdrop: Backdrop,
         groupPayload: Boolean,
         locked: Boolean,
+        scanFeedback: String? = null,
         secondsLeft: Int,
         onStartScan: () -> Unit,
     ) {
         if (locked) {
             val expectedToken = MedicationAlarmContract.scanTokenOf(payload)
-            ScanLockedCard(expectedToken, onStartScan)
+            ScanLockedCard(expectedToken, scanFeedback, onStartScan)
             return
         }
 
@@ -537,7 +571,7 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     /** 锁定态卡片：锁定说明 + 扫码主 CTA（渐变填充） */
     @Composable
-    private fun ScanLockedCard(expectedToken: String, onStartScan: () -> Unit) {
+    private fun ScanLockedCard(expectedToken: String, scanFeedback: String?, onStartScan: () -> Unit) {
         val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
@@ -557,6 +591,13 @@ class MedicationAlarmActivity : ComponentActivity() {
                 else "起身走到贴有解锁二维码的地方\n扫描配对码后才能完成服药",
                 style = TextStyle(fontSize = 14.sp, color = InkSoft, textAlign = TextAlign.Center, lineHeight = 21.sp),
             )
+            if (!scanFeedback.isNullOrEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                BasicText(
+                    scanFeedback,
+                    style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Red, textAlign = TextAlign.Center),
+                )
+            }
             Spacer(Modifier.height(18.dp))
             PrimaryGradientButton(
                 label = if (isCustom) "扫描绑定条码/二维码" else "扫描解锁二维码",
@@ -1224,7 +1265,21 @@ class MedicationAlarmActivity : ComponentActivity() {
         finish()
     }
 
-    override fun onDestroy() {
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_VOLUME_DOWN,
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    // 按物理音量键仅静音当前警报铃声与振动，页面在屏幕上保持显示，用户仍须在屏幕上完成操作
+                    silenceAlert()
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun silenceAlert() {
         try {
             ringtone?.takeIf { it.isPlaying }?.stop()
         } catch (ignored: Throwable) {
@@ -1233,6 +1288,10 @@ class MedicationAlarmActivity : ComponentActivity() {
             vibrator?.cancel()
         } catch (ignored: Throwable) {
         }
+    }
+
+    override fun onDestroy() {
+        silenceAlert()
         super.onDestroy()
     }
 

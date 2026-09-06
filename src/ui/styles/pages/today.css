@@ -22,11 +22,17 @@
 }
 
 .today-header-title {
-  font-size: 28px;
-  font-weight: 900;
+  font-size: var(--fs-title1, 22px);
+  font-weight: 700;
   color: var(--color-text);
   margin: 0;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.4px;
+  line-height: 1.25;
+}
+
+.today-header-title:focus,
+.today-header-title:focus-visible {
+  outline: none;
 }
 
 .today-header-date {

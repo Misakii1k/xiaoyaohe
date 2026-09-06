@@ -201,6 +201,7 @@ body {
   color: var(--label-primary);
 }
 
+h1[tabindex='-1']:focus,
 .topbar h1[tabindex='-1']:focus {
   outline: none;
 }
@@ -896,7 +897,7 @@ textarea {
 .progress-ring .ring-bg {
   fill: none;
   stroke: #edf0fc;
-  stroke-width: 10;
+  stroke-width: 8;
 }
 
 [data-theme='dark'] .progress-ring .ring-bg {
@@ -905,7 +906,7 @@ textarea {
 
 .progress-ring .ring-glow {
   fill: none;
-  stroke-width: 13;
+  stroke-width: 10;
   stroke-linecap: round;
   opacity: 0.55;
   transition: stroke-dasharray var(--dur-slow) var(--ease-out);
@@ -917,7 +918,7 @@ textarea {
 
 .progress-ring .ring-fg {
   fill: none;
-  stroke-width: 10;
+  stroke-width: 8;
   stroke-linecap: round;
   filter: drop-shadow(0 4px 10px rgba(79, 70, 229, 0.3));
   transition: stroke-dasharray var(--dur-slow) var(--ease-out);
@@ -942,25 +943,27 @@ textarea {
   align-items: baseline;
   justify-content: center;
   transform: translateY(1px);
+  white-space: nowrap;
+  max-inline-size: 100%;
 }
 
 .progress-ring .ring-num,
 .progress-ring .ring-value {
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 800;
   line-height: 1;
   color: var(--color-text, #1e202e);
-  letter-spacing: -1px;
+  letter-spacing: -0.6px;
   font-variant-numeric: tabular-nums;
   font-family: var(--font-sans);
 }
 
 .progress-ring .ring-unit {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1;
   color: var(--color-text, #1e202e);
-  margin-left: 1px;
+  margin-left: 2px;
   font-family: var(--font-sans);
 }
 

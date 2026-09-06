@@ -5,6 +5,46 @@ Integration branch: `main`
 Product version: `0.9.11`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## Fullscreen Medication Alarm Hardening (Anti-Bypass & Volume Mute) 2026-09-05 (workspace/claude)
+
+- **返回手势与按键防穿透/防绕过加固（`MedicationAlarmActivity.kt`）**：
+  - **取景器守卫**：用户在扫描药盒或解锁码时，按返回键仅收起取景器（`showScanner = false`），不关闭提醒 Activity；
+  - **扫码锁定态防绕过**：开启扫码强制解除（`locked == true`）时，Back 手势与物理返回键被严格拦截；触发短震动并在界面（卡片中央与底部）显示「强制提醒：请扫描已绑定的药盒或物品条码解除」红色警示，杜绝随手划掉漏服；
+  - **非锁定态防误触保护**：普通或已扫码状态下，返回手势自动转为「10分钟后提醒（SNOOZE）」，绝不让用户随手划掉直接关闭闹钟导致漏服。
+- **物理音量键静音拦截（`dispatchKeyEvent`）**：
+  - 拦截 `KEYCODE_VOLUME_DOWN` 与 `KEYCODE_VOLUME_UP`；
+  - 在公共场合或会议中按压音量键可快速静音铃声与震动（`silenceAlert()`），但页面保持在最前端，用户必须在屏幕上完成操作。
+- **全绿验证门与 Release 打包产物**：
+  - `npm run typecheck` (0 errors)
+  - `npm run test` (76 个测试套件，448 个测试 100% 通过)
+  - `npm run build:web` 构建成功
+  - `npx cap sync android` 同步成功
+  - `./gradlew.bat testReleaseUnitTest assembleRelease` (BUILD SUCCESSFUL in 1m 8s, 211 tasks)
+  - `scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `749a8ffe...`）
+  - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `acee36d280de7a631a6d4a4f6a32f4b4191cf1398dda4a4e43eb8044c46ab447`)，并已同步复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
+
+## Home Topbar & Progress Ring Fix + Settings Reminders Layout & Copy Optimization 2026-09-05 (workspace/claude)
+
+- **首页顶栏规范统一与 Android WebView 焦点黄框根治（`Today.ts`, `today.css`, `legacy.css`）**：
+  - **根因分析**：路由跳转时 `announceNavigation()` 对 `h1` 执行 `.focus({ preventScroll: true })` 以保障无障碍读屏，但在「今天」页自建的大标题 `.today-header-title` 上未声明 `outline: none`，导致 Android WebView / Chromium 渲染出默认黄色系统焦点矩形框；
+  - **修复**：为 `.today-header-title` 增加 `:focus, :focus-visible { outline: none; }`，并在 `legacy.css` 全局追加 `h1[tabindex='-1']:focus { outline: none; }` 预防机制；
+  - **字号与层级规范**：将「今天」页大标题字号由 `28px` 调整为 `var(--fs-title1, 22px)`，字重调整为 `700`，字距 `-0.4px`，与「我的」等主页面统一，同时保留日期副标与右侧 AI 助手及头像入口。
+- **进度环 100% 溢出修复与空间优化（`components.ts`, `legacy.css`）**：
+  - **扩大圆环内部净空**：SVG 半径 `r` 从 `38` 适度扩大至 `40`，描边 `stroke-width` 从 `10` 精简微调至 `8`，内部净圆直径从 `66%` 提升至 `72%`；
+  - **数值与单位排版微调**：数值字号微调为 `26px`，字距 `-0.6px`，单位 `%` 微调为 `13px`；在 `.ring-center-content` 上增加 `white-space: nowrap; max-inline-size: 100%;` 保护，彻底解决 100% 在系统字体放大下的折行和压线问题。
+- **设置页用药提醒测试按钮 2x2 宫格化与文案精简（`Settings.ts`, `settings.css`）**：
+  - **测试按钮 2x2 宫格布局**：解决原先 4 个测试按钮挤在单行 `btn-row` 导致严重缩窄、文字多行折叠的问题，新增 `.settings-test-grid` 样式类（双列网格、各占 50%、单行居中、40px 规范高度），按钮统一次要 `tonal` 样式；
+  - **文案去重与精简**：移除图2提醒说明中与时段聚合重复的条目，聚焦系统通知、精确闹钟与后台活动三项核心指引；将图3时段说明精简为通俗易懂的“每天按早、中、晚、睡前各发送 1 次聚合提醒。点击下方时段可自定义整体时间与响铃方式。”，移除“库存归因”等晦涩技术术语；
+  - **时段行箭头修复**：将误用的反向向左箭头 `icon('arrow-left')` 更换为标准的前往进入箭头 `icon('chevron-right')`。
+- **全绿验证门与 Release 打包产物**：
+  - `npm run typecheck` (0 errors)
+  - `npm run test` (76 个测试套件，448 个测试 100% 通过)
+  - `npm run build:web` 构建成功
+  - `npx cap sync android` 同步成功
+  - `./gradlew.bat testReleaseUnitTest assembleRelease` (BUILD SUCCESSFUL in 1m 7s, 224 tasks)
+  - `scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `749a8ffe...`）
+  - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `f8e3ef152f15732ec05947c2f36623ad4de21c39eb04ac5137088b9f8c1261f2`)，并已同步复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
+
 ## Frontend Internal Code Leak Elimination & Android QR Unlock Engine Overhaul 2026-09-05 (workspace/claude)
 
 - **根除内部码与 HTML 标签外显（`Settings.ts` & `settingsPanel.ts`）**：

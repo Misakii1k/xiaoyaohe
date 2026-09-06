@@ -8,6 +8,46 @@ Latest version: `0.9.11` (Android `versionCode: 30`)
 
 ## Summary of Accomplished Work
 
+### 18. 全屏用药提醒防误触与防绕过安全加固 (0.9.11)
+
+1. **手势穿透与返回键安全防线（`MedicationAlarmActivity.kt`）**：
+   - **取景器状态守卫**：用户在扫描药盒或解锁码时，按系统返回键或侧滑手势仅收起取景器（`showScanner = false`）回到全屏提醒卡片，绝不关闭提醒 Activity；
+   - **强制扫码锁定态防绕过**：当开启扫码强制解除（`locked == true`）时，Back 手势/按键被严格拦截；触发短震动警示并在屏幕中央及底部展示「强制提醒：请扫描已绑定的药盒或物品条码解除」红色警告，杜绝随手划掉漏服；
+   - **普通/已解锁态防误触**：用户在非锁定态下按返回键或侧滑，不会直接丢弃提醒，而是自动触发「10 分钟后提醒（延后/贪睡）」，保证用药计划不会因意外滑屏而丢失。
+2. **物理音量键静音拦截（`dispatchKeyEvent`）**：
+   - 拦截 `KEYCODE_VOLUME_DOWN` 与 `KEYCODE_VOLUME_UP` 按键事件；
+   - 用户在公共场合或开会时按压音量键可立即静音铃声与震动（`silenceAlert()`），但界面依然坚守在屏幕上，用户必须在屏幕上点击「服药」或「稍后提醒」完成操作，平衡了防扰与服药提醒强制性。
+3. **全绿验证门与 Release 打包产物**：
+   - `npm run typecheck` (0 errors)
+   - `npm run test` (76 个测试套件，448 个测试 100% 通过)
+   - `npm run build:web` 构建成功
+   - `npx cap sync android` 同步成功
+   - `./gradlew.bat testReleaseUnitTest assembleRelease` (BUILD SUCCESSFUL in 1m 8s, 211 tasks)
+   - `scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `749a8ffe...`）
+   - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `acee36d280de7a631a6d4a4f6a32f4b4191cf1398dda4a4e43eb8044c46ab447`)，并已同步复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
+
+### 17. 首页顶栏规范统一与进度环修复 + 设置页提醒布局与文案优化 (0.9.11)
+
+1. **首页顶栏规范统一与 Android WebView 焦点黄框根治（`Today.ts`, `today.css`, `legacy.css`）**：
+   - 根治路由切换时 `announceNavigation()` 对 `h1` 执行 `.focus({ preventScroll: true })` 触发的 Android WebView 默认黄色系统焦点矩形框：为 `.today-header-title` 添加 `:focus, :focus-visible { outline: none; }`，并在 `legacy.css` 全局补充 `h1[tabindex='-1']:focus { outline: none; }`；
+   - 规范大标题规格：字号由 `28px` 降至 `var(--fs-title1, 22px)`，字重 `700`，字距 `-0.4px`，与全站各 Tab 顶栏保持视觉层级一致，保留日期副标与右侧 AI 助手/头像入口。
+2. **进度环 100% 溢出修复与空间优化（`components.ts`, `legacy.css`）**：
+   - SVG 半径 `r` 从 `38` 扩大至 `40`，描边 `stroke-width` 从 `10` 微调至 `8`，内部净圆直径从 `66%` 提升至 `72%`；
+   - 数值字号微调为 `26px`，单位 `%` 微调为 `13px`；增加 `white-space: nowrap; max-inline-size: 100%;` 保护，彻底解决 100% 压线溢出问题。
+3. **设置页用药提醒测试按钮 2x2 宫格化与文案精简（`Settings.ts`, `settings.css`）**：
+   - 将原挤在单行的 4 个测试按钮改造为 2x2 宫格布局（`.settings-test-grid`），统一次要 `tonal` 样式，单行舒展呈现；
+   - 精简图2提醒说明，去重与时段聚合相关的表述，聚焦通知、精确闹钟与后台活动；
+   - 图3时段设置文案精简为“每天按早、中、晚、睡前各发送 1 次聚合提醒。点击下方时段可自定义整体时间与响铃方式。”；
+   - 修复时段列表行箭头：将 `icon('arrow-left')` 替换为标准前往箭头 `icon('chevron-right')`。
+4. **全绿验证门与 Release 打包产物**：
+   - `npm run typecheck` (0 errors)
+   - `npm run test` (76 个测试套件，448 个测试 100% 通过)
+   - `npm run build:web` 构建成功
+   - `npx cap sync android` 同步成功
+   - `./gradlew.bat testReleaseUnitTest assembleRelease` (BUILD SUCCESSFUL in 1m 7s, 224 tasks)
+   - `scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `749a8ffe...`）
+   - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `f8e3ef152f15732ec05947c2f36623ad4de21c39eb04ac5137088b9f8c1261f2`)，并已同步复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
+
 ### 16. 全屏闹钟生活二维码/条形码解锁识别引擎重构与就地试验闭环 (0.9.11)
 
 针对用户反馈的「选择生活中的二维码后，在全屏闹钟解锁试验情况下无法正常识别解锁」问题，深入底层排查 Android CameraX + ZXing 条码识别管线与解锁闭环，完成彻底重构：

@@ -879,8 +879,8 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     );
   }
 
-  const row = el('div', { class: 'btn-row mt-3' });
   if (perm !== 'granted') {
+    const row = el('div', { class: 'btn-row mt-3' });
     const grantBtn = el('button', { class: 'btn', html: '开启系统通知' });
     grantBtn.onclick = async () => {
       const r = await requestPermission();
@@ -890,8 +890,11 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       rerender();
     };
     row.append(grantBtn);
+    body.append(row);
   } else {
-    const testBtn = el('button', { class: 'btn', html: '发送测试通知' });
+    const isNativeAlarm = isNativeReminderPlatform() && nativeMedicationAlarmAvailable();
+    const row = el('div', { class: isNativeAlarm ? 'settings-test-grid' : 'btn-row mt-3' });
+    const testBtn = el('button', { class: 'btn tonal', html: '发送测试通知' });
     testBtn.onclick = async () => {
       const ok = await showNotification('测试提醒', {
         body: '看到这条说明当前通知通道可用',
@@ -905,7 +908,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       toast('已扫描一次到点任务');
     };
     row.append(testBtn, tickBtn);
-    if (isNativeReminderPlatform() && nativeMedicationAlarmAvailable()) {
+    if (isNativeAlarm) {
       const strongTest = el('button', { class: 'btn tonal', html: '测试锁屏强提醒' });
       strongTest.onclick = async () => {
         try {
@@ -915,7 +918,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
           toast('触发失败');
         }
       };
-      const fullTest = el('button', { class: 'btn', html: '测试全屏提醒' });
+      const fullTest = el('button', { class: 'btn tonal', html: '测试全屏提醒' });
       fullTest.onclick = async () => {
         try {
           await fireNativeMedicationAlarmNow('fullscreen-short');
@@ -926,8 +929,8 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       };
       row.append(strongTest, fullTest);
     }
+    body.append(row);
   }
-  body.append(row);
 
   if (perm === 'granted' && isNativeReminderPlatform()) {
     const exactAlarm = getExactAlarmCapability();
@@ -1059,11 +1062,11 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     el('div', {
       class: 'settings-hint',
       html: native
-        ? '提醒说明：\n· 请允许通知、精确闹钟，以及（Android 14+）全屏提醒权限。\n' +
-          '· 提醒按时间段聚合：整体时间、提醒方式与重复策略都在「时段提醒设置」里统一管理。\n' +
-          '· 全屏模式会在锁屏时点亮屏幕并弹出服药页；无权限时自动降级为增强通知。\n' +
-          '· 若系统限制后台运行，请在电池优化里允许本应用。\n' +
-          '· 回到应用时会自动检查遗漏的任务并重建闹钟。'
+        ? '提醒说明：\n' +
+          '· 请确保允许系统通知、精确闹钟以及（Android 14+）全屏提醒权限。\n' +
+          '· 全屏模式将在到点时亮屏提醒，无权限时自动降级为通知栏提醒。\n' +
+          '· 若系统限制后台运行，请在电池优化中将本应用设为允许后台活动。\n' +
+          '· 重新进入应用时会自动检查遗漏的提醒并校准闹钟。'
         : '网页端提醒说明：\n· 把本页「添加到主屏幕」再打开，后台补发的成功率会高不少。\n' +
           '· 页面开着（包括切到后台但没被系统清掉）时，提醒最准时。\n' +
           '· 手机息屏久了、或者你清了后台，补发会延迟，也可能直接丢失。\n' +
@@ -1305,8 +1308,7 @@ async function renderPeriodSettingsBody(body: HTMLElement, panelEl: HTMLElement)
   body.replaceChildren();
   body.append(el('div', {
     class: 'settings-hint',
-    html: '提醒按时间段聚合：每天早上/中午/晚上/睡前各发一条整体提醒，不再每种药各响一次。' +
-      '下方设置统一决定该时段所有药的整体时间、方式与重复策略；每种药自己的精确时间仍保留，仅用于记录与库存归因。',
+    html: '每天按早、中、晚、睡前各发送 1 次聚合提醒。点击下方时段可自定义整体时间与响铃方式。',
   }));
 
   const needsReview = settings.filter((s) => s.state === 'needs-review');
@@ -1324,7 +1326,7 @@ async function renderPeriodSettingsBody(body: HTMLElement, panelEl: HTMLElement)
 
   body.append(el('div', {
     class: 'settings-hint',
-    html: '新增药品不会改动上面的时段设置。提醒是否发送仍受「系统通知」开关控制。',
+    html: '各药品自身的具体时间仍保留，新增药品不会重置上方设置。',
   }));
 }
 
@@ -1353,7 +1355,7 @@ function buildPeriodSettingRow(
     el('div', { class: 'settings-toggle-desc', text: meta.join(' · ') }),
   );
   const chevron = el('span', { class: 'panel-chevron' });
-  chevron.append(icon('arrow-left'));
+  chevron.append(icon('chevron-right'));
   row.append(copy, chevron);
   const open = () => void renderPeriodEditor(body, setting, panelEl);
   row.onclick = open;
