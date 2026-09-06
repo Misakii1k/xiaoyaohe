@@ -36,7 +36,8 @@
             android:launchMode="singleTop"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:theme="@style/MedicationAlarmTheme" />
+            android:theme="@style/MedicationAlarmTheme"
+            android:taskAffinity="com.medbox.app.alarm" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

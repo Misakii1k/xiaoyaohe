@@ -442,7 +442,7 @@ const setReminderPeriodSettings: AssistantTool = {
     properties: {
       slot: { type: 'string', enum: PERIOD_SCOPE_VALUES, description: '要设置的时段：morning/noon/evening/bedtime；all=全部时段统一设置' },
       time: { type: 'string', description: '整体提醒时间，24 小时制 HH:mm，如 08:00' },
-      mode: { type: 'string', enum: REMINDER_MODE_VALUES, description: 'strong=增强通知；fullscreen-short=短时全屏；fullscreen-persistent=持续全屏' },
+      mode: { type: 'string', enum: REMINDER_MODE_VALUES, description: 'strong=全屏提醒（不自动收起）；fullscreen-short=全屏提醒（10 秒自动收起）；fullscreen-persistent=全屏提醒（60 秒自动收起）' },
       escalate: {
         type: 'object',
         properties: {
@@ -524,7 +524,7 @@ const setReminderPeriodSettings: AssistantTool = {
     const warnings = [
       saveWarning ? '部分时段保存失败，请稍后重试。' : '',
       scheduleWarning ? '提醒已保存，但系统闹钟重排暂未完成，应用会自动重试。' : '',
-      permissionWarning ? '系统尚未授予全屏提醒权限；到权限开放前，全屏提醒可能降级为增强通知。' : '',
+      permissionWarning ? '系统尚未授予全屏提醒权限；到权限开放前，到点提醒可能降级为顶部通知。' : '',
     ].filter(Boolean);
     const changes: string[] = [];
     if (time) changes.push(`整体时间 ${time}`);

@@ -444,7 +444,7 @@ describe('set_reminder_period_settings', () => {
     const msg = tool.confirm!({ slot: 'bedtime', time: '22:00', mode: 'fullscreen-persistent' });
     expect(msg).toContain('睡前');
     expect(msg).toContain('22:00');
-    expect(msg).toContain('持续全屏');
+    expect(msg).toContain('60 秒收起');
   });
 });
 

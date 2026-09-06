@@ -72,7 +72,11 @@ export function createReleaseCommands({ skipInstall, variant }) {
   commands.push({
     label: 'Run Android instrumentation tests',
     command: gradle,
-    args: [`connected${gradleVariant}AndroidTest`],
+    // AGP 仅为 testable 变体（默认 debug）生成 connected 任务；release 变体的
+    // connectedReleaseAndroidTest 不存在（曾导致发布链必挂）。这里固定跑 app
+    // 模块的 connectedAndroidTest（debug 变体 instrumented 测试，需已连接的
+    // 设备/模拟器），variant 无关——instrumentation 验证的是同一份 native 代码。
+    args: [':app:connectedAndroidTest'],
     cwd: resolve(root, 'android'),
   });
   return commands;

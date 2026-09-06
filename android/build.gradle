@@ -30,6 +30,19 @@ allprojects {
     }
 }
 
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            // kotlin-stdlib 1.8 起已把 jdk7/jdk8 并入主构件；传递依赖带入的旧
+            // 1.6.x kotlin-stdlib-jdk7/jdk8 会在 androidTest 类路径上与 1.8.x
+            // 主构件产生重复类（checkDebugAndroidTestDuplicateClasses 失败）。
+            // 统一抬到 1.8.22：该版本起 jdk7/jdk8 只是空壳委派构件，不再携带类。
+            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+            force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

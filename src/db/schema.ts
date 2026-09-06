@@ -173,9 +173,9 @@ export interface InventoryOperationLog {
 export type MedicationReminderMode = 'strong' | 'fullscreen-short' | 'fullscreen-persistent';
 
 export const MEDICATION_REMINDER_MODE_LABEL: Record<MedicationReminderMode, string> = {
-  strong: '增强通知',
-  'fullscreen-short': '短时全屏',
-  'fullscreen-persistent': '持续全屏',
+  strong: '全屏提醒 · 不自动收起',
+  'fullscreen-short': '全屏提醒 · 10 秒收起',
+  'fullscreen-persistent': '全屏提醒 · 60 秒收起',
 };
 
 export function normalizeMedicationReminderMode(value: unknown): MedicationReminderMode {

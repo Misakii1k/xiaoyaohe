@@ -123,10 +123,8 @@ export async function fireNativeMedicationAlarmNow(
     : undefined;
   await plugin.fireNow({
     mode,
-    title: mode === 'strong' ? '测试增强通知' : '测试全屏提醒',
-    body: mode === 'strong'
-      ? '高优先级通知 + 铃声振动（锁屏可见）'
-      : '应点亮屏幕并显示全屏服药页',
+    title: '测试强提醒',
+    body: '应自动弹出全屏服药页；被系统拦截时以高优先级通知兜底（锁屏可见）',
     ...(scanVerify && scanToken ? { scanVerify, scanToken } : {}),
   });
 }

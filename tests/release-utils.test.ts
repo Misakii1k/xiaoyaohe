@@ -311,7 +311,7 @@ describe('release command orchestration', () => {
     ]);
     expect(commands[0]?.args).toEqual(['audit', '--audit-level=low']);
     expect(commands.at(-2)?.args).toEqual(['testReleaseUnitTest', 'assembleRelease']);
-    expect(commands.at(-1)?.args).toEqual(['connectedReleaseAndroidTest']);
+    expect(commands.at(-1)?.args).toEqual([':app:connectedAndroidTest']);
 
     expect(commands.map((command) => command.label)).toContain('Run Android instrumentation tests');
   });
@@ -336,7 +336,7 @@ describe('Android-only distribution contract', () => {
 
     expect(packageJson).toMatchObject({
       name: 'xiaoyaohe',
-      version: '0.9.12',
+      version: '0.9.13',
       description: expect.stringContaining('Android App'),
       dependencies: { qrcode: expect.any(String) },
       devDependencies: { '@types/qrcode': expect.any(String) },

@@ -913,7 +913,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       strongTest.onclick = async () => {
         try {
           await fireNativeMedicationAlarmNow('strong');
-          toast('已触发增强通知（请看通知栏/锁屏）');
+          toast('已触发强提醒（如未弹出全屏页，请看通知栏/锁屏）');
         } catch {
           toast('触发失败');
         }
@@ -966,8 +966,8 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
         el('div', { class: 'banner warn mt-3' }, [
           el('span', {
             html: fullScreen === 'denied'
-              ? '全屏提醒权限尚未开启；选择全屏模式的药物会自动降级为增强通知。'
-              : '当前系统不提供全屏提醒权限，相关提醒会使用增强通知。',
+              ? '全屏提醒权限尚未开启；到点提醒会以顶部通知兜底，不再自动全屏。'
+              : '当前系统不提供全屏提醒权限，到点提醒会以顶部通知兜底。',
           }),
         ]),
       );

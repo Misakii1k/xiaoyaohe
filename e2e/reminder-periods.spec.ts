@@ -99,9 +99,9 @@ test.describe('period-level reminder settings', () => {
     await expect(rows.nth(1)).toContainText('中午');
     await expect(rows.nth(2)).toContainText('晚上');
     await expect(rows.nth(3)).toContainText('睡前');
-    // 默认时间与方式摘要
+    // 默认时间与方式摘要（0.9.13 起三种方式到点均全屏，标签只区分自动收起策略）
     await expect(rows.nth(0)).toContainText('08:00');
-    await expect(rows.nth(0)).toContainText('增强通知');
+    await expect(rows.nth(0)).toContainText('不自动收起');
     await expect(rows.nth(1)).toContainText('12:00');
     await expect(rows.nth(2)).toContainText('18:00');
     await expect(rows.nth(3)).toContainText('21:30');

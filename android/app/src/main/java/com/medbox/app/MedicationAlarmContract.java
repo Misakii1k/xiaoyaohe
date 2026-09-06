@@ -183,10 +183,12 @@ final class MedicationAlarmContract {
         ensureChannels(context);
         int id = payload.getInt("id");
         String mode = payload.optString("mode", "strong");
-        boolean wantsFullScreen = !"strong".equals(mode);
-        // 扫码解除模式：strong 也升级为全屏拦截面，且剥离通知按钮防绕过
+        // 0.9.13：所有提醒到点一律自动全屏接管（前台任意页面 / 后台 / 锁屏 / 灭屏），
+        // 通知只作为全屏页拉起被系统拦截时的兜底入口。
+        // mode 不再区分是否全屏，只决定全屏页的自动收起策略
+        // （strong 不自动收起、fullscreen-persistent 60s、fullscreen-short 10s）。
         boolean requireScan = requiresScanVerification(payload);
-        boolean fullScreen = (requireScan || wantsFullScreen) && canUseFullScreen(context);
+        boolean fullScreen = canUseFullScreen(context);
         Intent open = new Intent(context, MedicationAlarmActivity.class)
             .putExtra(EXTRA_PAYLOAD, payload.toString())
             .addFlags(
@@ -197,8 +199,9 @@ final class MedicationAlarmContract {
         PendingIntent openPending = PendingIntent.getActivity(
             context, id, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
-        // 增强通知也走高优先级 + 锁屏公开；全屏模式额外挂 fullScreenIntent。
-        String channel = wantsFullScreen ? CHANNEL_ALARM : CHANNEL_STRONG;
+        // 全屏路径走 CHANNEL_ALARM（更长的振动模式）；仅当全屏意图权限被拒时
+        // 降级回 CHANNEL_STRONG 的 heads-up 通知（仍带操作按钮可正常处理）。
+        String channel = fullScreen ? CHANNEL_ALARM : CHANNEL_STRONG;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_stat_medbox)
             .setColor(Color.rgb(23, 116, 91))
@@ -212,7 +215,8 @@ final class MedicationAlarmContract {
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setOnlyAlertOnce(false)
             .setAutoCancel(false)
-            .setOngoing("fullscreen-persistent".equals(mode));
+            // 常驻：下拉里不能被随手划掉，必须经全屏页或按钮完成操作
+            .setOngoing(true);
         if (!requireScan) {
             if (isGroupPayload(payload)) {
                 // 组载荷：通知按钮只提供整体操作。「全部已服用」→ all-taken（TS 侧一次批量记录）；
@@ -236,18 +240,13 @@ final class MedicationAlarmContract {
         // 通知发出后会授予短暂的「后台 Activity 启动」窗口——所以先 notify，再借
         // 这个窗口主动 startActivity，亮屏解锁时也能拉起全屏页面。
         context.getSystemService(NotificationManager.class).notify(id, builder.build());
-        if (fullScreen && (wantsFullScreen || requireScan)) {
+        if (fullScreen) {
             try {
                 context.startActivity(open);
             } catch (Throwable directFailed) {
                 // 直接启动被拦截（BAL 限制 / OEM 定制）：前台服务兜底再拉一次。
                 AlarmRingService.launch(context, payload.toString());
             }
-        }
-        // 强提醒（非全屏）路径补一次显式振动：部分机型会抑制通道配置的振动，
-        // 这里像全屏 Activity 那样主动调 Vibrator，确保用户一定感受到。
-        if (!wantsFullScreen && !requireScan) {
-            vibrateStrong(context);
         }
     }
 
@@ -272,28 +271,6 @@ final class MedicationAlarmContract {
         if (!top.isEmpty()) return top;
         JSONObject data = payload.optJSONObject("data");
         return data == null ? "" : data.optString("scanToken");
-    }
-
-    /** strong 模式触发时显式振动 ~1.5 秒后停，不依赖通道配置被 OS 尊重。 */
-    private static void vibrateStrong(Context context) {
-        try {
-            Vibrator vibrator;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                VibratorManager vm = (VibratorManager) context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
-                vibrator = vm == null ? null : vm.getDefaultVibrator();
-            } else {
-                vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
-            }
-            if (vibrator == null || !vibrator.hasVibrator()) return;
-            long[] pattern = {0, 400, 200, 400};
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
-            } else {
-                vibrator.vibrate(pattern, -1);
-            }
-        } catch (Throwable ignored) {
-            // 振动不可用时不影响通知本身
-        }
     }
 
     private static PendingIntent actionPending(Context context, JSONObject payload, String action, int requestCode) {
