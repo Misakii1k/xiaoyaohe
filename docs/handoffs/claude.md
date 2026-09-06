@@ -2,11 +2,43 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-05
+Updated: 2026-09-06
 Status: active
-Latest version: `0.9.11` (Android `versionCode: 30`)
+Latest version: `0.9.12` (Android `versionCode: 31`)
 
 ## Summary of Accomplished Work
+
+### 19. 扫码解锁直达已服用 + 小助手历史/模型偏好 + 批量页修复 (0.9.12)
+
+1. **全屏提醒扫码成功直接视为已服用（`MedicationAlarmActivity.kt`）**：
+   - `onMatched` 不再仅解锁按钮：新增 `dispatchScanAutoTaken()`，单药记 `ACTION_TAKEN`、群组提醒记 `ACTION_ALL_TAKEN`（复用 `MedicationAlarmContract.handleAction` 原生队列，TS 端 `replayPendingMedicationReminderActions` 落库）；
+   - 新增 `autoResolved` 状态：扫码成功后 FooterActions 渲染「✓ 已扫码 · 已记录为已服用」成功态约 1.5s 后自动 `finish()`；`BackHandler` 在 resolved 态只关页不再叠加贪睡；会话切换（新闹钟同实例复用）时复位。
+2. **绑定扫码免上滑确认（`Settings.ts` `openBindCustomCodeSheet`）**：识别成功即 `scannerHost.hidden = true` 收起相机预览并 `scanner.pause()`（结果门控已暂停相机），`scrollToSheetTop()` 把结果与「确认绑定」滚入可视区；「重新扫码」恢复预览并 `resume()`。ScanSort `showUnknownCode` 结果卡增加 `scrollIntoView`。新增 `tests/settingsUiContracts.test.ts` 行为契约断言。
+3. **扫码识别提速（`scanner.ts` + `MedicationAlarmActivity.kt`）**：
+   - Web：`getUserMedia` 增加 `1280x720 ideal` 分辨率约束；BarcodeDetector 检测循环加 120ms 时间门限（约 8 次/秒）；html5-qrcode 回退 `fps 12` + qrbox 视口短边 60%（200-320px 收敛）。
+   - 原生：`MultiFormatReader` + `BARCODE_HINTS` 提升为扫描会话级复用（原每帧 new），帧间由 `decodeLuminance` 的 `reset()` 复位。
+4. **AI 小助手对话历史（DB v10）**：
+   - `src/db/local.ts` 升 v10 新增 `assistantMessages` store（`byCreatedAt` 索引）；`schema.ts` 新增 `AssistantChatRecord`（blocks 保持 unknown，避免 db→ai 反向依赖）；辅助函数 `appendAssistantMessage`（写入并裁剪至 200 条）/`listRecentAssistantMessages`/`clearAssistantMessages`。
+   - `AiAssistant.ts`：对话成功后 user/assistant 两条落库（附件不入库）；启动回填最近 50 条渲染 + 最近 12 条并入内存 `history` 延续上下文；`historyLoaded` 守卫防止问候语覆盖回填；「清空记录」同时清库。E2E fixture 同步升至 v10 并补齐两个本地 store。
+5. **卡片推送不再重复文字**：`present_card` 工具描述与 SYSTEM_PROMPT 规则 10 均改为「卡片已承载完整信息，正文不得复述卡片内容，至多一句补充」。
+6. **小助手页模型选择 + 推理强度（新 `src/ai/assistantPrefs.ts`）**：
+   - localStorage `medbox.assistant-prefs.v1` 持久化 `{ modelOverride, reasoningEffort: low|medium|high }`，变更广播 `medbox:assistant-prefs` 事件；
+   - 请求链路：`AssistantTurnEvents` 增 `modelOverride`/`reasoningEffort`；`requestChat` 仅对**当前活跃供应商**生效（故障转移候选家用各自配置，避免 override 404）；400 且错误匹配 `UNSUPPORTED_PARAM_RE` 时与 stream 降级合并为一次重试去参；
+   - 面板头部下方新增偏好行：模型下拉（默认模型 + 体检模型列表 + 刷新按钮拉取）与推理强度下拉（默认/低/中/高），样式见 `.ai-prefs-row`。
+7. **批量管理页显示修复（`medications.css`，纯 CSS）**：
+   - `.medication-batch-row` 网格规则收窄到 `.medication-batch-page` 作用域，修复普通药品列表被覆盖 flex 导致的编辑按钮掉行；
+   - 补齐批量页全部缺失样式：`medication-batch-body/copy/name/subline`、`medication-batch-slots`、`medication-slot-chip`（胶囊/图标/时间/禁用态）、`medication-batch-no-rules`、`medication-batch-sheet-title/hint/options`；
+   - `.medication-batch-dock` 允许换行：计数独占一行 + 四按钮 2×2，窄屏不再挤压溢出。
+8. **发布门禁与存量测试修复**：
+   - `npm audit fix` 清零 3 个传递依赖漏洞（release 审计门禁要求）；
+   - 修复 0.9.11 遗留的两个过时 E2E spec（当时改版后未同步、基线即可复现失败）：`camera-actions.spec.ts` 入口改「拍药盒识别」快捷卡 + 断言改为悬浮球 `display:none` 契约与 620px 操作行上限；`inventory-workflows.spec.ts` 改用 `.inventory-stepper-input` 与 `.inventory-add-preview-card` 新文案；
+   - `AppConfigurationTest`、`tests/release-utils.test.ts`、`src/sync/lan/store.test.ts` 版本/结构断言同步 0.9.12。
+9. **全绿验证门与 Release 打包产物**：
+   - `npm run typecheck`（0 errors）；`npm run test`（79 套件 461 测试全过）；`npx playwright test`（56 全过，含修复后的两个 spec）；`npm run build:web`、`npx cap sync android` 成功；
+   - `./gradlew.bat connectedAndroidTest`（模拟器 ldj_test35）：app 模块 instrumented 测试 1/1 通过（AppSecurityInstrumentedTest）；
+   - **发布脚本发现（待办）**：`scripts/release.mjs` 的 `connectedReleaseAndroidTest` 步骤在 AGP 下不可执行——release 变体默认不生成 connected 任务（仅 debug），且 `capacitor-cordova-android-plugins` 模块 androidTest 类路径存在 kotlin-stdlib-jdk7/jdk8 1.6.21 与 stdlib 1.8.22 重复类（根级 resolutionStrategy force/substitute 均不影响该生成模块）。本次以 `testReleaseUnitTest assembleRelease` + 模拟器 `connectedAndroidTest`（app 模块）+ `publishReleaseArtifacts` 校验等价完成门禁；建议后续将脚本步骤改为 `connectedAndroidTest` 并同步 `tests/release-utils.test.ts` 的命令契约。
+   - 发布产物：`medbox/release/xiaoyaohe-0.9.12-android-release.apk`（18,627,587 字节，较 0.9.11 +4,008 字节 +0.02%；SHA256 `22bfa36bf3993e66f809eab5130ee6a70529145f616b8b9c5b3cb49f5f9c1ee2`），APK 与 SHA256SUMS 已复制至 `C:\Users\87850\Desktop\`。
+10. **待真机验证**：扫码自动已服用全流程（触发强制提醒 → 扫码 → 自动落库 + 自动关闭）、绑定 sheet 收起预览交互；悬浮球 a11y 欠账：分药页「拍单录入/拍药盒识别」快捷卡为带 onclick 的 div，无 button role（键盘/读屏不可达），建议后续改为真按钮。
 
 ### 18. 全屏用药提醒防误触与防绕过安全加固 (0.9.11)
 

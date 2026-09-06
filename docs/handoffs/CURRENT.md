@@ -1,9 +1,21 @@
 # Current Integration State
 
-Updated: 2026-09-05
+Updated: 2026-09-06
 Integration branch: `main`
-Product version: `0.9.11`
+Product version: `0.9.12`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Scan-Unlock Auto-Take + Assistant History/Model Prefs + Batch Page Fixes 2026-09-06 (workspace/claude)
+
+- **全屏提醒扫码成功直接视为已服用（`MedicationAlarmActivity.kt`）**：单药记 `ACTION_TAKEN`、群组记 `ACTION_ALL_TAKEN`；成功态展示约 1.5s 后自动关闭；返回键在 resolved 态仅关页。无扫码要求的提醒行为不变。
+- **绑定扫码免上滑确认（`Settings.ts`）**：识别成功即收起相机预览并把「确认绑定」滚入可视区；ScanSort 未知码结果自动滚到可见位置。
+- **扫码识别提速**：Web 端 1280×720 分辨率约束 + 120ms 检测节流 + html5 取景框按视口放大；原生解码器会话级复用（不再每帧新建）。
+- **AI 小助手对话历史（DB v10 `assistantMessages`）**：本机保留最近 200 条，重启续聊、可一键清空；附件不入库。
+- **小助手卡片不再重复文字**：`present_card` 描述与系统提示词改为「卡片已承载完整信息，正文不复述」。
+- **小助手页新增模型选择与推理强度**：新 `src/ai/assistantPrefs.ts`；模型覆盖与 `reasoning_effort` 仅对活跃供应商生效，不支持参数的服务商自动去参重试；面板头部新增两个下拉 + 模型列表刷新。
+- **批量管理页显示修复（纯 CSS）**：补齐时段 chip/行内排版/dock 全部缺失样式；dock 计数一行 + 四按钮 2×2；同步修复普通药品列表的级联覆盖导致的编辑按钮掉行。
+- **存量测试修复**：0.9.11 遗留的两个过时 E2E spec（camera-actions / inventory-workflows，基线即可复现失败）已更新到现行 UI 契约。
+- **验证门与产物**：typecheck 0 错误；vitest 79 套件 461 测试全过；Playwright 56 全过；`build:web` + `cap sync` 成功；模拟器 `connectedAndroidTest` app 模块 1/1 通过。发布产物 `release/xiaoyaohe-0.9.12-android-release.apk`（18,627,587 字节，较 0.9.11 +0.02%；SHA256 `22bfa36b…c1ee2`），已复制至用户桌面。发布脚本 `release.mjs` 的 instrumentation 步骤缺陷（release 变体无 connected 任务 + 插件模块 kotlin 重复类）记录于 `docs/handoffs/claude.md` §19 待办。
 
 ## Fullscreen Medication Alarm Hardening (Anti-Bypass & Volume Mute) 2026-09-05 (workspace/claude)
 
