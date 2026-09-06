@@ -141,4 +141,16 @@ describe('settings information architecture contracts', () => {
     expect(settings).toContain('function formatBarcodeTypeLabel(format?: string)');
     expect(settings).toContain('function formatCustomScanCodeSummary(customLabel?: string, token?: string)');
   });
+
+  it('keeps the bind-scan confirm actions inside the sheet viewport after recognition', () => {
+    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+
+    // 识别成功即收起相机预览并暂停相机，结果与「确认绑定」直接落入可视区
+    expect(settings).toContain('scannerHost.hidden = true;');
+    expect(settings).toContain('void scanner?.pause().catch(() => {});');
+    // 结果渲染完后把 sheet 滚回顶部，确认按钮无需上滑
+    expect(settings).toContain("sheet.overlay.querySelector<HTMLElement>('.bottom-sheet')?.scrollTo({ top: 0 })");
+    // 「重新扫码」恢复取景
+    expect(settings).toContain('scannerHost.hidden = false;');
+  });
 });

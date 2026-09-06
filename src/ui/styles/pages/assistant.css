@@ -116,6 +116,43 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 .ai-panel-title { margin: 0; font-size: var(--fs-title3); font-weight: 700; }
 .ai-panel-subtitle { margin: 2px 0 0; color: var(--color-text-muted); font-size: var(--fs-footnote); }
 
+/* 对话偏好行：模型覆盖 + 推理强度（只影响小助手聊天） */
+.ai-prefs-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-4) 0;
+}
+
+.ai-pref-select {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  block-size: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: var(--fs-footnote);
+  text-overflow: ellipsis;
+}
+
+.ai-pref-refresh {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  inline-size: 34px;
+  block-size: 34px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.ai-pref-refresh svg { inline-size: 16px; block-size: 16px; }
+.ai-pref-refresh.is-busy { opacity: 0.5; pointer-events: none; }
+
 .ai-panel-clear {
   display: grid;
   place-items: center;
@@ -833,6 +870,10 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   flex-wrap: wrap;
   gap: var(--space-2);
   padding: 0 var(--space-4) var(--space-3);
+  /* 空间不足时由快捷提示区收缩，保住头部与偏好行可见（小屏 320px 关键） */
+  flex: 0 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
 }
 
 .ai-quick-chip {

@@ -6,10 +6,19 @@ import {
   AssistantError,
   runAssistantTurn,
   type AssistantAttachment,
+  type AssistantContentBlock,
   type AssistantTurnResult,
   type AssistantExchange,
 } from '../ai/assistant';
-import { getLlmConfig } from '../ai/llmConfig';
+import { getLlmConfig, getActiveLlmProvider, getLlmHealth, pingLlm, setLlmHealth } from '../ai/llmConfig';
+import {
+  getAssistantPrefs,
+  onAssistantPrefsChange,
+  setAssistantModelOverride,
+  setAssistantReasoningEffort,
+  type AssistantReasoningEffort,
+} from '../ai/assistantPrefs';
+import { appendAssistantMessage, clearAssistantMessages, listRecentAssistantMessages, uid } from '../db/local';
 import { createButton } from './primitives/Button';
 import { compressBoxPhoto } from '../features/medPhotos';
 
@@ -58,6 +67,20 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const history: AssistantExchange[] = [];
 let mounted = false;
 let globalOpenPanel: (() => void) | null = null;
+
+/** 一轮对话成功后落库：user/assistant 各一条；附件不入库，与内存 history 保持一致。 */
+function persistExchange(userText: string, reply: AssistantTurnResult): void {
+  const base = Date.now();
+  void appendAssistantMessage({ id: uid(), role: 'user', content: userText, createdAt: base })
+    .then(() => appendAssistantMessage({
+      id: uid(),
+      role: 'assistant',
+      content: reply.markdown,
+      blocks: reply.blocks,
+      createdAt: base + 1,
+    }))
+    .catch(() => { /* 持久化失败不影响当前对话 */ });
+}
 
 async function fileToAttachment(file: File): Promise<AssistantAttachment> {
   if (file.size > MAX_FILE_BYTES) {
@@ -191,6 +214,72 @@ export function mountGlobalAssistant(): void {
 
   const log = el('div', { class: 'ai-chat-log' });
   log.setAttribute('aria-live', 'polite');
+
+  // ---- 对话偏好：模型覆盖 + 推理强度（只影响小助手聊天请求） ----
+  const modelSelect = document.createElement('select');
+  modelSelect.className = 'ai-pref-select';
+  modelSelect.setAttribute('aria-label', '选择对话模型');
+  const effortSelect = document.createElement('select');
+  effortSelect.className = 'ai-pref-select';
+  effortSelect.setAttribute('aria-label', '推理强度');
+  const refreshModelsBtn = el('button', { class: 'ai-pref-refresh', type: 'button' }, [icon('retry')]);
+  refreshModelsBtn.setAttribute('aria-label', '刷新模型列表');
+  refreshModelsBtn.title = '从服务商拉取最新模型列表';
+  const prefsRow = el('div', { class: 'ai-prefs-row' }, [modelSelect, effortSelect, refreshModelsBtn]);
+
+  function effortLabel(effort: AssistantReasoningEffort): string {
+    return effort === 'low' ? '低' : effort === 'medium' ? '中' : '高';
+  }
+
+  function refreshPrefControls(): void {
+    const provider = getActiveLlmProvider();
+    const prefs = getAssistantPrefs();
+
+    modelSelect.replaceChildren();
+    modelSelect.append(new Option(`默认模型（${provider.model}）`, ''));
+    const healthModels = getLlmHealth(provider.id).models ?? [];
+    for (const model of healthModels) {
+      if (model && model !== provider.model) modelSelect.append(new Option(model, model));
+    }
+    modelSelect.value = prefs.modelOverride ?? '';
+    if (modelSelect.selectedIndex === -1) modelSelect.value = '';
+    // 手动填过的覆盖模型不在健康检查列表里时，补一个选项保住当前选择
+    if (prefs.modelOverride && modelSelect.value !== prefs.modelOverride) {
+      modelSelect.append(new Option(prefs.modelOverride, prefs.modelOverride));
+      modelSelect.value = prefs.modelOverride;
+    }
+
+    effortSelect.replaceChildren();
+    effortSelect.append(new Option('推理：默认', ''));
+    for (const effort of ['low', 'medium', 'high'] as const) {
+      effortSelect.append(new Option(`推理：${effortLabel(effort)}`, effort));
+    }
+    effortSelect.value = prefs.reasoningEffort ?? '';
+  }
+
+  modelSelect.onchange = () => {
+    setAssistantModelOverride(modelSelect.value || undefined);
+  };
+  effortSelect.onchange = () => {
+    setAssistantReasoningEffort((effortSelect.value || undefined) as AssistantReasoningEffort | undefined);
+  };
+  refreshModelsBtn.onclick = async () => {
+    const provider = getActiveLlmProvider();
+    refreshModelsBtn.classList.add('is-busy');
+    try {
+      const health = await pingLlm(provider);
+      setLlmHealth(health, provider.id);
+      refreshPrefControls();
+      if (health.state === 'ok' && health.models?.length) toast(`已拉取 ${health.models.length} 个模型`);
+      else toast(health.message || '暂时拉不到模型列表');
+    } catch {
+      toast('拉取模型列表失败');
+    } finally {
+      refreshModelsBtn.classList.remove('is-busy');
+    }
+  };
+  refreshPrefControls();
+  onAssistantPrefsChange(() => refreshPrefControls());
   const quick = el('div', { class: 'ai-quick' }, QUICK_PROMPTS.map((prompt) => {
     const chip = el('button', { class: 'ai-quick-chip', type: 'button', text: prompt });
     chip.onclick = () => { void send(prompt); };
@@ -222,7 +311,7 @@ export function mountGlobalAssistant(): void {
   attachMenu.setAttribute('role', 'dialog');
   attachMenu.setAttribute('aria-label', '添加附件');
 
-  const panel = el('section', { class: 'ai-panel' }, [header, log, quick, form]);
+  const panel = el('section', { class: 'ai-panel' }, [header, prefsRow, log, quick, form]);
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', '小助手');
 
@@ -366,17 +455,50 @@ export function mountGlobalAssistant(): void {
 
   let busy: AbortController | null = null;
 
+  function seedGreeting(): void {
+    addMsg('bot', GREETING);
+    const cfg = getLlmConfig();
+    if (!cfg.baseUrl || !cfg.apiKey) {
+      addSettingsHint('不过现在还没连上 AI 服务，先去设置里填好服务地址和密钥，我就能开工了。');
+    }
+  }
+
+  // 历史回填完成前不种问候语，避免覆盖将要恢复的记录
+  let historyLoaded = false;
+
   function openPanel(): void {
     root.classList.add('is-open');
-    if (log.childElementCount === 0) {
-      addMsg('bot', GREETING);
-      const cfg = getLlmConfig();
-      if (!cfg.baseUrl || !cfg.apiKey) {
-        addSettingsHint('不过现在还没连上 AI 服务，先去设置里填好服务地址和密钥，我就能开工了。');
-      }
-    }
+    refreshPrefControls();
+    if (log.childElementCount === 0 && historyLoaded) seedGreeting();
     setTimeout(() => input.focus(), 320);
   }
+
+  // 启动即回填历史：最近 ~50 条可见，最近 12 条并入上下文延续对话。
+  void (async () => {
+    try {
+      const records = await listRecentAssistantMessages(50);
+      if (records.length > 0 && log.childElementCount === 0) {
+        for (const record of records) {
+          if (record.role === 'user') {
+            addMsg('user', record.content);
+          } else {
+            addAssistantReply({
+              markdown: record.content,
+              blocks: (Array.isArray(record.blocks) ? record.blocks : []) as AssistantContentBlock[],
+            });
+          }
+        }
+        history.length = 0;
+        for (const record of records.slice(-12)) {
+          history.push({ role: record.role, content: record.content });
+        }
+      }
+    } catch {
+      /* 历史读取失败不影响新对话 */
+    }
+    historyLoaded = true;
+    if (root.classList.contains('is-open') && log.childElementCount === 0) seedGreeting();
+  })();
 
   globalOpenPanel = openPanel;
 
@@ -501,15 +623,12 @@ export function mountGlobalAssistant(): void {
   };
   clearBtn.onclick = async () => {
     if (log.childElementCount <= 1 && history.length === 0) return;
-    const confirmed = await confirmDialog('确定清空与小助手的对话记录吗？', '清空记录');
+    const confirmed = await confirmDialog('确定清空与小助手的对话记录吗？清空后所有设备上的本机记录都会删除。', '清空记录');
     if (!confirmed) return;
     history.length = 0;
     log.replaceChildren();
-    addMsg('bot', GREETING);
-    const cfg = getLlmConfig();
-    if (!cfg.baseUrl || !cfg.apiKey) {
-      addSettingsHint('不过现在还没连上 AI 服务，先去设置里填好服务地址和密钥，我就能开工了。');
-    }
+    seedGreeting();
+    void clearAssistantMessages().catch(() => { /* 清库失败不影响界面清空 */ });
     quick.hidden = false;
     toast('对话已清空');
   };
@@ -669,9 +788,12 @@ export function mountGlobalAssistant(): void {
 
     try {
       log.setAttribute('aria-live', 'off');
+      const prefs = getAssistantPrefs();
       const reply = await runAssistantTurn(history, {
         signal: busy.signal,
         attachment,
+        modelOverride: prefs.modelOverride,
+        reasoningEffort: prefs.reasoningEffort,
         confirmTool: (message) => confirmDialog(message, '好，就这么办'),
         onToolStart: (_name, label) => {
           status.update(label);
@@ -699,6 +821,7 @@ export function mountGlobalAssistant(): void {
       const liveMessage = streamedMessage as HTMLElement | null;
       if (liveMessage !== null) liveMessage.remove();
       addAssistantReply(reply);
+      persistExchange(displayText, reply);
     } catch (e) {
       status.remove();
       history.pop();

@@ -8,11 +8,12 @@ test.describe('inventory entry workflows', () => {
 
     await page.getByRole('button', { name: '添加库存', exact: true }).click();
     await page.getByRole('button', { name: /给视觉验收用的长药品名称.*添加库存/ }).click();
-    await page.getByLabel('本次新增数量').fill('2.5');
+    // 0.9.11 起数量输入改为步进器；label 内含 +/- 按钮，直接定位输入框
+    await page.locator('.inventory-stepper-input').fill('2.5');
 
-    await expect(page.locator('.inventory-add-preview')).toContainText('12.5片 + 2.5片 = 15片');
+    await expect(page.locator('.inventory-add-preview-card')).toContainText('当前 12.5片 → 入库后 15片');
     await page.getByRole('button', { name: '确认添加库存' }).click();
 
-    await expect(page.locator('.inventory-row-details')).toContainText('剩余 15片');
+    await expect(page.locator('.inventory-card-spec').first()).toContainText('剩余 15片');
   });
 });

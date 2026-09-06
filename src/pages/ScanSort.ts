@@ -894,6 +894,8 @@ async function showUnknownCode(
   }
   if (continuation) card.append(continueButton(continuation));
   box.append(card);
+  // 结果卡在取景框下方：识别后滚到可视区，绑定按钮无需用户手动上滑查找。
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function runAiIdentify(

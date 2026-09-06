@@ -425,6 +425,20 @@ export interface IntakeLog {
   updatedAt: number;
 }
 
+/** 小助手聊天记录（本机 IndexedDB，随对话即时写入；附件不入库）。 */
+export interface AssistantChatRecord {
+  id: string;
+  role: 'user' | 'assistant';
+  /** 消息文本；user 消息为展示文本（图片等附件只显示占位说明） */
+  content: string;
+  /**
+   * assistant 消息随附的卡片/跳转块，结构与 ai/assistant 的 AssistantContentBlock
+   * 一致；此处保持 unknown 以避免 db 层反向依赖 ai 层。
+   */
+  blocks?: unknown;
+  createdAt: number;
+}
+
 export type MedicationScheduleReviewFlag = 'cycle-start-missing' | 'dose-unstructured';
 
 /**

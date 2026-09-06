@@ -197,12 +197,15 @@ class MedicationAlarmActivity : ComponentActivity() {
         val scanUnlocked = remember { mutableStateOf(false) }
         val showScanner = remember { mutableStateOf(false) }
         val scanFeedback = remember { mutableStateOf<String?>(null) }
+        // 扫码匹配后直接视为已服用（单药记已服用、群组记全部已服用），展示成功态后自动关闭。
+        val autoResolved = remember { mutableStateOf(false) }
 
         // 会话切换：复位解锁/取景/反馈
         LaunchedEffect(scanSession.value) {
             scanUnlocked.value = false
             showScanner.value = false
             scanFeedback.value = null
+            autoResolved.value = false
         }
 
         val locked = requireScan && !scanUnlocked.value
@@ -210,11 +213,14 @@ class MedicationAlarmActivity : ComponentActivity() {
         // 返回手势/按键拦截加固：
         // 1. 取景器开启时：返回仅收起取景器；
         // 2. 扫码锁定态：严禁退出，提示必须扫码并短震警告；
-        // 3. 非锁定态：返回手势自动转为「10分钟后提醒（贪睡）」，杜绝随手划掉漏服。
+        // 3. 扫码已自动记录：返回仅关闭页面，绝不能再叠加贪睡动作；
+        // 4. 非锁定态：返回手势自动转为「10分钟后提醒（贪睡）」，杜绝随手划掉漏服。
         BackHandler(enabled = true) {
             if (showScanner.value) {
                 showScanner.value = false
                 scanFeedback.value = null
+            } else if (autoResolved.value) {
+                finish()
             } else if (locked) {
                 val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
                 val msg = if (isCustom) "强制提醒：请扫描已绑定的药盒或物品条码解除" else "强制提醒：请扫描专属解锁二维码解除"
@@ -235,6 +241,13 @@ class MedicationAlarmActivity : ComponentActivity() {
                 delay(3000)
                 scanFeedback.value = null
             }
+        }
+
+        // 扫码自动记录成功态停留约 1.5s（足够看清反馈），然后自动关闭页面。
+        LaunchedEffect(autoResolved.value) {
+            if (!autoResolved.value) return@LaunchedEffect
+            delay(1500)
+            finish()
         }
 
         // 自动关闭倒计时：strong 且未要求扫码时不自动关；进入取景器暂停计数
@@ -305,6 +318,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                     backdrop = backdrop,
                     groupPayload = data != null && "reminder-group" == data.optString("kind"),
                     locked = locked,
+                    resolved = autoResolved.value,
                     scanFeedback = scanFeedback.value,
                     secondsLeft = if (autoCloseSeconds != null) secondsLeft.value else -1,
                     onStartScan = {
@@ -335,6 +349,8 @@ class MedicationAlarmActivity : ComponentActivity() {
                         scanUnlocked.value = true
                         scanFeedback.value = "已验证 · 操作已解锁"
                         vibrateUnlock()
+                        dispatchScanAutoTaken(payload)
+                        autoResolved.value = true
                     },
                 )
             }
@@ -347,6 +363,23 @@ class MedicationAlarmActivity : ComponentActivity() {
         try {
             vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 60, 80, 60), -1))
         } catch (ignored: Throwable) {
+        }
+    }
+
+    /**
+     * 扫码匹配即视为已服用：单药记「已服用」，群组提醒记「全部已服用」。
+     * 复用 handleAction 的原生队列，TS 侧 replayPendingMedicationReminderActions 落库。
+     */
+    private fun dispatchScanAutoTaken(payload: JSONObject) {
+        val data = payload.optJSONObject("data")
+        val action = if (data != null && "reminder-group" == data.optString("kind")) {
+            MedicationAlarmContract.ACTION_ALL_TAKEN
+        } else {
+            MedicationAlarmContract.ACTION_TAKEN
+        }
+        try {
+            MedicationAlarmContract.handleAction(this, action, payload)
+        } catch (ignored: JSONException) {
         }
     }
 
@@ -523,10 +556,26 @@ class MedicationAlarmActivity : ComponentActivity() {
         backdrop: Backdrop,
         groupPayload: Boolean,
         locked: Boolean,
+        resolved: Boolean = false,
         scanFeedback: String? = null,
         secondsLeft: Int,
         onStartScan: () -> Unit,
     ) {
+        if (resolved) {
+            // 扫码已自动记录：成功态替代操作按钮，短暂展示后由 AlarmRoot 自动关闭。
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(GreenDeep.copy(alpha = 0.12f))
+                    .padding(vertical = 20.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                GlassText("✓ 已扫码 · 已记录为已服用", 17.sp, FontWeight.SemiBold, GreenDeep)
+            }
+            return
+        }
+
         if (locked) {
             val expectedToken = MedicationAlarmContract.scanTokenOf(payload)
             ScanLockedCard(expectedToken, scanFeedback, onStartScan)
@@ -758,6 +807,9 @@ class MedicationAlarmActivity : ComponentActivity() {
         DisposableEffect(Unit) {
             val executor = Executors.newSingleThreadExecutor()
             var boundProvider: ProcessCameraProvider? = null
+            // 解码器会话级复用：hints 只装一次，帧间由 decodeLuminance 的 reset() 复位；
+            // 每帧 new MultiFormatReader 的分配开销在低端机上会明显拖慢出帧节奏。
+            val barcodeReader = MultiFormatReader().apply { setHints(BARCODE_HINTS) }
 
             ProcessCameraProvider.getInstance(context).addListener({
                 try {
@@ -772,7 +824,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                         .build()
                         .also {
                             it.setAnalyzer(executor) { proxy ->
-                                analyzeBarcodeFrame(proxy, expectedToken, onMatched, onMismatch)
+                                analyzeBarcodeFrame(proxy, expectedToken, barcodeReader, onMatched, onMismatch)
                             }
                         }
 
@@ -827,10 +879,29 @@ class MedicationAlarmActivity : ComponentActivity() {
         AndroidView(factory = { previewView }, modifier = modifier)
     }
 
+    /** 会话级复用的解码提示集：格式白名单 + TRY_HARDER，避免每帧重建 map 与 reader。 */
+    private val BARCODE_HINTS: Map<DecodeHintType, Any> = mapOf(
+        DecodeHintType.TRY_HARDER to true,
+        DecodeHintType.POSSIBLE_FORMATS to listOf(
+            BarcodeFormat.QR_CODE,
+            BarcodeFormat.DATA_MATRIX,
+            BarcodeFormat.AZTEC,
+            BarcodeFormat.PDF_417,
+            BarcodeFormat.EAN_13,
+            BarcodeFormat.EAN_8,
+            BarcodeFormat.CODE_128,
+            BarcodeFormat.CODE_39,
+            BarcodeFormat.UPC_A,
+            BarcodeFormat.UPC_E,
+            BarcodeFormat.ITF
+        )
+    )
+
     /** Y 平面 → ZXing；逐帧在后台线程执行，匹配结果统一抛回主线程。 */
     private fun analyzeBarcodeFrame(
         proxy: ImageProxy,
         expectedToken: String,
+        reader: MultiFormatReader,
         onMatched: () -> Unit,
         onMismatch: () -> Unit,
     ) {
@@ -908,24 +979,6 @@ class MedicationAlarmActivity : ComponentActivity() {
 
             val source: LuminanceSource =
                 PlanarYUVLuminanceSource(rotatedData, rotatedWidth, rotatedHeight, 0, 0, rotatedWidth, rotatedHeight, false)
-
-            val hints = mapOf(
-                DecodeHintType.TRY_HARDER to true,
-                DecodeHintType.POSSIBLE_FORMATS to listOf(
-                    BarcodeFormat.QR_CODE,
-                    BarcodeFormat.DATA_MATRIX,
-                    BarcodeFormat.AZTEC,
-                    BarcodeFormat.PDF_417,
-                    BarcodeFormat.EAN_13,
-                    BarcodeFormat.EAN_8,
-                    BarcodeFormat.CODE_128,
-                    BarcodeFormat.CODE_39,
-                    BarcodeFormat.UPC_A,
-                    BarcodeFormat.UPC_E,
-                    BarcodeFormat.ITF
-                )
-            )
-            val reader = MultiFormatReader().apply { setHints(hints) }
 
             var raw = decodeLuminance(source, reader)
 

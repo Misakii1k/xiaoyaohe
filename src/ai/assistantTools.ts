@@ -590,7 +590,7 @@ const PAGE_ICONS: Record<string, AssistantNavigationBlock['icon']> = {
 const presentCard: AssistantTool = {
   name: 'present_card',
   label: '整理重点信息',
-  description: '把已经查到的一组关键结论或数字整理成一张信息卡片。卡片之外仍需给一句简短正文。不要用它代替数据查询。',
+  description: '把已经查到的一组关键结论或数字整理成一张信息卡片。卡片本身已经把信息展示完整，正文不要复述卡片里的内容，只在需要补充背景或注意事项时最多写一句，没有就完全不用写正文。不要用它代替数据查询。',
   parameters: {
     type: 'object',
     properties: {

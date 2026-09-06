@@ -29,7 +29,7 @@ export async function seedVisualFixtures(page: Page): Promise<void> {
     localStorage.removeItem('medbox.llmHealth.v1');
     sessionStorage.clear();
 
-    const medsDb = await open('medbox', 9, (database) => {
+    const medsDb = await open('medbox', 10, (database) => {
       if (!database.objectStoreNames.contains('meds')) database.createObjectStore('meds', { keyPath: 'id' });
       if (!database.objectStoreNames.contains('rules')) {
         const rules = database.createObjectStore('rules', { keyPath: 'id' });
@@ -55,6 +55,13 @@ export async function seedVisualFixtures(page: Page): Promise<void> {
       if (!database.objectStoreNames.contains('inventoryLogs')) {
         const invLogs = database.createObjectStore('inventoryLogs', { keyPath: 'id' });
         invLogs.createIndex('byMed', 'medId');
+      }
+      if (!database.objectStoreNames.contains('reminderPeriods')) {
+        database.createObjectStore('reminderPeriods', { keyPath: 'slot' });
+      }
+      if (!database.objectStoreNames.contains('assistantMessages')) {
+        const assistantMsgs = database.createObjectStore('assistantMessages', { keyPath: 'id' });
+        assistantMsgs.createIndex('byCreatedAt', 'createdAt');
       }
     });
     const medStores = ['meds', 'rules', 'scheduleRevisions', 'logs', 'photos', 'pushStates', 'syncLanMetadata', 'inventoryLogs'];

@@ -38,6 +38,7 @@ import {
   type InventoryActionType,
   type MedicationReminderMode,
   type ReminderPeriodSetting,
+  type AssistantChatRecord,
 } from './schema';
 import {
   validateMedicationDraft,
@@ -94,6 +95,7 @@ export interface MedboxDB extends DBSchema {
   syncLanMetadata: { key: string; value: SyncLanMetadata };
   inventoryLogs: { key: string; value: InventoryOperationLog; indexes: { byMed: string; byTimestamp: number } };
   reminderPeriods: { key: string; value: ReminderPeriodSetting };
+  assistantMessages: { key: string; value: AssistantChatRecord; indexes: { byCreatedAt: number } };
 }
 
 let dbp: Promise<IDBPDatabase<MedboxDB>> | null = null;
@@ -145,11 +147,18 @@ export function upgradeMedboxDatabase(d: IDBPDatabase<MedboxDB>, oldVersion: num
       d.createObjectStore('reminderPeriods', { keyPath: 'slot' });
     }
   }
+  if (oldVersion < 10) {
+    // 小助手聊天记录；仅新增 store，不影响既有数据。
+    if (!d.objectStoreNames.contains('assistantMessages')) {
+      const assistantMsgs = d.createObjectStore('assistantMessages', { keyPath: 'id' });
+      assistantMsgs.createIndex('byCreatedAt', 'createdAt');
+    }
+  }
 }
 
 export function openMedboxDatabase(): Promise<IDBPDatabase<MedboxDB>> {
   if (!dbp) {
-    dbp = openDB<MedboxDB>('medbox', 9, {
+    dbp = openDB<MedboxDB>('medbox', 10, {
       upgrade: upgradeMedboxDatabase,
       blocked() {
         console.warn('IndexedDB 升级被旧页面阻塞，请关闭其他已打开的 medbox 页面后刷新。');
@@ -175,6 +184,44 @@ const db = openMedboxDatabase;
 
 export function uid(): string {
   return crypto.randomUUID();
+}
+
+// ------------------------------ 小助手聊天记录 ------------------------------
+
+/** 本机保留的最近聊天条数；更旧的在写入时顺手裁剪。 */
+const ASSISTANT_HISTORY_LIMIT = 200;
+
+export async function appendAssistantMessage(record: AssistantChatRecord): Promise<void> {
+  const database = await db();
+  await database.put('assistantMessages', record);
+  await pruneAssistantMessages(database);
+}
+
+async function pruneAssistantMessages(database: IDBPDatabase<MedboxDB>): Promise<void> {
+  const count = await database.count('assistantMessages');
+  if (count <= ASSISTANT_HISTORY_LIMIT) return;
+  let excess = count - ASSISTANT_HISTORY_LIMIT;
+  let cursor = await database
+    .transaction('assistantMessages', 'readwrite')
+    .store.index('byCreatedAt')
+    .openCursor();
+  while (cursor && excess > 0) {
+    await cursor.delete();
+    excess -= 1;
+    cursor = await cursor.continue();
+  }
+}
+
+/** 按 createdAt 升序返回最近 limit 条（旧→新），可直接顺序渲染。 */
+export async function listRecentAssistantMessages(limit = 50): Promise<AssistantChatRecord[]> {
+  const database = await db();
+  const all = await database.getAllFromIndex('assistantMessages', 'byCreatedAt');
+  return all.slice(-Math.max(0, limit));
+}
+
+export async function clearAssistantMessages(): Promise<void> {
+  const database = await db();
+  await database.clear('assistantMessages');
 }
 
 function nextInventoryOperationTimestamp(

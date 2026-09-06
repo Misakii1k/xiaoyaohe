@@ -175,7 +175,10 @@ async function startNative(opts: {
   let stream: MediaStream;
   try {
     if (!navigator.mediaDevices?.getUserMedia) throw new DOMException('Camera API unavailable', 'NotSupportedError');
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    // 明确要一帧高一些的分辨率：默认 640x360 对小条码（药盒 EAN）解码成功率明显更低。
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
   } catch (error) {
     container.replaceChildren();
     opts.onError?.(cameraErrorMessage(error));
@@ -196,12 +199,18 @@ async function startNative(opts: {
   const gate = createResultGate(opts.onScan);
   let frameId = 0;
   let detecting = false;
+  // detect 是同步占 CPU 的重操作：按时间门限节流（约 8 次/秒）而不是每 rAF 全速跑，
+  // 省下的算力让相机流水线出帧更稳，整体识别反而更快。
+  const DETECT_INTERVAL_MS = 120;
+  let lastDetectAt = 0;
   // 只有 running 状态才维持 rAF 循环；paused 由 resume 显式重启，避免空转耗电
   const shouldContinue = () => gate.state === 'running';
 
   const tick = async () => {
     if (!shouldContinue()) return;
-    if (gate.state === 'running' && !detecting) {
+    const now = performance.now();
+    if (gate.state === 'running' && !detecting && now - lastDetectAt >= DETECT_INTERVAL_MS) {
+      lastDetectAt = now;
       detecting = true;
       try {
         const codes = await detector.detect(video);
@@ -249,10 +258,12 @@ async function startHtml5(opts: {
 }): Promise<Scanner> {
   const reader = new Html5Qrcode(opts.containerId);
   const gate = createResultGate(opts.onScan);
+  // 取景框取视口短边 60%（收敛到 200-320px）：框太小会漏掉画面边缘的码，识别变慢。
+  const qrSize = Math.max(200, Math.min(320, Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.6)));
   try {
     await reader.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
+      { fps: 12, qrbox: { width: qrSize, height: qrSize } },
       (decodedText, result) => {
         const format = (result as any)?.result?.format?.formatName || 'unknown';
         gate.accept(

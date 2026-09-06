@@ -14,7 +14,8 @@ test('keeps camera actions aligned with the app button hierarchy', async ({ page
   });
 
   await page.goto('/#/scan');
-  await page.getByRole('button', { name: /拍药单，一次录完/ }).click();
+  // 0.9.11 起分药页首屏改为入口卡；「拍药盒识别」快捷卡（div，非 button role）直接打开智能相机工作台
+  await page.locator('.scan-quick-card', { hasText: '拍药盒识别' }).click();
 
   const capture = page.getByRole('button', { name: '拍照' });
   const album = page.getByRole('button', { name: '相册上传' });
@@ -53,14 +54,15 @@ test('keeps camera actions aligned with the app button hierarchy', async ({ page
       captureBackground: style(captureButton).backgroundColor,
       albumBackground: style(albumButton).backgroundColor,
       backBackground: style(backButton).backgroundColor,
-      assistantVisibility: getComputedStyle(document.querySelector<HTMLElement>('.ai-launcher')!).visibility,
+      // 悬浮球入口已整体废除（display:none），相机界面不得出现任何浮动助手入口
+      assistantDisplay: getComputedStyle(document.querySelector<HTMLElement>('.ai-launcher')!).display,
       tokens,
     };
   });
 
   expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewportWidth);
-  expect(layout.actions.width).toBeCloseTo(layout.preview.width, 0);
-  expect(layout.actions.right).toBeCloseTo(layout.preview.right, 0);
+  // 0.9.11 起操作行在宽屏下限制为 620px（scanner.css 相机契约样式），不再与预览等宽
+  expect(layout.actions.width).toBeLessThanOrEqual(620);
   expect(layout.buttons[0].width).toBeCloseTo(layout.actions.width, 0);
   expect(layout.buttons[1].width).toBeCloseTo(layout.buttons[2].width, 0);
   expect(layout.buttons.every((button) => button.height >= 44)).toBe(true);
@@ -68,7 +70,7 @@ test('keeps camera actions aligned with the app button hierarchy', async ({ page
   expect(layout.captureBackground).toBe(layout.tokens.primaryPressed);
   expect(layout.albumBackground).toBe(layout.tokens.primarySoft);
   expect(layout.backBackground).toBe('rgba(0, 0, 0, 0)');
-  expect(layout.assistantVisibility).toBe('hidden');
+  expect(layout.assistantDisplay).toBe('none');
 
   await page.keyboard.press('Tab');
   await expect(album).toBeFocused();

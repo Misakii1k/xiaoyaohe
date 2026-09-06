@@ -1168,9 +1168,16 @@ function openBindCustomCodeSheet(rerender: () => void): void {
   let scannedCode: string | null = null;
   let scannedFormat: string | null = null;
 
+  const scrollToSheetTop = () => {
+    sheet.overlay.querySelector<HTMLElement>('.bottom-sheet')?.scrollTo({ top: 0 });
+  };
+
   const handleResult = (raw: string, format: string) => {
     scannedCode = raw.trim();
     scannedFormat = format;
+    // 识别成功即收起相机预览（结果门控已暂停相机）：结果与确认按钮直接落入视口，无需上滑。
+    scannerHost.hidden = true;
+    void scanner?.pause().catch(() => {});
     statusBox.hidden = false;
     statusBox.className = 'banner ok mt-3';
     statusBox.replaceChildren();
@@ -1215,11 +1222,14 @@ function openBindCustomCodeSheet(rerender: () => void): void {
     rescanBtn.onclick = () => {
       scannedCode = null;
       statusBox.hidden = true;
+      scannerHost.hidden = false;
       actionRow.replaceChildren(fileLabel, cancelBtn);
       void scanner?.resume();
+      scrollToSheetTop();
     };
 
     actionRow.append(confirmBtn, rescanBtn);
+    scrollToSheetTop();
   };
 
   fileInput.onchange = async () => {

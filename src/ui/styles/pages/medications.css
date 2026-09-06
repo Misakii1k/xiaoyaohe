@@ -355,7 +355,9 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.medication-batch-row {
+/* 只作用于批量管理页：普通药品列表的卡片也带 medication-batch-row 类，
+   不加作用域会覆盖 .med-item-card 的 flex 布局，编辑按钮会掉到第二行。 */
+.medication-batch-page .medication-batch-row {
   display: grid;
   grid-template-columns: var(--tap) minmax(0, 1fr);
   gap: var(--space-2);
@@ -367,7 +369,7 @@
   overflow-wrap: anywhere;
 }
 
-.medication-batch-row.is-selected {
+.medication-batch-page .medication-batch-row.is-selected {
   margin-inline: calc(var(--space-2) * -1);
   padding-inline: var(--space-2);
   border-block-end-color: transparent;
@@ -397,6 +399,59 @@
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
+
+/* 批量行内排版：药名 / 副标题 / 提醒时段 chip（普通列表与批量页共用类名） */
+.medication-batch-body { display: flex; flex-direction: column; gap: var(--space-2); min-inline-size: 0; }
+.medication-batch-copy { min-inline-size: 0; }
+.medication-batch-name {
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.medication-batch-subline { color: var(--color-text-muted); font-size: var(--fs-footnote); }
+
+.medication-batch-slots { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.medication-slot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-inline-size: 100%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.medication-slot-icon { inline-size: 13px; block-size: 13px; flex: 0 0 auto; }
+.medication-slot-label { white-space: nowrap; }
+.medication-slot-time { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.medication-slot-chip.is-disabled { background: var(--color-surface-muted); color: var(--color-text-muted); }
+.medication-slot-disabled {
+  margin-inline-start: 2px;
+  padding-inline-start: 6px;
+  border-inline-start: 1px solid currentColor;
+  font-size: 11px;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+.medication-batch-no-rules { color: var(--color-text-muted); font-size: var(--fs-footnote); }
+
+/* 批量 dock：计数独占一行，四个操作 2×2，窄屏不再挤压溢出 */
+.medication-batch-dock { flex-wrap: wrap; row-gap: var(--space-2); }
+.medication-batch-dock-count { flex: 0 0 100%; color: var(--color-text-muted); font-size: var(--fs-subheadline); }
+.medication-batch-dock .ui-button { flex: 1 1 calc(50% - var(--space-2)); }
+
+/* 修改时段底部弹层排版 */
+.medication-batch-sheet-title { margin: 0; font-size: var(--fs-title3); font-weight: 700; }
+.medication-batch-sheet-hint { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--fs-footnote); }
+.medication-batch-sheet-options { display: grid; gap: var(--space-2); margin-block-start: var(--space-3); }
 
 .medication-actions-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
