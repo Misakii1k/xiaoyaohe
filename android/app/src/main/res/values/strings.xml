@@ -4,4 +4,6 @@
     <string name="title_activity_main">小药盒</string>
     <string name="package_name">com.medbox.app</string>
     <string name="custom_url_scheme">com.medbox.app</string>
+    <string name="accessibility_service_label">小药盒用药强提醒防退出守护</string>
+    <string name="accessibility_service_description">仅在用药强制提醒未扫码解除前守护前台焦点，防止意外误触切出桌面漏服药物。不读取任何个人屏幕内容与按键信息。</string>
 </resources>

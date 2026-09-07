@@ -5,6 +5,21 @@ Integration branch: `main`
 Product version: `0.9.15`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## Mandatory Alarm Accessibility Guard, LockTask Removal, Seamless App Return & Audio Focus 2026-09-07 (workspace/claude)
+
+- **彻底移除系统固定屏幕（`startLockTask`）**：剥离 `startLockTask()` / `stopLockTask()`，从根本上消灭「应用已固定（不用了 / 知道了）」系统弹窗；
+- **无障碍防绕过服务（`MedboxAccessibilityService.kt`）**：仅在扫码锁定态守护前台焦点，用户切出即时拉回；扫码完成或解除时立即注销保护；
+- **扫码退出双重闭环（根治图一卡死）**：在扫码成功态提供显式「完成并返回」主按钮（且卡片支持点击即退），配合 1.5s 倒计时自动调用 `finish()`；
+- **无缝弹回原前台应用（如红果短剧 App）**：移除 `MedicationAlarmContract.java` 中强跳 `MainActivity` 的代码，服药完毕销毁提醒窗口后，Android 系统自然恢复刚才正在使用的原应用，绝不强退桌面或强跳药盒主页；
+- **音频焦点智能控制（`AlarmAudioPlayer.kt`）**：唤起强提醒时向系统申请 `AUDIOFOCUS_GAIN_TRANSIENT` 临时音频焦点，背景播放的短剧/音乐自动暂停；提醒结束时释放焦点，背景短剧/音乐原声自动恢复播放；
+- **设置页状态展示与引导（`Settings.ts`）**：在扫码配置卡片新增「无障碍防退出保护」状态展示与一键跳转系统设置按钮；
+- **全绿验证门与产物**：
+  - `npm run typecheck`（0 errors）；
+  - `npm run test`（79 套件 463 项测试全部通过）；
+  - `./gradlew.bat compileDebugKotlin` 编译通过；
+  - `./gradlew.bat assembleDebug` 与 `./gradlew.bat testReleaseUnitTest assembleRelease` 224 项任务全绿编译通过；
+  - 产物：`C:\Users\87850\Desktop\xiaoyaohe-0.9.15-accessibility-guard.apk`（18,646,307 字节）。
+
 ## Fullscreen Reminder Home Escape Block & Singleton Audio Player 2026-09-07 (workspace/claude)
 
 - **彻底阻断全屏提醒通过 Home 键或手势退出（`MedicationAlarmActivity.kt`）**：

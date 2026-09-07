@@ -8,7 +8,38 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
 
 ## Summary of Accomplished Work
 
-### 24. 彻底阻止全屏提醒 Home 退出与全局单例音频控制器 (0.9.15)
+### 25. 强制提醒锁定重构、无障碍防退出、扫码退出闭环、自动弹回原 App 与音频焦点管理 (0.9.15)
+
+1. **彻底移除 `startLockTask()`（屏幕固定）**：
+   - 彻底剥离 `Activity.startLockTask()` 与 `stopLockTask()`，从根本上消灭每次弹出「应用已固定（不用了 / 知道了）」的系统灰色对话框；
+   - 解决用户点击「不用了」导致锁定失效、以及屏幕固定导致后续无法正常退出的问题。
+2. **引入无障碍防绕过服务（`MedboxAccessibilityService.kt`）**：
+   - 新建并注册 `MedboxAccessibilityService`，声明 `BIND_ACCESSIBILITY_SERVICE` 与专用配置；
+   - 仅在**扫码强制提醒处于锁定态**时激活守护（`setGuarded(true)`），一旦检测到窗口切出到非本应用界面（`TYPE_WINDOW_STATE_CHANGED`），0ms 瞬间把药盒强提醒拉回最前台；
+   - 扫码成功或解除锁定瞬间立即 `setGuarded(false)` 释放守护；
+   - 普通非扫码提醒不触发无障碍强拉回。
+3. **彻底根治扫码成功后退不出的死锁（图一现场修复）**：
+   - 扫码匹对成功瞬间注销无障碍守护，静音警报；
+   - 在成功卡片下方新增醒目的「完成并返回」主按钮，同时成功卡片自身支持点击即退；
+   - 配合 1.5 秒自动退出倒计时，双重机制确保顺利调用 `finish()` 退出页面。
+4. **服药完成后无缝弹回原前台应用（如红果短剧 App）**：
+   - 查出并移除 `MedicationAlarmContract.java` 中 `handleAction` 与 `queueOccurrenceAction` 强跳 `MainActivity` 的代码；
+   - 全屏提醒 Activity 运行在独立栈，`finish()` 销毁后 Android 窗口栈自然将刚才正在使用的应用（如红果短剧 App、微信等）恢复至最前台，绝不强退桌面或强跳药盒主页。
+5. **智能音频焦点管理（`AlarmAudioPlayer.kt`）**：
+   - 引入 `AudioManager.requestAudioFocus`，唤醒强提醒时申请 `AUDIOFOCUS_GAIN_TRANSIENT` 临时音频焦点；
+   - 遵循 Android 规范让正在前台/后台播放声音的红果短剧、网易云音乐、视频应用等**自动暂停播放**；
+   - 提醒结束/静音（`stop()`）时立即调用 `abandonAudioFocusRequest()`，**背景短剧/音乐原声自动恢复播放**。
+6. **设置页无障碍授权引导与状态展示（`Settings.ts`）**：
+   - 在「扫码解除强制提醒」配置卡片中新增「无障碍防退出保护」状态展示卡片，显示已开启/未开启状态；
+   - 提供一键跳转系统无障碍设置按钮；
+   - 若用户未开启无障碍，无感降级为应用内任务栈拉回防误触兜底。
+7. **全绿验证门与 Release 打包产物**：
+   - `npm run typecheck`（0 errors）；
+   - `npm run test`（79 套件 463 项测试全部通过）；
+   - `./gradlew.bat compileDebugKotlin` 编译通过；
+   - `./gradlew.bat assembleDebug` 成功打包；
+   - `./gradlew.bat testReleaseUnitTest assembleRelease` 224 项任务全绿编译通过；
+   - 产物：`C:\Users\87850\Desktop\xiaoyaohe-0.9.15-accessibility-guard.apk`（18,646,307 字节）。
 
 1. **沉浸粘性全屏模式（Immersive Sticky Mode）**：
    - 全屏提醒拉起时自动隐藏底部手势横条与系统状态栏，启用 `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`；

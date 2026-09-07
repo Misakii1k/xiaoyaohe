@@ -56,7 +56,12 @@ import {
   requestFullScreenAlarmCapability,
   showNotification,
 } from '../features/notifier';
-import { fireNativeMedicationAlarmNow, nativeMedicationAlarmAvailable } from '../features/nativeMedicationAlarm';
+import {
+  checkAccessibilityGuardEnabled,
+  fireNativeMedicationAlarmNow,
+  nativeMedicationAlarmAvailable,
+  openAccessibilityGuardSettings,
+} from '../features/nativeMedicationAlarm';
 import {
   bindCustomAlarmScanCode,
   disableAlarmScanVerify,
@@ -1118,6 +1123,57 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     qrGrid.append(showQrBtn, bindCustomBtn, testUnlockBtn);
   }
   body.append(qrGrid);
+
+  if (isNativeAlarm) {
+    const accCard = el('div', {
+      class: 'settings-scan-card mt-2',
+      style: 'background: rgba(0, 0, 0, 0.02); border: 1px dashed var(--color-border);',
+    });
+    const accHeader = el('div', { class: 'settings-scan-card-header flex items-center justify-between' });
+    const accTitle = el('span', {
+      style: 'font-size: 13px; font-weight: 600; color: var(--color-text);',
+      text: '无障碍防退出保护',
+    });
+    const accBadge = el('span', {
+      class: 'chip-pill',
+      style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.05); color: var(--color-text-muted);',
+      text: '检测中...',
+    });
+    accHeader.append(accTitle, accBadge);
+
+    const accDesc = el('div', {
+      class: 'settings-scan-card-desc mt-1',
+      text: '开启后在强制提醒未扫码前阻断切回桌面，彻底免去固定屏幕弹窗；若未开启，将自动通过应用内任务栈防误触兜底。',
+    });
+
+    const accActionBtn = el('button', {
+      class: 'btn tonal mt-2',
+      style: 'font-size: 12px; padding: 6px 12px; width: 100%;',
+      text: '前往系统无障碍设置',
+    });
+    accActionBtn.onclick = async () => {
+      await openAccessibilityGuardSettings();
+    };
+
+    accCard.append(accHeader, accDesc, accActionBtn);
+    body.append(accCard);
+
+    void checkAccessibilityGuardEnabled().then((enabled) => {
+      if (enabled) {
+        accBadge.className = 'chip-pill chip-pill-active';
+        accBadge.style.background = 'rgba(23, 96, 63, 0.12)';
+        accBadge.style.color = 'var(--color-primary, #17603f)';
+        accBadge.textContent = '已开启';
+        accActionBtn.textContent = '管理系统无障碍设置';
+      } else {
+        accBadge.className = 'chip-pill';
+        accBadge.style.background = 'rgba(245, 158, 11, 0.15)';
+        accBadge.style.color = '#b45309';
+        accBadge.textContent = '未开启 (建议开启)';
+        accActionBtn.textContent = '点击前往系统开启无障碍';
+      }
+    });
+  }
 
   body.append(
     el('div', {

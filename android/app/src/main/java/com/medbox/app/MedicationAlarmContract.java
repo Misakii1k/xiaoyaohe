@@ -304,9 +304,6 @@ final class MedicationAlarmContract {
             actionId = "skip";
         }
         queueAction(context, actionId, payload);
-        Intent open = new Intent(context, MainActivity.class)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        context.startActivity(open);
     }
 
     static void queueAction(Context context, String actionId, JSONObject payload) {
@@ -434,9 +431,6 @@ final class MedicationAlarmContract {
             data.put("occurrenceId", occurrenceId);
             itemPayload.put("data", data);
             queueAction(context, actionId, itemPayload);
-            Intent open = new Intent(context, MainActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            context.startActivity(open);
         } catch (JSONException ignored) {}
     }
 

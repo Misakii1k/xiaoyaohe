@@ -146,8 +146,6 @@ class MedicationAlarmActivity : ComponentActivity() {
     /** 闹钟会话计数：onNewIntent 换载荷时 +1，驱动解锁态/取景器/倒计时全部复位 */
     private var scanSession = mutableIntStateOf(0)
 
-    private var isLockTaskActive = false
-
     // 相机权限结果在 Activity 构建期注册（ComponentActivity 规范）
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -179,23 +177,11 @@ class MedicationAlarmActivity : ComponentActivity() {
         }
     }
 
-    private fun safeStartLockTask() {
-        if (!isLockTaskActive && !isFinishing) {
-            try {
-                startLockTask()
-                isLockTaskActive = true
-            } catch (ignored: Throwable) {
-            }
-        }
-    }
-
-    private fun safeStopLockTask() {
-        if (isLockTaskActive) {
-            try {
-                stopLockTask()
-            } catch (ignored: Throwable) {
-            }
-            isLockTaskActive = false
+    private fun updateAccessibilityGuard() {
+        if (isLocked()) {
+            MedboxAccessibilityService.setGuarded(true, payloadState.value?.toString())
+        } else {
+            MedboxAccessibilityService.setGuarded(false)
         }
     }
 
@@ -203,16 +189,17 @@ class MedicationAlarmActivity : ComponentActivity() {
         super.onUserLeaveHint()
         if (isFinishing || autoResolvedState.value) return
 
-        // 无论普通还是扫码提醒，提醒未完成前严禁退回桌面，强制拉回前台
-        reclaimForeground()
-        triggerHapticWarning()
-        val msg = if (isLocked()) "强制提醒：请扫描条码解除" else "用药提醒进行中，请先处理"
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        // 仅在扫码锁定态下，提醒未完成前拦截退回桌面，强制拉回前台
+        if (isLocked()) {
+            reclaimForeground()
+            triggerHapticWarning()
+            Toast.makeText(this, "强制提醒：请扫描条码解除", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onStop() {
         super.onStop()
-        if (!isFinishing && !autoResolvedState.value) {
+        if (!isFinishing && !autoResolvedState.value && isLocked()) {
             // 意外退入后台时强力拉回
             reclaimForeground()
         }
@@ -324,14 +311,14 @@ class MedicationAlarmActivity : ComponentActivity() {
             AlarmRoot(payload)
         }
         startAlert()
-        safeStartLockTask()
+        updateAccessibilityGuard()
     }
 
     override fun onResume() {
         super.onResume()
         enableImmersiveMode()
         if (!autoResolvedState.value && !isFinishing) {
-            safeStartLockTask()
+            updateAccessibilityGuard()
         }
     }
 
@@ -346,7 +333,7 @@ class MedicationAlarmActivity : ComponentActivity() {
             scanSession.value += 1
             enableImmersiveMode()
             startAlert()
-            safeStartLockTask()
+            updateAccessibilityGuard()
         } catch (ignored: JSONException) {
         }
     }
@@ -402,7 +389,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 showScanner.value = false
                 scanFeedback.value = null
             } else if (autoResolved.value) {
-                safeStopLockTask()
+                MedboxAccessibilityService.setGuarded(false)
                 finish()
             } else if (locked) {
                 val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
@@ -423,7 +410,7 @@ class MedicationAlarmActivity : ComponentActivity() {
             }
         }
 
-        // 扫码自动记录成功态停留约 1.5s（足够看清反馈），然后自动关闭页面。
+        // 扫码自动记录成功态停留约 1.5s（足够看清反馈），然后自动关闭页面返回原应用。
         LaunchedEffect(autoResolved.value) {
             if (!autoResolved.value) return@LaunchedEffect
             delay(1500)
@@ -532,6 +519,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                         scanUnlocked.value = true
                         scanFeedback.value = "已验证 · 操作已解锁"
                         vibrateUnlock()
+                        MedboxAccessibilityService.setGuarded(false)
                         dispatchScanAutoTaken(payload)
                         autoResolved.value = true
                     },
@@ -542,11 +530,13 @@ class MedicationAlarmActivity : ComponentActivity() {
                 EmergencyBypassDialog(
                     groupPayload = isGroup,
                     onSnooze = {
+                        MedboxAccessibilityService.setGuarded(false)
                         showEmergencyDialog.value = false
                         Toast.makeText(this@MedicationAlarmActivity, "已延后 10 分钟提醒", Toast.LENGTH_SHORT).show()
                         act(MedicationAlarmContract.ACTION_SNOOZE)
                     },
                     onSkip = {
+                        MedboxAccessibilityService.setGuarded(false)
                         showEmergencyDialog.value = false
                         val action = if (isGroup) MedicationAlarmContract.ACTION_ALL_SKIPPED else MedicationAlarmContract.ACTION_SKIP
                         Toast.makeText(this@MedicationAlarmActivity, "已跳过本次用药", Toast.LENGTH_SHORT).show()
@@ -751,16 +741,34 @@ class MedicationAlarmActivity : ComponentActivity() {
         onEmergencyTriggered: () -> Unit = {},
     ) {
         if (resolved) {
-            // 扫码已自动记录：成功态替代操作按钮，短暂展示后由 AlarmRoot 自动关闭。
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(GreenDeep.copy(alpha = 0.12f))
-                    .padding(vertical = 20.dp),
-                contentAlignment = Alignment.Center,
+            // 扫码已自动记录：成功态替代操作按钮，提供显式完成按钮并支持点击即退，伴随 1.5s 自动退出。
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                GlassText("✓ 已扫码 · 已记录为已服用", 17.sp, FontWeight.SemiBold, GreenDeep)
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(GreenDeep.copy(alpha = 0.12f))
+                        .clickable { finish() }
+                        .padding(vertical = 18.dp, horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        GlassText("✓ 已扫码 · 已记录为已服用", 17.sp, FontWeight.SemiBold, GreenDeep)
+                        Spacer(Modifier.height(4.dp))
+                        BasicText(
+                            "1.5 秒后自动返回原应用",
+                            style = TextStyle(fontSize = 12.sp, color = GreenDeep.copy(alpha = 0.7f)),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                PrimaryGradientButton(
+                    label = "完成并返回",
+                    onClick = { finish() }
+                )
             }
             return
         }
@@ -1588,7 +1596,7 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     /** 单药行按钮：向 data 注入 occurrenceId 后入队，TS 侧据此记录到具体 occurrence。 */
     private fun queueOccurrence(action: String, occurrenceId: String) {
-        safeStopLockTask()
+        MedboxAccessibilityService.setGuarded(false)
         autoResolvedState.value = true
         payloadState.value?.let {
             MedicationAlarmContract.queueOccurrenceAction(this, action, it, occurrenceId)
@@ -1600,7 +1608,7 @@ class MedicationAlarmActivity : ComponentActivity() {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(epochMillis))
 
     private fun act(action: String) {
-        safeStopLockTask()
+        MedboxAccessibilityService.setGuarded(false)
         autoResolvedState.value = true
         payloadState.value?.let { payload ->
             try {
@@ -1626,7 +1634,7 @@ class MedicationAlarmActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        safeStopLockTask()
+        MedboxAccessibilityService.setGuarded(false)
         silenceAlert()
         super.onDestroy()
     }

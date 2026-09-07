@@ -140,4 +140,24 @@ public final class MedicationAlarmPlugin extends Plugin {
             call.reject("Unable to schedule snooze", "INVALID_PAYLOAD");
         }
     }
+
+    @PluginMethod
+    public void isAccessibilityServiceEnabled(PluginCall call) {
+        JSObject result = new JSObject();
+        boolean enabled = MedboxAccessibilityService.isAccessibilityEnabled(getContext());
+        result.put("enabled", enabled);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void openAccessibilitySettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Throwable t) {
+            call.reject("无法打开系统无障碍设置", "ACCESSIBILITY_ERROR");
+        }
+    }
 }

@@ -22,6 +22,8 @@ interface NativeAlarmPlugin {
   acknowledgeActions(options: { ids: string[] }): Promise<void>;
   snooze(options: { tag: string; data: Record<string, unknown>; minutes: number }): Promise<void>;
   fireNow(options: { mode?: string; title?: string; body?: string; scanVerify?: boolean; scanToken?: string }): Promise<void>;
+  isAccessibilityServiceEnabled(): Promise<{ enabled: boolean }>;
+  openAccessibilitySettings(): Promise<void>;
 }
 
 interface NativeAlarmNotification {
@@ -127,4 +129,23 @@ export async function fireNativeMedicationAlarmNow(
     body: '应自动弹出全屏服药页；被系统拦截时以高优先级通知兜底（锁屏可见）',
     ...(scanVerify && scanToken ? { scanVerify, scanToken } : {}),
   });
+}
+
+export async function checkAccessibilityGuardEnabled(): Promise<boolean> {
+  if (!nativeMedicationAlarmAvailable()) return false;
+  try {
+    const result = await plugin.isAccessibilityServiceEnabled();
+    return !!result?.enabled;
+  } catch {
+    return false;
+  }
+}
+
+export async function openAccessibilityGuardSettings(): Promise<void> {
+  if (!nativeMedicationAlarmAvailable()) return;
+  try {
+    await plugin.openAccessibilitySettings();
+  } catch {
+    // 忽略异常
+  }
 }

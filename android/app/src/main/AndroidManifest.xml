@@ -83,6 +83,20 @@
             android:name=".AlarmRingService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- 无障碍辅助服务：在扫码强制用药提醒未完成前守护前台，防绕过与切出 -->
+        <service
+            android:name=".MedboxAccessibilityService"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
     </application>
 
     <!-- Permissions -->
