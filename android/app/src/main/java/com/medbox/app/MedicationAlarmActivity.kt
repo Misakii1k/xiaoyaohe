@@ -1,18 +1,22 @@
 package com.medbox.app
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.Ringtone
-import android.media.RingtoneManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -132,9 +136,6 @@ import java.util.concurrent.Executors
  */
 class MedicationAlarmActivity : ComponentActivity() {
 
-    private var ringtone: Ringtone? = null
-    private var vibrator: Vibrator? = null
-
     // Compose 可观察载荷：onNewIntent 更新后界面自动重建
     private var payloadState = mutableStateOf<JSONObject?>(null)
 
@@ -144,6 +145,8 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     /** 闹钟会话计数：onNewIntent 换载荷时 +1，驱动解锁态/取景器/倒计时全部复位 */
     private var scanSession = mutableIntStateOf(0)
+
+    private var isLockTaskActive = false
 
     // 相机权限结果在 Activity 构建期注册（ComponentActivity 规范）
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -158,75 +161,137 @@ class MedicationAlarmActivity : ComponentActivity() {
         return MedicationAlarmContract.requiresScanVerification(payload)
     }
 
+    /** 沉浸粘性全屏模式：隐藏底部导航手势栏与状态栏，滑动屏幕边缘仅唤出半透明指示条，不触发 Home 退出手势 */
+    private fun enableImmersiveMode() {
+        try {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } catch (ignored: Throwable) {
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            enableImmersiveMode()
+        }
+    }
+
+    private fun safeStartLockTask() {
+        if (!isLockTaskActive && !isFinishing) {
+            try {
+                startLockTask()
+                isLockTaskActive = true
+            } catch (ignored: Throwable) {
+            }
+        }
+    }
+
+    private fun safeStopLockTask() {
+        if (isLockTaskActive) {
+            try {
+                stopLockTask()
+            } catch (ignored: Throwable) {
+            }
+            isLockTaskActive = false
+        }
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (isFinishing || autoResolvedState.value) return
 
-        if (isLocked()) {
-            // 扫码锁定态：严禁退出，立即将提醒页面重新弹回最前台
-            reopenAlarmActivity()
-            try {
-                vibrator?.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
-            } catch (ignored: Throwable) {
-            }
-            Toast.makeText(this, "强制提醒：请扫描条码解除", Toast.LENGTH_SHORT).show()
-        } else {
-            // 普通提醒：上滑 Home 自动转为「10分钟后提醒（贪睡）」，立即停止铃声并关闭全屏页
-            silenceAlert()
-            Toast.makeText(this, "已延后 10 分钟提醒", Toast.LENGTH_SHORT).show()
-            act(MedicationAlarmContract.ACTION_SNOOZE)
-        }
+        // 无论普通还是扫码提醒，提醒未完成前严禁退回桌面，强制拉回前台
+        reclaimForeground()
+        triggerHapticWarning()
+        val msg = if (isLocked()) "强制提醒：请扫描条码解除" else "用药提醒进行中，请先处理"
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
     override fun onStop() {
         super.onStop()
         if (!isFinishing && !autoResolvedState.value) {
-            if (isLocked()) {
-                reopenAlarmActivity()
-            } else {
-                silenceAlert()
-            }
+            // 意外退入后台时强力拉回
+            reclaimForeground()
         }
     }
 
-    private fun reopenAlarmActivity() {
+    private fun reclaimForeground() {
+        if (isFinishing || autoResolvedState.value) return
         val payload = payloadState.value ?: return
-        try {
-            val reopenIntent = Intent(this, MedicationAlarmActivity::class.java).apply {
-                putExtra(MedicationAlarmContract.EXTRA_PAYLOAD, payload.toString())
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK
-                        or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                        or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                )
+
+        val pullTask = Runnable {
+            if (isFinishing || autoResolvedState.value) return@Runnable
+            try {
+                val am = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
+                am?.moveTaskToFront(taskId, ActivityManager.MOVE_TASK_NO_USER_ACTION)
+            } catch (ignored: Throwable) {
             }
-            startActivity(reopenIntent)
+            try {
+                val reopenIntent = Intent(this@MedicationAlarmActivity, MedicationAlarmActivity::class.java).apply {
+                    putExtra(MedicationAlarmContract.EXTRA_PAYLOAD, payload.toString())
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                            or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                }
+                startActivity(reopenIntent)
+            } catch (ignored: Throwable) {
+            }
+        }
+
+        // 立即执行一次任务栈拉回
+        pullTask.run()
+        // 延时 120ms 二次拉回，避开系统手势过渡动画期间的栈锁
+        Handler(Looper.getMainLooper()).postDelayed(pullTask, 120L)
+    }
+
+    private fun triggerHapticWarning() {
+        try {
+            val v = getSystemService(VIBRATOR_SERVICE) as? Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                v?.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                v?.vibrate(120)
+            }
         } catch (ignored: Throwable) {
         }
+    }
+
+    private fun triggerHapticBypass() {
         try {
-            AlarmRingService.launch(this, payload.toString())
+            val v = getSystemService(VIBRATOR_SERVICE) as? Vibrator
+            val pattern = longArrayOf(0, 60, 80, 60)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                v?.vibrate(VibrationEffect.createWaveform(pattern, -1))
+            } else {
+                @Suppress("DEPRECATION")
+                v?.vibrate(pattern, -1)
+            }
         } catch (ignored: Throwable) {
         }
     }
 
     /** 扫描时暂停震动，避免机身抖动影响对焦与条码识别率；保留声音 */
     private fun pauseVibration() {
-        try {
-            vibrator?.cancel()
-        } catch (ignored: Throwable) {
-        }
+        AlarmAudioPlayer.pauseVibration()
     }
 
     /** 退出扫描且未解除时恢复震动 */
     private fun resumeVibration() {
-        if (ringtone?.isPlaying == true) {
-            try {
-                vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
-                val pattern = longArrayOf(0, 700, 250, 700, 250, 700)
-                vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
-            } catch (ignored: Throwable) {
-            }
-        }
+        AlarmAudioPlayer.resumeVibration(this)
+    }
+
+    private fun startAlert() {
+        AlarmAudioPlayer.start(this)
+    }
+
+    private fun silenceAlert() {
+        AlarmAudioPlayer.stop()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -247,6 +312,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
                 or WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
         )
+        enableImmersiveMode()
         try {
             payloadState.value = MedicationAlarmContract.payloadFrom(intent)
         } catch (error: JSONException) {
@@ -258,6 +324,15 @@ class MedicationAlarmActivity : ComponentActivity() {
             AlarmRoot(payload)
         }
         startAlert()
+        safeStartLockTask()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        enableImmersiveMode()
+        if (!autoResolvedState.value && !isFinishing) {
+            safeStartLockTask()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -269,7 +344,9 @@ class MedicationAlarmActivity : ComponentActivity() {
             scanUnlockedState.value = false
             autoResolvedState.value = false
             scanSession.value += 1
+            enableImmersiveMode()
             startAlert()
+            safeStartLockTask()
         } catch (ignored: JSONException) {
         }
     }
@@ -325,15 +402,13 @@ class MedicationAlarmActivity : ComponentActivity() {
                 showScanner.value = false
                 scanFeedback.value = null
             } else if (autoResolved.value) {
+                safeStopLockTask()
                 finish()
             } else if (locked) {
                 val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
                 val msg = if (isCustom) "强制提醒：请扫描已绑定的药盒或物品条码解除" else "强制提醒：请扫描专属解锁二维码解除"
                 scanFeedback.value = msg
-                try {
-                    vibrator?.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
-                } catch (ignored: Throwable) {
-                }
+                triggerHapticWarning()
                 Toast.makeText(this@MedicationAlarmActivity, msg, Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this@MedicationAlarmActivity, "已延后 10 分钟提醒", Toast.LENGTH_SHORT).show()
@@ -489,10 +564,7 @@ class MedicationAlarmActivity : ComponentActivity() {
     /** 扫码成功后的短振动与停止警报反馈 */
     private fun vibrateUnlock() {
         silenceAlert()
-        try {
-            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 60, 80, 60), -1))
-        } catch (ignored: Throwable) {
-        }
+        triggerHapticBypass()
     }
 
     /**
@@ -551,19 +623,6 @@ class MedicationAlarmActivity : ComponentActivity() {
         }
     }
 
-    private fun startAlert() {
-        try {
-            ringtone = RingtoneManager.getRingtone(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
-            ringtone?.play()
-        } catch (ignored: Throwable) {
-        }
-        try {
-            vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
-            val pattern = longArrayOf(0, 700, 250, 700, 250, 700)
-            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
-        } catch (ignored: Throwable) {
-        }
-    }
 
     // ------------------------------ 主体内容 ------------------------------
 
@@ -1529,6 +1588,7 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     /** 单药行按钮：向 data 注入 occurrenceId 后入队，TS 侧据此记录到具体 occurrence。 */
     private fun queueOccurrence(action: String, occurrenceId: String) {
+        safeStopLockTask()
         autoResolvedState.value = true
         payloadState.value?.let {
             MedicationAlarmContract.queueOccurrenceAction(this, action, it, occurrenceId)
@@ -1540,6 +1600,7 @@ class MedicationAlarmActivity : ComponentActivity() {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(epochMillis))
 
     private fun act(action: String) {
+        safeStopLockTask()
         autoResolvedState.value = true
         payloadState.value?.let { payload ->
             try {
@@ -1564,18 +1625,8 @@ class MedicationAlarmActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
-    private fun silenceAlert() {
-        try {
-            ringtone?.takeIf { it.isPlaying }?.stop()
-        } catch (ignored: Throwable) {
-        }
-        try {
-            vibrator?.cancel()
-        } catch (ignored: Throwable) {
-        }
-    }
-
     override fun onDestroy() {
+        safeStopLockTask()
         silenceAlert()
         super.onDestroy()
     }

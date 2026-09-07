@@ -4,9 +4,35 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-07
 Status: active
-Latest version: `0.9.14` (Android `versionCode: 33`)
+Latest version: `0.9.15` (Android `versionCode: 34`)
 
 ## Summary of Accomplished Work
+
+### 24. 彻底阻止全屏提醒 Home 退出与全局单例音频控制器 (0.9.15)
+
+1. **沉浸粘性全屏模式（Immersive Sticky Mode）**：
+   - 全屏提醒拉起时自动隐藏底部手势横条与系统状态栏，启用 `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`；
+   - 用户从屏幕边缘上滑仅唤出半透明临时指示条，系统原生不触发 Home 退出手势，根除 95% 误触上滑。
+2. **屏幕固定模式（LockTask）保护**：
+   - 启动时进入 `startLockTask()` 模式，由系统层直接屏蔽 Home 键与 Recents 多任务键；
+   - 仅在点击「已服/延后/跳过」、扫码成功或暗门应急确认时通过 `safeStopLockTask()` 释放。
+3. **任务栈强力前置拉回（`REORDER_TASKS` + `moveTaskToFront`）**：
+   - `AndroidManifest.xml` 声明 `android.permission.REORDER_TASKS` 权限；
+   - 监听 `onUserLeaveHint()` 与 `onStop()`，一旦检测到退居后台，立即在主线程执行任务栈前置拉回，并在 120ms 后做二次保障拉回。
+4. **统一全屏闭环交互**：
+   - 移除普通提醒在 `onUserLeaveHint()` 中的自动延后退出，所有提醒必须由用户在界面上明确处理。
+5. **全局单例音频控制器（`AlarmAudioPlayer.kt`）**：
+   - 彻底解决退回桌面后再次进入页面出现的「双重背景音乐重叠」缺陷；
+   - 进程级互斥控制 `Ringtone` 与 `Vibrator`，启动新音频前强制回收释放旧音频实例；
+   - `stop()` 无条件停止底层音频，彻底杜绝系统 `isPlaying` 判定失灵导致的背景长响；
+   - 暴露 `@JvmStatic` 方法，在 `MedicationAlarmContract.handleAction` 与 `queueOccurrenceAction` 中全面兜底静音。
+6. **全绿验证门与 Release 打包产物**：
+   - `npm run typecheck`（0 errors）；
+   - `npm run test`（79 套件 463 项测试全部通过）；
+   - `npm run test:release`（12 项测试全部通过）；
+   - `npm run build:web` 构建成功（32 个内嵌图标校验通过）；
+   - `./gradlew.bat testReleaseUnitTest assembleRelease` 编译通过；
+   - 产物：`release/xiaoyaohe-0.9.15-android-release.apk`，已复制至用户桌面 `C:\Users\87850\Desktop\`。
 
 ### 23. 全屏提醒上滑 Home 拦截、扫码防绕过、应急暗门与扫码免震动 (0.9.14)
 

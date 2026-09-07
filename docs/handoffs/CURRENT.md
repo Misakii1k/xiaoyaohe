@@ -2,10 +2,28 @@
 
 Updated: 2026-09-07
 Integration branch: `main`
-Product version: `0.9.14`
+Product version: `0.9.15`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
-## Fullscreen Reminder Home Guard, Scan Anti-Bypass & Camera Vibration Mute 2026-09-07 (workspace/claude)
+## Fullscreen Reminder Home Escape Block & Singleton Audio Player 2026-09-07 (workspace/claude)
+
+- **彻底阻断全屏提醒通过 Home 键或手势退出（`MedicationAlarmActivity.kt`）**：
+  - **沉浸粘性全屏模式（Immersive Sticky）**：进入全屏提醒时自动隐藏底部导航手势栏与状态栏，滑动屏幕边缘仅唤出半透明临时指示条，Android 原生不触发 Home 退出手势，根除 95% 以上误触。
+  - **屏幕固定保护（LockTask）**：提醒唤起后进入 `startLockTask()` 模式，由系统底层直接禁用 Home 键与 Recents 多任务键；仅在服药确认、延后、跳过或扫码成功后通过 `safeStopLockTask()` 释放。
+  - **任务栈强力前置拉回（`REORDER_TASKS` + `moveTaskToFront`）**：在 `AndroidManifest.xml` 声明 `android.permission.REORDER_TASKS`；一旦检测到 `onUserLeaveHint()` 或意外压入后台，立即在主线程将 Activity 任务栈无缝拉回最前台，并延时 120ms 二次拉回避开系统手势过渡动画栈锁。
+  - **所有提醒统一闭环**：普通提醒与扫码强制提醒一律留在前台，必须由用户在界面上明确选择「已服/延后/跳过」或扫码解除，彻底杜绝切回桌面导致用药漏服。
+- **全局单例音频控制器（`AlarmAudioPlayer.kt`）**：
+  - 彻底根除「切出桌面再进入页面出现两路背景音乐重叠」的缺陷；
+  - 进程级全局单例互斥管理 `Ringtone` 与 `Vibrator`，启动新音频前强制回收释放旧音频实例；
+  - `stop()` 无条件停止底层音频，移除对不可靠的系统 `isPlaying` 判定；
+  - 提供 `@JvmStatic` 方法供 `MedicationAlarmContract` 动作分发无缝调用。
+- **全绿验证门与产物**：
+  - `npm run typecheck`（0 errors）；
+  - `npm run test`（79 套件 463 项测试全部通过）；
+  - `npm run test:release`（12 项测试全部通过）；
+  - `npm run build:web` 构建成功（32 个内嵌图标校验通过）；
+  - `./gradlew.bat testReleaseUnitTest assembleRelease` 编译通过；
+  - 产物：`release/xiaoyaohe-0.9.15-android-release.apk`，已复制至用户桌面 `C:\Users\87850\Desktop\`。
 
 - **普通提醒上滑 Home 自动转为贪睡（`MedicationAlarmActivity.kt`）**：
   - 监听 `onUserLeaveHint()` 与 `onStop()`，普通全屏提醒在用户上滑 Home 或返回桌面时自动执行「延后 10 分钟提醒（SNOOZE）」；

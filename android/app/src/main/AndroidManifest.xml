@@ -96,6 +96,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
 
     <!-- 保活：前台服务（Android 14+ 需子类型权限） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

@@ -284,6 +284,7 @@ final class MedicationAlarmContract {
     }
 
     static void handleAction(Context context, String action, JSONObject payload) throws JSONException {
+        AlarmAudioPlayer.stop();
         int id = payload.getInt("id");
         context.getSystemService(NotificationManager.class).cancel(id);
         if (ACTION_SNOOZE.equals(action)) {
@@ -423,6 +424,7 @@ final class MedicationAlarmContract {
 
     /** 全屏页单药行按钮：克隆载荷并向 data 注入 occurrenceId 后入队，保证 TS 侧能解析到具体 occurrence。 */
     static void queueOccurrenceAction(Context context, String action, JSONObject payload, String occurrenceId) {
+        AlarmAudioPlayer.stop();
         // 通知/全屏页按钮走 Java action 常量，入队时归一化成 TS 侧识别的 actionId
         String actionId = ACTION_SKIP.equals(action) ? "skip" : "taken";
         try {
