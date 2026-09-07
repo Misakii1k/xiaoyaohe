@@ -28,6 +28,7 @@ final class MedicationAlarmContract {
     static final String ACTION_SNOOZE = "com.medbox.app.MEDICATION_SNOOZE";
     static final String ACTION_SKIP = "com.medbox.app.MEDICATION_SKIP";
     static final String ACTION_ALL_TAKEN = "com.medbox.app.MEDICATION_ALL_TAKEN";
+    static final String ACTION_ALL_SKIPPED = "com.medbox.app.MEDICATION_ALL_SKIPPED";
     static final String EXTRA_PAYLOAD = "payload";
     static final String CHANNEL_STRONG = "medication_strong_v2";
     static final String CHANNEL_ALARM = "medication_alarm_v1";
@@ -294,6 +295,8 @@ final class MedicationAlarmContract {
         String actionId;
         if (ACTION_ALL_TAKEN.equals(action)) {
             actionId = "all-taken";
+        } else if (ACTION_ALL_SKIPPED.equals(action)) {
+            actionId = "all-skipped";
         } else if (ACTION_TAKEN.equals(action)) {
             actionId = "taken";
         } else {

@@ -50,6 +50,7 @@ export async function handleMedicationReminderAction(action: ReminderAction): Pr
     return true;
   }
   if (action.actionId === 'all-taken') return handleAllTakenAction(action);
+  if (action.actionId === 'all-skipped') return handleAllSkippedAction(action);
   if (action.actionId !== 'taken' && action.actionId !== 'skip') return false;
   const dueAt = typeof action.data.dueAt === 'number' ? action.data.dueAt : Date.now();
   const date = toLocalDate(dueAt);
@@ -84,6 +85,27 @@ async function handleAllTakenAction(action: ReminderAction): Promise<boolean> {
   }
   if (resolved.length === 0) return false;
   await setOccurrenceActions(resolved, 'taken');
+  await closeNotificationsByTag(action.tag);
+  await rescheduleMedicationReminders().catch(() => undefined);
+  return true;
+}
+
+/** 「全部跳过」：组内全部 occurrence 一次 setOccurrenceActions 单事务标记为 skipped */
+async function handleAllSkippedAction(action: ReminderAction): Promise<boolean> {
+  const refs = groupOccurrenceRefs(action.data);
+  if (refs.length === 0) return false;
+  const dueAt = typeof action.data.dueAt === 'number' ? action.data.dueAt : Date.now();
+  const date = typeof action.data.date === 'string'
+    ? (action.data.date as LocalDate)
+    : toLocalDate(dueAt);
+  const revisions = await listScheduleRevisions();
+  const resolved: MedicationOccurrence[] = [];
+  for (const ref of refs) {
+    const occurrence = resolveOccurrence(revisions, date, ref.occurrenceId, ref.legacyLogId);
+    if (occurrence) resolved.push(occurrence);
+  }
+  if (resolved.length === 0) return false;
+  await setOccurrenceActions(resolved, 'skipped');
   await closeNotificationsByTag(action.tag);
   await rescheduleMedicationReminders().catch(() => undefined);
   return true;

@@ -2,8 +2,33 @@
 
 Updated: 2026-09-07
 Integration branch: `main`
-Product version: `0.9.13`
+Product version: `0.9.14`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Fullscreen Reminder Home Guard, Scan Anti-Bypass & Camera Vibration Mute 2026-09-07 (workspace/claude)
+
+- **普通提醒上滑 Home 自动转为贪睡（`MedicationAlarmActivity.kt`）**：
+  - 监听 `onUserLeaveHint()` 与 `onStop()`，普通全屏提醒在用户上滑 Home 或返回桌面时自动执行「延后 10 分钟提醒（SNOOZE）」；
+  - 立即停止响铃与震动（`silenceAlert()`），弹出「已延后 10 分钟提醒」Toast 并关闭页面，根除“提醒界面退到桌面但手机在后台持续疯狂响铃”的体验问题。
+- **扫码强制提醒上滑 Home 严格防绕过拦截**：
+  - 判定 `isLocked() == true` 时，用户尝试上滑离开将被严格拦截并立即通过 `Intent.FLAG_ACTIVITY_REORDER_TO_FRONT` 配合前台服务 `AlarmRingService.launch` 兜底弹回最前台；
+  - 触发警告短震与「强制提醒：请扫描条码解除」Toast，铃声保持播放，杜绝睡迷糊随手划掉。
+- **二维码图标 5 秒暗门应急解除（防死锁）**：
+  - 界面保持极简纯净，无外显文字与进度圈（保持纯彩蛋暗门属性，避免日常依赖）；
+  - 卡片顶部手绘二维码图标（`QrGlyph`）支持按压检测，持续长按满 5 秒即刻触发双短震反馈并静音当前警报，弹出液态玻璃质感应急对话框（提供「延后 10 分钟」与「确认跳过本次」选项，支持单药与群组；点击取消恢复响铃）。
+- **相机扫码模式自动关闭震动（降噪稳焦）**：
+  - 点击按钮进入相机扫码取景器时，自动调用 `pauseVibration()` 暂停马达震动，保留报警声音，消除机身抖动对摄像头对焦与条码识别的物理干扰；退出扫码未解除时自动恢复震动。
+- **群组提醒批量跳过数据流打通**：
+  - `MedicationAlarmContract.java` 增加 `ACTION_ALL_SKIPPED` 常量与动作映射；
+  - `reminderActions.ts` 新增 `handleAllSkippedAction`，单事务批量标记当日群组内全部 `occurrence` 为 `skipped`。
+- **全绿验证门与产物**：
+  - `npm run typecheck`（0 errors）；
+  - `npm run test`（79 套件 463 项测试全部通过）；
+  - `npm run test:release`（12 项测试全部通过）；
+  - `npm run build:web` 构建成功（32 个内嵌图标校验通过）；
+  - `npx cap sync android` 同步成功；
+  - `./gradlew.bat testReleaseUnitTest assembleRelease` 224 个任务编译通过；
+  - 产物：`release/xiaoyaohe-0.9.14-android-release.apk`（18,644,659 字节，SHA256: `b6c88b5b47e652f5dd57c7c4d445117d982156298318f5f6eb17a3956e92b6c9`），94 个内嵌资产校验通过，已复制至用户桌面 `C:\Users\87850\Desktop\`。
 
 ## Copywriting Polish with oil-tone 2026-09-07 (workspace/claude)
 
