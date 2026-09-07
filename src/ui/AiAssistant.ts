@@ -50,14 +50,14 @@ function renderAssistantMarkdown(text: string): HTMLElement {
   return fallback;
 }
 
-const GREETING = '你好呀，我是小助手。想知道今天吃什么药、最近是否按时，或者查看药品库存，直接说就行。也能拍照、发文件。';
+const GREETING = '这里是 AI 用药助手。你可以询问今天的服药计划、近期的用药记录或药品库存，也可以直接发送处方图片或清单文件。';
 const QUICK_PROMPTS = [
-  '今天我要吃什么药？',
-  '排查当前用药相互作用与禁忌',
-  '帮我从处方单/清单批量录入药品',
-  '最近一周吃药按时吗？',
-  '哪些药快吃完了？',
-  '打开药品库存',
+  '今天有哪些用药安排？',
+  '检查当前药品的相互作用与禁忌',
+  '根据处方单或清单录入药品',
+  '查看最近一周的服药记录',
+  '查看库存不足的药品',
+  '查看全部药品库存',
 ];
 
 /** 文本附件最多带入模型的字数，避免一次塞整本书 */
@@ -84,7 +84,7 @@ function persistExchange(userText: string, reply: AssistantTurnResult): void {
 
 async function fileToAttachment(file: File): Promise<AssistantAttachment> {
   if (file.size > MAX_FILE_BYTES) {
-    throw new Error('文件太大了，请选 8MB 以内的');
+    throw new Error('文件大小超过 8MB 限制，请重新选择');
   }
   // 图片类（普通照片、处方长图、化验单截屏）
   if (file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic|bmp)$/i.test(file.name)) {

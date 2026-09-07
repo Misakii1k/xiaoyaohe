@@ -153,4 +153,24 @@ describe('settings information architecture contracts', () => {
     // 「重新扫码」恢复取景
     expect(settings).toContain('scannerHost.hidden = false;');
   });
+
+  it('keeps scan-verify binding card and action buttons visible regardless of toggle state and platform', () => {
+    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const styles = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8');
+
+    // 绑定卡片与自适应按钮网格常驻
+    expect(settings).toContain("el('div', { class: 'settings-scan-card mt-2' })");
+    expect(settings).toContain("el('div', { class: 'settings-scan-grid mt-2' })");
+    expect(settings).toContain("html: '重新扫码绑定'");
+    expect(settings).toContain("html: '切换为专属二维码'");
+    expect(settings).toContain("html: '查看专属二维码'");
+    expect(settings).toContain("html: '扫描生活中的码绑定'");
+    expect(settings).toContain("html: '试验扫码解锁'");
+    expect(settings).toContain('仅 Android App 生效');
+
+    // 样式契约
+    expect(styles).toContain('.settings-scan-card');
+    expect(styles).toContain('.settings-scan-grid');
+    expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+  });
 });

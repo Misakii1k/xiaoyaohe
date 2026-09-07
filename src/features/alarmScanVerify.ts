@@ -100,6 +100,17 @@ export function enableAlarmScanVerify(mode: AlarmScanVerifyMode = 'generated'): 
   return `${TOKEN_PREFIX}${token}`;
 }
 
+/** 获取或初始化专属二维码 token（不改变当前 enabled 开启状态）。返回带前缀的完整字符串。 */
+export function getOrCreateGeneratedScanToken(): string {
+  const current = getAlarmScanVerifyPreference();
+  if (current.mode === 'generated' && current.token) {
+    return `${TOKEN_PREFIX}${current.token}`;
+  }
+  const token = (current.mode === 'custom' || !current.token) ? randomToken() : current.token;
+  setAlarmScanVerifyPreference({ ...current, mode: 'generated', token, customLabel: undefined });
+  return `${TOKEN_PREFIX}${token}`;
+}
+
 /** 绑定生活中的已有二维码/条形码作为解锁条件。 */
 export function bindCustomAlarmScanCode(code: string, format?: string): void {
   const trimmed = code.trim();

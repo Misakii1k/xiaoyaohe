@@ -152,7 +152,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
 
   const encourage = el('div', {
     class: 'today-progress-encourage',
-    text: total === 0 ? '今日暂无用药安排~' : pending === 0 ? '🎉 今日所有用药已按时完成！' : '按时完成很棒！继续保持哦~',
+    text: total === 0 ? '今日没有用药计划' : pending === 0 ? '今日用药已全部完成' : `剩余 ${pending} 次用药待处理`,
   });
   progressCard.append(encourage);
   content.append(progressCard);
@@ -221,13 +221,13 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   } else {
     const emptyCard = el('div', { class: 'today-empty-card' });
     emptyCard.append(
-      el('div', { class: 'today-empty-title', text: '还没有设置用药计划' }),
-      el('div', { class: 'today-empty-sub', text: '前往“药品”添加药品并设置服药时间，这里会自动生成今日清单。' })
+      el('div', { class: 'today-empty-title', text: '暂无用药计划' }),
+      el('div', { class: 'today-empty-sub', text: '前往「药品」页面添加药品并配置服药时段，此处将自动生成每日计划。' })
     );
     const addBtn = el('button', {
       class: 'btn primary',
       type: 'button',
-      text: '+ 添加第一种药品',
+      text: '+ 添加药品',
     });
     addBtn.onclick = () => navigate('/meds/new');
     emptyCard.append(addBtn);

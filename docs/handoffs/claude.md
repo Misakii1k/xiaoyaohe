@@ -2,11 +2,51 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-06
+Updated: 2026-09-07
 Status: active
 Latest version: `0.9.13` (Android `versionCode: 32`)
 
 ## Summary of Accomplished Work
+
+### 22. 项目文案润色与 oil-tone 规范落地 (0.9.13+)
+
+1. **文风原则与基线规范**：
+   - 安装并配置 `oil-tone` 技能；
+   - 剔除宣传化用词、主观修饰语、含混术语与口语化标点（如波浪号与表情符号）；
+   - 标题统一采用内容标签式命名（如「关于小药盒」「发布记录」），避免使用动作短语；
+   - 语句平铺直叙，陈述事实边界；中英文与数字之间保持半角空格，专有名词规范拼写。
+2. **发布记录与交接文档润色**：
+   - 逐一润色 `docs/releases/0.9.13.md`、`0.9.12.md`、`0.9.11.md`、`0.9.4.md`，通过 `tone_lint.py` 自动化检测；
+   - 规范 `docs/handoffs/claude.md` 中的架构表述，将含混动作词替换为准确的流程描述。
+3. **界面文本重构**：
+   - `Today.ts`：进度环状态文案改用客观句式（「今日没有用药计划」「今日用药已全部完成」「剩余 N 次用药待处理」），清空状态改用规整文本；
+   - `Settings.ts`：重构关于卡片功能摘要、免责声明及网页端提醒说明；
+   - `AiAssistant.ts`：重写欢迎语、快捷建议和附件超限报错文案。
+4. **全绿验证门与 Release 打包产物**：
+   - `tone_lint.py` 检查全部通过；
+   - `npm run typecheck`（0 errors）；
+   - `npm run test`（79 套件 463 项测试全部通过）；
+   - `npx playwright test`（52 测试全过）；
+   - `npm run release -- --skip-install --android-variant release` 全链路通过：包含 `:app:connectedAndroidTest` 模拟器插桩测试 1/1 通过与 94 个内嵌资产校验；
+   - 产物：`release/xiaoyaohe-0.9.13-android-release.apk`（18,628,171 字节，较前次 +504 字节；SHA256 `c5fb4d577e85230531036a8282c7e18df32f1ddaba9b5629b452c2675c59f7a7`），已复制至用户桌面 `C:\Users\87850\Desktop\`。
+
+### 21. 扫码解除强制提醒绑定功能与操作按钮常驻优化 (0.9.13+)
+
+1. **常驻绑定卡片与操作按钮网格（`Settings.ts` & `settings.css`）**：
+   - 彻底修复总开关处于关闭状态时绑定操作按钮完全被 `if (scanPref.enabled && hasAlarmScanToken())` 门控吞掉的体验断层；
+   - 引入 `.settings-scan-card` 与 `.settings-scan-grid`（双列网格，最后一个测试按钮跨两列居中），开关开闭均清晰显示当前模式（专属码/生活码）、尾号与就绪状态；
+   - 提供「重新扫码绑定 / 切换专属码」或「查看专属二维码 / 扫描生活中的码绑定」入口，用户无需先开总开关即可预设或更换。
+2. **跨平台体验友好化**：
+   - 取消 Web 端对该配置区的整块隐藏，标题展示「仅 Android App 生效」徽标，补充局域网家庭同步互传说明；
+   - Web 端点击「试验扫码解锁」友好提示「全屏闹钟扫码解锁需在 Android App 中体验」。
+3. **安全令牌预置与绑定联动（`alarmScanVerify.ts`）**：
+   - 新增 `getOrCreateGeneratedScanToken()`：保证开关关闭时查看专属二维码也能生成/获取合法 token，不意外强制触发开关开启；
+   - 扫描生活码绑定后自动联动开启总开关并给出明确提示，同时支持用户后续手动关闭总开关保留备用码。
+4. **验证门**：
+   - `npm run typecheck`（0 errors）；
+   - `npm run test`（79 套件 463 测试全部通过）；
+   - `npm run build:web`（资产校验与 Vite 生产构建通过）；
+   - `npx playwright test`（52 测试全过）。
 
 ### 20. 提醒到点必全屏 + 多任务不可划杀 (0.9.13)
 
@@ -94,9 +134,9 @@ Latest version: `0.9.13` (Android `versionCode: 32`)
    - `scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `749a8ffe...`）
    - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `f8e3ef152f15732ec05947c2f36623ad4de21c39eb04ac5137088b9f8c1261f2`)，并已同步复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
 
-### 16. 全屏闹钟生活二维码/条形码解锁识别引擎重构与就地试验闭环 (0.9.11)
+### 16. 全屏闹钟生活二维码/条形码解锁识别引擎重构与就地验证 (0.9.11)
 
-针对用户反馈的「选择生活中的二维码后，在全屏闹钟解锁试验情况下无法正常识别解锁」问题，深入底层排查 Android CameraX + ZXing 条码识别管线与解锁闭环，完成彻底重构：
+针对用户反馈的「选择生活中的二维码后，在全屏闹钟解锁试验情况下无法正常识别解锁」问题，深入底层排查 Android CameraX + ZXing 条码识别管线与解锁机制，完成彻底重构：
 
 1. **核心缺陷与根因定位**：
    - **PlanarYUVLuminanceSource 不支持旋转导致每帧被静默抛弃（致命根因）**：ZXing 的 `PlanarYUVLuminanceSource.isRotateSupported()` 硬编码为 `false`，调用 `rotateCounterClockwise()` 会直接抛出 `java.lang.UnsupportedOperationException: This luminance source does not support rotation by 90 degrees`。原代码在 `analyzeBarcodeFrame` 内包裹了 `try ... catch (ignored: Throwable)`，导致相机的每一帧图像在刚刚准备旋转时就直接抛异常崩溃并被静默丢弃，条码解码器实际上从未执行过任何解码！
@@ -118,7 +158,7 @@ Latest version: `0.9.13` (Android `versionCode: 32`)
    - **智能容错条码比对（`isTokenMatch`）**：
      - 自动滤除 BOM、AIM 标识前缀与控制符；
      - 智能兼容 URL 结尾斜线、协议与大小写差异；
-   - **交互与就地验证闭环**：
+   - **交互与就地验证流程**：
      - `vibrateUnlock()` 解锁即刻停止警报响铃，消除持续警报震动，改为清脆短震；
      - `ScannerOverlay` 错误提示 2.5 秒自动重置淡出；
      - 设置页 `Settings.ts` 在绑定生活码后，操作行直接增加「试验扫码解锁」按钮，用户点击即可立即拉起全屏闹钟实测扫码解除。
@@ -283,7 +323,7 @@ Latest version: `0.9.13` (Android `versionCode: 32`)
 
 对小药盒「本地后端与底层服务」（数据持久化、局域网加密通信协议、Android 原生后台守护及 AI 密钥安全）及前端 WebView 与原生插件的桥接机制进行了全面代码审计与健壮性加固：
 
-- **前后端打卡动作桥接闭环修复**：
+- **前后端打卡动作桥接与数据同步修复**：
   - 在 `MedicationAlarmContract.java` 的 `queueOccurrenceAction` 中补充对 `MainActivity` 的唤醒启动意图（带 `FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP`），解决全屏提醒单药行点击「已服/跳过」后 WebView 无法感知的问题；
   - 在 `src/features/reminderScheduler.ts` 的 `runTick()` 函数入口处前置调用 `replayPendingMedicationReminderActions()`，使常驻后台保活运行的调度器每次计算新计划前均优先消化 SharedPreferences 中累积的原生打卡动作，确保本地 IndexedDB 记录与原生排程状态强一致，彻底根除闹钟重复响起的桥接脱节隐患。
 - **WebView Insets 注入脚本加固**：在 `MainActivity.java` 的 `installInsetsBridge` 脚本中包裹 `if(document.documentElement){...}` 判空保护，防御冷启动首帧时因 DOM 尚未挂载导致的控制台 null 访问异常。

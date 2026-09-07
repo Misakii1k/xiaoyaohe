@@ -1,9 +1,38 @@
 # Current Integration State
 
-Updated: 2026-09-06
+Updated: 2026-09-07
 Integration branch: `main`
 Product version: `0.9.13`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Copywriting Polish with oil-tone 2026-09-07 (workspace/claude)
+
+- **文风规范落地（遵循 oil-tone 规则）**：
+  - 剔除宣传化用词、主观修饰语（「一款专为...打造」「纯净」「用心守护全家健康」「亲情」等）与口语化叹号/波浪号（`~`、`🎉`）；
+  - 标题均作为内容标签（如「关于小药盒」「发布记录」），避免使用动作短语（「了解...」）；
+  - 采用平铺直叙的完整句子，陈述事实边界（明确本地离线存储、不设远程账号、不展示广告）；
+  - 中英文与数字之间保持半角空格，专有名词规范书写。
+- **发布文档与交接文档优化**：
+  - `docs/releases/0.9.13.md`、`0.9.12.md`、`0.9.11.md`、`0.9.4.md` 全面润色并通过 `tone_lint.py` 校验；
+  - `docs/handoffs/claude.md` 替换含混用词，准确表述数据流与交互状态。
+- **界面文本规范**：
+  - `Today.ts`：规范进度摘要与空状态提示（「今日没有用药计划」「今日用药已全部完成」「剩余 N 次用药待处理」）；
+  - `Settings.ts`：重写品牌卡片介绍、核心功能清单、免责声明以及网页端提醒说明；
+  - `AiAssistant.ts`：精简欢迎语、快捷建议与超限错误提示。
+- **质量验证与打包产物**：
+  - `tone_lint.py` 全部检查通过；
+  - TypeScript 检查 0 错误；
+  - Vitest 79 个测试套件 463 项测试全部通过；
+  - Playwright 52 项测试全通过；
+  - Android Release 编译与模拟器（`ldj_test35`）端到端插桩测试 1/1 通过；
+  - 产物：`release/xiaoyaohe-0.9.13-android-release.apk`（18,628,171 字节，SHA256: `c5fb4d577e85230531036a8282c7e18df32f1ddaba9b5629b452c2675c59f7a7`），已复制至用户桌面。
+
+## Scan-Unlock Binding UX & Button Visibility Optimization 2026-09-07 (workspace/claude)
+
+- **绑定入口与卡片常驻（`Settings.ts` & `settings.css`）**：根治「扫码解除强制提醒」在总开关处于关闭状态时绑定按钮完全隐藏（`if (scanPref.enabled && hasAlarmScanToken())`）导致用户误以为功能缺失的问题；重构为常驻渲染 `.settings-scan-card` 与 `.settings-scan-grid`（双列自适应网格排版，移动端不再挤压折行），无论开关开闭均完整展示当前绑定状态（生活码/专属码）并提供「重新扫码绑定 / 切换专属码」或「查看专属二维码 / 扫描生活中的码绑定」入口。
+- **跨平台展示友好化**：取消 Web 端整块隐藏，全平台展示该配置区，非 Android 原生环境下展示「仅 Android App 生效」徽标并说明配置随局域网同步；Web 端点击「试验扫码解锁」友好提示需在 Android App 中体验。
+- **绑定状态联动与静默预置（`alarmScanVerify.ts`）**：新增 `getOrCreateGeneratedScanToken()` 辅助函数，确保在不强制修改 `enabled` 状态下预生成或读取专属码；用户扫描生活码成功绑定后自动置为开启并提示，若暂不需强制提醒可手动拨动总开关关闭（保存已绑定的码）。
+- **验证门**：typecheck 0 错误；vitest 79 套件 463 测试全过（新增 `tests/settingsUiContracts.test.ts` 契约断言与 `tests/alarmScanVerify.test.ts` 单元测试）；`npm run build:web` 资产检查 + Vite 构建成功；Playwright 52 测试全过。
 
 ## Always-Fullscreen Reminder + Unswipeable Alarm Page 2026-09-06 (workspace/claude)
 

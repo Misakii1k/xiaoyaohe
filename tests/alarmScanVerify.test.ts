@@ -6,6 +6,7 @@ import {
   enableAlarmScanVerify,
   getAlarmScanExpectedToken,
   getAlarmScanVerifyPreference,
+  getOrCreateGeneratedScanToken,
   hasAlarmScanToken,
   isAlarmScanVerifyEnabled,
   rotateAlarmScanToken,
@@ -97,5 +98,19 @@ describe('alarmScanVerify 扫码解除强制提醒偏好', () => {
     expect(pref.mode).toBe('generated');
     expect(pref.token).toBe('0123456789abcdef0123456789abcdef');
     expect(getAlarmScanExpectedToken()).toBe('medbox-unlock:0123456789abcdef0123456789abcdef');
+  });
+
+  it('getOrCreateGeneratedScanToken 保持原有 enabled 状态不变并生成可用 token', () => {
+    expect(getAlarmScanVerifyPreference().enabled).toBe(false);
+    const code = getOrCreateGeneratedScanToken();
+    expect(code.startsWith('medbox-unlock:')).toBe(true);
+    const pref = getAlarmScanVerifyPreference();
+    expect(pref.enabled).toBe(false);
+    expect(pref.mode).toBe('generated');
+    expect(hasAlarmScanToken()).toBe(true);
+
+    // 再次调用返回相同 token
+    const again = getOrCreateGeneratedScanToken();
+    expect(again).toBe(code);
   });
 });

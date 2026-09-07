@@ -62,6 +62,7 @@ import {
   disableAlarmScanVerify,
   enableAlarmScanVerify,
   getAlarmScanVerifyPreference,
+  getOrCreateGeneratedScanToken,
   hasAlarmScanToken,
   rotateAlarmScanToken,
 } from '../features/alarmScanVerify';
@@ -305,19 +306,19 @@ function renderAboutSection(): HTMLElement {
 
   const intro = el('div', {
     class: 'settings-about-intro',
-    text: '小药盒是一款专为家庭日常用药打造的健康管理工具。吃药提醒、药品管理与库存记录均安全保存在本机，纯净无广告，用心守护全家健康。',
+    text: '用于家庭日常用药管理。服药提醒、药品信息与库存记录均保存在本地设备中，不展示广告，无需注册账号。',
   });
 
   const highlights = el('div', { class: 'settings-about-highlights' }, [
-    el('div', { class: 'settings-about-hl-item', text: '✔ 定时提醒与智能补服' }),
-    el('div', { class: 'settings-about-hl-item', text: '✔ 药箱余量预警防断药' }),
-    el('div', { class: 'settings-about-hl-item', text: '✔ 本地数据隐私安全守护' }),
-    el('div', { class: 'settings-about-hl-item', text: '✔ 亲情面对面免流同步' }),
+    el('div', { class: 'settings-about-hl-item', text: '✔ 定时服药提醒与记录' }),
+    el('div', { class: 'settings-about-hl-item', text: '✔ 药箱余量预警' }),
+    el('div', { class: 'settings-about-hl-item', text: '✔ 数据保存在本地设备' }),
+    el('div', { class: 'settings-about-hl-item', text: '✔ 局域网面对面免流量同步' }),
   ]);
 
   const disclaimer = el('div', {
     class: 'settings-about-disclaimer muted',
-    text: '健康声明：小药盒所有提醒与助手建议仅作为日常健康辅助参考，不构成任何医疗处方或临床诊断建议。如有身体不适，请遵从专业医嘱。',
+    text: '健康声明：小药盒的服药提醒与助手建议仅供日常健康管理参考，不构成处方或临床诊断意见。如有不适，请咨询专业医生。',
   });
 
   aboutCard.append(brandRow, intro, highlights, disclaimer);
@@ -985,78 +986,138 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     void refreshFullScreenAlarmCapability();
   }
 
-  // ── 扫码解除强制提醒（仅 Android 原生全屏提醒生效）──
-  if (isNativeReminderPlatform() && nativeMedicationAlarmAvailable()) {
-    const scanPref = getAlarmScanVerifyPreference();
-    const scanRow = el('label', { class: 'settings-toggle-row mt-3' });
-    const scanCopy = el('div', { class: 'settings-toggle-copy' });
-    const isCustom = scanPref.mode === 'custom';
-    scanCopy.append(
-      el('div', { class: 'settings-toggle-title', text: '扫码解除强制提醒' }),
-      el('div', {
-        class: 'settings-toggle-desc',
-        text: scanPref.enabled
-          ? (isCustom
-              ? `已开启：${formatCustomScanCodeSummary(scanPref.customLabel, scanPref.token)}`
-              : '已开启：全屏提醒必须扫描专属二维码后才能操作')
-          : '关闭：提醒到点可直接点击完成或贪睡',
+  // ── 扫码解除强制提醒（全屏响铃仅 Android 原生生效，配置与绑定全局常驻）──
+  const isNativeAlarm = isNativeReminderPlatform() && nativeMedicationAlarmAvailable();
+  const scanPref = getAlarmScanVerifyPreference();
+  const scanRow = el('label', { class: 'settings-toggle-row mt-3' });
+  const scanCopy = el('div', { class: 'settings-toggle-copy' });
+  const isCustom = scanPref.mode === 'custom';
+
+  const titleRow = el('div', {
+    class: 'settings-toggle-title',
+    style: 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap;',
+  });
+  titleRow.append(el('span', { text: '扫码解除强制提醒' }));
+  if (!isNativeAlarm) {
+    titleRow.append(
+      el('span', {
+        class: 'chip-pill',
+        style: 'font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: rgba(0, 0, 0, 0.06); color: var(--color-text-muted);',
+        text: '仅 Android App 生效',
       }),
     );
-    const scanToggle = el('input', {
-      type: 'checkbox',
-      role: 'switch',
-      'aria-label': '扫码解除强制提醒',
-    });
-    scanToggle.checked = scanPref.enabled;
-    scanToggle.onchange = async () => {
-      if (scanToggle.checked) {
-        if (scanPref.mode === 'custom' && scanPref.token) {
-          enableAlarmScanVerify('custom');
-          toast('已开启扫码验证（已绑定生活码）');
-          await rescheduleMedicationReminders().catch(() => {});
-        } else {
-          enableAlarmScanVerify('generated');
-          toast('已开启，请查看专属二维码或扫描已有码绑定');
-          openUnlockQrSheet(rerender);
-        }
-      } else {
-        disableAlarmScanVerify();
-        toast('已关闭扫码验证');
-        await rescheduleMedicationReminders().catch(() => {});
-      }
-      rerender();
-    };
-    scanRow.append(scanCopy, scanToggle);
-    body.append(scanRow);
-
-    if (scanPref.enabled && hasAlarmScanToken()) {
-      const qrRow = el('div', { class: 'btn-row mt-3' });
-      const testUnlockBtn = el('button', { class: 'btn tonal', html: '试验扫码解锁' });
-      testUnlockBtn.onclick = async () => {
-        try {
-          await fireNativeMedicationAlarmNow('fullscreen-short');
-          toast('已触发全屏提醒，请体验扫码解锁');
-        } catch {
-          toast('触发失败，请先允许全屏权限');
-        }
-      };
-
-      if (isCustom) {
-        const rebindBtn = el('button', { class: 'btn tonal', html: '重新扫码绑定' });
-        rebindBtn.onclick = () => openBindCustomCodeSheet(rerender);
-        const switchQrBtn = el('button', { class: 'btn tonal', html: '切换为专属二维码' });
-        switchQrBtn.onclick = () => openUnlockQrSheet(rerender);
-        qrRow.append(rebindBtn, switchQrBtn, testUnlockBtn);
-      } else {
-        const showQrBtn = el('button', { class: 'btn tonal', html: '查看专属二维码' });
-        showQrBtn.onclick = () => openUnlockQrSheet(rerender);
-        const bindCustomBtn = el('button', { class: 'btn tonal', html: '扫描生活中的码绑定' });
-        bindCustomBtn.onclick = () => openBindCustomCodeSheet(rerender);
-        qrRow.append(showQrBtn, bindCustomBtn, testUnlockBtn);
-      }
-      body.append(qrRow);
-    }
   }
+
+  const descText = scanPref.enabled
+    ? (isCustom
+        ? `已开启 · ${formatCustomScanCodeSummary(scanPref.customLabel, scanPref.token)}`
+        : '已开启 · 全屏提醒必须扫描专属二维码后才能操作')
+    : (isCustom
+        ? `已关闭 · 当前备用：${formatCustomScanCodeSummary(scanPref.customLabel, scanPref.token)}`
+        : '已关闭 · 提醒到点可直接点击完成或贪睡');
+
+  scanCopy.append(
+    titleRow,
+    el('div', { class: 'settings-toggle-desc', text: descText }),
+  );
+  const scanToggle = el('input', {
+    type: 'checkbox',
+    role: 'switch',
+    'aria-label': '扫码解除强制提醒',
+  });
+  scanToggle.checked = scanPref.enabled;
+  scanToggle.onchange = async () => {
+    if (scanToggle.checked) {
+      if (scanPref.mode === 'custom' && scanPref.token) {
+        enableAlarmScanVerify('custom');
+        toast('已开启扫码验证（已绑定生活码）');
+        await rescheduleMedicationReminders().catch(() => {});
+      } else {
+        enableAlarmScanVerify('generated');
+        toast('已开启，请查看专属二维码或扫描已有码绑定');
+        openUnlockQrSheet(rerender, true);
+      }
+    } else {
+      disableAlarmScanVerify();
+      toast('已关闭扫码验证');
+      await rescheduleMedicationReminders().catch(() => {});
+    }
+    rerender();
+  };
+  scanRow.append(scanCopy, scanToggle);
+  body.append(scanRow);
+
+  // ── 常驻展示当前绑定状态卡片与操作按钮（无论开关开闭均可见）──
+  const scanCard = el('div', { class: 'settings-scan-card mt-2' });
+  const cardHeader = el('div', { class: 'settings-scan-card-header' });
+  const badge = el('span', {
+    class: 'chip-pill chip-pill-active',
+    style: 'font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px;',
+    text: isCustom ? '生活条形码/二维码' : '专属二维码（打印件）',
+  });
+  const statusLabel = el('span', {
+    style: 'font-size: 13px; font-weight: 600; color: var(--color-text);',
+    text: isCustom
+      ? formatCustomScanCodeSummary(scanPref.customLabel, scanPref.token)
+      : (hasAlarmScanToken() ? '专属二维码已就绪' : '专属二维码（系统预置）'),
+  });
+  cardHeader.append(badge, statusLabel);
+
+  const cardDesc = el('div', {
+    class: 'settings-scan-card-desc',
+    text: isCustom
+      ? '闹钟响起时扫描已绑定的药盒条形码或生活码，直接记录为已服用并自动关闭提醒。'
+      : '截图保存专属二维码并打印贴在药箱或远离床的位置，到点起身扫码解除，杜绝睡迷糊随手关闭。',
+  });
+
+  scanCard.append(cardHeader, cardDesc);
+  if (!isNativeAlarm) {
+    scanCard.append(
+      el('div', {
+        class: 'muted text-xs mt-2',
+        text: '💡 网页端支持提前绑定与查看，数据可通过设置页「家庭同步」互传至手机。全屏响铃仅在 Android App 生效。',
+      }),
+    );
+  }
+  body.append(scanCard);
+
+  // 操作按钮网格（双列排列，保证移动端自适应舒展）
+  const qrGrid = el('div', { class: 'settings-scan-grid mt-2' });
+  const testUnlockBtn = el('button', { class: 'btn tonal', html: '试验扫码解锁' });
+  testUnlockBtn.onclick = async () => {
+    if (!isNativeAlarm) {
+      toast('全屏闹钟扫码解锁需在 Android App 中体验');
+      return;
+    }
+    if (!scanPref.enabled) {
+      toast('请先开启上方「扫码解除强制提醒」开关');
+      return;
+    }
+    try {
+      await fireNativeMedicationAlarmNow('fullscreen-short');
+      toast('已触发全屏提醒，请体验扫码解锁');
+    } catch {
+      toast('触发失败，请先允许全屏权限');
+    }
+  };
+
+  if (isCustom) {
+    const rebindBtn = el('button', { class: 'btn tonal', html: '重新扫码绑定' });
+    rebindBtn.onclick = () => openBindCustomCodeSheet(rerender);
+    const switchQrBtn = el('button', { class: 'btn tonal', html: '切换为专属二维码' });
+    switchQrBtn.onclick = () => {
+      openUnlockQrSheet(rerender, true);
+      toast('已切换为专属二维码并开启');
+    };
+    qrGrid.append(rebindBtn, switchQrBtn, testUnlockBtn);
+  } else {
+    const showQrBtn = el('button', { class: 'btn tonal', html: '查看专属二维码' });
+    showQrBtn.onclick = () => openUnlockQrSheet(rerender, scanPref.enabled);
+    const bindCustomBtn = el('button', { class: 'btn tonal', html: '扫描生活中的码绑定' });
+    bindCustomBtn.onclick = () => openBindCustomCodeSheet(rerender);
+    qrGrid.append(showQrBtn, bindCustomBtn, testUnlockBtn);
+  }
+  body.append(qrGrid);
 
   body.append(
     el('div', {
@@ -1067,18 +1128,21 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
           '· 全屏模式将在到点时亮屏提醒，无权限时自动降级为通知栏提醒。\n' +
           '· 若系统限制后台运行，请在电池优化中将本应用设为允许后台活动。\n' +
           '· 重新进入应用时会自动检查遗漏的提醒并校准闹钟。'
-        : '网页端提醒说明：\n· 把本页「添加到主屏幕」再打开，后台补发的成功率会高不少。\n' +
-          '· 页面开着（包括切到后台但没被系统清掉）时，提醒最准时。\n' +
-          '· 手机息屏久了、或者你清了后台，补发会延迟，也可能直接丢失。\n' +
-          '· 网页端没有锁屏全屏提醒，那是手机 App 才有的能力。\n' +
-          '· 重新打开页面时会自动补查一次遗漏的任务。',
+        : '网页端提醒说明：\n' +
+          '· 将网页「添加到主屏幕」后打开，可提升后台提醒的可靠性。\n' +
+          '· 浏览器保持前台运行或处于活跃状态时，提醒最为准确。\n' +
+          '· 设备长时间息屏或浏览器进程被清理后，通知可能会延迟或无法接收。\n' +
+          '· 网页端不支持锁屏全屏提醒与物理按键拦截，完整功能请使用 Android 客户端。\n' +
+          '· 重新打开网页时会自动检查遗漏的服药任务。',
     })
   );
 }
 
 /** ---------------- 扫码解除：专属二维码 Sheet ---------------- */
-function openUnlockQrSheet(rerender: () => void): void {
-  const tokenValue = enableAlarmScanVerify('generated');
+function openUnlockQrSheet(rerender: () => void, activate: boolean = true): void {
+  const tokenValue = activate
+    ? enableAlarmScanVerify('generated')
+    : getOrCreateGeneratedScanToken();
   void rescheduleMedicationReminders().catch(() => {});
   const title = el('h3', { class: 'lan-sync-sheet-title', text: '强制提醒专属二维码' });
   const canvas = document.createElement('canvas');
@@ -1113,10 +1177,10 @@ function openUnlockQrSheet(rerender: () => void): void {
     );
     if (!confirmed) return;
     rotateAlarmScanToken();
-    toast('已生成新的专属码');
+    toast('已生成新的专属码并开启');
     sheet.close();
     rerender();
-    openUnlockQrSheet(rerender);
+    openUnlockQrSheet(rerender, true);
   };
   const switchCustomBtn = el('button', { class: 'btn tonal', html: '改为扫描生活中的码' });
   switchCustomBtn.onclick = () => {
@@ -1212,7 +1276,7 @@ function openBindCustomCodeSheet(rerender: () => void): void {
     confirmBtn.onclick = async () => {
       if (!scannedCode) return;
       bindCustomAlarmScanCode(scannedCode, scannedFormat || undefined);
-      toast('已成功绑定！闹钟提醒时扫此码即可解除', 3200);
+      toast('已成功绑定并开启！闹钟提醒时扫此码即可解除', 3200);
       await rescheduleMedicationReminders().catch(() => {});
       sheet.close();
       rerender();
