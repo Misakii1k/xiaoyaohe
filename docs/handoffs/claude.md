@@ -8,18 +8,23 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
 
 ## Summary of Accomplished Work
 
-### 27. Web 端 PWA 静态在线部署、Vite 相对路径适配与 GitHub Actions 自动发版流水线 (0.9.15)
+### 27. Web 端 PWA 静态在线部署（Cloudflare Pages 正式上线）、Vite 相对路径适配与 GitHub Actions 自动发版流水线 (0.9.15)
 
-1. **Vite 相对基路径适配（`vite.config.ts`）**：
+1. **Cloudflare Pages 全球 CDN 正式上线**：
+   - 公网正式可访问地址：`https://xiaoyaohe.pages.dev/`；
+   - 浏览器全自动化完成与 GitHub 私有仓库 `Misakii1k/xiaoyaohe`（`workspace/claude` 分支）的绑定与配置；
+   - 填入框架预设 `Vite`、构建命令 `npm run build:web`、输出目录 `dist`，并注入 `NODE_VERSION=22` 环境变量；
+   - 40 秒构建成功，全球 Anycast 分发完成，在浏览器中实测首屏加载、暗色液态玻璃主题与全部业务功能秒开。
+2. **Vite 相对基路径适配（`vite.config.ts`）**：
    - 增加 `base: process.env.VITE_BASE_PATH || './'`；
-   - 确保在 GitHub Pages 仓库二级目录（`https://misakii1k.github.io/xiaoyaohe/`）、独立域名根路径以及 Capacitor Android 本地 WebView 下，所有 CSS、JS 及图标资源均能通过相对路径正常加载。
-2. **浏览器持久化存储保护（`src/main.ts`）**：
+   - 确保在 Cloudflare Pages 独立根路径、GitHub Pages 仓库二级目录（`https://misakii1k.github.io/xiaoyaohe/`）以及 Capacitor Android 本地 WebView 下，所有 CSS、JS 及图标资源均能通过相对路径正常加载。
+3. **浏览器持久化存储保护（`src/main.ts`）**：
    - 网页端启动阶段主动向浏览器申请 `navigator.storage.persist()` 持久化配额，保护本地 IndexedDB 药品清单与用药打卡记录。
-3. **GitHub Pages 自动化部署工作流（`.github/workflows/deploy-web.yml`）**：
-   - 代码推送至 `main`、`workspace/claude` 或手动触发时，自动执行类型检查、测试门禁与静态打包，自动将 PWA 网页发布至 GitHub Pages。
-4. **Android APK 自动打包与 GitHub Releases 发布工作流（`.github/workflows/release-apk.yml`）**：
+4. **GitHub Pages 自动化部署工作流（`.github/workflows/deploy-web.yml`）**：
+   - 代码推送至 `main`、`workspace/claude` 或手动触发时，自动执行类型检查、测试门禁与静态打包，并配置 `lfs: true` 保证图标母版正常拉取。
+5. **Android APK 自动打包与 GitHub Releases 发布工作流（`.github/workflows/release-apk.yml`）**：
    - 推送版本 Tag（如 `v0.9.16`）或手动触发时，自动拉取代码、配置 Java 21 与 Android SDK、执行 `./gradlew assembleRelease testReleaseUnitTest` 编译、自动适配/生成发布签名、生成校验和并挂载到 GitHub Releases 供用户下载。
-5. **全绿验证门**：
+6. **全绿验证门**：
    - `npm run typecheck`（0 errors）；
    - `npm test`（79 个测试套件，467 项测试全部通过）；
    - `npm run build:web` 编译成功，32 个内嵌图标校验通过，产物引用全部为相对路径。

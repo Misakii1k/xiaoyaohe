@@ -20,15 +20,19 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - `npm test`（79 个测试套件，467 个测试全部通过）；
   - `npm run build:web` 构建通过。
 
-## Web PWA Online Deployment & GitHub Actions Release Automation 2026-09-08 (workspace/claude)
+## Web PWA Online Deployment (Cloudflare Pages Live) & GitHub Actions Release Automation 2026-09-08 (workspace/claude)
 
+- **Cloudflare Pages 全球 CDN 正式上线（公网可访问）**：
+  - 公网正式访问地址：`https://xiaoyaohe.pages.dev/`；
+  - 成功绑定 GitHub 私有仓库 `Misakii1k/xiaoyaohe`（`workspace/claude` 分支），自动配置 Node 22 环境与 Vite 构建；
+  - 经实测首屏秒开，暗黑液态玻璃质感、今日用药、药品管理、分药排程、库存、设置及 AI 助手全链路功能完整可用。
 - **Vite 相对基路径适配（`vite.config.ts`）**：
-  - 增加 `base: process.env.VITE_BASE_PATH || './'`，确保静态资源在 GitHub Pages 二级目录（`misakii1k.github.io/xiaoyaohe/`）、独立域名根目录以及 Capacitor Android 本地 WebView 下均能通过相对路径正确定位，消除 404 隐患。
+  - 增加 `base: process.env.VITE_BASE_PATH || './'`，确保静态资源在 Cloudflare Pages 独立根域名、GitHub Pages 二级目录（`misakii1k.github.io/xiaoyaohe/`）以及 Capacitor Android 本地 WebView 下均能通过相对路径正确定位，消除 404 隐患。
 - **浏览器持久化存储保护（`src/main.ts`）**：
   - 网页端启动阶段主动向浏览器申请 `navigator.storage.persist()` 持久化配额，防止移动端 Safari 或清理大师在存储紧张时意外清除 IndexedDB 药品与日程数据。
 - **GitHub Pages 自动化部署工作流（`.github/workflows/deploy-web.yml`）**：
-  - 支持向 `main`、`workspace/claude` 推送或手动触发；
-  - 自动执行 Node 22 环境安装、`npm ci`、`npm run typecheck`、`npm test` 门禁与 Web 资源打包，自动发布至 GitHub Pages。
+  - 支持向 `main`、`workspace/claude` 推送或手动触发；已修复 Git LFS 图标母版拉取配置；
+  - 若后续仓库设为 Public，可一键激活作为备用站点。
 - **Android APK 自动打包与 GitHub Releases 发布工作流（`.github/workflows/release-apk.yml`）**：
   - 支持推送版本 Tag（`v*`）或手动点击执行；
   - 结合 Java 21、Android SDK 与 Gradle 缓存，自动适配 GitHub Secrets 专属签名密钥或自动生成一致的标准发布签名；
