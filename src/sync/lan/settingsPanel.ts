@@ -126,7 +126,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     autoSyncToggle,
     el('div', { class: 'lan-sync-toggle-copy' }, [
       el('strong', { text: '每 30 分钟自动同步' }),
-      el('span', { text: '在同一 Wi‑Fi 下后台轮询已配对设备。需先扫码配对一次；两台都开启效果更好。依赖「设置 → 后台运行」。' }),
+      el('span', { text: '在同一 Wi‑Fi 下后台轮询已配对设备。需先扫码配对一次；两台都开启效果更好。依赖「设置 → 后台保活与防杀」。' }),
     ]),
   ]);
 

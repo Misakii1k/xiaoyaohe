@@ -1,4 +1,4 @@
-﻿package com.medbox.app
+package com.medbox.app
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
@@ -24,10 +24,14 @@ class MedboxAccessibilityService : AccessibilityService() {
         if (event == null) return
 
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val pkg = event.packageName?.toString() ?: return
-            // 忽略本应用与常见输入法/系统界面交互
-            if (pkg == packageName) return
+            val pkg = event.packageName?.toString()?.lowercase() ?: return
+            // 忽略本应用、输入法、系统权限申请弹窗（避免拦截相机权限授予过程与崩溃）
+            if (pkg == packageName.lowercase()) return
             if (pkg.contains("inputmethod") || pkg.contains("ime")) return
+            if (pkg.contains("permission") || pkg.contains("packageinstaller") ||
+                pkg.contains("security") || pkg.contains("systemmanager") ||
+                pkg.contains("safecenter") || pkg == "android" || pkg.contains("systemui")
+            ) return
 
             Log.i(TAG, "Non-app window detected during mandatory alarm: $pkg, pulling alarm back to front")
             reclaimAlarm()
@@ -50,6 +54,7 @@ class MedboxAccessibilityService : AccessibilityService() {
     }
 
     private fun reclaimAlarm() {
+        if (!isGuarded) return
         val payload = activePayloadString ?: return
         try {
             val reopenIntent = Intent(this, MedicationAlarmActivity::class.java).apply {

@@ -152,13 +152,94 @@ public class MedicationAlarmContractTest {
         assertTrue(MedicationAlarmContract.isTokenMatch("]Q1https://example.com", "https://example.com"));
         assertTrue(MedicationAlarmContract.isTokenMatch("]C16901234567890", "6901234567890"));
 
-        // UPC-A (12位) 与 EAN-13 (13位带前导0) 容错
-        assertTrue(MedicationAlarmContract.isTokenMatch("0123456789012", "123456789012"));
-        assertTrue(MedicationAlarmContract.isTokenMatch("123456789012", "0123456789012"));
+        // TOKEN_PREFIX 容错：两边无论带不带前缀均可匹配
+        assertTrue(MedicationAlarmContract.isTokenMatch("v1:abc", "medbox-unlock:v1:abc"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("medbox-unlock:v1:abc", "v1:abc"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("MEDBOX-UNLOCK:V1:ABC", "v1:abc"));
+
+        // GTIN-14 (14位前导0) 与 EAN-13 (13位) / UPC-A (12位) 容错
+        assertTrue(MedicationAlarmContract.isTokenMatch("06901234567890", "6901234567890"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("6901234567890", "06901234567890"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("00123456789012", "123456789012"));
+
+        // GS1-128 / DataMatrix AI (01) 提取容错
+        assertTrue(MedicationAlarmContract.isTokenMatch("(01)06901234567890", "6901234567890"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("0106901234567890", "6901234567890"));
+        // GS1 与 GS1 互相匹配（验证 gtin1 vs gtin2 比对修复）
+        assertTrue(MedicationAlarmContract.isTokenMatch("(01)06901234567890", "0106901234567890"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("010690123456789017251231", "(01)06901234567890"));
+
+        // 药品追溯码与监管网 URL 包含容错
+        assertTrue(MedicationAlarmContract.isTokenMatch(
+            "http://app.nmpa.gov.cn/code/81234567890123456789",
+            "81234567890123456789"
+        ));
+        assertTrue(MedicationAlarmContract.isTokenMatch(
+            "81234567890123456789",
+            "https://dhy.alihealth.cn/trace/81234567890123456789?source=qr"
+        ));
+
+        // 引号与制表符清理容错
+        assertTrue(MedicationAlarmContract.isTokenMatch("\"6901234567890\"", "'6901234567890'"));
+        assertTrue(MedicationAlarmContract.isTokenMatch("\t6901234567890\t", "6901234567890"));
 
         // 不匹配
         assertFalse(MedicationAlarmContract.isTokenMatch("12345", "67890"));
         assertFalse(MedicationAlarmContract.isTokenMatch("", "67890"));
         assertFalse(MedicationAlarmContract.isTokenMatch("12345", ""));
+    }
+
+    @Test
+    public void allExpectedTokensAggregatesTokensAndBarcodes() throws Exception {
+        JSONObject data = groupData();
+        // 给 occurrenceA 增加绑定的药盒条形码
+        data.getJSONArray("occurrences").getJSONObject(0).put("barcodes", new JSONArray().put("6901111111111"));
+        // 给 occurrenceB 增加绑定的药盒条形码
+        data.getJSONArray("occurrences").getJSONObject(1).put("barcodes", new JSONArray().put("6902222222222"));
+
+        JSONObject payload = new JSONObject()
+            .put("scanToken", "medbox-unlock:custom_token_123")
+            .put("data", data);
+
+        java.util.List<String> tokens = MedicationAlarmContract.allExpectedTokens(payload);
+        assertEquals(3, tokens.size());
+        assertTrue(tokens.contains("medbox-unlock:custom_token_123"));
+        assertTrue(tokens.contains("6901111111111"));
+        assertTrue(tokens.contains("6902222222222"));
+
+        // 扫专属解锁码匹配
+        assertTrue(MedicationAlarmContract.isAnyTokenMatch("custom_token_123", tokens));
+        // 扫任一药品药盒条码匹配（含 GTIN-14 前导零）
+        assertTrue(MedicationAlarmContract.isAnyTokenMatch("06901111111111", tokens));
+        assertTrue(MedicationAlarmContract.isAnyTokenMatch("6902222222222", tokens));
+        // 扫描不相关的码不匹配
+        assertFalse(MedicationAlarmContract.isAnyTokenMatch("6909999999999", tokens));
+    }
+
+    @Test
+    public void allExpectedTokensAcrossMultiplePayloadsAggregatesCorrectly() throws Exception {
+        JSONObject payload1 = new JSONObject()
+            .put("id", 101)
+            .put("scanToken", "medbox-unlock:master_alarm_token")
+            .put("data", new JSONObject().put("barcode", "6901111111111"));
+
+        JSONObject payload2 = new JSONObject()
+            .put("id", 102)
+            .put("scanToken", "medbox-unlock:master_alarm_token")
+            .put("data", new JSONObject().put("barcode", "6902222222222"));
+
+        java.util.List<JSONObject> payloads = java.util.Arrays.asList(payload1, payload2);
+        java.util.List<String> aggregated = MedicationAlarmContract.allExpectedTokens(payloads);
+
+        // 包含主解锁码及两药各自的条码
+        assertTrue(aggregated.contains("medbox-unlock:master_alarm_token"));
+        assertTrue(aggregated.contains("6901111111111"));
+        assertTrue(aggregated.contains("6902222222222"));
+
+        // 扫描任何一个条码均能命中匹配
+        assertTrue(MedicationAlarmContract.isAnyTokenMatch("master_alarm_token", aggregated));
+        assertTrue(MedicationAlarmContract.isAnyTokenMatch("06901111111111", aggregated));
+        assertTrue(MedicationAlarmContract.isAnyTokenMatch("6902222222222", aggregated));
+        assertFalse(MedicationAlarmContract.isAnyTokenMatch("6903333333333", aggregated));
     }
 }

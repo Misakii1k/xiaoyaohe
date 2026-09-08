@@ -42,7 +42,12 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
     { cleanupRetiredCloudSyncStorage },
     { cleanupRetiredWorkStorage },
     { startAutoSync },
-    { isApkDistributionAvailable, startServingInstalledApk },
+    {
+      isApkDistributionAvailable,
+      startServingInstalledApk,
+      checkForAppUpdates,
+      notifyIfUpdateAvailable,
+    },
   ] = await Promise.all([
     import('./router'),
     import('./app/moduleRegistry'),
@@ -119,11 +124,17 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
     /* 自动同步启动失败不挡首屏 */
   }
 
-  // 局域网 APK 分发：在 Android App 启动时自动在 38473 端口对外分发本机 APK，供同局域网设备获取更新
+  // 局域网 APK 分发与每日静默更新检测
   if (isApkDistributionAvailable()) {
     void startServingInstalledApk().catch((cause) => {
       reportSilentFailure('lan.apk-serve-start', cause);
     });
+    // 延迟 4 秒执行低优先级每日静默更新检测（防干扰首屏渲染，24h 内最多提醒一次）
+    window.setTimeout(() => {
+      void checkForAppUpdates()
+        .then(() => notifyIfUpdateAvailable())
+        .catch(() => undefined);
+    }, 4000);
   }
 
   for (const [legacyPath, currentPath] of Object.entries(compatibilityRedirects)) {

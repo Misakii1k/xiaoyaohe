@@ -24,11 +24,13 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.net.URL;
 import java.net.UnknownHostException;
 import java.util.HashSet;
 import java.util.Set;
@@ -185,6 +187,42 @@ public final class ApkDistributionPlugin extends Plugin {
         });
     }
 
+    /**
+     * 通过 HTTP/HTTPS 下载指定 URL 的 APK 文件到 destPath，支持 302 重定向与实时进度通知。
+     */
+    @PluginMethod
+    public void downloadHttp(PluginCall call) {
+        String urlString = call.getString("url");
+        String destPath = call.getString("destPath");
+        if (urlString == null || urlString.isEmpty()) {
+            call.reject("url is required", "INVALID_URL");
+            return;
+        }
+        if (destPath == null || destPath.isEmpty()) {
+            call.reject("destPath is required", "INVALID_PATH");
+            return;
+        }
+
+        File dest = resolveStoragePath(destPath);
+        if (dest == null) {
+            call.reject("Cannot resolve destPath: " + destPath, "INVALID_PATH");
+            return;
+        }
+        final String absolutePath = dest.getAbsolutePath();
+
+        ioExecutor.execute(() -> {
+            try {
+                long bytes = doDownloadHttp(urlString, absolutePath);
+                JSObject result = new JSObject();
+                result.put("bytes", bytes);
+                result.put("destPath", absolutePath);
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject("APK download failed: " + error.getMessage(), "DOWNLOAD_FAILED");
+            }
+        });
+    }
+
     /** 快速探测指定 IP 的 38473 端口是否在对外分发有效 APK（通过校验前 8 字节 MAGIC）。 */
     @PluginMethod
     public void probePeer(PluginCall call) {
@@ -234,12 +272,13 @@ public final class ApkDistributionPlugin extends Plugin {
 
     /**
      * 并发快速扫描本机所在 /24 子网的所有 IP（排除本机），探测是否有设备在 38473 分发 APK。
+     * 使用受控并发线程池（16线程），避免瞬时 254 线程暴击导致的 OOM 与家用路由器 SYN 防护丢包。
      * 返回所有可达的分发源列表 [{ host: string, port: number }]。
      */
     @PluginMethod
     public void scanSubnet(PluginCall call) {
         final int targetPort = call.getInt("port", APK_PORT);
-        final int timeoutMs = call.getInt("timeoutMs", 1000);
+        final int timeoutMs = call.getInt("timeoutMs", 500);
 
         final Inet4Address localAddress;
         try {
@@ -261,47 +300,55 @@ public final class ApkDistributionPlugin extends Plugin {
         ioExecutor.execute(() -> {
             java.util.List<JSObject> foundPeers = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
             java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(254);
-
-            for (int i = 1; i <= 254; i++) {
-                final int hostIndex = i;
-                if (hostIndex == selfLast) {
-                    latch.countDown();
-                    continue;
-                }
-                final String targetIp = prefix + hostIndex;
-                try {
-                    ioExecutor.execute(() -> {
-                        try (Socket socket = new Socket()) {
-                            socket.connect(new InetSocketAddress(targetIp, targetPort), timeoutMs);
-                            socket.setSoTimeout(timeoutMs);
-                            InputStream in = socket.getInputStream();
-                            byte[] magic = readN(in, MAGIC.length);
-                            boolean matches = true;
-                            for (int m = 0; m < MAGIC.length; m++) {
-                                if (magic[m] != MAGIC[m]) {
-                                    matches = false;
-                                    break;
-                                }
-                            }
-                            if (matches) {
-                                JSObject peer = new JSObject();
-                                peer.put("host", targetIp);
-                                peer.put("port", targetPort);
-                                foundPeers.add(peer);
-                            }
-                        } catch (Throwable ignored) {
-                        } finally {
-                            latch.countDown();
-                        }
-                    });
-                } catch (RejectedExecutionException error) {
-                    latch.countDown();
-                }
-            }
+            ExecutorService scanPool = Executors.newFixedThreadPool(16, new NamedThreadFactory("medbox-subnet-scan"));
 
             try {
-                latch.await(3500, java.util.concurrent.TimeUnit.MILLISECONDS);
-            } catch (InterruptedException ignored) {
+                final int connectTimeout = Math.min(Math.max(timeoutMs, 200), 500);
+                for (int i = 1; i <= 254; i++) {
+                    final int hostIndex = i;
+                    if (hostIndex == selfLast) {
+                        latch.countDown();
+                        continue;
+                    }
+                    final String targetIp = prefix + hostIndex;
+                    try {
+                        scanPool.execute(() -> {
+                            try {
+                                try (Socket socket = new Socket()) {
+                                    socket.connect(new InetSocketAddress(targetIp, targetPort), connectTimeout);
+                                    socket.setSoTimeout(connectTimeout);
+                                    InputStream in = socket.getInputStream();
+                                    byte[] magic = readN(in, MAGIC.length);
+                                    boolean matches = true;
+                                    for (int m = 0; m < MAGIC.length; m++) {
+                                        if (magic[m] != MAGIC[m]) {
+                                            matches = false;
+                                            break;
+                                        }
+                                    }
+                                    if (matches) {
+                                        JSObject peer = new JSObject();
+                                        peer.put("host", targetIp);
+                                        peer.put("port", targetPort);
+                                        foundPeers.add(peer);
+                                    }
+                                }
+                            } catch (Throwable ignored) {
+                            } finally {
+                                latch.countDown();
+                            }
+                        });
+                    } catch (Throwable poolRejected) {
+                        latch.countDown();
+                    }
+                }
+
+                try {
+                    latch.await(6000, java.util.concurrent.TimeUnit.MILLISECONDS);
+                } catch (InterruptedException ignored) {
+                }
+            } finally {
+                scanPool.shutdownNow();
             }
 
             JSArray peersArray = new JSArray();
@@ -486,12 +533,22 @@ public final class ApkDistributionPlugin extends Plugin {
             }
 
             long received = 0;
+            long lastProgressNotify = 0;
             try (OutputStream out = new FileOutputStream(destFile)) {
                 byte[] buffer = new byte[BUFFER_SIZE];
                 int read;
                 while (received < expected && (read = in.read(buffer)) > 0) {
                     out.write(buffer, 0, read);
                     received += read;
+                    long now = System.currentTimeMillis();
+                    if (now - lastProgressNotify > 150 || received == expected) {
+                        lastProgressNotify = now;
+                        JSObject progress = new JSObject();
+                        progress.put("received", received);
+                        progress.put("total", expected);
+                        progress.put("percent", expected > 0 ? (int) (received * 100 / expected) : 0);
+                        notifyListeners("downloadProgress", progress);
+                    }
                 }
                 out.flush();
             }
@@ -501,6 +558,93 @@ public final class ApkDistributionPlugin extends Plugin {
             }
             return received;
         }
+    }
+
+    private long doDownloadHttp(String initialUrl, String destPath) throws IOException {
+        File destFile = new File(destPath);
+        File parent = destFile.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Cannot create parent dir: " + parent.getAbsolutePath());
+        }
+
+        String currentUrl = initialUrl;
+        HttpURLConnection conn = null;
+        int redirects = 0;
+        final int MAX_REDIRECTS = 6;
+
+        while (redirects < MAX_REDIRECTS) {
+            URL url = new URL(currentUrl);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(15_000);
+            conn.setReadTimeout(60_000);
+            conn.setRequestProperty("User-Agent", "Xiaoyaohe/" + (servingApk != null ? "android" : "app"));
+            conn.setRequestProperty("Accept", "*/*");
+            conn.connect();
+
+            int code = conn.getResponseCode();
+            if (code == HttpURLConnection.HTTP_MOVED_PERM
+                    || code == HttpURLConnection.HTTP_MOVED_TEMP
+                    || code == HttpURLConnection.HTTP_SEE_OTHER
+                    || code == 307
+                    || code == 308) {
+                String loc = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (loc == null || loc.isEmpty()) {
+                    throw new IOException("HTTP redirect without Location header (code " + code + ")");
+                }
+                URL base = url;
+                currentUrl = new URL(base, loc).toExternalForm();
+                redirects++;
+                continue;
+            }
+
+            if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
+                conn.disconnect();
+                throw new IOException("HTTP error " + code + ": " + conn.getResponseMessage());
+            }
+            break;
+        }
+
+        if (redirects >= MAX_REDIRECTS) {
+            if (conn != null) conn.disconnect();
+            throw new IOException("Too many HTTP redirects");
+        }
+
+        long total = conn.getContentLengthLong();
+        long received = 0;
+        long lastProgressNotify = 0;
+
+        try (InputStream in = conn.getInputStream();
+             OutputStream out = new FileOutputStream(destFile)) {
+            byte[] buffer = new byte[BUFFER_SIZE];
+            int read;
+            while ((read = in.read(buffer)) > 0) {
+                out.write(buffer, 0, read);
+                received += read;
+                long now = System.currentTimeMillis();
+                if (now - lastProgressNotify > 150 || (total > 0 && received == total)) {
+                    lastProgressNotify = now;
+                    JSObject progress = new JSObject();
+                    progress.put("received", received);
+                    progress.put("total", total);
+                    progress.put("percent", total > 0 ? (int) (received * 100 / total) : 0);
+                    notifyListeners("downloadProgress", progress);
+                }
+            }
+            out.flush();
+        } catch (IOException error) {
+            destFile.delete();
+            throw error;
+        } finally {
+            conn.disconnect();
+        }
+
+        if (total > 0 && received != total) {
+            destFile.delete();
+            throw new IOException("APK download incomplete: expected " + total + " bytes, got " + received);
+        }
+        return received;
     }
 
     /**

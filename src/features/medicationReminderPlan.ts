@@ -49,6 +49,8 @@ export interface ReminderGroupOccurrence {
   medId: string;
   medName: string;
   dose: string;
+  /** 该药已绑定的所有条形码与二维码（GTIN、监管码、自定义条码等） */
+  barcodes?: string[];
 }
 
 interface GroupMember {
@@ -125,16 +127,24 @@ export function buildMedicationReminderPlan({
     const sortedMembers = [...members].sort((left, right) =>
       left.occurrence.id < right.occurrence.id ? -1 : left.occurrence.id > right.occurrence.id ? 1 : 0,
     );
-    const occurrences: ReminderGroupOccurrence[] = sortedMembers.map(({ occurrence, med, revision }) => ({
-      occurrenceId: occurrence.id,
-      legacyLogId: occurrence.legacyLogId,
-      medId: med.id,
-      medName: med.name,
-      dose:
-        revision.doseQuantity && revision.doseUnit
-          ? `${revision.doseQuantity}${revision.doseUnit}`
-          : med.amountPerDose || med.dosageText || '',
-    }));
+    const occurrences: ReminderGroupOccurrence[] = sortedMembers.map(({ occurrence, med, revision }) => {
+      const rawBarcodes = [
+        ...(med.identity?.gtins ?? []),
+        ...(med.identity?.rawCodes ?? []),
+      ].map((b) => (typeof b === 'string' ? b.trim() : '')).filter(Boolean);
+      const uniqueBarcodes = Array.from(new Set(rawBarcodes));
+      return {
+        occurrenceId: occurrence.id,
+        legacyLogId: occurrence.legacyLogId,
+        medId: med.id,
+        medName: med.name,
+        dose:
+          revision.doseQuantity && revision.doseUnit
+            ? `${revision.doseQuantity}${revision.doseUnit}`
+            : med.amountPerDose || med.dosageText || '',
+        ...(uniqueBarcodes.length > 0 ? { barcodes: uniqueBarcodes } : {}),
+      };
+    });
 
     // 重复策略按组（dose / repeat-N），由时段设置的 escalate 决定
     const repeatEveryMin = Math.max(1, safeMinutes(setting.escalate.repeatEveryMin));

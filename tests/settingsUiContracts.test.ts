@@ -173,4 +173,25 @@ describe('settings information architecture contracts', () => {
     expect(styles).toContain('.settings-scan-grid');
     expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
   });
+
+  it('provides structured background keep-alive protection and OEM guides without unparsed HTML', () => {
+    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const styles = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8');
+
+    expect(settings).toContain("title: '后台保活与防杀'");
+    expect(settings).toContain('function openKeepAliveGuideModal()');
+    expect(settings).toContain('function openKeepAlivePromptSheet');
+    expect(settings).toContain('主流手机后台防杀指南');
+    expect(settings).toContain('建议开启后台防杀保护');
+    expect(settings).toContain('1. 无障碍防退出保护');
+    expect(settings).toContain('2. 忽略电池优化（白名单）');
+    expect(settings).toContain('3. 多任务后台卡片加锁');
+    expect(settings).toContain('4. 自启动与后台运行权限');
+
+    expect(styles).toContain('.keepalive-item-list');
+    expect(styles).toContain('.keepalive-card');
+    expect(styles).toContain('.keepalive-oem-tabs');
+    expect(styles).toContain('.keepalive-oem-step');
+  });
 });
+

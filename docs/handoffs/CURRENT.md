@@ -1,11 +1,34 @@
 # Current Integration State
 
-Updated: 2026-09-07
+Updated: 2026-09-08
 Integration branch: `main`
 Product version: `0.9.15`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
-## Mandatory Alarm Accessibility Guard, LockTask Removal, Seamless App Return & Audio Focus 2026-09-07 (workspace/claude)
+## App Update Discovery Fix, GitHub Releases Online Channel & Download Progress 2026-09-08 (workspace/claude)
+
+- **局域网扫描并发风暴修复（`ApkDistributionPlugin.java`）**：
+  - 根除 `scanSubnet` 瞬间为 254 个 IP 派发 254 个原生线程导致的线程耗尽、OOM 或触发路由器 SYN Flood 防御静默丢包缺陷；
+  - 重构为固定容量线程池 `Executors.newFixedThreadPool(16)`，限制最大并发数为 16，连接超时 500ms，扫描稳定可靠。
+- **GitHub Releases 官方在线发布与镜像加速接入（`apkTransport.ts`）**：
+  - 新增 `checkGithubRelease()` 对接 GitHub 官方发布接口，支持解析 APK 附件与更新日志；
+  - 原生支持国内加速镜像备用兜底（`ghfast.top`、`ghproxy.net`、`gh-proxy.com`），网络波动时自动无缝降级切换。
+- **原生 HTTP 流式下载与重定向追踪（`ApkDistributionPlugin.java`）**：
+  - 原生实现 `downloadHttp`，支持多跳 301/302/303/307/308 重定向追踪（适配 GitHub Releases 到 AWS S3 CDN 的跨域重定向）；
+  - 8KB 流式缓冲写入，下载完毕严格进行 `verifyApk` 证书签名校验，防止 APK 篡改。
+- **多源并行检查与统一交互（`Settings.ts` & `settings.css`）**：
+  - 设置页简化并统一为一键「检查更新」，`checkForAppUpdates` 并行查询 GitHub 与局域网设备，智能择优（高版本优先，同版本局域网优先）；
+  - 新增局域网服务运行状态指示（端口 38473）；
+  - 弹窗展示版本对比、更新日志、包大小及实时流式进度条（显示百分比及已下载流量）。
+- **后台每日静默检测（`main.ts`）**：
+  - 冷启动 4 秒后在空闲期静默检测，发现新版本时在设置卡片与底部 Tab 显示更新标记。
+- **全绿验证门**：
+  - `npm run typecheck`（0 errors）；
+  - Vitest 79 个测试套件，467 个测试全部通过（新增 `tests/apkUpdateVerification.test.ts` 12 项测试）；
+  - `npm run build:web` 构建成功；
+  - `npx cap sync android` 同步通过；
+  - `./gradlew.bat testReleaseUnitTest assembleRelease` 224 项任务全绿编译通过。
+
 
 - **彻底移除系统固定屏幕（`startLockTask`）**：剥离 `startLockTask()` / `stopLockTask()`，从根本上消灭「应用已固定（不用了 / 知道了）」系统弹窗；
 - **无障碍防绕过服务（`MedboxAccessibilityService.kt`）**：仅在扫码锁定态守护前台焦点，用户切出即时拉回；扫码完成或解除时立即注销保护；
@@ -18,7 +41,7 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - `npm run test`（79 套件 463 项测试全部通过）；
   - `./gradlew.bat compileDebugKotlin` 编译通过；
   - `./gradlew.bat assembleDebug` 与 `./gradlew.bat testReleaseUnitTest assembleRelease` 224 项任务全绿编译通过；
-  - 产物：`C:\Users\87850\Desktop\xiaoyaohe-0.9.15-accessibility-guard.apk`（18,646,307 字节）。
+  - 产物：`~/Desktop/xiaoyaohe-0.9.15-accessibility-guard.apk`（18,646,307 字节）。
 
 ## Fullscreen Reminder Home Escape Block & Singleton Audio Player 2026-09-07 (workspace/claude)
 
@@ -38,7 +61,7 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - `npm run test:release`（12 项测试全部通过）；
   - `npm run build:web` 构建成功（32 个内嵌图标校验通过）；
   - `./gradlew.bat testReleaseUnitTest assembleRelease` 编译通过；
-  - 产物：`release/xiaoyaohe-0.9.15-android-release.apk`，已复制至用户桌面 `C:\Users\87850\Desktop\`。
+  - 产物：`release/xiaoyaohe-0.9.15-android-release.apk`，已复制至用户桌面 `~/Desktop/`。
 
 - **普通提醒上滑 Home 自动转为贪睡（`MedicationAlarmActivity.kt`）**：
   - 监听 `onUserLeaveHint()` 与 `onStop()`，普通全屏提醒在用户上滑 Home 或返回桌面时自动执行「延后 10 分钟提醒（SNOOZE）」；
@@ -61,7 +84,7 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - `npm run build:web` 构建成功（32 个内嵌图标校验通过）；
   - `npx cap sync android` 同步成功；
   - `./gradlew.bat testReleaseUnitTest assembleRelease` 224 个任务编译通过；
-  - 产物：`release/xiaoyaohe-0.9.14-android-release.apk`（18,644,659 字节，SHA256: `b6c88b5b47e652f5dd57c7c4d445117d982156298318f5f6eb17a3956e92b6c9`），94 个内嵌资产校验通过，已复制至用户桌面 `C:\Users\87850\Desktop\`。
+  - 产物：`release/xiaoyaohe-0.9.14-android-release.apk`（18,644,659 字节，SHA256: `b6c88b5b47e652f5dd57c7c4d445117d982156298318f5f6eb17a3956e92b6c9`），94 个内嵌资产校验通过，已复制至用户桌面 `~/Desktop/`。
 
 ## Copywriting Polish with oil-tone 2026-09-07 (workspace/claude)
 
@@ -128,7 +151,7 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - `npx cap sync android` 同步成功
   - `./gradlew.bat testReleaseUnitTest assembleRelease` (BUILD SUCCESSFUL in 1m 8s, 211 tasks)
   - `scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `749a8ffe...`）
-  - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `acee36d280de7a631a6d4a4f6a32f4b4191cf1398dda4a4e43eb8044c46ab447`)，并已同步复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
+  - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `acee36d280de7a631a6d4a4f6a32f4b4191cf1398dda4a4e43eb8044c46ab447`)，并已同步复制至用户桌面 `~/Desktop/xiaoyaohe-0.9.11-android-release.apk`。
 
 ## Home Topbar & Progress Ring Fix + Settings Reminders Layout & Copy Optimization 2026-09-05 (workspace/claude)
 
@@ -150,7 +173,7 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - `npx cap sync android` 同步成功
   - `./gradlew.bat testReleaseUnitTest assembleRelease` (BUILD SUCCESSFUL in 1m 7s, 224 tasks)
   - `scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `749a8ffe...`）
-  - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `f8e3ef152f15732ec05947c2f36623ad4de21c39eb04ac5137088b9f8c1261f2`)，并已同步复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
+  - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `f8e3ef152f15732ec05947c2f36623ad4de21c39eb04ac5137088b9f8c1261f2`)，并已同步复制至用户桌面 `~/Desktop/xiaoyaohe-0.9.11-android-release.apk`。
 
 ## Frontend Internal Code Leak Elimination & Android QR Unlock Engine Overhaul 2026-09-05 (workspace/claude)
 
@@ -186,7 +209,7 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - Capacitor 同步：`npx cap sync android`；
   - Gradle Release 打包：`./gradlew.bat assembleRelease` (BUILD SUCCESSFUL in 1m 16s, 211 tasks)；
   - 产物校验：`scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `c86b50cd...`）；
-  - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,587 字节) 并复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
+  - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,587 字节) 并复制至用户桌面 `~/Desktop/xiaoyaohe-0.9.11-android-release.apk`。
 
 ## AI Provider Modernized Card Architecture & Settings Layout Overhaul 2026-09-05 (workspace/claude)
 

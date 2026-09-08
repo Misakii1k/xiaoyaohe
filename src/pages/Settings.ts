@@ -103,7 +103,7 @@ import {
   getAvailableUpdate,
   installApk,
   isApkDistributionAvailable,
-  scanLanForUpdates,
+  checkForAppUpdates,
   LOCAL_APP_VERSION,
 } from '../sync/lan/apkTransport';
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations, openAppSettings } from '../features/keepAlive';
@@ -1030,13 +1030,22 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     role: 'switch',
     'aria-label': '扫码解除强制提醒',
   });
-  scanToggle.checked = scanPref.enabled;
   scanToggle.onchange = async () => {
     if (scanToggle.checked) {
       if (scanPref.mode === 'custom' && scanPref.token) {
         enableAlarmScanVerify('custom');
         toast('已开启扫码验证（已绑定生活码）');
         await rescheduleMedicationReminders().catch(() => {});
+        if (isNativeAlarm) {
+          void Promise.all([
+            checkAccessibilityGuardEnabled().catch(() => false),
+            isIgnoringBatteryOptimizations().catch(() => false),
+          ]).then(([accEnabled, ignoring]) => {
+            if (!accEnabled || !ignoring) {
+              openKeepAlivePromptSheet(rerender, { accEnabled, ignoring });
+            }
+          });
+        }
       } else {
         enableAlarmScanVerify('generated');
         toast('已开启，请查看专属二维码或扫描已有码绑定');
@@ -1155,7 +1164,14 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
       await openAccessibilityGuardSettings();
     };
 
-    accCard.append(accHeader, accDesc, accActionBtn);
+    const accGuideBtn = el('button', {
+      class: 'btn tonal mt-2',
+      style: 'font-size: 12px; padding: 6px 12px; width: 100%;',
+      text: '查看主流手机后台防杀指南',
+    });
+    accGuideBtn.onclick = () => openKeepAliveGuideModal();
+
+    accCard.append(accHeader, accDesc, accActionBtn, accGuideBtn);
     body.append(accCard);
 
     void checkAccessibilityGuardEnabled().then((enabled) => {
@@ -1245,6 +1261,19 @@ function openUnlockQrSheet(rerender: () => void, activate: boolean = true): void
   };
   const closeBtn = el('button', { class: 'btn', html: '完成' });
   let sheet!: ReturnType<typeof openBottomSheet>;
+  closeBtn.onclick = () => {
+    sheet.close();
+    if (isNativeReminderPlatform() && nativeMedicationAlarmAvailable()) {
+      void Promise.all([
+        checkAccessibilityGuardEnabled().catch(() => false),
+        isIgnoringBatteryOptimizations().catch(() => false),
+      ]).then(([accEnabled, ignoring]) => {
+        if (!accEnabled || !ignoring) {
+          openKeepAlivePromptSheet(rerender, { accEnabled, ignoring });
+        }
+      });
+    }
+  };
   sheet = openBottomSheet({
     label: '强制提醒专属二维码',
     content: [title, canvas, hint, el('div', { class: 'btn-row mt-3' }, [rotateBtn, switchCustomBtn, closeBtn])],
@@ -1336,6 +1365,16 @@ function openBindCustomCodeSheet(rerender: () => void): void {
       await rescheduleMedicationReminders().catch(() => {});
       sheet.close();
       rerender();
+      if (isNativeReminderPlatform() && nativeMedicationAlarmAvailable()) {
+        void Promise.all([
+          checkAccessibilityGuardEnabled().catch(() => false),
+          isIgnoringBatteryOptimizations().catch(() => false),
+        ]).then(([accEnabled, ignoring]) => {
+          if (!accEnabled || !ignoring) {
+            openKeepAlivePromptSheet(rerender, { accEnabled, ignoring });
+          }
+        });
+      }
     };
 
     const rescanBtn = el('button', { class: 'btn tonal', html: '重新扫码' });
@@ -1603,10 +1642,10 @@ async function renderPeriodEditor(
   body.append(row);
 }
 
-/** ---------------- 后台运行/保活面板：申请电池优化白名单 ---------------- */
+/** ---------------- 后台保活与防杀面板 ---------------- */
 function renderKeepAlivePanel(): HTMLElement {
   const p = panel({
-    title: '后台运行',
+    title: '后台保活与防杀',
     iconName: 'plug',
     chip: { text: '检查中', tone: 'muted' },
     renderBody: (body) => {
@@ -1673,36 +1712,45 @@ function buildAppUpdateBody(
 
   if (!available) {
     body.append(el('div', { class: 'banner info mt-3' }, [
-      el('span', { html: '应用更新仅在 Android App 中可用。其他设备同步时会发现可用更新。' }),
+      el('span', { html: '应用更新仅在 Android App 中可用。当前为网页端，无需单独安装更新。' }),
     ]));
     return;
   }
 
   const update = getAvailableUpdate();
   if (!update) {
-    body.append(el('div', { class: 'settings-hint mt-3' }, [
-      el('span', { html: '同一局域网（Wi-Fi）内有设备升级后，可点击下方按钮主动扫描探测新版本，或在同步时自动接收更新。' }),
+    body.append(el('div', { class: 'settings-hint mt-2' }, [
+      el('span', { html: '支持自动聚合检查 GitHub 官方发布与同局域网 Wi-Fi 设备新版本。' }),
     ]));
+
+    // 本机为 Android 原生端时展示局域网分发服务状态
+    const servingBadge = el('div', { class: 'app-update-serving-badge mt-2' });
+    servingBadge.append(
+      el('span', { class: 'app-update-serving-dot' }),
+      el('span', { text: '本机局域网分发服务已就绪（服务端口 38473）' }),
+    );
+    body.append(servingBadge);
+
     const row = el('div', { class: 'btn-row mt-3' });
-    const checkBtn = el('button', { class: 'btn tonal', html: '检查局域网更新' });
+    const checkBtn = el('button', { class: 'btn', text: '检查更新' });
     checkBtn.onclick = async () => {
       checkBtn.disabled = true;
-      checkBtn.textContent = '正在扫描局域网...';
+      checkBtn.textContent = '正在检查更新...';
       try {
-        const found = await scanLanForUpdates();
+        const found = await checkForAppUpdates();
         if (found) {
           toast(`发现新版本 v${found.version}！`, 3000);
           setChip(panelEl, { text: `可更新 v${found.version}`, tone: 'info' });
           buildAppUpdateBody(body, panelEl, available);
         } else {
-          toast('未在局域网内发现新版本（当前已是最新或暂未检测到已升级设备）', 3500);
+          toast(`当前已是最新版本 (v${LOCAL_APP_VERSION})`, 3500);
         }
       } catch (error) {
         const msg = error instanceof Error ? error.message : '未知错误';
-        toast(`检查失败：${msg}`, 3500);
+        toast(`检查更新失败：${msg}`, 3500);
       } finally {
         checkBtn.disabled = false;
-        checkBtn.textContent = '检查局域网更新';
+        checkBtn.textContent = '检查更新';
       }
     };
     row.append(checkBtn);
@@ -1710,38 +1758,59 @@ function buildAppUpdateBody(
     return;
   }
 
-  // 发现可用更新：显示版本、来源、操作按钮
+  // 发现可用更新：显示版本、来源、更新说明、操作按钮与进度条
   const updateBanner = el('div', { class: 'banner info mt-3' });
   const updateTitle = el('div');
   updateTitle.append('发现新版本 ', el('strong', { text: `v${update.version}` }));
+
+  const sourceDesc = update.source === 'github'
+    ? `来源：GitHub 官方发布${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`
+    : `来源：局域网设备 ${update.peerHost ?? ''}`;
   const updateSource = el('div', {
     class: 'muted text-xs mt-1',
-    text: `来源：${update.peerHost}（局域网内已升级设备）。`,
+    text: sourceDesc,
   });
   updateBanner.append(updateTitle, updateSource);
+
+  if (update.releaseNotes) {
+    const notesBox = el('div', { class: 'app-update-release-notes', text: update.releaseNotes });
+    updateBanner.append(notesBox);
+  }
   body.append(updateBanner);
 
+  // 下载进度容器（初始隐藏）
+  const progressBox = el('div', { class: 'app-update-progress-box', style: 'display: none;' });
+  const progressLabels = el('div', { class: 'app-update-progress-labels' });
+  const progressText = el('span', { text: '正在下载...' });
+  const progressDetail = el('span', { text: '0%' });
+  progressLabels.append(progressText, progressDetail);
+  const progressTrack = el('div', { class: 'app-update-progress-track' });
+  const progressFill = el('div', { class: 'app-update-progress-fill' });
+  progressTrack.append(progressFill);
+  progressBox.append(progressLabels, progressTrack);
+  body.append(progressBox);
+
   const row = el('div', { class: 'btn-row mt-3' });
-  const downloadBtn = el('button', { class: 'btn', html: '下载并安装' });
-  const recheckBtn = el('button', { class: 'btn tonal', html: '重新扫描' });
-  const skipBtn = el('button', { class: 'btn tonal', html: '本次跳过' });
+  const downloadBtn = el('button', { class: 'btn', text: '下载并安装' });
+  const recheckBtn = el('button', { class: 'btn tonal', text: '重新检查' });
+  const skipBtn = el('button', { class: 'btn tonal', text: '本次跳过' });
 
   recheckBtn.onclick = async () => {
     recheckBtn.disabled = true;
-    recheckBtn.textContent = '扫描中...';
+    recheckBtn.textContent = '检查中...';
     try {
-      const found = await scanLanForUpdates();
+      const found = await checkForAppUpdates();
       if (found) {
         toast(`已刷新版本：v${found.version}`, 3000);
         setChip(panelEl, { text: `可更新 v${found.version}`, tone: 'info' });
       } else {
-        toast('局域网暂无更新版本');
+        toast('暂无更高版本');
       }
     } catch {
-      toast('扫描失败');
+      toast('检查失败');
     } finally {
       recheckBtn.disabled = false;
-      recheckBtn.textContent = '重新扫描';
+      recheckBtn.textContent = '重新检查';
       buildAppUpdateBody(body, panelEl, available);
     }
   };
@@ -1749,16 +1818,23 @@ function buildAppUpdateBody(
   downloadBtn.onclick = async () => {
     if (downloadBtn.getAttribute('aria-busy') === 'true') return;
     downloadBtn.setAttribute('aria-busy', 'true');
-    downloadBtn.textContent = '下载中...';
+    downloadBtn.textContent = '准备下载...';
     downloadBtn.disabled = true;
     recheckBtn.disabled = true;
     skipBtn.disabled = true;
+    progressBox.style.display = 'block';
+
     try {
-      const apkPath = await downloadUpdate(update);
+      const apkPath = await downloadUpdate(update, (percent, received, total) => {
+        progressFill.style.width = `${percent}%`;
+        progressDetail.textContent = `${percent}%`;
+        if (total > 0) {
+          progressText.textContent = `${(received / (1024 * 1024)).toFixed(1)}MB / ${(total / (1024 * 1024)).toFixed(1)}MB`;
+        }
+        downloadBtn.textContent = `下载中 ${percent}%`;
+      });
       toast(`已下载 v${update.version}，正在调起安装器`, 3200);
-      await installApk(apkPath, update.versionCode);
-      // 安装器调起后不立即清除可用更新——安装结果由用户在系统中确认。
-      // 安装成功后应用会重启，状态自然刷新。
+      await installApk(apkPath, update.source === 'lan' ? update.versionCode : undefined);
     } catch (error) {
       const msg = error instanceof Error ? error.message : '未知错误';
       toast(`更新失败：${msg}`, 4200);
@@ -1768,6 +1844,7 @@ function buildAppUpdateBody(
       downloadBtn.disabled = false;
       recheckBtn.disabled = false;
       skipBtn.disabled = false;
+      progressBox.style.display = 'none';
     }
   };
 
@@ -1782,35 +1859,350 @@ function buildAppUpdateBody(
   body.append(row);
 }
 
+function openKeepAliveGuideModal(): void {
+  const title = el('h3', { class: 'lan-sync-sheet-title', text: '主流手机后台防杀指南' });
+  const hint = el('div', {
+    class: 'settings-hint mb-3',
+    text: '部分手机厂商的后台清理策略较为严格，可能在熄屏后终止后台进程。请根据手机品牌完成以下设置：',
+  });
+
+  const oems = [
+    {
+      id: 'xiaomi',
+      name: '小米 / 红米',
+      steps: [
+        { title: '多任务后台卡片加锁', desc: '从屏幕底部上滑呼出多任务界面，长按小药盒卡片，点击「锁」图标加锁，防止被系统一键清理。' },
+        { title: '允许自启动权限', desc: '打开手机「安全中心」→「应用管理」→「权限」→「自启动管理」，找到「小药盒」并开启自启动。' },
+        { title: '省电策略设为无限制', desc: '在安全中心「应用管理」中找到小药盒，进入「省电策略」，将其修改为「无限制」。' },
+        { title: '开启无障碍服务', desc: '进入手机「系统设置」→「更多设置」→「无障碍」→「已下载的应用」，开启「小药盒无障碍服务」。' },
+      ],
+    },
+    {
+      id: 'huawei',
+      name: '华为 / 荣耀',
+      steps: [
+        { title: '手动管理应用启动', desc: '进入「系统设置」→「应用和服务」→「应用启动管理」，找到小药盒，关闭「自动管理」，在手动管理弹窗中开启「允许自启动」、「允许关联启动」与「允许后台活动」。' },
+        { title: '电池优化设为不允许', desc: '进入「系统设置」→「应用」→「权限管理」→右上角四点「特殊访问权限」→「电池优化」，切换为全部应用，将小药盒设为「不允许」。' },
+        { title: '多任务后台卡片加锁', desc: '呼出多任务后台，向下拉动小药盒卡片，卡片右上角出现小锁图标即锁定成功。' },
+        { title: '开启无障碍服务', desc: '进入「系统设置」→「辅助功能」→「已安装的服务」，开启「小药盒无障碍服务」。' },
+      ],
+    },
+    {
+      id: 'oppo',
+      name: 'OPPO / 一加',
+      steps: [
+        { title: '允许完全后台行为', desc: '进入「系统设置」→「电池」→「应用耗电管理」→找到小药盒，开启「允许完全后台行为」与「允许应用自启动」。' },
+        { title: '多任务后台加锁', desc: '呼出多任务后台，点击小药盒卡片右上角「⋮」，选择「锁定」。' },
+        { title: '开启无障碍服务', desc: '进入「系统设置」→「其他设置」→「无障碍」，开启「小药盒无障碍服务」。' },
+      ],
+    },
+    {
+      id: 'vivo',
+      name: 'vivo / iQOO',
+      steps: [
+        { title: '允许后台高耗电', desc: '进入「系统设置」→「电池」→「后台高耗电管理」，将小药盒勾选为「允许高耗电」。' },
+        { title: '开启自启动', desc: '进入「系统设置」→「应用与权限」→「权限管理」→「自启动」，开启小药盒自启动开关。' },
+        { title: '多任务后台加锁', desc: '呼出多任务，向下拉动小药盒卡片，点击小锁图标锁定。' },
+        { title: '开启无障碍服务', desc: '进入「系统设置」→「快捷与辅助」→「无障碍」→「已下载的应用」，开启「小药盒无障碍服务」。' },
+      ],
+    },
+    {
+      id: 'generic',
+      name: '通用 Android',
+      steps: [
+        { title: '忽略电池优化', desc: '在应用详情设置中，将「电池」或「电池优化」设为「无限制」或「不受优化」。' },
+        { title: '多任务界面加锁', desc: '在最近任务（多任务）列表中，长按或向下拉动小药盒卡片，点击小锁图标防止一键清理。' },
+        { title: '开启无障碍服务', desc: '在系统设置「无障碍」中找到「小药盒无障碍服务」并开启。' },
+      ],
+    },
+  ];
+
+  let currentOemIndex = 0;
+  const tabsContainer = el('div', { class: 'keepalive-oem-tabs' });
+  const contentContainer = el('div', { class: 'keepalive-oem-content' });
+
+  const renderOemContent = () => {
+    tabsContainer.replaceChildren();
+    contentContainer.replaceChildren();
+
+    oems.forEach((oem, idx) => {
+      const tabBtn = el('button', {
+        class: `keepalive-oem-tab ${idx === currentOemIndex ? 'is-active' : ''}`,
+        text: oem.name,
+      });
+      tabBtn.onclick = () => {
+        currentOemIndex = idx;
+        renderOemContent();
+      };
+      tabsContainer.append(tabBtn);
+    });
+
+    const activeOem = oems[currentOemIndex] ?? oems[0];
+    if (!activeOem) return;
+    activeOem.steps.forEach((s, stepIdx) => {
+      const stepRow = el('div', { class: 'keepalive-oem-step' });
+      const numBadge = el('div', { class: 'keepalive-step-num', text: String(stepIdx + 1) });
+      const textCol = el('div', { class: 'keepalive-step-text' });
+      const stepTitle = el('strong', { text: `${s.title}：` });
+      textCol.append(stepTitle, s.desc);
+      stepRow.append(numBadge, textCol);
+      contentContainer.append(stepRow);
+    });
+  };
+
+  renderOemContent();
+
+  const openSettingsBtn = el('button', { class: 'btn tonal', text: '打开应用系统设置' });
+  openSettingsBtn.onclick = () => {
+    void openAppSettings();
+  };
+
+  const closeBtn = el('button', { class: 'btn', text: '完成' });
+  let sheet!: ReturnType<typeof openBottomSheet>;
+  closeBtn.onclick = () => sheet.close();
+
+  const btnRow = el('div', { class: 'btn-row mt-3' }, [openSettingsBtn, closeBtn]);
+
+  sheet = openBottomSheet({
+    label: '主流手机后台防杀指南',
+    content: [title, hint, tabsContainer, contentContainer, btnRow],
+    initialFocus: closeBtn,
+  });
+}
+
+function openKeepAlivePromptSheet(
+  rerender: () => void,
+  status: { accEnabled: boolean; ignoring: boolean },
+): void {
+  const title = el('h3', { class: 'lan-sync-sheet-title', text: '建议开启后台防杀保护' });
+  const hint = el('div', { class: 'settings-hint mb-3' });
+  hint.append(
+    el('p', {
+      class: 'mb-1',
+      text: '已开启扫码解除强制提醒。为避免提醒被手机系统清理或通过手势误退，建议开启以下保护：',
+    }),
+  );
+
+  const list = el('div', { class: 'keepalive-item-list' });
+
+  if (!status.accEnabled) {
+    const accItem = el('div', { class: 'keepalive-card' });
+    const head = el('div', { class: 'keepalive-card-head' });
+    head.append(
+      el('span', { class: 'keepalive-card-title', text: '无障碍防退出保护' }),
+      el('span', {
+        class: 'chip-pill',
+        style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
+        text: '未开启',
+      }),
+    );
+    const desc = el('div', {
+      class: 'keepalive-card-desc',
+      text: '在未扫码前阻断切回桌面，同时提升应用在系统中的保活优先级。',
+    });
+    const btn = el('button', {
+      class: 'btn tonal mt-2',
+      style: 'font-size: 13px; width: 100%;',
+      text: '前往开启无障碍服务',
+    });
+    btn.onclick = async () => {
+      await openAccessibilityGuardSettings();
+      sheet.close();
+      rerender();
+    };
+    accItem.append(head, desc, btn);
+    list.append(accItem);
+  }
+
+  if (!status.ignoring) {
+    const battItem = el('div', { class: 'keepalive-card' });
+    const head = el('div', { class: 'keepalive-card-head' });
+    head.append(
+      el('span', { class: 'keepalive-card-title', text: '忽略电池优化（白名单）' }),
+      el('span', {
+        class: 'chip-pill',
+        style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
+        text: '需授权',
+      }),
+    );
+    const desc = el('div', {
+      class: 'keepalive-card-desc',
+      text: '允许应用在后台持续运行，避免手机长时间熄屏或处于省电模式时遗漏提醒。',
+    });
+    const btn = el('button', {
+      class: 'btn tonal mt-2',
+      style: 'font-size: 13px; width: 100%;',
+      text: '申请加入电池白名单',
+    });
+    btn.onclick = async () => {
+      const ok = await requestIgnoreBatteryOptimizations();
+      toast(ok ? '已加入电池优化白名单' : '未加入，可稍后再试');
+      sheet.close();
+      rerender();
+    };
+    battItem.append(head, desc, btn);
+    list.append(battItem);
+  }
+
+  const guideBtn = el('button', {
+    class: 'btn tonal',
+    text: '查看防杀指南',
+  });
+  guideBtn.onclick = () => {
+    sheet.close();
+    openKeepAliveGuideModal();
+  };
+
+  const closeBtn = el('button', { class: 'btn', text: '我知道了' });
+  let sheet!: ReturnType<typeof openBottomSheet>;
+  closeBtn.onclick = () => sheet.close();
+
+  const btnRow = el('div', { class: 'btn-row mt-3' }, [guideBtn, closeBtn]);
+
+  sheet = openBottomSheet({
+    label: '建议开启后台防杀保护',
+    content: [title, hint, list, btnRow],
+    initialFocus: closeBtn,
+  });
+}
+
 async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement): Promise<void> {
   body.replaceChildren();
-  const ignoring = await isIgnoringBatteryOptimizations();
-  setChip(panelEl, ignoring
-    ? { text: '已允许', tone: 'ok' }
-    : { text: '需授权', tone: 'warn' });
-  if (ignoring) {
-    body.append(el('div', { class: 'settings-hint', html: '已在电池优化白名单中，应用可在后台持续运行提醒与同步。' }));
-    const row = el('div', { class: 'btn-row mt-3' });
-    const openBtn = el('button', { class: 'btn tonal', html: '打开应用设置' });
-    openBtn.onclick = () => void openAppSettings();
-    row.append(openBtn);
-    body.append(row);
-    return;
+  const isNative = isNativeReminderPlatform() && nativeMedicationAlarmAvailable();
+  const [ignoring, accEnabled] = await Promise.all([
+    isIgnoringBatteryOptimizations().catch(() => false),
+    isNative ? checkAccessibilityGuardEnabled().catch(() => false) : Promise.resolve(false),
+  ]);
+
+  const allReady = isNative ? (ignoring && accEnabled) : ignoring;
+  setChip(panelEl, allReady
+    ? { text: '已就绪', tone: 'ok' }
+    : { text: '建议设置', tone: 'warn' });
+
+  const intro = el('div', {
+    class: 'settings-hint',
+    text: isNative
+      ? 'Android 系统会对后台应用进行休眠和清理。完成以下设置后，可确保按时收到用药全屏提醒与自动同步。'
+      : '网页端提醒依赖浏览器前台活动。如需最可靠的准时提醒与无障碍守护，建议安装 Android 原生 App。',
+  });
+  body.append(intro);
+
+  if (isNative) {
+    const list = el('div', { class: 'keepalive-item-list mt-3' });
+
+    // 1. 无障碍防退出保护
+    const accItem = el('div', { class: 'keepalive-card' });
+    const accHead = el('div', { class: 'keepalive-card-head' });
+    accHead.append(
+      el('span', { class: 'keepalive-card-title', text: '1. 无障碍防退出保护' }),
+      el('span', {
+        class: `chip-pill ${accEnabled ? 'chip-pill-active' : ''}`,
+        style: accEnabled
+          ? 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(23, 96, 63, 0.12); color: var(--color-primary, #17603f);'
+          : 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
+        text: accEnabled ? '已开启' : '未开启（建议开启）',
+      }),
+    );
+    const accDesc = el('div', {
+      class: 'keepalive-card-desc',
+      text: '开启后由无障碍服务守护全屏提醒窗口，在未完成扫码前阻止误切桌面；同时显著提升系统后台保活优先级。',
+    });
+    const accBtn = el('button', {
+      class: 'btn tonal mt-2',
+      style: 'font-size: 13px; width: 100%;',
+      text: accEnabled ? '管理系统无障碍设置' : '前往开启无障碍服务',
+    });
+    accBtn.onclick = async () => {
+      await openAccessibilityGuardSettings();
+      void refreshKeepAlive(body, panelEl);
+    };
+    accItem.append(accHead, accDesc, accBtn);
+    list.append(accItem);
+
+    // 2. 电池优化白名单
+    const battItem = el('div', { class: 'keepalive-card mt-2' });
+    const battHead = el('div', { class: 'keepalive-card-head' });
+    battHead.append(
+      el('span', { class: 'keepalive-card-title', text: '2. 忽略电池优化（白名单）' }),
+      el('span', {
+        class: `chip-pill ${ignoring ? 'chip-pill-active' : ''}`,
+        style: ignoring
+          ? 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(23, 96, 63, 0.12); color: var(--color-primary, #17603f);'
+          : 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
+        text: ignoring ? '已允许' : '需授权（建议允许）',
+      }),
+    );
+    const battDesc = el('div', {
+      class: 'keepalive-card-desc',
+      text: '允许应用在后台持续运行，避免手机长时间熄屏或处于省电模式时遗漏提醒与定时同步。',
+    });
+    const battBtnRow = el('div', { class: 'btn-row mt-2' });
+    if (!ignoring) {
+      const allowBtn = el('button', { class: 'btn', style: 'font-size: 13px;', text: '申请加入白名单' });
+      allowBtn.onclick = async () => {
+        const ok = await requestIgnoreBatteryOptimizations();
+        toast(ok ? '已加入电池优化白名单' : '未加入，可稍后再试');
+        void refreshKeepAlive(body, panelEl);
+      };
+      battBtnRow.append(allowBtn);
+    }
+    const appSettingsBtn = el('button', { class: 'btn tonal', style: 'font-size: 13px;', text: '打开应用系统设置' });
+    appSettingsBtn.onclick = () => void openAppSettings();
+    battBtnRow.append(appSettingsBtn);
+    battItem.append(battHead, battDesc, battBtnRow);
+    list.append(battItem);
+
+    // 3. 多任务卡片加锁
+    const lockItem = el('div', { class: 'keepalive-card mt-2' });
+    const lockHead = el('div', { class: 'keepalive-card-head' });
+    lockHead.append(
+      el('span', { class: 'keepalive-card-title', text: '3. 多任务后台卡片加锁' }),
+      el('span', {
+        class: 'chip-pill',
+        style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.05); color: var(--color-text-muted);',
+        text: '手动操作',
+      }),
+    );
+    const lockDesc = el('div', {
+      class: 'keepalive-card-desc',
+      text: '呼出手机多任务（最近应用）列表，在小药盒卡片上向下拉动或长按，点击「小锁」图标加锁，防止被系统「一键清理」关闭。',
+    });
+    lockItem.append(lockHead, lockDesc);
+    list.append(lockItem);
+
+    // 4. 自启动与后台运行管理
+    const autoItem = el('div', { class: 'keepalive-card mt-2' });
+    const autoHead = el('div', { class: 'keepalive-card-head' });
+    autoHead.append(
+      el('span', { class: 'keepalive-card-title', text: '4. 自启动与后台运行权限' }),
+      el('span', {
+        class: 'chip-pill',
+        style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.05); color: var(--color-text-muted);',
+        text: '厂商管理',
+      }),
+    );
+    const autoDesc = el('div', {
+      class: 'keepalive-card-desc',
+      text: '部分手机厂商（小米、华为、OPPO、vivo 等）默认限制后台自启动，请在手机管家或权限管理中将小药盒设为允许自启动与后台活动。',
+    });
+    const guideBtn = el('button', {
+      class: 'btn tonal mt-2',
+      style: 'font-size: 13px; width: 100%;',
+      text: '查看主流手机防杀指南',
+    });
+    guideBtn.onclick = () => openKeepAliveGuideModal();
+    autoItem.append(autoHead, autoDesc, guideBtn);
+    list.append(autoItem);
+
+    body.append(list);
+  } else {
+    // 网页端
+    const battBtnRow = el('div', { class: 'btn-row mt-3' });
+    const openBtn = el('button', { class: 'btn tonal', text: '查看防杀设置指南' });
+    openBtn.onclick = () => openKeepAliveGuideModal();
+    battBtnRow.append(openBtn);
+    body.append(battBtnRow);
   }
-  body.append(el('div', { class: 'banner warn' }, [
-    el('span', { html: '允许小药盒在后台运行，提醒和自动同步才不会被系统关闭。点下方按钮，在弹窗里选「允许」。' }),
-  ]));
-  const row = el('div', { class: 'btn-row mt-3' });
-  const allowBtn = el('button', { class: 'btn', html: '允许后台运行' });
-  allowBtn.onclick = async () => {
-    const ok = await requestIgnoreBatteryOptimizations();
-    toast(ok ? '已加入电池优化白名单' : '未加入，可稍后再试');
-    void refreshKeepAlive(body, panelEl);
-  };
-  const openBtn = el('button', { class: 'btn tonal', html: '打开应用设置' });
-  openBtn.onclick = () => void openAppSettings();
-  row.append(allowBtn, openBtn);
-  body.append(row);
 }
 
 /** ---------------- AI 大模型面板（支持模型自动检测 + 状态） ---------------- */

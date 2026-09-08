@@ -2,7 +2,10 @@ package com.medbox.app
 
 import android.Manifest
 import android.app.ActivityManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -23,6 +26,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.draw.scale
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -38,6 +44,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -70,6 +78,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -110,8 +119,15 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.shapes.Capsule
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.coroutineScope
+import android.os.SystemClock
 import org.json.JSONException
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -149,14 +165,64 @@ class MedicationAlarmActivity : ComponentActivity() {
     // 相机权限结果在 Activity 构建期注册（ComponentActivity 规范）
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> cameraPermissionGranted.value = granted }
+    ) { granted ->
+        cameraPermissionGranted.value = granted
+        if (!granted) {
+            Toast.makeText(this, "需要相机权限以扫描解锁条码或二维码", Toast.LENGTH_SHORT).show()
+        }
+        updateAccessibilityGuard()
+    }
+
+    private fun requestCameraPermissionSafely() {
+        // 请求权限弹窗前暂停无障碍前台拦截，防止无障碍服务把权限弹窗误判为离开应用而死循环抢占焦点导致系统窗口管理器崩溃
+        MedboxAccessibilityService.setGuarded(false)
+        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+    }
 
     private val cameraPermissionGranted = mutableStateOf(false)
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingPullTask: Runnable? = null
+
+    private val finishAllReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == MedicationAlarmContract.ACTION_FINISH_ALL_ALARMS) {
+                dismissThisActivity()
+            }
+        }
+    }
+
+    private fun clearDelayedTasks() {
+        pendingPullTask?.let { mainHandler.removeCallbacks(it) }
+        pendingPullTask = null
+        mainHandler.removeCallbacksAndMessages(null)
+    }
+
+    private fun dismissThisActivity() {
+        autoResolvedState.value = true
+        clearDelayedTasks()
+        MedboxAccessibilityService.setGuarded(false)
+        silenceAlert()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                finishAndRemoveTask()
+            } else {
+                finish()
+            }
+        } catch (ignored: Throwable) {
+            finish()
+        }
+    }
+
     private fun isLocked(): Boolean {
-        if (isFinishing || autoResolvedState.value || scanUnlockedState.value) return false
-        val payload = payloadState.value ?: return false
-        return MedicationAlarmContract.requiresScanVerification(payload)
+        if (isFinishing || isDestroyed || autoResolvedState.value || scanUnlockedState.value) return false
+        val current = payloadState.value
+        if (current != null && MedicationAlarmContract.requiresScanVerification(current)) return true
+        val list = getActivePayloadsSnapshot()
+        for (p in list) {
+            if (MedicationAlarmContract.requiresScanVerification(p)) return true
+        }
+        return false
     }
 
     /** 沉浸粘性全屏模式：隐藏底部导航手势栏与状态栏，滑动屏幕边缘仅唤出半透明指示条，不触发 Home 退出手势 */
@@ -199,18 +265,22 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        if (!isFinishing && !autoResolvedState.value && isLocked()) {
+        if (!isFinishing && !isDestroyed && !autoResolvedState.value && isLocked()) {
             // 意外退入后台时强力拉回
             reclaimForeground()
+        } else {
+            clearDelayedTasks()
         }
     }
 
     private fun reclaimForeground() {
-        if (isFinishing || autoResolvedState.value) return
+        if (isFinishing || isDestroyed || autoResolvedState.value) return
         val payload = payloadState.value ?: return
 
+        clearDelayedTasks()
+
         val pullTask = Runnable {
-            if (isFinishing || autoResolvedState.value) return@Runnable
+            if (isFinishing || isDestroyed || autoResolvedState.value) return@Runnable
             try {
                 val am = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
                 am?.moveTaskToFront(taskId, ActivityManager.MOVE_TASK_NO_USER_ACTION)
@@ -230,10 +300,9 @@ class MedicationAlarmActivity : ComponentActivity() {
             }
         }
 
-        // 立即执行一次任务栈拉回
+        pendingPullTask = pullTask
         pullTask.run()
-        // 延时 120ms 二次拉回，避开系统手势过渡动画期间的栈锁
-        Handler(Looper.getMainLooper()).postDelayed(pullTask, 120L)
+        mainHandler.postDelayed(pullTask, 120L)
     }
 
     private fun triggerHapticWarning() {
@@ -283,6 +352,18 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        activeActivities.add(this)
+
+        try {
+            val filter = IntentFilter(MedicationAlarmContract.ACTION_FINISH_ALL_ALARMS)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(finishAllReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(finishAllReceiver, filter)
+            }
+        } catch (ignored: Throwable) {
+        }
+
         cameraPermissionGranted.value = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.CAMERA
@@ -301,9 +382,12 @@ class MedicationAlarmActivity : ComponentActivity() {
         )
         enableImmersiveMode()
         try {
-            payloadState.value = MedicationAlarmContract.payloadFrom(intent)
-        } catch (error: JSONException) {
-            finish()
+            val p = MedicationAlarmContract.payloadFrom(intent)
+            payloadState.value = p
+            recordActivePayload(p)
+        } catch (error: Throwable) {
+            Log.e("MedicationAlarm", "Failed to parse alarm payload", error)
+            dismissThisActivity()
             return
         }
         setContent {
@@ -325,16 +409,26 @@ class MedicationAlarmActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         try {
-            // singleTop：同实例被新的闹钟再次拉起时换载荷并重建页面。
-            // scanSession 自增让「解锁态 / 取景器 / 倒计时」全部回到初始状态。
-            payloadState.value = MedicationAlarmContract.payloadFrom(intent)
-            scanUnlockedState.value = false
-            autoResolvedState.value = false
-            scanSession.value += 1
+            val newPayload = MedicationAlarmContract.payloadFrom(intent)
+            recordActivePayload(newPayload)
+            val currentPayload = payloadState.value
+            val currentId = currentPayload?.optInt("id", -1)
+            val newId = newPayload.optInt("id", -1)
+            val sameAlarm = currentId != null && currentId != -1 && currentId == newId
+
+            payloadState.value = newPayload
             enableImmersiveMode()
             startAlert()
             updateAccessibilityGuard()
-        } catch (ignored: JSONException) {
+
+            // 仅当切换到完全不同的新闹钟时，才重置解锁态与会话计数；同提醒拉回时保持当前进度
+            if (!sameAlarm) {
+                scanUnlockedState.value = false
+                autoResolvedState.value = false
+                scanSession.value += 1
+            }
+        } catch (error: Throwable) {
+            Log.e("MedicationAlarm", "Failed to parse new alarm intent payload", error)
         }
     }
 
@@ -342,14 +436,22 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     @Composable
     private fun AlarmRoot(payload: JSONObject) {
-        val requireScan = MedicationAlarmContract.requiresScanVerification(payload)
-        val expectedToken = MedicationAlarmContract.scanTokenOf(payload)
+        val requireScan = isLocked()
+        val expectedTokens = remember(payload, scanSession.value) {
+            val list = getActivePayloadsSnapshot()
+            if (list.isNotEmpty()) {
+                MedicationAlarmContract.allExpectedTokens(list)
+            } else {
+                MedicationAlarmContract.allExpectedTokens(payload)
+            }
+        }
         val mode = payload.optString("mode", "strong")
         val data = payload.optJSONObject("data")
         val isGroup = data != null && "reminder-group" == data.optString("kind")
 
         val scanUnlocked = scanUnlockedState
         val showScanner = remember { mutableStateOf(false) }
+        val scannerEmergencyMode = remember { mutableStateOf(false) }
         val scanFeedback = remember { mutableStateOf<String?>(null) }
         // 扫码匹配后直接视为已服用（单药记已服用、群组记全部已服用），展示成功态后自动关闭。
         val autoResolved = autoResolvedState
@@ -359,6 +461,7 @@ class MedicationAlarmActivity : ComponentActivity() {
         LaunchedEffect(scanSession.value) {
             scanUnlockedState.value = false
             showScanner.value = false
+            scannerEmergencyMode.value = false
             scanFeedback.value = null
             autoResolvedState.value = false
             showEmergencyDialog.value = false
@@ -387,12 +490,13 @@ class MedicationAlarmActivity : ComponentActivity() {
                 startAlert()
             } else if (showScanner.value) {
                 showScanner.value = false
+                scannerEmergencyMode.value = false
                 scanFeedback.value = null
             } else if (autoResolved.value) {
                 MedboxAccessibilityService.setGuarded(false)
-                finish()
+                finishAllAlarms(this@MedicationAlarmActivity)
             } else if (locked) {
-                val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
+                val isCustom = expectedTokens.any { it.isNotEmpty() && !it.startsWith(TOKEN_PREFIX) }
                 val msg = if (isCustom) "强制提醒：请扫描已绑定的药盒或物品条码解除" else "强制提醒：请扫描专属解锁二维码解除"
                 scanFeedback.value = msg
                 triggerHapticWarning()
@@ -414,7 +518,7 @@ class MedicationAlarmActivity : ComponentActivity() {
         LaunchedEffect(autoResolved.value) {
             if (!autoResolved.value) return@LaunchedEffect
             delay(1500)
-            finish()
+            finishAllAlarms(this@MedicationAlarmActivity)
         }
 
         // 自动关闭倒计时：strong 且未要求扫码时不自动关；进入取景器暂停计数
@@ -439,7 +543,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 left -= 1
                 secondsLeft.value = left
                 if (left <= 0) {
-                    finish()
+                    finishAllAlarms(this@MedicationAlarmActivity)
                     return@LaunchedEffect
                 }
             }
@@ -472,47 +576,111 @@ class MedicationAlarmActivity : ComponentActivity() {
                 HeaderBlock(mode = mode, payload = payload, locked = locked)
 
                 Spacer(Modifier.height(18.dp))
-                if (isGroup && data != null) {
-                    GroupBody(data, backdrop, locked)
-                } else {
-                    LegacyBody(payload, data)
-                }
-
-                Spacer(Modifier.height(24.dp))
-                FooterActions(
-                    payload = payload,
-                    backdrop = backdrop,
-                    groupPayload = isGroup,
-                    locked = locked,
-                    resolved = autoResolved.value,
-                    scanFeedback = scanFeedback.value,
-                    secondsLeft = if (autoCloseSeconds != null) secondsLeft.value else -1,
-                    onStartScan = {
-                        scanFeedback.value = null
-                        if (cameraPermissionGranted.value ||
-                            ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
-                            == PackageManager.PERMISSION_GRANTED
-                        ) {
-                            cameraPermissionGranted.value = true
+                if (locked || autoResolved.value) {
+                    FooterActions(
+                        payload = payload,
+                        expectedTokens = expectedTokens,
+                        backdrop = backdrop,
+                        groupPayload = isGroup,
+                        locked = locked,
+                        resolved = autoResolved.value,
+                        scanFeedback = scanFeedback.value,
+                        secondsLeft = if (autoCloseSeconds != null) secondsLeft.value else -1,
+                        onStartScan = {
+                            scanFeedback.value = null
+                            scannerEmergencyMode.value = false
                             showScanner.value = true
-                        } else {
-                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
-                    },
-                    onEmergencyTriggered = {
-                        vibrateUnlock()
-                        showEmergencyDialog.value = true
-                    },
-                )
+                            if (!cameraPermissionGranted.value &&
+                                ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
+                                != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                requestCameraPermissionSafely()
+                            }
+                        },
+                        onEmergencyTriggered = {
+                            scanFeedback.value = null
+                            vibrateUnlock()
+                            scannerEmergencyMode.value = true
+                            showScanner.value = true
+                            if (!cameraPermissionGranted.value &&
+                                ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
+                                != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                requestCameraPermissionSafely()
+                            }
+                        },
+                        onDismissAll = {
+                            finishAllAlarms(this@MedicationAlarmActivity)
+                        },
+                    )
+
+                    Spacer(Modifier.height(20.dp))
+                    if (isGroup && data != null) {
+                        GroupBody(data, backdrop, locked)
+                    } else {
+                        LegacyBody(payload, data)
+                    }
+                } else {
+                    if (isGroup && data != null) {
+                        GroupBody(data, backdrop, locked)
+                    } else {
+                        LegacyBody(payload, data)
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+                    FooterActions(
+                        payload = payload,
+                        expectedTokens = expectedTokens,
+                        backdrop = backdrop,
+                        groupPayload = isGroup,
+                        locked = locked,
+                        resolved = autoResolved.value,
+                        scanFeedback = scanFeedback.value,
+                        secondsLeft = if (autoCloseSeconds != null) secondsLeft.value else -1,
+                        onStartScan = {
+                            scanFeedback.value = null
+                            scannerEmergencyMode.value = false
+                            showScanner.value = true
+                            if (!cameraPermissionGranted.value &&
+                                ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
+                                != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                requestCameraPermissionSafely()
+                            }
+                        },
+                        onEmergencyTriggered = {
+                            scanFeedback.value = null
+                            vibrateUnlock()
+                            scannerEmergencyMode.value = true
+                            showScanner.value = true
+                            if (!cameraPermissionGranted.value &&
+                                ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
+                                != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                requestCameraPermissionSafely()
+                            }
+                        },
+                        onDismissAll = {
+                            finishAllAlarms(this@MedicationAlarmActivity)
+                        },
+                    )
+                }
                 Spacer(Modifier.height(28.dp))
             }
 
             if (showScanner.value) {
                 ScannerOverlay(
-                    expectedToken = expectedToken,
+                    expectedTokens = expectedTokens,
+                    showEmergencyBypass = scannerEmergencyMode.value,
                     onClose = {
                         showScanner.value = false
+                        scannerEmergencyMode.value = false
                         scanFeedback.value = null
+                    },
+                    onEmergencyTriggered = {
+                        showScanner.value = false
+                        vibrateUnlock()
+                        showEmergencyDialog.value = true
                     },
                     onMatched = {
                         showScanner.value = false
@@ -520,7 +688,12 @@ class MedicationAlarmActivity : ComponentActivity() {
                         scanFeedback.value = "已验证 · 操作已解锁"
                         vibrateUnlock()
                         MedboxAccessibilityService.setGuarded(false)
-                        dispatchScanAutoTaken(payload)
+                        val payloadsToResolve = getActivePayloadsSnapshot().ifEmpty {
+                            listOfNotNull(payloadState.value)
+                        }
+                        for (p in payloadsToResolve) {
+                            dispatchScanAutoTaken(p)
+                        }
                         autoResolved.value = true
                     },
                 )
@@ -540,6 +713,14 @@ class MedicationAlarmActivity : ComponentActivity() {
                         showEmergencyDialog.value = false
                         val action = if (isGroup) MedicationAlarmContract.ACTION_ALL_SKIPPED else MedicationAlarmContract.ACTION_SKIP
                         Toast.makeText(this@MedicationAlarmActivity, "已跳过本次用药", Toast.LENGTH_SHORT).show()
+                        act(action)
+                    },
+                    onForceStop = {
+                        MedboxAccessibilityService.setGuarded(false)
+                        showEmergencyDialog.value = false
+                        silenceAlert()
+                        Toast.makeText(this@MedicationAlarmActivity, "已强行停止提醒", Toast.LENGTH_SHORT).show()
+                        val action = if (isGroup) MedicationAlarmContract.ACTION_ALL_SKIPPED else MedicationAlarmContract.ACTION_SKIP
                         act(action)
                     },
                     onCancel = {
@@ -731,6 +912,7 @@ class MedicationAlarmActivity : ComponentActivity() {
     @Composable
     private fun FooterActions(
         payload: JSONObject,
+        expectedTokens: List<String>,
         backdrop: Backdrop,
         groupPayload: Boolean,
         locked: Boolean,
@@ -739,6 +921,7 @@ class MedicationAlarmActivity : ComponentActivity() {
         secondsLeft: Int,
         onStartScan: () -> Unit,
         onEmergencyTriggered: () -> Unit = {},
+        onDismissAll: () -> Unit = {},
     ) {
         if (resolved) {
             // 扫码已自动记录：成功态替代操作按钮，提供显式完成按钮并支持点击即退，伴随 1.5s 自动退出。
@@ -751,7 +934,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(22.dp))
                         .background(GreenDeep.copy(alpha = 0.12f))
-                        .clickable { finish() }
+                        .clickable { onDismissAll() }
                         .padding(vertical = 18.dp, horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -767,15 +950,14 @@ class MedicationAlarmActivity : ComponentActivity() {
                 Spacer(Modifier.height(14.dp))
                 PrimaryGradientButton(
                     label = "完成并返回",
-                    onClick = { finish() }
+                    onClick = onDismissAll
                 )
             }
             return
         }
 
         if (locked) {
-            val expectedToken = MedicationAlarmContract.scanTokenOf(payload)
-            ScanLockedCard(expectedToken, scanFeedback, onStartScan, onEmergencyTriggered)
+            ScanLockedCard(expectedTokens, scanFeedback, onStartScan, onEmergencyTriggered)
             return
         }
 
@@ -816,49 +998,61 @@ class MedicationAlarmActivity : ComponentActivity() {
     }
 
     /** 锁定态卡片：锁定说明 + 扫码主 CTA（渐变填充） */
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     private fun ScanLockedCard(
-        expectedToken: String,
+        expectedTokens: List<String>,
         scanFeedback: String?,
         onStartScan: () -> Unit,
         onEmergencyTriggered: () -> Unit,
     ) {
-        val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
+        val isCustom = expectedTokens.any { it.isNotEmpty() && !it.startsWith(TOKEN_PREFIX) }
+        val interactionSource = remember { MutableInteractionSource() }
+        val isPressed by interactionSource.collectIsPressedAsState()
+        val scale by animateFloatAsState(
+            targetValue = if (isPressed) 0.88f else 1f,
+            animationSpec = tween(durationMillis = 150),
+            label = "qrScale"
+        )
+
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
                 .background(Color.White.copy(alpha = 0.72f))
                 .padding(horizontal = 20.dp, vertical = 22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // 暗门：长按二维码图标 5 秒触发应急解除，无外显提示，无环形进度条
+            // 暗门：长按二维码图标触发应急解除（基于 Compose 原生 combinedClickable，长按触发震动并进入带应急解除的扫码页）
             Box(
                 Modifier
-                    .size(68.dp)
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false)
-                            val upOrCancel = withTimeoutOrNull(5000L) {
-                                waitForUpOrCancellation()
-                            }
-                            if (upOrCancel == null) {
-                                onEmergencyTriggered()
-                                waitForUpOrCancellation()
-                            }
+                    .size(96.dp)
+                    .scale(scale)
+                    .clip(CircleShape)
+                    .combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = {
+                            onStartScan()
+                        },
+                        onLongClick = {
+                            try {
+                                triggerHapticBypass()
+                            } catch (ignored: Throwable) {}
+                            onEmergencyTriggered()
                         }
-                    },
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                QrGlyph(Modifier.size(56.dp))
+                QrGlyph(Modifier.size(68.dp))
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
             BasicText(
-                "需要扫码解除",
+                "扫码确认服药",
                 style = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink),
             )
             Spacer(Modifier.height(6.dp))
             BasicText(
-                if (isCustom) "起身找到已绑定的药盒或物品\n扫描其条形码或二维码后才能完成服药"
-                else "起身走到贴有解锁二维码的地方\n扫描配对码后才能完成服药",
+                if (isCustom) "请扫描已绑定的药盒、条形码或二维码，完成本次服药确认"
+                else "请扫描已绑定的专属二维码或药盒条码，完成本次服药确认",
                 style = TextStyle(fontSize = 14.sp, color = InkSoft, textAlign = TextAlign.Center, lineHeight = 21.sp),
             )
             if (!scanFeedback.isNullOrEmpty()) {
@@ -870,18 +1064,19 @@ class MedicationAlarmActivity : ComponentActivity() {
             }
             Spacer(Modifier.height(18.dp))
             PrimaryGradientButton(
-                label = if (isCustom) "扫描绑定条码/二维码" else "扫描解锁二维码",
+                label = "立即扫码验证",
                 onClick = onStartScan
             )
         }
     }
 
-    /** 应急解除暗门对话框（长按二维码 5 秒触发） */
+    /** 应急解除暗门对话框（长按二维码触发） */
     @Composable
     private fun EmergencyBypassDialog(
         groupPayload: Boolean,
         onSnooze: () -> Unit,
         onSkip: () -> Unit,
+        onForceStop: () -> Unit,
         onCancel: () -> Unit,
     ) {
         Box(
@@ -915,7 +1110,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 )
                 Spacer(Modifier.height(8.dp))
                 BasicText(
-                    "已触发应急暗门。如遇条码遗失等特殊情况，可选择以下方式解除当前提醒：",
+                    "已触发应急暗门。如遇条码遗失或无法扫描等情况，可选择以下方式解除当前提醒：",
                     style = TextStyle(
                         fontSize = 14.sp,
                         color = InkSoft,
@@ -923,18 +1118,24 @@ class MedicationAlarmActivity : ComponentActivity() {
                         lineHeight = 20.sp
                     )
                 )
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(20.dp))
                 PrimaryGradientButton(
                     label = "延后 10 分钟",
                     onClick = onSnooze
                 )
                 Spacer(Modifier.height(10.dp))
                 GhostButton(
-                    label = if (groupPayload) "确认跳过本组服药" else "确认跳过本次",
-                    contentColor = Red,
+                    label = if (groupPayload) "跳过本组服药" else "跳过本次服药",
+                    contentColor = InkSoft,
                     onClick = onSkip
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
+                GhostButton(
+                    label = "强行停止提醒",
+                    contentColor = Red,
+                    onClick = onForceStop
+                )
+                Spacer(Modifier.height(10.dp))
                 BasicText(
                     "取消",
                     style = TextStyle(
@@ -956,12 +1157,15 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     @Composable
     private fun ScannerOverlay(
-        expectedToken: String,
+        expectedTokens: List<String>,
+        showEmergencyBypass: Boolean = false,
         onClose: () -> Unit,
+        onEmergencyTriggered: () -> Unit,
         onMatched: () -> Unit,
     ) {
         val cameraPermissionGranted = cameraPermissionGranted.value
         val scanFeedback = remember { mutableStateOf<String?>(null) }
+        val context = LocalContext.current
 
         LaunchedEffect(scanFeedback.value) {
             if (scanFeedback.value != null) {
@@ -973,9 +1177,9 @@ class MedicationAlarmActivity : ComponentActivity() {
         Box(Modifier.fillMaxSize()) {
             if (cameraPermissionGranted) {
                 CameraScanner(
-                    expectedToken = expectedToken,
+                    expectedTokens = expectedTokens,
                     onMismatch = {
-                        scanFeedback.value = "这不是配对的解锁码"
+                        scanFeedback.value = "这不是配对的解锁码或药盒条码"
                     },
                     onMatched = onMatched,
                     modifier = Modifier.matchParentSize(),
@@ -1013,7 +1217,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                     )
                     Spacer(Modifier.height(8.dp))
                     BasicText(
-                        "需要使用相机扫描解锁二维码",
+                        "需要使用相机扫描解锁二维码或药盒条码",
                         style = TextStyle(fontSize = 14.sp, color = Color.White.copy(alpha = 0.85f)),
                     )
                     Spacer(Modifier.height(20.dp))
@@ -1021,7 +1225,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                         Modifier
                             .clip(Capsule())
                             .background(Color.White)
-                            .clickable { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
+                            .clickable { requestCameraPermissionSafely() }
                             .padding(horizontal = 26.dp, vertical = 14.dp)
                     ) {
                         BasicText(
@@ -1032,9 +1236,9 @@ class MedicationAlarmActivity : ComponentActivity() {
                 } else {
                     ViewfinderFrame(Modifier.size(244.dp))
                     Spacer(Modifier.height(18.dp))
-                    val isCustom = expectedToken.isNotEmpty() && !expectedToken.startsWith(TOKEN_PREFIX)
+                    val isCustom = expectedTokens.any { it.isNotEmpty() && !it.startsWith(TOKEN_PREFIX) }
                     BasicText(
-                        scanFeedback.value ?: if (isCustom) "请对准已绑定的条形码或二维码" else "请对准贴好的解锁二维码",
+                        scanFeedback.value ?: if (isCustom) "请对准已绑定的条形码或二维码" else "请对准贴好的解锁二维码或药盒条码",
                         style = TextStyle(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -1043,17 +1247,37 @@ class MedicationAlarmActivity : ComponentActivity() {
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                Box(
-                    Modifier
-                        .clip(Capsule())
-                        .background(Color.White.copy(alpha = 0.16f))
-                        .clickable { onClose() }
-                        .padding(horizontal = 30.dp, vertical = 13.dp)
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    BasicText(
-                        "返回提醒页",
-                        style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White),
-                    )
+                    Box(
+                        Modifier
+                            .clip(Capsule())
+                            .background(Color.White.copy(alpha = 0.16f))
+                            .clickable { onClose() }
+                            .padding(horizontal = 24.dp, vertical = 13.dp)
+                    ) {
+                        BasicText(
+                            "返回提醒页",
+                            style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White),
+                        )
+                    }
+                    if (showEmergencyBypass) {
+                        Spacer(Modifier.width(16.dp))
+                        Box(
+                            Modifier
+                                .clip(Capsule())
+                                .background(Color.White.copy(alpha = 0.16f))
+                                .clickable { onEmergencyTriggered() }
+                                .padding(horizontal = 20.dp, vertical = 13.dp)
+                        ) {
+                            BasicText(
+                                "应急解除",
+                                style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFFFB4AB)),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1087,21 +1311,27 @@ class MedicationAlarmActivity : ComponentActivity() {
     }
 
     /**
-     * CameraX 取景 + ZXing QR 解码。
+     * CameraX 取景 + ZXing 条码与二维码解码。
      * analyzer 回调在单线程执行器上跑；ImageProxy 在 finally 中 close；
      * KEEP_ONLY_LATEST 策略下解码器忙时自动丢帧，无需额外节流。
      */
     @Composable
     private fun CameraScanner(
-        expectedToken: String,
+        expectedTokens: List<String>,
         onMatched: () -> Unit,
         onMismatch: () -> Unit,
         modifier: Modifier = Modifier,
     ) {
         val context = LocalContext.current
         val previewView = remember { PreviewView(context) }
+        val scanAlreadyMatched = remember { AtomicBoolean(false) }
+
+        val currentExpectedTokens by rememberUpdatedState(expectedTokens)
+        val currentOnMatched by rememberUpdatedState(onMatched)
+        val currentOnMismatch by rememberUpdatedState(onMismatch)
 
         DisposableEffect(Unit) {
+            var isDisposed = false
             val executor = Executors.newSingleThreadExecutor()
             var boundProvider: ProcessCameraProvider? = null
             // 解码器会话级复用：hints 只装一次，帧间由 decodeLuminance 的 reset() 复位；
@@ -1109,9 +1339,14 @@ class MedicationAlarmActivity : ComponentActivity() {
             val barcodeReader = MultiFormatReader().apply { setHints(BARCODE_HINTS) }
 
             ProcessCameraProvider.getInstance(context).addListener({
+                if (isDisposed || isFinishing || isDestroyed || executor.isShutdown) return@addListener
                 try {
                     val cameraProvider = ProcessCameraProvider.getInstance(context).get()
                     boundProvider = cameraProvider
+                    if (isDisposed || isFinishing || isDestroyed || executor.isShutdown) {
+                        cameraProvider.unbindAll()
+                        return@addListener
+                    }
 
                     val preview = Preview.Builder().build()
                         .also { it.setSurfaceProvider(previewView.surfaceProvider) }
@@ -1121,7 +1356,14 @@ class MedicationAlarmActivity : ComponentActivity() {
                         .build()
                         .also {
                             it.setAnalyzer(executor) { proxy ->
-                                analyzeBarcodeFrame(proxy, expectedToken, barcodeReader, onMatched, onMismatch)
+                                analyzeBarcodeFrame(
+                                    proxy,
+                                    currentExpectedTokens,
+                                    barcodeReader,
+                                    scanAlreadyMatched,
+                                    currentOnMatched,
+                                    currentOnMismatch
+                                )
                             }
                         }
 
@@ -1165,11 +1407,16 @@ class MedicationAlarmActivity : ComponentActivity() {
             }, ContextCompat.getMainExecutor(context))
 
             onDispose {
+                isDisposed = true
                 try {
+                    previewView.setOnTouchListener(null)
                     boundProvider?.unbindAll()
                 } catch (ignored: Throwable) {
                 }
-                executor.shutdown()
+                try {
+                    executor.shutdownNow()
+                } catch (ignored: Throwable) {
+                }
             }
         }
 
@@ -1197,29 +1444,44 @@ class MedicationAlarmActivity : ComponentActivity() {
     /** Y 平面 → ZXing；逐帧在后台线程执行，匹配结果统一抛回主线程。 */
     private fun analyzeBarcodeFrame(
         proxy: ImageProxy,
-        expectedToken: String,
+        expectedTokens: List<String>,
         reader: MultiFormatReader,
+        scanAlreadyMatched: AtomicBoolean,
         onMatched: () -> Unit,
         onMismatch: () -> Unit,
     ) {
         try {
+            if (isFinishing || isDestroyed || scanAlreadyMatched.get()) {
+                return
+            }
+
             val media = proxy.image ?: return
 
             val width = proxy.width
             val height = proxy.height
-            val rowStride = proxy.planes[0].rowStride
-            val buffer = proxy.planes[0].buffer
+            val planes = proxy.planes
+            if (planes.isEmpty()) return
+            val plane0 = planes[0]
+            val rowStride = plane0.rowStride
+            val buffer = plane0.buffer
             buffer.rewind()
 
-            // 处理 rowStride > width 的对齐填充：逐行拷贝有效像素
+            // 处理 rowStride > width 的对齐填充：逐行拷贝有效像素，严防 BufferUnderflowException
             val data = ByteArray(width * height)
-            if (rowStride == width) {
+            if (rowStride == width && buffer.remaining() >= data.size) {
                 buffer.get(data)
             } else {
                 var offset = 0
+                val bufferLimit = buffer.limit()
                 for (row in 0 until height) {
-                    buffer.position(row * rowStride)
-                    buffer.get(data, offset, width)
+                    val pos = row * rowStride
+                    if (pos >= bufferLimit) break
+                    buffer.position(pos)
+                    val available = buffer.remaining()
+                    val copyLen = minOf(width, available)
+                    if (copyLen > 0) {
+                        buffer.get(data, offset, copyLen)
+                    }
                     offset += width
                 }
             }
@@ -1310,12 +1572,15 @@ class MedicationAlarmActivity : ComponentActivity() {
             val scannedText = raw?.trim()
             when {
                 scannedText == null -> Unit
-                MedicationAlarmContract.isTokenMatch(scannedText, expectedToken) -> {
-                    Log.i("MedicationAlarm", "Scan matched! Scanned=[$scannedText], Expected=[$expectedToken]")
-                    runOnUiThread { onMatched() }
+                isFinishing || isDestroyed || scanAlreadyMatched.get() -> Unit
+                MedicationAlarmContract.isAnyTokenMatch(scannedText, expectedTokens) -> {
+                    if (scanAlreadyMatched.compareAndSet(false, true)) {
+                        Log.i("MedicationAlarm", "Scan matched! Scanned=[$scannedText], ExpectedList=$expectedTokens")
+                        runOnUiThread { onMatched() }
+                    }
                 }
                 else -> {
-                    Log.w("MedicationAlarm", "Scan mismatch! Scanned=[$scannedText], Expected=[$expectedToken]")
+                    Log.w("MedicationAlarm", "Scan mismatch! Scanned=[$scannedText], ExpectedList=$expectedTokens")
                     runOnUiThread { onMismatch() }
                 }
             }
@@ -1598,10 +1863,15 @@ class MedicationAlarmActivity : ComponentActivity() {
     private fun queueOccurrence(action: String, occurrenceId: String) {
         MedboxAccessibilityService.setGuarded(false)
         autoResolvedState.value = true
-        payloadState.value?.let {
-            MedicationAlarmContract.queueOccurrenceAction(this, action, it, occurrenceId)
+        clearDelayedTasks()
+        silenceAlert()
+        val payloadsToAct = getActivePayloadsSnapshot().ifEmpty {
+            listOfNotNull(payloadState.value)
         }
-        finish()
+        for (p in payloadsToAct) {
+            MedicationAlarmContract.queueOccurrenceAction(this, action, p, occurrenceId)
+        }
+        finishAllAlarms(this)
     }
 
     private fun formatTime(epochMillis: Long): String =
@@ -1610,13 +1880,18 @@ class MedicationAlarmActivity : ComponentActivity() {
     private fun act(action: String) {
         MedboxAccessibilityService.setGuarded(false)
         autoResolvedState.value = true
-        payloadState.value?.let { payload ->
+        clearDelayedTasks()
+        silenceAlert()
+        val payloadsToAct = getActivePayloadsSnapshot().ifEmpty {
+            listOfNotNull(payloadState.value)
+        }
+        for (p in payloadsToAct) {
             try {
-                MedicationAlarmContract.handleAction(this, action, payload)
+                MedicationAlarmContract.handleAction(this, action, p)
             } catch (ignored: JSONException) {
             }
         }
-        finish()
+        finishAllAlarms(this)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -1634,12 +1909,80 @@ class MedicationAlarmActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        activeActivities.remove(this)
+        try {
+            unregisterReceiver(finishAllReceiver)
+        } catch (ignored: Throwable) {
+        }
+        clearDelayedTasks()
         MedboxAccessibilityService.setGuarded(false)
         silenceAlert()
         super.onDestroy()
     }
 
     companion object {
+        private val activeActivities = java.util.Collections.synchronizedSet(mutableSetOf<MedicationAlarmActivity>())
+        private val activePayloads = java.util.Collections.synchronizedList(mutableListOf<JSONObject>())
+
+        fun recordActivePayload(payload: JSONObject?) {
+            if (payload == null) return
+            synchronized(activePayloads) {
+                val newId = payload.optInt("id", -1)
+                val existingIndex = if (newId != -1) {
+                    activePayloads.indexOfFirst { it.optInt("id", -1) == newId }
+                } else -1
+                if (existingIndex >= 0) {
+                    activePayloads[existingIndex] = payload
+                } else {
+                    activePayloads.add(payload)
+                }
+            }
+        }
+
+        fun getActivePayloadsSnapshot(): List<JSONObject> {
+            return synchronized(activePayloads) { ArrayList(activePayloads) }
+        }
+
+        @JvmStatic
+        @JvmOverloads
+        fun finishAllAlarms(context: Context? = null) {
+            val ctx = context ?: synchronized(activeActivities) { activeActivities.firstOrNull()?.applicationContext }
+            // 1. 取消系统通知栏中的所有闹钟/强提醒通知，防止通知栏残留全屏意图导致再次弹出
+            ctx?.let { MedicationAlarmContract.cancelAllAlarmNotifications(it) }
+
+            // 2. 发送应用内全局广播，通知可能存在于其他任务栈的闹钟页面自毁
+            ctx?.let { c ->
+                try {
+                    val broadcastIntent = Intent(MedicationAlarmContract.ACTION_FINISH_ALL_ALARMS)
+                        .setPackage(c.packageName)
+                    c.sendBroadcast(broadcastIntent)
+                } catch (ignored: Throwable) {
+                }
+            }
+
+            // 3. 关闭当前进程内登记的所有 MedicationAlarmActivity 实例
+            synchronized(activeActivities) {
+                val list = activeActivities.toList()
+                list.forEach { act ->
+                    try {
+                        act.dismissThisActivity()
+                    } catch (ignored: Throwable) {
+                        try { act.finish() } catch (ignored2: Throwable) {}
+                    }
+                }
+                activeActivities.clear()
+            }
+
+            // 4. 清除活跃载荷列表
+            synchronized(activePayloads) {
+                activePayloads.clear()
+            }
+
+            // 5. 解除无障碍前台锁定守护与停止警报声音
+            MedboxAccessibilityService.setGuarded(false)
+            AlarmAudioPlayer.stop()
+        }
+
         /** 解锁码前缀必须与 TS alarmScanVerify.ts 一致 */
         const val TOKEN_PREFIX = "medbox-unlock:"
 

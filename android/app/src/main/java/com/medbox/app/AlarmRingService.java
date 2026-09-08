@@ -21,7 +21,7 @@ import org.json.JSONObject;
  */
 public final class AlarmRingService extends Service {
 
-    private static final int NOTIF_ID = 0x414C; // "AL"
+    static final int NOTIF_ID = 0x414C; // "AL"
 
     static void launch(Context context, String payloadJson) {
         try {

@@ -16,10 +16,13 @@ import android.os.Vibrator;
 import android.os.VibratorManager;
 import android.provider.Settings;
 import androidx.core.app.NotificationCompat;
+import android.service.notification.StatusBarNotification;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 final class MedicationAlarmContract {
@@ -29,6 +32,8 @@ final class MedicationAlarmContract {
     static final String ACTION_SKIP = "com.medbox.app.MEDICATION_SKIP";
     static final String ACTION_ALL_TAKEN = "com.medbox.app.MEDICATION_ALL_TAKEN";
     static final String ACTION_ALL_SKIPPED = "com.medbox.app.MEDICATION_ALL_SKIPPED";
+    static final String ACTION_FINISH_ALL_ALARMS = "com.medbox.app.ACTION_FINISH_ALL_ALARMS";
+    public static final String TOKEN_PREFIX = "medbox-unlock:";
     static final String EXTRA_PAYLOAD = "payload";
     static final String CHANNEL_STRONG = "medication_strong_v2";
     static final String CHANNEL_ALARM = "medication_alarm_v1";
@@ -435,8 +440,9 @@ final class MedicationAlarmContract {
     }
 
     static JSONObject payloadFrom(Intent intent) throws JSONException {
+        if (intent == null) throw new JSONException("Intent is null");
         String raw = intent.getStringExtra(EXTRA_PAYLOAD);
-        if (raw == null) throw new JSONException("Missing reminder payload");
+        if (raw == null || raw.trim().isEmpty()) throw new JSONException("Missing reminder payload");
         return new JSONObject(raw);
     }
 
@@ -450,10 +456,15 @@ final class MedicationAlarmContract {
         String s = token.trim()
             .replace("\r", "")
             .replace("\n", "")
+            .replace("\t", "")
             .replace("\uFEFF", "")
             .replace("\u001D", "")
             .replace("\u0000", "");
-        // 移除条码 AIM 标识符前缀（如 ]Q1, ]C1, ]e0 等）
+        // 剥离两端可能包裹的双引号或单引号
+        if (s.length() >= 2 && ((s.startsWith("\"") && s.endsWith("\"")) || (s.startsWith("'") && s.endsWith("'")))) {
+            s = s.substring(1, s.length() - 1).trim();
+        }
+        // 移除条码 AIM 标识符前缀（如 ]Q1, ]C1, ]d2, ]e0 等）
         if (s.startsWith("]") && s.length() >= 3) {
             char second = s.charAt(1);
             if ((second >= 'A' && second <= 'Z') || (second >= 'a' && second <= 'z')) {
@@ -463,29 +474,200 @@ final class MedicationAlarmContract {
         return s;
     }
 
-    /** 智能比对已绑定的码与扫描到的码（支持 URL 结尾斜线容错、大小写容错、EAN-13/UPC-A 容错等） */
+    public static boolean isAllDigits(String s) {
+        if (s == null || s.isEmpty()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            if (!Character.isDigit(s.charAt(i))) return false;
+        }
+        return true;
+    }
+
+    public static String stripLeadingZeros(String s) {
+        if (s == null) return "";
+        String res = s.replaceFirst("^0+", "");
+        return res.isEmpty() ? "0" : res;
+    }
+
+    public static String extractGtin(String s) {
+        if (s == null) return null;
+        String raw = s.trim();
+        // (01)06901234567890 形式
+        if (raw.startsWith("(01)") && raw.length() >= 18) {
+            String candidate = raw.substring(4, 18);
+            if (isAllDigits(candidate)) return candidate;
+        }
+        // 0106901234567890 形式（AI 01 紧跟 14 位 GTIN）
+        if (raw.startsWith("01") && raw.length() >= 16) {
+            String candidate = raw.substring(2, 16);
+            if (isAllDigits(candidate)) return candidate;
+        }
+        // GS1 Digital Link 形式，例如 https://id.gs1.org/01/06901234567890
+        int idx01 = raw.indexOf("/01/");
+        if (idx01 != -1 && raw.length() >= idx01 + 4 + 14) {
+            String candidate = raw.substring(idx01 + 4, idx01 + 4 + 14);
+            if (isAllDigits(candidate)) return candidate;
+        }
+        return null;
+    }
+
+    private static boolean isCodeContainedInUrl(String url, String code) {
+        if (url == null || code == null) return false;
+        String trimmedCode = code.trim();
+        if (trimmedCode.length() < 8) return false; // 仅对至少 8 位的有效条形码/监管码进行 URL 包含检测，杜绝误判
+        // 必须形如 URL 或包含路径/参数
+        if (!url.contains("://") && !url.contains("/") && !url.contains("?") && !url.contains("=")) {
+            return false;
+        }
+        if (url.contains(trimmedCode)) return true;
+        String stripped = stripLeadingZeros(trimmedCode);
+        if (stripped.length() >= 8 && url.contains(stripped)) return true;
+        return false;
+    }
+
+    /** 智能比对已绑定的码与扫描到的码（支持 TOKEN_PREFIX、URL 协议与结尾斜线、大小写、EAN-13/UPC-A/GTIN-14 前导零及 GS1 AI 容错） */
     public static boolean isTokenMatch(String scanned, String expected) {
         String s1 = normalizeScanToken(scanned);
         String s2 = normalizeScanToken(expected);
         if (s1.isEmpty() || s2.isEmpty()) return false;
-        if (s1.equals(s2)) return true;
-        if (s1.equalsIgnoreCase(s2)) return true;
+        if (s1.equals(s2) || s1.equalsIgnoreCase(s2)) return true;
 
-        // UPC-A (12位) 与 EAN-13 (13位带前导0) 互通容错
-        if (s1.length() == 13 && s1.startsWith("0") && s1.substring(1).equals(s2)) return true;
-        if (s2.length() == 13 && s2.startsWith("0") && s2.substring(1).equals(s1)) return true;
+        // 1. TOKEN_PREFIX (medbox-unlock:) 容错：两边无论带不带前缀均可比对
+        String lower1 = s1.toLowerCase();
+        String lower2 = s2.toLowerCase();
+        String noPrefix1 = lower1.startsWith(TOKEN_PREFIX) ? s1.substring(TOKEN_PREFIX.length()).trim() : s1;
+        String noPrefix2 = lower2.startsWith(TOKEN_PREFIX) ? s2.substring(TOKEN_PREFIX.length()).trim() : s2;
+        if (!noPrefix1.isEmpty() && noPrefix1.equalsIgnoreCase(noPrefix2)) return true;
 
-        // URL 容错：忽略末尾斜杠
+        // 2. URL 容错：忽略末尾斜杠、www. 及协议前缀 (http vs https)
         String clean1 = s1.endsWith("/") ? s1.replaceAll("/+$", "") : s1;
         String clean2 = s2.endsWith("/") ? s2.replaceAll("/+$", "") : s2;
-        if (clean1.equals(clean2)) return true;
         if (clean1.equalsIgnoreCase(clean2)) return true;
-
-        // URL 协议前缀容错 (http vs https)
-        String noProto1 = clean1.replaceFirst("^https?://", "");
-        String noProto2 = clean2.replaceFirst("^https?://", "");
+        String noProto1 = clean1.replaceFirst("^https?://(www\\.)?", "");
+        String noProto2 = clean2.replaceFirst("^https?://(www\\.)?", "");
         if (!noProto1.isEmpty() && noProto1.equalsIgnoreCase(noProto2)) return true;
 
+        // 3. 纯数字条码容错：UPC-A (12位)、EAN-13 (13位)、GTIN-14 (14位带前导0) 剥除前导零统一比对
+        if (isAllDigits(noPrefix1) && isAllDigits(noPrefix2)) {
+            if (stripLeadingZeros(noPrefix1).equals(stripLeadingZeros(noPrefix2))) {
+                return true;
+            }
+        }
+
+        // 4. GS1 DataMatrix / GS1-128 AI(01) GTIN 提取容错
+        String gtin1 = extractGtin(noPrefix1);
+        String gtin2 = extractGtin(noPrefix2);
+        if (gtin1 != null && isAllDigits(noPrefix2)) {
+            if (stripLeadingZeros(gtin1).equals(stripLeadingZeros(noPrefix2))) return true;
+        }
+        if (gtin2 != null && isAllDigits(noPrefix1)) {
+            if (stripLeadingZeros(gtin2).equals(stripLeadingZeros(noPrefix1))) return true;
+        }
+        if (gtin1 != null && gtin2 != null) {
+            if (stripLeadingZeros(gtin1).equals(stripLeadingZeros(gtin2))) return true;
+        }
+
+        // 5. 药盒追溯二维码/URL 包含商品条形码或监管码容错（例如扫到药品监管 URL 中包含 20 位监管码或 13/14 位商品码）
+        if (isCodeContainedInUrl(clean1, noPrefix2) || isCodeContainedInUrl(clean2, noPrefix1)) {
+            return true;
+        }
+
         return false;
+    }
+
+    /** 聚合多个活跃提醒期望的所有有效比对码 */
+    public static List<String> allExpectedTokens(java.util.Collection<JSONObject> payloads) {
+        List<String> tokens = new ArrayList<>();
+        if (payloads == null) return tokens;
+        for (JSONObject p : payloads) {
+            for (String t : allExpectedTokens(p)) {
+                if (!tokens.contains(t)) tokens.add(t);
+            }
+        }
+        return tokens;
+    }
+
+    /** 聚合该提醒期望的所有有效比对码（专属解锁码 + 本次提醒包含的各药条形码/GTIN/监管码等） */
+    public static List<String> allExpectedTokens(JSONObject payload) {
+        List<String> tokens = new ArrayList<>();
+        if (payload == null) return tokens;
+        String primary = scanTokenOf(payload);
+        if (!primary.isEmpty() && !tokens.contains(primary)) {
+            tokens.add(primary);
+        }
+        JSONObject data = payload.optJSONObject("data");
+        if (data != null) {
+            String dataToken = data.optString("scanToken", "");
+            if (!dataToken.isEmpty() && !tokens.contains(dataToken)) {
+                tokens.add(dataToken);
+            }
+            JSONArray occurrences = data.optJSONArray("occurrences");
+            if (occurrences != null) {
+                for (int i = 0; i < occurrences.length(); i++) {
+                    JSONObject occ = occurrences.optJSONObject(i);
+                    if (occ != null) {
+                        extractTokensFromObject(occ, tokens);
+                    }
+                }
+            }
+            extractTokensFromObject(data, tokens);
+        }
+        extractTokensFromObject(payload, tokens);
+        return tokens;
+    }
+
+    private static void extractTokensFromObject(JSONObject obj, List<String> tokens) {
+        if (obj == null) return;
+        JSONArray barcodes = obj.optJSONArray("barcodes");
+        if (barcodes != null) {
+            for (int j = 0; j < barcodes.length(); j++) {
+                String b = barcodes.optString(j, "").trim();
+                if (!b.isEmpty() && !tokens.contains(b)) {
+                    tokens.add(b);
+                }
+            }
+        }
+        String[] directKeys = new String[]{"barcode", "gtin", "rawCode", "raw_code"};
+        for (String key : directKeys) {
+            String v = obj.optString(key, "").trim();
+            if (!v.isEmpty() && !tokens.contains(v)) {
+                tokens.add(v);
+            }
+        }
+    }
+
+    /** 只要匹配期望码列表中的任意一个（专属码或本次服药任一药盒条码），即视为验证成功 */
+    public static boolean isAnyTokenMatch(String scanned, List<String> expectedTokens) {
+        if (scanned == null || expectedTokens == null || expectedTokens.isEmpty()) return false;
+        for (String expected : expectedTokens) {
+            if (isTokenMatch(scanned, expected)) return true;
+        }
+        return false;
+    }
+
+    /** 取消所有强提醒与全屏提醒相关通知，同时严格保留常驻保活服务通知 */
+    public static void cancelAllAlarmNotifications(Context context) {
+        if (context == null) return;
+        try {
+            NotificationManager nm = context.getSystemService(NotificationManager.class);
+            if (nm == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                StatusBarNotification[] sbns = nm.getActiveNotifications();
+                if (sbns != null) {
+                    for (StatusBarNotification sbn : sbns) {
+                        if (sbn == null) continue;
+                        int notifId = sbn.getId();
+                        if (notifId == KeepAliveService.NOTIF_ID) continue;
+                        String channelId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && sbn.getNotification() != null
+                            ? sbn.getNotification().getChannelId()
+                            : null;
+                        if (CHANNEL_ALARM.equals(channelId) || CHANNEL_STRONG.equals(channelId) || notifId == AlarmRingService.NOTIF_ID) {
+                            nm.cancel(sbn.getTag(), notifId);
+                        }
+                    }
+                }
+            } else {
+                nm.cancel(AlarmRingService.NOTIF_ID);
+            }
+        } catch (Throwable ignored) {}
     }
 }

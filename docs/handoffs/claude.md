@@ -2,11 +2,35 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-07
+Updated: 2026-09-08
 Status: active
 Latest version: `0.9.15` (Android `versionCode: 34`)
 
 ## Summary of Accomplished Work
+
+### 26. 应用更新局域网扫描并发风暴修复、GitHub Releases 官方多源发布与实时进度流 (0.9.15)
+
+1. **局域网扫描并发风暴根治（`ApkDistributionPlugin.java`）**：
+   - 将 `scanSubnet` 中无限制瞬发的 `Executors.newCachedThreadPool()`（为 254 个 IP 并发创建原生线程）彻底重构为固定容量线程池 `Executors.newFixedThreadPool(16)`；
+   - 单 IP 超时设为 500ms，消除线程创建爆炸、OOM 隐患与普通路由器 SYN Flood / 端口扫描防御静默丢包问题，5~6 秒内稳定完成扫描。
+2. **接入 GitHub Releases 官方发布渠道（`apkTransport.ts`）**：
+   - 增加 `checkGithubRelease()`，拉取官方仓库最新 Release 信息，解析 APK 附件链接、版本号与发布说明；
+   - 内置国内加速镜像自动降级机制（`ghfast.top`、`ghproxy.net`、`gh-proxy.com`），网络阻断时自动平滑切换。
+3. **原生 HTTP 流式下载与跨域多跳重定向（`ApkDistributionPlugin.java`）**：
+   - 原生实现 `downloadHttp` 并在 `doDownloadHttp` 中支持 301/302/303/307/308 递归重定向追踪（完美解决 GitHub 到 AWS S3 CDN 的跨域重定向问题）；
+   - 8KB 流式写入并实时抛出 `downloadProgress` 进度事件。
+4. **统一多源并行检查与实时下载进度 UI（`Settings.ts` & `settings.css`）**：
+   - 重构设置页应用更新卡片为极简统一的「检查更新」按钮，附带本机局域网分发服务端口就绪状态（`端口 38473`）；
+   - 并行查询 GitHub 与局域网设备，智能优选高版本或局域网源；
+   - 更新确认弹窗完整展示版本对比、来源标识、包大小、更新日志，并在下载期间以平滑进度条直观展示进度（`百分比 · 已下载/总大小`）。
+5. **后台每日静默更新检测（`main.ts`）**：
+   - 应用冷启动 4 秒后在空闲期静默检测（每天最多一次），有新版本时在「设置」Tab 呈现更新小圆点徽标。
+6. **全绿验证门与构建**：
+   - `npm run typecheck`（0 errors）；
+   - Vitest 79 个测试套件，467 个测试全部通过（新增 `tests/apkUpdateVerification.test.ts` 12 项测试）；
+   - `npm run build:web` 构建成功；
+   - `npx cap sync android` 同步通过；
+   - `./gradlew.bat testReleaseUnitTest assembleRelease` 224 项任务全绿编译通过。
 
 ### 25. 强制提醒锁定重构、无障碍防退出、扫码退出闭环、自动弹回原 App 与音频焦点管理 (0.9.15)
 
@@ -39,7 +63,7 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
    - `./gradlew.bat compileDebugKotlin` 编译通过；
    - `./gradlew.bat assembleDebug` 成功打包；
    - `./gradlew.bat testReleaseUnitTest assembleRelease` 224 项任务全绿编译通过；
-   - 产物：`C:\Users\87850\Desktop\xiaoyaohe-0.9.15-accessibility-guard.apk`（18,646,307 字节）。
+   - 产物：`~/Desktop/xiaoyaohe-0.9.15-accessibility-guard.apk`（18,646,307 字节）。
 
 1. **沉浸粘性全屏模式（Immersive Sticky Mode）**：
    - 全屏提醒拉起时自动隐藏底部手势横条与系统状态栏，启用 `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`；
@@ -63,7 +87,7 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
    - `npm run test:release`（12 项测试全部通过）；
    - `npm run build:web` 构建成功（32 个内嵌图标校验通过）；
    - `./gradlew.bat testReleaseUnitTest assembleRelease` 编译通过；
-   - 产物：`release/xiaoyaohe-0.9.15-android-release.apk`，已复制至用户桌面 `C:\Users\87850\Desktop\`。
+   - 产物：`release/xiaoyaohe-0.9.15-android-release.apk`，已复制至用户桌面 `~/Desktop/`。
 
 ### 23. 全屏提醒上滑 Home 拦截、扫码防绕过、应急暗门与扫码免震动 (0.9.14)
 
@@ -88,7 +112,7 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
    - `npm run build:web` 构建成功（32 个内嵌图标校验通过）；
    - `npx cap sync android` 同步成功；
    - `./gradlew.bat testReleaseUnitTest assembleRelease` 224 个任务编译通过；
-   - 产物：`release/xiaoyaohe-0.9.14-android-release.apk`（18,644,659 字节，SHA256: `b6c88b5b47e652f5dd57c7c4d445117d982156298318f5f6eb17a3956e92b6c9`），94 个内嵌资产校验通过，已复制至用户桌面 `C:\Users\87850\Desktop\`。
+   - 产物：`release/xiaoyaohe-0.9.14-android-release.apk`（18,644,659 字节，SHA256: `b6c88b5b47e652f5dd57c7c4d445117d982156298318f5f6eb17a3956e92b6c9`），94 个内嵌资产校验通过，已复制至用户桌面 `~/Desktop/`。
 
 ### 22. 项目文案润色与 oil-tone 规范落地 (0.9.13+)
 
@@ -110,7 +134,7 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
    - `npm run test`（79 套件 463 项测试全部通过）；
    - `npx playwright test`（52 测试全过）；
    - `npm run release -- --skip-install --android-variant release` 全链路通过：包含 `:app:connectedAndroidTest` 模拟器插桩测试 1/1 通过与 94 个内嵌资产校验；
-   - 产物：`release/xiaoyaohe-0.9.13-android-release.apk`（18,628,171 字节，较前次 +504 字节；SHA256 `c5fb4d577e85230531036a8282c7e18df32f1ddaba9b5629b452c2675c59f7a7`），已复制至用户桌面 `C:\Users\87850\Desktop\`。
+   - 产物：`release/xiaoyaohe-0.9.13-android-release.apk`（18,628,171 字节，较前次 +504 字节；SHA256 `c5fb4d577e85230531036a8282c7e18df32f1ddaba9b5629b452c2675c59f7a7`），已复制至用户桌面 `~/Desktop/`。
 
 ### 21. 扫码解除强制提醒绑定功能与操作按钮常驻优化 (0.9.13+)
 
@@ -141,7 +165,7 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
 5. **全绿验证门与 Release 打包产物**：
    - `npm run typecheck`（0 errors）；`npm run test`（79 套件 461 测试全过）；`npx playwright test`（56 全过，release 门禁内含）；`build:web` + `cap sync` 成功；
    - `npm run release -- --skip-install --android-variant release` 端到端成功：`:app:connectedAndroidTest`（模拟器 ldj_test35，1/1 通过）+ 94 个内嵌资产校验（aggregate `6c9e7fb6…0bd3`）；
-   - 发布产物：`medbox/release/xiaoyaohe-0.9.13-android-release.apk`（18,627,667 字节，较 0.9.12 +80 字节；SHA256 `34d76d04bf29817161e053d6a4f5242c6d5b687c8c3bbf2a977b6f6feab5dadc`），APK 与 SHA256SUMS 已复制至 `C:\Users\87850\Desktop\`。
+   - 发布产物：`medbox/release/xiaoyaohe-0.9.13-android-release.apk`（18,627,667 字节，较 0.9.12 +80 字节；SHA256 `34d76d04bf29817161e053d6a4f5242c6d5b687c8c3bbf2a977b6f6feab5dadc`），APK 与 SHA256SUMS 已复制至 `~/Desktop/`。
 6. **待真机验证**：到点自动全屏在前台其他应用 / 后台 / 锁屏三种状态下的表现；多任务划杀保护；若 OEM「一键清理」仍可终止，建议用户加入电池优化白名单。
 
 ### 19. 扫码解锁直达已服用 + 小助手历史/模型偏好 + 批量页修复 (0.9.12)
@@ -173,7 +197,7 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
    - `npm run typecheck`（0 errors）；`npm run test`（79 套件 461 测试全过）；`npx playwright test`（56 全过，含修复后的两个 spec）；`npm run build:web`、`npx cap sync android` 成功；
    - `./gradlew.bat connectedAndroidTest`（模拟器 ldj_test35）：app 模块 instrumented 测试 1/1 通过（AppSecurityInstrumentedTest）；
    - **发布脚本发现（待办）**：`scripts/release.mjs` 的 `connectedReleaseAndroidTest` 步骤在 AGP 下不可执行——release 变体默认不生成 connected 任务（仅 debug），且 `capacitor-cordova-android-plugins` 模块 androidTest 类路径存在 kotlin-stdlib-jdk7/jdk8 1.6.21 与 stdlib 1.8.22 重复类（根级 resolutionStrategy force/substitute 均不影响该生成模块）。本次以 `testReleaseUnitTest assembleRelease` + 模拟器 `connectedAndroidTest`（app 模块）+ `publishReleaseArtifacts` 校验等价完成门禁；建议后续将脚本步骤改为 `connectedAndroidTest` 并同步 `tests/release-utils.test.ts` 的命令契约。
-   - 发布产物：`medbox/release/xiaoyaohe-0.9.12-android-release.apk`（18,627,587 字节，较 0.9.11 +4,008 字节 +0.02%；SHA256 `22bfa36bf3993e66f809eab5130ee6a70529145f616b8b9c5b3cb49f5f9c1ee2`），APK 与 SHA256SUMS 已复制至 `C:\Users\87850\Desktop\`。
+   - 发布产物：`medbox/release/xiaoyaohe-0.9.12-android-release.apk`（18,627,587 字节，较 0.9.11 +4,008 字节 +0.02%；SHA256 `22bfa36bf3993e66f809eab5130ee6a70529145f616b8b9c5b3cb49f5f9c1ee2`），APK 与 SHA256SUMS 已复制至 `~/Desktop/`。
 10. **待真机验证**：扫码自动已服用全流程（触发强制提醒 → 扫码 → 自动落库 + 自动关闭）、绑定 sheet 收起预览交互；悬浮球 a11y 欠账：分药页「拍单录入/拍药盒识别」快捷卡为带 onclick 的 div，无 button role（键盘/读屏不可达），建议后续改为真按钮。
 
 ### 18. 全屏用药提醒防误触与防绕过安全加固 (0.9.11)
@@ -192,7 +216,7 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
    - `npx cap sync android` 同步成功
    - `./gradlew.bat testReleaseUnitTest assembleRelease` (BUILD SUCCESSFUL in 1m 8s, 211 tasks)
    - `scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `749a8ffe...`）
-   - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `acee36d280de7a631a6d4a4f6a32f4b4191cf1398dda4a4e43eb8044c46ab447`)，并已同步复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
+   - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `acee36d280de7a631a6d4a4f6a32f4b4191cf1398dda4a4e43eb8044c46ab447`)，并已同步复制至用户桌面 `~/Desktop/xiaoyaohe-0.9.11-android-release.apk`。
 
 ### 17. 首页顶栏规范统一与进度环修复 + 设置页提醒布局与文案优化 (0.9.11)
 
@@ -214,7 +238,7 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
    - `npx cap sync android` 同步成功
    - `./gradlew.bat testReleaseUnitTest assembleRelease` (BUILD SUCCESSFUL in 1m 7s, 224 tasks)
    - `scripts/lib/release-utils.mjs` 校验通过 94 个内嵌资产（哈希 `749a8ffe...`）
-   - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `f8e3ef152f15732ec05947c2f36623ad4de21c39eb04ac5137088b9f8c1261f2`)，并已同步复制至用户桌面 `C:\Users\87850\Desktop\xiaoyaohe-0.9.11-android-release.apk`。
+   - 发布产物：已输出至 `medbox/release/xiaoyaohe-0.9.11-android-release.apk` (18,623,579 字节，SHA256: `f8e3ef152f15732ec05947c2f36623ad4de21c39eb04ac5137088b9f8c1261f2`)，并已同步复制至用户桌面 `~/Desktop/xiaoyaohe-0.9.11-android-release.apk`。
 
 ### 16. 全屏闹钟生活二维码/条形码解锁识别引擎重构与就地验证 (0.9.11)
 

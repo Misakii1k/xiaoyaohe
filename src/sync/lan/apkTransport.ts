@@ -23,15 +23,25 @@ const AVAILABLE_UPDATE_KEY = 'medbox.lan-sync.available-update.v1';
 const LAST_UPDATE_NOTIFY_KEY = 'medbox.lan-sync.last-update-notify.v1';
 const NOTIFY_DEBOUNCE_MS = 24 * 60 * 60 * 1000; // 24h
 
+export type UpdateSource = 'github' | 'lan';
+
 export interface AvailableUpdate {
-  /** 更新版本号（如 "0.9.1"）。 */
+  /** 更新版本号（如 "0.9.15"）。 */
   version: string;
   /** 更新 versionCode。 */
   versionCode: number;
-  /** 分发源 IPv4。 */
-  peerHost: string;
-  /** 分发源 TCP 端口（一般是 38473）。 */
-  peerPort: number;
+  /** 更新来源类型。 */
+  source?: UpdateSource;
+  /** 分发源 IPv4（局域网更新有效）。 */
+  peerHost?: string;
+  /** 分发源 TCP 端口（一般是 38473，局域网更新有效）。 */
+  peerPort?: number;
+  /** 远程下载直链（GitHub/HTTP 更新有效）。 */
+  downloadUrl?: string;
+  /** 更新日志/说明。 */
+  releaseNotes?: string;
+  /** 安装包大小（字节数）。 */
+  fileSize?: number;
   /** 发现时间戳（UTC ms）。 */
   discoveredAt: number;
 }
@@ -41,6 +51,7 @@ interface ApkDistributionPlugin {
   startServer(options: { apkPath: string }): Promise<{ port: number; apkPath: string }>;
   stopServer(): Promise<void>;
   download(options: { host: string; port: number; destPath: string }): Promise<{ bytes: number; destPath: string }>;
+  downloadHttp?(options: { url: string; destPath: string }): Promise<{ bytes: number; destPath: string }>;
   probePeer?(options: { host: string; port?: number; timeoutMs?: number }): Promise<{ reachable: boolean; host: string; port: number }>;
   scanSubnet?(options?: { port?: number; timeoutMs?: number }): Promise<{ peers: Array<{ host: string; port: number }> }>;
   verifyApk(options: { apkPath: string; expectedVersionCode?: number }): Promise<{
@@ -50,6 +61,10 @@ interface ApkDistributionPlugin {
   }>;
   installApk(options: { apkPath: string; expectedVersionCode?: number }): Promise<void>;
   deleteApk(options: { apkPath: string }): Promise<{ deleted: boolean }>;
+  addListener?(
+    eventName: string,
+    listenerFunc: (data: any) => void,
+  ): Promise<{ remove: () => Promise<void> }>;
 }
 
 const plugin = registerPlugin<ApkDistributionPlugin>('ApkDistribution');
@@ -71,17 +86,26 @@ export function getAvailableUpdate(): AvailableUpdate | null {
     if (
       typeof parsed.version !== 'string'
       || typeof parsed.versionCode !== 'number'
-      || typeof parsed.peerHost !== 'string'
-      || typeof parsed.peerPort !== 'number'
       || typeof parsed.discoveredAt !== 'number'
     ) {
+      return null;
+    }
+    const source: UpdateSource = parsed.source === 'github' ? 'github' : 'lan';
+    if (source === 'lan' && (!parsed.peerHost || !parsed.peerPort)) {
+      return null;
+    }
+    if (source === 'github' && !parsed.downloadUrl) {
       return null;
     }
     return {
       version: parsed.version,
       versionCode: parsed.versionCode,
+      source,
       peerHost: parsed.peerHost,
       peerPort: parsed.peerPort,
+      downloadUrl: parsed.downloadUrl,
+      releaseNotes: parsed.releaseNotes,
+      fileSize: parsed.fileSize,
       discoveredAt: parsed.discoveredAt,
     };
   } catch {
@@ -109,6 +133,7 @@ export function recordPeerVersion(
   const update: AvailableUpdate = {
     version: peerVersion,
     versionCode: peerCode,
+    source: 'lan',
     peerHost,
     peerPort: APK_DISTRIBUTION_PORT,
     discoveredAt: Date.now(),
@@ -207,32 +232,91 @@ export async function stopServingApk(): Promise<void> {
 
 /**
  * 下载可用更新到本机 cacheDir，校验通过后返回 apkPath。
+ * 支持传入 onProgress 回调展示实时下载百分比与字节数。
  * 失败时抛出错误（含中文文案）。
  */
-export async function downloadUpdate(update: AvailableUpdate): Promise<string> {
+export async function downloadUpdate(
+  update: AvailableUpdate,
+  onProgress?: (percent: number, received: number, total: number) => void,
+): Promise<string> {
   if (!isApkDistributionAvailable()) {
     throw new Error('当前环境不支持 APK 自动更新');
   }
   const destPath = await resolveApkCachePath(update.versionCode);
-  let downloadedPath: string;
+  let downloadedPath = '';
+
+  // 监听原生下载进度
+  let progressHandle: { remove: () => Promise<void> } | null = null;
+  if (typeof plugin.addListener === 'function' && onProgress) {
+    try {
+      progressHandle = await plugin.addListener(
+        'downloadProgress',
+        (data: { received: number; total: number; percent: number }) => {
+          if (data && typeof data.percent === 'number') {
+            onProgress(data.percent, data.received || 0, data.total || 0);
+          }
+        },
+      );
+    } catch {
+      /* 忽略监听注册失败 */
+    }
+  }
+
   try {
-    const result = await plugin.download({
-      host: update.peerHost,
-      port: update.peerPort,
-      destPath,
-    });
-    downloadedPath = result.destPath;
+    if (update.source === 'github' && update.downloadUrl) {
+      if (typeof plugin.downloadHttp !== 'function') {
+        throw new Error('原生下载模块未就绪（downloadHttp 不可用）');
+      }
+      const candidates = [
+        update.downloadUrl,
+        `https://ghfast.top/${update.downloadUrl}`,
+        `https://ghproxy.net/${update.downloadUrl}`,
+        `https://gh-proxy.com/${update.downloadUrl}`,
+      ];
+      let lastErr: Error | null = null;
+      let success = false;
+      for (const url of candidates) {
+        try {
+          const result = await plugin.downloadHttp({ url, destPath });
+          downloadedPath = result.destPath;
+          success = true;
+          break;
+        } catch (error) {
+          lastErr = error instanceof Error ? error : new Error(String(error));
+        }
+      }
+      if (!success) {
+        throw new Error(`下载更新失败：${lastErr?.message || '网络连接超时'}`);
+      }
+    } else {
+      if (!update.peerHost || !update.peerPort) {
+        throw new Error('局域网更新信息不完整（缺少主机或端口）');
+      }
+      const result = await plugin.download({
+        host: update.peerHost,
+        port: update.peerPort,
+        destPath,
+      });
+      downloadedPath = result.destPath;
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : '';
     throw new Error(`下载更新失败：${msg || '未知错误'}`);
+  } finally {
+    if (progressHandle) {
+      void progressHandle.remove().catch(() => undefined);
+    }
   }
 
-  // APK 走的是明文 TCP，同网段的第三方有机会掉包，所以下载完必须验过才算数：
-  // 签名要与本机应用一致，版本号要与 update.versionCode 精确对上——后者来自
-  // 已加密的同步通道，等于把不可信的下载绑定到可信的版本公告上。
-  // 校验不过就地删文件，不给用户留一个「点一下就装」的坏包。
+  // APK 走的是明文 TCP 或外部网络，下载完必须严格验签：
+  // 包名必须为 com.medbox.app，签名证书必须与本机一致。
+  // 局域网更新时强制校验 expectedVersionCode；
+  // GitHub 更新时以 APK 内部实际版本号为准（原生验签强制要求 archiveCode >= installedCode）。
   try {
-    await plugin.verifyApk({ apkPath: downloadedPath, expectedVersionCode: update.versionCode });
+    await plugin.verifyApk({
+      apkPath: downloadedPath,
+      ...(update.source !== 'github' ? { expectedVersionCode: update.versionCode } : {}),
+    });
   } catch (error) {
     await deleteApk(downloadedPath);
     const msg = error instanceof Error ? error.message : '';
@@ -368,6 +452,7 @@ export async function scanLanForUpdates(): Promise<AvailableUpdate | null> {
         const update: AvailableUpdate = {
           version: archive.versionName,
           versionCode: archive.versionCode,
+          source: 'lan',
           peerHost: host,
           peerPort: APK_DISTRIBUTION_PORT,
           discoveredAt: Date.now(),
@@ -385,6 +470,113 @@ export async function scanLanForUpdates(): Promise<AvailableUpdate | null> {
     } catch {
       continue;
     }
+  }
+
+  return null;
+}
+
+/**
+ * 检查 GitHub Releases 官方最新版本（带国内镜像加速容错）。
+ */
+export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
+  const repo = 'Misakii1k/xiaoyaohe';
+  const apiUrls = [
+    `https://api.github.com/repos/${repo}/releases/latest`,
+    `https://ghfast.top/https://api.github.com/repos/${repo}/releases/latest`,
+    `https://ghproxy.net/https://api.github.com/repos/${repo}/releases/latest`,
+    `https://gh-proxy.com/https://api.github.com/repos/${repo}/releases/latest`,
+  ];
+
+  interface GhRelease {
+    tag_name?: string;
+    body?: string;
+    assets?: Array<{ name?: string; browser_download_url?: string; size?: number }>;
+  }
+
+  let releaseData: GhRelease | null = null;
+  for (const url of apiUrls) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4500);
+      const res = await fetch(url, {
+        headers: { Accept: 'application/vnd.github.v3+json' },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const json = (await res.json()) as GhRelease;
+        if (json && json.tag_name) {
+          releaseData = json;
+          break;
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  if (!releaseData || !releaseData.tag_name) {
+    return null;
+  }
+
+  const rawTag = String(releaseData.tag_name).trim();
+  const remoteVersion = rawTag.startsWith('v') || rawTag.startsWith('V') ? rawTag.slice(1) : rawTag;
+  if (!remoteVersion) return null;
+
+  // 若版本低于或等于当前版本，则无需更新
+  if (compareVersion(remoteVersion, LOCAL_APP_VERSION) <= 0) {
+    return null;
+  }
+
+  const assets = Array.isArray(releaseData.assets) ? releaseData.assets : [];
+  const apkAsset = assets.find((a) => a.name?.endsWith('.apk') && !a.name.includes('unaligned'));
+  if (!apkAsset || !apkAsset.browser_download_url) {
+    return null;
+  }
+
+  const diff = compareVersion(remoteVersion, LOCAL_APP_VERSION);
+  const estimatedCode = diff > 0 ? LOCAL_APP_VERSION_CODE + diff : LOCAL_APP_VERSION_CODE;
+
+  return {
+    version: remoteVersion,
+    versionCode: estimatedCode,
+    source: 'github',
+    downloadUrl: apkAsset.browser_download_url,
+    fileSize: apkAsset.size,
+    releaseNotes: typeof releaseData.body === 'string' ? releaseData.body.trim() : undefined,
+    discoveredAt: Date.now(),
+  };
+}
+
+/**
+ * 统一检查更新：并行发起 GitHub 线上官方检测与局域网 Wi-Fi 设备探测，
+ * 自动比对版本号，择优返回最新可用更新。
+ */
+export async function checkForAppUpdates(): Promise<AvailableUpdate | null> {
+  const [ghResult, lanResult] = await Promise.allSettled([
+    checkGithubRelease().catch(() => null),
+    isApkDistributionAvailable() ? scanLanForUpdates().catch(() => null) : Promise.resolve(null),
+  ]);
+
+  const ghUpdate = ghResult.status === 'fulfilled' ? ghResult.value : null;
+  const lanUpdate = lanResult.status === 'fulfilled' ? lanResult.value : null;
+
+  let best: AvailableUpdate | null = null;
+  if (ghUpdate && lanUpdate) {
+    const cmp = compareVersion(ghUpdate.version, lanUpdate.version);
+    best = cmp >= 0 ? ghUpdate : lanUpdate;
+  } else {
+    best = ghUpdate || lanUpdate;
+  }
+
+  if (best) {
+    try {
+      localStorage.setItem(AVAILABLE_UPDATE_KEY, JSON.stringify(best));
+    } catch {
+      /* ignore */
+    }
+    dispatchUpdateChanged();
+    return best;
   }
 
   return null;

@@ -18,6 +18,8 @@ const nativePlugin = {
   deleteApk: vi.fn(),
   probePeer: vi.fn(),
   scanSubnet: vi.fn(),
+  downloadHttp: vi.fn(),
+  addListener: vi.fn(),
 };
 
 vi.mock('@capacitor/core', () => ({
@@ -30,7 +32,14 @@ vi.mock('@capacitor/core', () => ({
 
 vi.mock('../src/features/notifier', () => ({ showNotification: vi.fn() }));
 
-const { downloadUpdate, installApk, deleteApk, scanLanForUpdates } = await import('../src/sync/lan/apkTransport');
+const {
+  downloadUpdate,
+  installApk,
+  deleteApk,
+  scanLanForUpdates,
+  checkGithubRelease,
+  checkForAppUpdates,
+} = await import('../src/sync/lan/apkTransport');
 
 const UPDATE = {
   version: '0.9.4',
@@ -172,6 +181,93 @@ describe('局域网 APK 更新的安装前校验', () => {
 
       expect(update).toBeNull();
       expect(nativePlugin.download).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GitHub Releases 官方更新检测与 HTTP 流式下载', () => {
+    it('正确解析 GitHub Releases 响应并生成 AvailableUpdate', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          tag_name: 'v0.9.99',
+          body: '1. 新增强提醒无障碍保护\n2. 优化音频焦点恢复',
+          assets: [
+            {
+              name: 'xiaoyaohe-0.9.99-android-release.apk',
+              size: 18646307,
+              browser_download_url: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.99/xiaoyaohe-0.9.99-android-release.apk',
+            },
+          ],
+        }),
+      });
+
+      try {
+        const update = await checkGithubRelease();
+        expect(update).not.toBeNull();
+        expect(update?.version).toBe('0.9.99');
+        expect(update?.source).toBe('github');
+        expect(update?.downloadUrl).toContain('xiaoyaohe-0.9.99-android-release.apk');
+        expect(update?.fileSize).toBe(18646307);
+        expect(update?.releaseNotes).toContain('新增强提醒无障碍保护');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('调用 downloadHttp 下载 GitHub 安装包并通过 verifyApk 校验', async () => {
+      nativePlugin.downloadHttp.mockResolvedValue({
+        bytes: 18646307,
+        destPath: '/cache/medbox-update-99.apk',
+      });
+      nativePlugin.verifyApk.mockResolvedValue({
+        packageName: 'com.medbox.app',
+        versionCode: 99,
+        versionName: '0.9.99',
+      });
+
+      const ghUpdate = {
+        version: '0.9.99',
+        versionCode: 99,
+        source: 'github' as const,
+        downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.99/app.apk',
+        discoveredAt: Date.now(),
+      };
+
+      const path = await downloadUpdate(ghUpdate);
+      expect(path).toBe('/cache/medbox-update-99.apk');
+      expect(nativePlugin.downloadHttp).toHaveBeenCalled();
+      expect(nativePlugin.verifyApk).toHaveBeenCalledWith({
+        apkPath: '/cache/medbox-update-99.apk',
+      });
+    });
+
+    it('统一检查更新 (checkForAppUpdates) 并行比较择优最高版本', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          tag_name: 'v0.9.16',
+          assets: [
+            {
+              name: 'xiaoyaohe-0.9.16-android-release.apk',
+              size: 18000000,
+              browser_download_url: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.16/xiaoyaohe-0.9.16-android-release.apk',
+            },
+          ],
+        }),
+      });
+
+      nativePlugin.scanSubnet.mockResolvedValue({ peers: [] });
+
+      try {
+        const best = await checkForAppUpdates();
+        expect(best).not.toBeNull();
+        expect(best?.version).toBe('0.9.16');
+        expect(best?.source).toBe('github');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 });
