@@ -26,8 +26,9 @@ const tablerIconsRawResolver = () => ({
   },
 });
 
-// Vite builds the assets embedded in the Capacitor Android WebView.
+// Vite builds the assets embedded in the Capacitor Android WebView or hosted statically on Web/PWA.
 export default defineConfig({
+  base: process.env.VITE_BASE_PATH || './',
   define: {
     __APP_VERSION__: JSON.stringify(appPackage.version),
     __APP_VERSION_CODE__: JSON.stringify(appVersionCode),

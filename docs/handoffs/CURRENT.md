@@ -5,6 +5,24 @@ Integration branch: `main`
 Product version: `0.9.15`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## Web PWA Online Deployment & GitHub Actions Release Automation 2026-09-08 (workspace/claude)
+
+- **Vite 相对基路径适配（`vite.config.ts`）**：
+  - 增加 `base: process.env.VITE_BASE_PATH || './'`，确保静态资源在 GitHub Pages 二级目录（`misakii1k.github.io/xiaoyaohe/`）、独立域名根目录以及 Capacitor Android 本地 WebView 下均能通过相对路径正确定位，消除 404 隐患。
+- **浏览器持久化存储保护（`src/main.ts`）**：
+  - 网页端启动阶段主动向浏览器申请 `navigator.storage.persist()` 持久化配额，防止移动端 Safari 或清理大师在存储紧张时意外清除 IndexedDB 药品与日程数据。
+- **GitHub Pages 自动化部署工作流（`.github/workflows/deploy-web.yml`）**：
+  - 支持向 `main`、`workspace/claude` 推送或手动触发；
+  - 自动执行 Node 22 环境安装、`npm ci`、`npm run typecheck`、`npm test` 门禁与 Web 资源打包，自动发布至 GitHub Pages。
+- **Android APK 自动打包与 GitHub Releases 发布工作流（`.github/workflows/release-apk.yml`）**：
+  - 支持推送版本 Tag（`v*`）或手动点击执行；
+  - 结合 Java 21、Android SDK 与 Gradle 缓存，自动适配 GitHub Secrets 专属签名密钥或自动生成一致的标准发布签名；
+  - 自动编译 Release APK，输出 SHA256SUMS 校验文件，并自动发布到 GitHub Releases。
+- **全绿验证门**：
+  - `npm run typecheck`（0 errors）；
+  - `npm test`（79 个测试套件，467 个测试全部通过）；
+  - `npm run build:web` 编译通过（所有资源引用转为 `./`，32 个内嵌图标校验通过）。
+
 ## App Update Discovery Fix, GitHub Releases Online Channel & Download Progress 2026-09-08 (workspace/claude)
 
 - **局域网扫描并发风暴修复（`ApkDistributionPlugin.java`）**：

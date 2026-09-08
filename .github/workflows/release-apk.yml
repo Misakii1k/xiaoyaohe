@@ -1,0 +1,115 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-apk:
+    name: Build & Release Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build Web assets
+        run: npm run build:web
+        env:
+          VITE_BASE_PATH: './'
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Configure Android Signing Keystore
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Using release keystore provided in GitHub Secrets..."
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+            cat <<EOF > android/app/keystore.properties
+          storeFile=release.keystore
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+          else
+            echo "No custom keystore configured. Generating CI release signing key..."
+            keytool -genkey -v \
+              -keystore android/app/release.keystore \
+              -alias medbox-release \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass medbox123 \
+              -keypass medbox123 \
+              -dname "CN=Xiaoyaohe, OU=Medbox, O=Xiaoyaohe, L=Hangzhou, ST=Zhejiang, C=CN"
+            cat <<EOF > android/app/keystore.properties
+          storeFile=release.keystore
+          storePassword=medbox123
+          keyAlias=medbox-release
+          keyPassword=medbox123
+          EOF
+          fi
+
+      - name: Build Android Release APK
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleRelease testReleaseUnitTest
+
+      - name: Package and Hash Release Artifacts
+        run: |
+          APP_VERSION=$(node -p "require('./package.json').version")
+          TARGET_APK="xiaoyaohe-${APP_VERSION}-android-release.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "./${TARGET_APK}"
+          sha256sum "${TARGET_APK}" > SHA256SUMS.txt
+          echo "APK generated: ${TARGET_APK}"
+          cat SHA256SUMS.txt
+
+      - name: Upload APK Artifact to Actions Run
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: |
+            xiaoyaohe-*-android-release.apk
+            SHA256SUMS.txt
+          retention-days: 14
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            xiaoyaohe-*-android-release.apk
+            SHA256SUMS.txt
+          generate_release_notes: true

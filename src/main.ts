@@ -81,6 +81,10 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
   void registerWebReminderWorker().catch(() => false);
   // 页面即将关闭时踢 Service Worker 一脚，让它把刚到点的提醒补发出去。
   window.addEventListener('pagehide', () => requestWebReminderCatchUp());
+  // 网页端：向浏览器申请持久化存储配额（防止浏览器在磁盘紧张时自动清理 IndexedDB 数据）
+  if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.persist === 'function') {
+    void navigator.storage.persist().catch(() => false);
+  }
 
   // Register notification click routing before the router starts. The target is
   // retained so the Today page can focus the exact occurrence when it supports it.
