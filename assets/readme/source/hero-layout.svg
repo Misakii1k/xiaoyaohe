@@ -1,0 +1,179 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="100%" height="100%">
+  <title>小药盒 (xiaoyaohe) - 用药提醒与家庭药箱管理助手</title>
+  <defs>
+    <!-- 背景渐变 -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0f1d" />
+      <stop offset="50%" stop-color="#0e172a" />
+      <stop offset="100%" stop-color="#0f2137" />
+    </linearGradient>
+
+    <!-- 柔和光晕 -->
+    <radialGradient id="glow-cyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#06b6d4" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glow-emerald" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.22" />
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glow-indigo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- 卡片水凝玻璃质感 -->
+    <linearGradient id="card-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.07" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02" />
+    </linearGradient>
+    <linearGradient id="card-border" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.05" />
+    </linearGradient>
+
+    <!-- 徽章渐变 -->
+    <linearGradient id="badge-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0.2" />
+    </linearGradient>
+    <linearGradient id="badge-border" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0.5" />
+    </linearGradient>
+  </defs>
+
+  <style>
+    .font-base {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    .badge-text {
+      font-size: 14px;
+      font-weight: 600;
+      fill: #38bdf8;
+      letter-spacing: 0.5px;
+    }
+    .title-main {
+      font-size: 52px;
+      font-weight: 800;
+      fill: #f8fafc;
+      letter-spacing: -1px;
+    }
+    .title-sub {
+      font-size: 24px;
+      font-weight: 600;
+      fill: #38bdf8;
+      letter-spacing: -0.2px;
+    }
+    .desc-text {
+      font-size: 16px;
+      line-height: 26px;
+      fill: #94a3b8;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      fill: #f1f5f9;
+    }
+    .card-desc {
+      font-size: 13px;
+      fill: #64748b;
+    }
+  </style>
+
+  <!-- 背景底色 -->
+  <rect width="1200" height="600" rx="20" fill="url(#bg-grad)" />
+
+  <!-- 氛围光晕层 -->
+  <circle cx="200" cy="150" r="260" fill="url(#glow-cyan)" />
+  <circle cx="920" cy="300" r="320" fill="url(#glow-emerald)" />
+  <circle cx="1060" cy="180" r="240" fill="url(#glow-indigo)" />
+
+  <!-- 背景装饰网格轻质感 -->
+  <g opacity="0.04" stroke="#ffffff" stroke-width="1">
+    <line x1="80" y1="0" x2="80" y2="600" />
+    <line x1="240" y1="0" x2="240" y2="600" />
+    <line x1="400" y1="0" x2="400" y2="600" />
+    <line x1="560" y1="0" x2="560" y2="600" />
+    <line x1="720" y1="0" x2="720" y2="600" />
+    <line x1="880" y1="0" x2="880" y2="600" />
+    <line x1="1040" y1="0" x2="1040" y2="600" />
+    <line x1="0" y1="120" x2="1200" y2="120" />
+    <line x1="0" y1="240" x2="1200" y2="240" />
+    <line x1="0" y1="360" x2="1200" y2="360" />
+    <line x1="0" y1="480" x2="1200" y2="480" />
+  </g>
+
+  <!-- 左侧文案与功能模块 -->
+  <g class="font-base">
+    <!-- 顶部状态胶囊 -->
+    <g transform="translate(80, 60)">
+      <rect width="250" height="34" rx="17" fill="url(#badge-grad)" stroke="url(#badge-border)" stroke-width="1" />
+      <circle cx="18" cy="17" r="4.5" fill="#34d399" />
+      <text x="32" y="22" class="badge-text">小药盒 · v0.9.15 · Android &amp; Web</text>
+    </g>
+
+    <!-- 主标题与副标题 -->
+    <text x="80" y="152" class="title-main">小药盒</text>
+    <text x="240" y="150" class="title-sub">家庭用药提醒与药箱管理助手</text>
+
+    <!-- 一句话定位 -->
+    <text x="80" y="196" class="desc-text">专为长辈与日常服药者打造的离线优先健康工具。</text>
+    <text x="80" y="224" class="desc-text">全屏防误触强提醒 · 药盒条码扫码验证解除 · 智能库存与有效期预警</text>
+
+    <!-- 4 大核心机制卡片 (2x2 水凝玻璃网格) -->
+    <!-- Card 1 -->
+    <g transform="translate(80, 270)">
+      <rect width="265" height="110" rx="16" fill="url(#card-grad)" stroke="url(#card-border)" stroke-width="1" />
+      <circle cx="34" cy="36" r="16" fill="#0ea5e9" fill-opacity="0.15" />
+      <text x="34" y="42" font-size="18" text-anchor="middle">🔔</text>
+      <text x="62" y="42" class="card-title">全屏防误触强提醒</text>
+      <text x="24" y="74" class="card-desc">粘性全屏拦截，手势上滑延后</text>
+      <text x="24" y="94" class="card-desc">守护前台直至服药完成</text>
+    </g>
+
+    <!-- Card 2 -->
+    <g transform="translate(365, 270)">
+      <rect width="265" height="110" rx="16" fill="url(#card-grad)" stroke="url(#card-border)" stroke-width="1" />
+      <circle cx="34" cy="36" r="16" fill="#10b981" fill-opacity="0.15" />
+      <text x="34" y="42" font-size="18" text-anchor="middle">📷</text>
+      <text x="62" y="42" class="card-title">药盒条码扫码核验</text>
+      <text x="24" y="74" class="card-desc">走到药盒前扫码核验解除</text>
+      <text x="24" y="94" class="card-desc">杜绝睡迷糊随手划掉漏服</text>
+    </g>
+
+    <!-- Card 3 -->
+    <g transform="translate(80, 400)">
+      <rect width="265" height="110" rx="16" fill="url(#card-grad)" stroke="url(#card-border)" stroke-width="1" />
+      <circle cx="34" cy="36" r="16" fill="#f59e0b" fill-opacity="0.15" />
+      <text x="34" y="42" font-size="18" text-anchor="middle">📦</text>
+      <text x="62" y="42" class="card-title">批次库存与有效期</text>
+      <text x="24" y="74" class="card-desc">服药自动扣减剩余库存</text>
+      <text x="24" y="94" class="card-desc">余量不足与临期多档预警</text>
+    </g>
+
+    <!-- Card 4 -->
+    <g transform="translate(365, 400)">
+      <rect width="265" height="110" rx="16" fill="url(#card-grad)" stroke="url(#card-border)" stroke-width="1" />
+      <circle cx="34" cy="36" r="16" fill="#8b5cf6" fill-opacity="0.15" />
+      <text x="34" y="42" font-size="18" text-anchor="middle">🛡️</text>
+      <text x="62" y="42" class="card-title">100% 离线优先安全</text>
+      <text x="24" y="74" class="card-desc">纯本地 IndexedDB 存储</text>
+      <text x="24" y="94" class="card-desc">局域网点对点加密直传同步</text>
+    </g>
+
+    <!-- 底部状态指示 -->
+    <g transform="translate(80, 545)">
+      <text x="0" y="0" font-size="13" fill="#475569">无广告 · 零云端依赖 · 开源透明 · 适老化设计</text>
+    </g>
+  </g>
+
+  <!-- 右侧保留区域（透明药盒图标底板） -->
+  <g id="hero-subject-frame">
+    <!-- 底座光环与水凝玻璃托盘 -->
+    <ellipse cx="910" cy="460" rx="200" ry="32" fill="#06b6d4" fill-opacity="0.18" />
+    <ellipse cx="910" cy="458" rx="160" ry="22" fill="#10b981" fill-opacity="0.14" />
+    <rect x="690" y="70" width="440" height="440" rx="220" fill="url(#card-grad)" stroke="url(#card-border)" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.4" />
+  </g>
+</svg>
+

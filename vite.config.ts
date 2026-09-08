@@ -35,8 +35,8 @@ export default defineConfig({
   },
   plugins: [tablerIconsRawResolver()],
   test: {
-    // e2e/ 是 Playwright 测试，archive/ 是归档源码，不由 Vitest 运行
-    exclude: [...configDefaults.exclude, 'e2e/**', 'archive/**'],
+    // e2e/ 是 Playwright 测试，不由 Vitest 运行
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
   server: {
     host: true, // 允许局域网内手机访问（npm run dev 后用手机打开电脑 IP）

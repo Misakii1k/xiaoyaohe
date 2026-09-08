@@ -5,6 +5,21 @@ Integration branch: `main`
 Product version: `0.9.15`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## Archive Module Cleanup & Visual README Launch 2026-09-08 (workspace/claude)
+
+- **彻底移除退役工时归档模块（`archive/工时模块归档`）**：
+  - 排查确认与当前药品核心业务无任何依赖与耦合，彻底删除 `archive/` 物理目录（历史快照永久保留在 Git 提交 `4ee0146` 中）；
+  - 清理 `vite.config.ts` 中的测试排除项配置。
+- **构建高品质项目主页与视觉资产（`README.md` & `assets/readme/`）**：
+  - 遵循 `beautify-github-readme` 规范，采用 Hybrid 混合模式渲染生成 1200x600 规范的高保真封面图 `assets/readme/hero.png` 与 SVG 源码 `assets/readme/hero.svg`，完整融合项目水凝玻璃质感与药盒设计切图；
+  - 严格遵循 `oil-tone` 文风规范编写 `README.md`，平实自然阐述项目初衷、全屏防误触强提醒、药盒条形码扫描核验、智能库存预警与离线优先机制，并提供 Android APK 与 Web PWA 入口；
+  - 补齐标准 MIT 开源许可证文件 `LICENSE`；
+  - 通过 `tone_lint.py` 与 `audit_readme.py` 双重审计。
+- **全绿验证门**：
+  - `npm run typecheck`（0 errors）；
+  - `npm test`（79 个测试套件，467 个测试全部通过）；
+  - `npm run build:web` 构建通过。
+
 ## Web PWA Online Deployment & GitHub Actions Release Automation 2026-09-08 (workspace/claude)
 
 - **Vite 相对基路径适配（`vite.config.ts`）**：
