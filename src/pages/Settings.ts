@@ -1737,7 +1737,11 @@ function buildAppUpdateBody(
       checkBtn.disabled = true;
       checkBtn.textContent = '正在检查更新...';
       try {
-        const found = await checkForAppUpdates();
+        const found = await checkForAppUpdates({
+          onStatus: (status) => {
+            checkBtn.textContent = status;
+          },
+        });
         if (found) {
           toast(`发现新版本 v${found.version}！`, 3000);
           setChip(panelEl, { text: `可更新 v${found.version}`, tone: 'info' });
@@ -1763,7 +1767,9 @@ function buildAppUpdateBody(
   const updateTitle = el('div');
   updateTitle.append('发现新版本 ', el('strong', { text: `v${update.version}` }));
 
-  const sourceDesc = update.source === 'github'
+  const sourceDesc = update.source === 'cloud'
+    ? `来源：云端极速通道${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`
+    : update.source === 'github'
     ? `来源：GitHub 官方发布${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`
     : `来源：局域网设备 ${update.peerHost ?? ''}`;
   const updateSource = el('div', {
@@ -1799,7 +1805,11 @@ function buildAppUpdateBody(
     recheckBtn.disabled = true;
     recheckBtn.textContent = '检查中...';
     try {
-      const found = await checkForAppUpdates();
+      const found = await checkForAppUpdates({
+        onStatus: (status) => {
+          recheckBtn.textContent = status;
+        },
+      });
       if (found) {
         toast(`已刷新版本：v${found.version}`, 3000);
         setChip(panelEl, { text: `可更新 v${found.version}`, tone: 'info' });

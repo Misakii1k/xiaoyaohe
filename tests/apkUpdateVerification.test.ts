@@ -37,7 +37,9 @@ const {
   installApk,
   deleteApk,
   scanLanForUpdates,
+  checkFastCloudVersion,
   checkGithubRelease,
+  checkOnlineRelease,
   checkForAppUpdates,
 } = await import('../src/sync/lan/apkTransport');
 
@@ -265,6 +267,141 @@ describe('局域网 APK 更新的安装前校验', () => {
         expect(best).not.toBeNull();
         expect(best?.version).toBe('0.9.16');
         expect(best?.source).toBe('github');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('checkFastCloudVersion 正确解析 Cloudflare Pages 边缘元数据', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          version: '0.9.18',
+          versionCode: 38,
+          releaseDate: '2026-09-08',
+          downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.18/xiaoyaohe-0.9.18-android-release.apk',
+          fileSize: 19123456,
+          releaseNotes: '云端极速通道更新测试',
+        }),
+      });
+
+      try {
+        const update = await checkFastCloudVersion();
+        expect(update).not.toBeNull();
+        expect(update?.version).toBe('0.9.18');
+        expect(update?.versionCode).toBe(38);
+        expect(update?.source).toBe('cloud');
+        expect(update?.fileSize).toBe(19123456);
+        expect(update?.releaseNotes).toBe('云端极速通道更新测试');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('checkFastCloudVersion 当版本不高于当前版本时返回 null', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          version: '0.0.0', // 本机测试环境版本为 0.0.0
+          versionCode: 0,
+        }),
+      });
+
+      try {
+        const update = await checkFastCloudVersion();
+        expect(update).toBeNull();
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('调用 downloadUpdate 下载云端极速通道更新并通过 verifyApk 校验', async () => {
+      nativePlugin.downloadHttp.mockResolvedValue({
+        bytes: 19123456,
+        destPath: '/cache/medbox-update-cloud.apk',
+      });
+      nativePlugin.verifyApk.mockResolvedValue({
+        packageName: 'com.medbox.app',
+        versionCode: 38,
+        versionName: '0.9.18',
+      });
+
+      const cloudUpdate = {
+        version: '0.9.18',
+        versionCode: 38,
+        source: 'cloud' as const,
+        downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.18/app.apk',
+        discoveredAt: Date.now(),
+      };
+
+      const path = await downloadUpdate(cloudUpdate);
+      expect(path).toBe('/cache/medbox-update-cloud.apk');
+      expect(nativePlugin.downloadHttp).toHaveBeenCalled();
+      expect(nativePlugin.verifyApk).toHaveBeenCalledWith({
+        apkPath: '/cache/medbox-update-cloud.apk',
+      });
+    });
+
+    it('云端发现新版本时极速拦截返回，无需等待局域网扫描', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (typeof url === 'string' && url.includes('version.json')) {
+          return {
+            ok: true,
+            json: async () => ({
+              version: '0.9.20',
+              versionCode: 40,
+              downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.20/app.apk',
+            }),
+          };
+        }
+        return { ok: false, status: 404 };
+      });
+
+      // 模拟局域网探测耗时 8000ms（若未被拦截会导致测试严重超时或挂起）
+      nativePlugin.scanSubnet.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve({ peers: [] }), 8000)));
+
+      const statuses: string[] = [];
+      try {
+        const result = await checkForAppUpdates({
+          onStatus: (st) => statuses.push(st),
+          timeoutLanMs: 200,
+        });
+        expect(result).not.toBeNull();
+        expect(result?.version).toBe('0.9.20');
+        expect(result?.source).toBe('cloud');
+        // 验证第一步提示为检查云端
+        expect(statuses).toContain('正在检查云端最新版本...');
+        // 验证由于云端已有更新，未发出扫描周边设备的提示
+        expect(statuses).not.toContain('云端已是最新，正在扫描周边设备...');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('云端已是最新时，通知 UI 并转入局域网扫描', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          version: '0.0.0', // 无新版本
+        }),
+      });
+
+      // 局域网无候选
+      nativePlugin.scanSubnet.mockResolvedValue({ peers: [] });
+
+      const statuses: string[] = [];
+      try {
+        const result = await checkForAppUpdates({
+          onStatus: (st) => statuses.push(st),
+          timeoutLanMs: 100,
+        });
+        expect(result).toBeNull();
+        expect(statuses).toContain('正在检查云端最新版本...');
+        expect(statuses).toContain('云端已是最新，正在扫描周边设备...');
       } finally {
         globalThis.fetch = originalFetch;
       }

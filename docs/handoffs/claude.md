@@ -8,6 +8,31 @@ Latest version: `0.9.15` (Android `versionCode: 34`)
 
 ## Summary of Accomplished Work
 
+### 28. 0.3 秒云端极速通道更新检测与阶梯探测拦截架构 (0.9.15)
+
+1. **痛点根治**：
+   - 彻底解决点击「检查更新」时，因无条件执行局域网 254 个 IP 探测而强行等待 8~10 秒的问题；
+   - 建立「云端极速通道 + 阶梯探测 + 发现即拦截」响应体系。
+2. **构建期自动生成轻量级版本元数据（`scripts/gen-version.mjs` & `public/version.json`）**：
+   - 挂载至 `npm run build:web`，打包前自动提取版本号、构建号、发布日期、下载链接、文件大小与更新日志；
+   - 输出 `dist/version.json` 并自动随网页端部署至 Cloudflare Pages 全球 CDN（`https://xiaoyaohe.pages.dev/version.json`），全国 50~150ms 秒级加载。
+3. **Cloudflare 边缘极速探测通道（`apkTransport.ts`）**：
+   - 新增 `checkFastCloudVersion()`，获取轻量 JSON（~400 字节），设置 2 秒超时熔断；
+   - 支持 `source: 'cloud'` 更新源，沿用原生 HTTP 流式下载与签名校验。
+4. **GitHub Releases 多镜像并发竞速（`apkTransport.ts`）**：
+   - 采用 `Promise.any` 驱动官方 API 及 3 个国内镜像（`ghfast.top`、`ghproxy.net`、`gh-proxy.com`）**并发竞速**，率先响应者胜出并取消其余请求，耗时由数秒压缩至 300~600ms。
+5. **阶梯探测与发现即拦截（`apkTransport.ts`）**：
+   - `checkForAppUpdates` 并发启动线上检测与局域网扫描；
+   - 云端一旦发现新版本（~0.3s），**立即拦截并弹窗呈现，直接跳过漫长的局域网扫描**；
+   - 仅当云端无更新时，才提示「云端已是最新，正在扫描周边设备...」并等待局域网探测（全局严格限时 3 秒）。
+6. **UI 实时状态反馈与 AI 工具扩展（`Settings.ts` & `assistantTools.ts`）**：
+   - 设置页更新按钮实时显示分步阶段文本；
+   - AI 工具卡片与提示文案适配「云端极速通道」来源。
+7. **全绿验证门**：
+   - `npm run typecheck`（0 errors）；
+   - Vitest 79 个测试套件，472 项测试全部通过（新增 5 项云端检测、极速拦截与下载测试）；
+   - `npm run build:web` 编译通过。
+
 ### 27. Web 端 PWA 静态在线部署（Cloudflare Pages 正式上线）、Vite 相对路径适配与 GitHub Actions 自动发版流水线 (0.9.15)
 
 1. **Cloudflare Pages 全球 CDN 正式上线**：

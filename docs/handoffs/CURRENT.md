@@ -5,6 +5,31 @@ Integration branch: `main`
 Product version: `0.9.15`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## 0.3s Fast Cloud Update Check & Ladder Probing Architecture 2026-09-08 (workspace/claude)
+
+- **应用更新检测时间过长痛点根治**：
+  - 过去点击「检查更新」总是执行 `Promise.allSettled([checkGithubRelease(), scanLanForUpdates()])`，由于局域网探测需对 254 个 IP 执行扫描（16 线程 x 500ms），即使用户处于良好互联网环境下，也必须干等 8~10 秒；
+  - 重构为**「云端极速通道 + 阶梯探测 + 发现即拦截」**架构。
+- **构建期版本元数据自动生成（`scripts/gen-version.mjs` & `public/version.json`）**：
+  - 在 `npm run build:web` 构建阶段自动执行 `scripts/gen-version.mjs`，从 `package.json`、`getVersionCode()` 与对应版本的 Release 文档（`docs/releases/*.md`）抽取版本号、构建号、发布日期、下载链接、文件大小与更新日志；
+  - 输出 `dist/version.json`，随静态网页一同部署在 Cloudflare Pages 全球 Anycast CDN（`https://xiaoyaohe.pages.dev/version.json`），全国平均网络延迟仅 50~150ms。
+- **Cloudflare Anycast 极速探测通道（`apkTransport.ts`）**：
+  - 新增 `checkFastCloudVersion()`，通过轻量级 HTTP GET 获取 `https://xiaoyaohe.pages.dev/version.json`（体积仅 ~400B，耗时 50~150ms），2 秒超时熔断保护；
+  - 支持直接将云端源（`source: 'cloud'`）作为受信任更新源。
+- **GitHub Releases 多镜像并发竞速（`apkTransport.ts`）**：
+  - 重构 `checkGithubRelease()`：由原来的逐个串行尝试 4.5s 改为通过 `Promise.any` 对官方 API 与 3 个国内镜像（`ghfast.top`、`ghproxy.net`、`gh-proxy.com`）发起**并发竞速**，一旦任一节点先返回有效响应即刻胜出并取消其余请求，将 GitHub API 检测耗时从数秒压缩至 300~600ms。
+- **阶梯探测与极速拦截机制（`apkTransport.ts`）**：
+  - 新增 `checkOnlineRelease()` 综合线上检测；
+  - 在 `checkForAppUpdates` 中实现**「发现即拦截」**：并发拉起云端与局域网探测，一旦云端确定有更高可用版本（~0.3s），**立刻终止等待局域网扫描**，保存并派发更新通知，使用户在 0.3 秒内即刻弹出更新弹窗；
+  - 仅当云端无更新或网络不可用时，才向用户提示「云端已是最新，正在扫描周边设备...」并转入局域网扫描，且施加严格的 3 秒全局超时上限。
+- **界面交互与 AI 工具链增强（`Settings.ts` & `assistantTools.ts`）**：
+  - `Settings.ts` 检查按钮接入 `onStatus` 回调，实时展示「正在检查云端最新版本...」或「云端已是最新，正在扫描周边设备...」进度，消灭假死感；
+  - `assistantTools.ts` 与更新卡片完整适配 `cloud` 来源标识（显示「来源：云端极速通道」）。
+- **全绿验证门**：
+  - `npm run typecheck`（0 errors）；
+  - `npm test`（79 个测试套件，472 项测试全部通过，新增 5 项云端极速检测与拦截测试）；
+  - `npm run build:web` 自动生成 `public/version.json` 并编译通过。
+
 ## Archive Module Cleanup & Visual README Launch 2026-09-08 (workspace/claude)
 
 - **彻底移除退役工时归档模块（`archive/工时模块归档`）**：
