@@ -17,7 +17,7 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - 版本号由 `0.9.15` 正式升级为 `1.0.0`（Android `versionCode: 35`）；
   - 本地执行 Gradle `assembleRelease` 编译出最新正式版安装包 `xiaoyaohe-1.0.0-android-release.apk`（32,095,374 字节，SHA256: `cb86c34838c1be16ffd6f142c21686b40434a81b6f179910f69fbc612735d317`），已复制至用户电脑桌面 `C:\Users\87850\Desktop\`；
   - 修复本地缓存过期问题：在 `getAvailableUpdate()` 中加入自动失效逻辑，若缓存版本 <= 本地当前运行版本，自动清空脏缓存；
-  - 彻底解决 GitHub 私有仓库 404：新增 Cloudflare Pages Functions（`functions/api/releases.ts` 与 `functions/api/download.ts`），由 Cloudflare 边缘安全中转私有 GitHub Releases 资产，免去登录且不泄露源码。
+  - 新增 Cloudflare Pages Functions（`functions/api/releases.ts` 与 `functions/api/download.ts`），由 Cloudflare 边缘中转私有 GitHub Releases 资产。**注意：代码已部署，但 Pages 项目尚未配置 `GITHUB_TOKEN`，线上仍返回 503（2026-09-09 实测），需在控制台补齐环境变量后才能真正免登录下载。**
 
 ## 0.3s Fast Cloud Update Check & Ladder Probing Architecture 2026-09-08 (workspace/claude)
 

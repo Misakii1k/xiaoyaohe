@@ -8,6 +8,28 @@ Latest version: `1.0.0` (Android `versionCode: 35`)
 
 ## Summary of Accomplished Work
 
+### 30. 前端与后端全面检查与修复（1.0.0 基线）
+
+完整结论见 `docs/audits/2026-09-09-frontend-backend-audit.md`。只读检查后按严重度修复，每项独立提交。
+
+1. **P0 云端更新链路在线上完全不可用（已定位并修复代码侧）**：
+   - 线上 `version.json` 的 `downloadUrl` 指向**私有**仓库 Release 资产（匿名 404），`fileSize` 为 `gen-version.mjs` 的硬编码兜底 `16398223`（真实 APK 为 `32095374` 字节）；
+   - `/release/xiaoyaohe-1.0.0-android-release.apk` 实测返回 200 `text/html`（Pages SPA 兜底，`public/release/` 被 gitignore 忽略）；
+   - `scripts/gen-version.mjs` 改为输出同源代理直链 `/api/download?tag=v…`，写入真实 `fileSize` 与 `sha256`，找不到产物时只警告不编造数字。
+2. **P0 Cloudflare 代理未配置（需用户执行）**：`/api/releases` 与 `/api/download` 线上均 503 `GITHUB_TOKEN_NOT_CONFIGURED`。**待办：在 Pages 项目设置里添加 `GITHUB_TOKEN`（建议 fine-grained、仅 `Contents: Read`、仅本仓库），重新部署后跑 `node scripts/check-release-endpoints.mjs` 验证。**
+3. **P1 代理安全加固（`functions/api/_shared.ts` 新增）**：
+   - `tag` 版本号白名单 + URL 前缀断言，封堵路径穿越（`tag=../../../../user` 会让 WHATWG URL 归一化到 `api.github.com/repos/user`）与查询注入；
+   - CORS 由 `*` 收窄为来源白名单（pages.dev / `https://localhost` / `capacitor://localhost`）+ `Vary: Origin`；
+   - 上游错误统一脱敏为 `UPSTREAM_ERROR`，兜底流式回传仅在 `res.ok` 时进行，补 `nosniff`/`Referrer-Policy`/`X-GitHub-Api-Version` 与 8s 超时。
+4. **P1 `releases.ts` 改写资产直链**：把 APK 的 `browser_download_url` 换成同源 `/api/download?tag=…`，客户端因此无需理解代理细节；客户端 `checkGithubRelease` 同步只走自家代理，删除对 `api.github.com` 与三个公开镜像的直连（私有仓库下必然 404）。
+5. **P1 客户端下载加固（`apkTransport.ts`）**：下载主机白名单、`fileSize` 字节数校验（不符即删包并中止）、`sha256` 透传、部署域名收敛为 `CLOUD_ORIGIN` 常量、移除无意义的 ghproxy 前缀重试。
+6. **P1 删除明文密钥死路径（`extras.ts`）**：`agnes` 分支读的是不存在的 `VITE_AGNES_*`，接收端却会把密钥明文写进无人读取的 `localStorage['medbox.agnesApi.v1']`；现已整体移除，旧对端字段被 schema 拒绝，设置面板文案补注「含密钥，加密传输」。
+7. **P2 元数据与 CI 治理**：`public/version.json` 移出版本控制（构建生成、不再弄脏工作区）；`release-apk.yml` 缺签名 secret 时直接失败（原先用硬编码口令 `medbox123` 现造密钥，产出的 APK 用户装不上也升不了级）；删除指向不存在站点的 `deploy-web.yml`（GitHub Pages 实测 404）。
+8. **新增验证门**：`tests/functionsApi.test.ts`（17 项，直接驱动两个 Function handler）、`tests/versionManifest.test.ts`（3 项）、`tests/lanSyncSecretContracts.test.ts`（3 项）、`tests/apkUpdateVerification.test.ts` 扩充 5 项（大小不符/主机白名单/相对直链/代理单通道）、`scripts/check-release-endpoints.mjs` 线上冒烟（已接入发布流水线）；`tsconfig` 的 `include` 增加 `functions`，后端代码纳入 `tsc --noEmit`。
+9. **已知接受项**：CSP `connect-src 'self' https:` 宽泛（用户可自配 LLM 端点，无法静态收窄）；局域网 APK 分发无配对鉴权（仅 8 字节 magic）；`sha256` 仅在客户端透传，原生侧校验待排期。
+10. **验证门**：`npm run typecheck` 0 errors；`npm run test` 全绿；`npm run test:release` 全绿；`npx playwright test` 全绿；`npm run build:web` 后 `git status` 无脏文件。
+11. **待用户处理**：Cloudflare `GITHUB_TOKEN`；轮换/删除 `scripts/check-gh.mjs` 与 `gen-token-exec.mjs` 曾创建的 PAT；决定这两个脚本与 `scratch/` 的去留（本次未删）；CI 的 4 个 Android 签名 secret。
+
 ### 29. 全套 3D 拟物液态微质感图标重构、专属色彩向外弥散与 1.0.0 正式版发布 (1.0.0)
 
 1. **3D 拟物资产重绘与精准边缘抗锯齿抠图**：
