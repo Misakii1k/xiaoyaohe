@@ -552,6 +552,7 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
 export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
   const repo = 'Misakii1k/xiaoyaohe';
   const apiUrls = [
+    'https://xiaoyaohe.pages.dev/api/releases',
     `https://api.github.com/repos/${repo}/releases/latest`,
     `https://ghfast.top/https://api.github.com/repos/${repo}/releases/latest`,
     `https://ghproxy.net/https://api.github.com/repos/${repo}/releases/latest`,
