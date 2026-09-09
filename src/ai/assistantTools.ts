@@ -1226,7 +1226,11 @@ const checkAppUpdate: AssistantTool = {
       tone: update ? 'warning' : 'success',
       badge: update ? `可更新` : '最新',
       body: update
-        ? `来源：${update.peerHost}（局域网内已升级设备）。`
+        ? (update.source === 'cloud'
+          ? '来源：云端极速通道（Cloudflare 官方发布）。'
+          : update.source === 'github'
+          ? '来源：GitHub 官方发布。'
+          : `来源：${update.peerHost ?? '局域网设备'}（局域网内已升级设备）。`)
         : (canSelfUpdate
           ? '本机已是当前最新版本，其他设备会通过局域网同步发现。'
           : '应用更新仅在 Android App 中可用；当前环境无法直接安装 APK。'),
@@ -1240,7 +1244,7 @@ const checkAppUpdate: AssistantTool = {
       当前版本: LOCAL_APP_VERSION,
       versionCode: LOCAL_APP_VERSION_CODE,
       可用更新: update
-        ? { version: update.version, versionCode: update.versionCode, peerHost: update.peerHost }
+        ? { version: update.version, versionCode: update.versionCode, peerHost: update.peerHost, source: update.source }
         : null,
       可自动更新: canSelfUpdate,
       ui,
@@ -1251,12 +1255,17 @@ const checkAppUpdate: AssistantTool = {
 const downloadAndInstallUpdate: AssistantTool = {
   name: 'download_and_install_update',
   label: '下载并安装新版本',
-  description: '当 check_app_update 发现可用更新后，调用此工具从局域网内已升级设备下载 APK 并调起系统安装器。安装器启动后应用可能重启，请提醒用户保存当前对话。',
+  description: '当 check_app_update 发现可用更新后，调用此工具从局域网内已升级设备或云端下载 APK 并调起系统安装器。安装器启动后应用可能重启，请提醒用户保存当前对话。',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   confirm() {
     const update = getAvailableUpdate();
     if (!update) return '当前没有可用更新，仍要继续吗？';
-    return `即将从 ${update.peerHost} 下载 v${update.version}（versionCode ${update.versionCode}）的 APK 并调起安装器。\n安装器启动后应用可能重启，请确认当前对话已保存。`;
+    const origin = update.source === 'cloud'
+      ? '云端极速通道'
+      : update.source === 'github'
+      ? 'GitHub 官方'
+      : (update.peerHost ? `${update.peerHost}` : '网络源');
+    return `即将从 ${origin} 下载 v${update.version}（versionCode ${update.versionCode}）的 APK 并调起安装器。\n安装器启动后应用可能重启，请确认当前对话已保存。`;
   },
   async run() {
     if (!isApkDistributionAvailable()) {

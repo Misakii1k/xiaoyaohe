@@ -2,11 +2,77 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-08
+Updated: 2026-09-09
 Status: active
-Latest version: `0.9.15` (Android `versionCode: 34`)
+Latest version: `1.0.0` (Android `versionCode: 35`)
 
 ## Summary of Accomplished Work
+
+### 30. 前端与后端全面检查与修复（1.0.0 基线）
+
+完整结论见 `docs/audits/2026-09-09-frontend-backend-audit.md`。只读检查后按严重度修复，每项独立提交。
+
+1. **P0 云端更新链路在线上完全不可用（已定位并修复代码侧）**：
+   - 线上 `version.json` 的 `downloadUrl` 指向**私有**仓库 Release 资产（匿名 404），`fileSize` 为 `gen-version.mjs` 的硬编码兜底 `16398223`（真实 APK 为 `32095374` 字节）；
+   - `/release/xiaoyaohe-1.0.0-android-release.apk` 实测返回 200 `text/html`（Pages SPA 兜底，`public/release/` 被 gitignore 忽略）；
+   - `scripts/gen-version.mjs` 改为输出同源代理直链 `/api/download?tag=v…`，写入真实 `fileSize` 与 `sha256`，找不到产物时只警告不编造数字。
+2. **P0 Cloudflare 代理未配置（需用户执行）**：`/api/releases` 与 `/api/download` 线上均 503 `GITHUB_TOKEN_NOT_CONFIGURED`。**待办：在 Pages 项目设置里添加 `GITHUB_TOKEN`（建议 fine-grained、仅 `Contents: Read`、仅本仓库），重新部署后跑 `node scripts/check-release-endpoints.mjs` 验证。**
+3. **P1 代理安全加固（`functions/api/_shared.ts` 新增）**：
+   - `tag` 版本号白名单 + URL 前缀断言，封堵路径穿越（`tag=../../../../user` 会让 WHATWG URL 归一化到 `api.github.com/repos/user`）与查询注入；
+   - CORS 由 `*` 收窄为来源白名单（pages.dev / `https://localhost` / `capacitor://localhost`）+ `Vary: Origin`；
+   - 上游错误统一脱敏为 `UPSTREAM_ERROR`，兜底流式回传仅在 `res.ok` 时进行，补 `nosniff`/`Referrer-Policy`/`X-GitHub-Api-Version` 与 8s 超时。
+4. **P1 `releases.ts` 改写资产直链**：把 APK 的 `browser_download_url` 换成同源 `/api/download?tag=…`，客户端因此无需理解代理细节；客户端 `checkGithubRelease` 同步只走自家代理，删除对 `api.github.com` 与三个公开镜像的直连（私有仓库下必然 404）。
+5. **P1 客户端下载加固（`apkTransport.ts`）**：下载主机白名单、`fileSize` 字节数校验（不符即删包并中止）、`sha256` 透传、部署域名收敛为 `CLOUD_ORIGIN` 常量、移除无意义的 ghproxy 前缀重试。
+6. **P1 删除明文密钥死路径（`extras.ts`）**：`agnes` 分支读的是不存在的 `VITE_AGNES_*`，接收端却会把密钥明文写进无人读取的 `localStorage['medbox.agnesApi.v1']`；现已整体移除，旧对端字段被 schema 拒绝，设置面板文案补注「含密钥，加密传输」。
+7. **P2 元数据与 CI 治理**：`public/version.json` 移出版本控制（构建生成、不再弄脏工作区）；`release-apk.yml` 缺签名 secret 时直接失败（原先用硬编码口令 `medbox123` 现造密钥，产出的 APK 用户装不上也升不了级）；删除指向不存在站点的 `deploy-web.yml`（GitHub Pages 实测 404）。
+8. **新增验证门**：`tests/functionsApi.test.ts`（17 项，直接驱动两个 Function handler）、`tests/versionManifest.test.ts`（3 项）、`tests/lanSyncSecretContracts.test.ts`（3 项）、`tests/apkUpdateVerification.test.ts` 扩充 5 项（大小不符/主机白名单/相对直链/代理单通道）、`scripts/check-release-endpoints.mjs` 线上冒烟（已接入发布流水线）；`tsconfig` 的 `include` 增加 `functions`，后端代码纳入 `tsc --noEmit`。
+9. **已知接受项**：CSP `connect-src 'self' https:` 宽泛（用户可自配 LLM 端点，无法静态收窄）；局域网 APK 分发无配对鉴权（仅 8 字节 magic）；`sha256` 仅在客户端透传，原生侧校验待排期。
+10. **E2E 偶发失败已定位修复（P3-13）**：`--repeat-each=2` 复现出唯一失败点 `e2e/assistant-cards.spec.ts:3`（phone-320）。根因是该用例 `/?assistant-preview=1` 冷启动要等 Vite 现场转译 `assistantContent` 懒加载分块，单跑实测 13.0s，15s 预算在并行门禁下必然打满；失败瞬间快照显示面板已渲染、卡片仍在「内容加载中」，属预算问题而非面板缺陷。预算提高到 25s 后 `--repeat-each=2` → 104/104 全绿。
+11. **验证门（全部实跑通过）**：`npm run typecheck` 0 errors（`include` 已含 `functions`）；`npm run test` 82 文件 / **501 项**全绿（原 79/472）；`npm run test:release` 12 项全绿；`npx playwright test --repeat-each=2` 104/104 全绿；`npm run build:web` 成功且 `git status` 无脏文件（仅 3 项原有未跟踪文件）。
+12. **待用户处理**（2026-09-09 ZCode 经电脑操作核实并部分完成）：
+    - **已撤销**：GitHub 上确实存在该流程创建的 classic PAT `xiaoyaohe-release-proxy`（全量 `repo` 权限，2026-12-08 过期，GitHub 记录 **Never used**，ID `5416890922`）。已在 `https://github.com/settings/tokens` 删除；classic 与 fine-grained 列表现均为空。其权限与有效期同脚本参数完全一致，但 `scratch/gh_token.tmp` 现已不存在，不能排除曾被写盘后清理。
+    - **已删除**：`scripts/check-gh.mjs`、`scripts/gen-token-exec.mjs`（CDP 驱动真实浏览器申请全量 `repo` PAT 并明文写盘）与 `scratch/` 下 3 张调试截图。
+    - **待用户**：替代令牌须为 fine-grained、仅 `Contents: Read`、仅 `Misakii1k/xiaoyaohe`。新建时 GitHub 强制 sudo 模式（GitHub Mobile 一次性数字），自动化无法完成；浏览器已停在 `https://github.com/settings/personal-access-tokens/new` 的 Confirm access 页，输入数字即可继续。生成后填入 Cloudflare Pages 的 `GITHUB_TOKEN` 并重新部署。
+    - **额外风险**：Chrome 仍以远程调试端口 9222 运行（`DevToolsActivePort` 存在），本机任意进程都可驱动这个已登录的浏览器；用完建议关掉该端口。
+    - **仍未处理**：Cloudflare `GITHUB_TOKEN`；CI 的 4 个 Android 签名 secret。
+
+### 29. 全套 3D 拟物液态微质感图标重构、专属色彩向外弥散与 1.0.0 正式版发布 (1.0.0)
+
+1. **3D 拟物资产重绘与精准边缘抗锯齿抠图**：
+   - 使用 Gemini Imagen 3 重绘 9 款 Studio 级 3D 拟物资产（药盒、规划本、靶向徽章、药瓶、时钟药丸、急救包、浮动胶囊、分药机、亲和头像）；
+   - 自主研发并运行 `scripts/cutout_assets.py`（基于 OpenCV GrabCut 算法与中性边缘平滑先验），生成无杂色、零毛边的 512x512 高清透明 PNG，保存在 `src/assets/images3d/`。
+2. **专属环境色彩弥散（Ambient Color Diffusion）**：
+   - 彻底摆脱传统图标方框与矩形裁切限制，在 `settings.css`、`medications.css`、`scanner.css`、`primitives.css` 中为所有 3D 拟物图标定制微质感环境发散光晕（`::before` 径向渐变结合动态 `filter: drop-shadow`）；
+   - 根据卡片语义色（金橙、天蓝、珊瑚红、丁香紫、薄荷青、祖母绿）动态渲染柔和彩色光雾，在卡片悬停与点击时呈现平滑呼吸回弹，完美融入液态玻璃与明暗主题。
+3. **1.0.0 里程碑正式发版**：
+   - 版本由 `0.9.15` 正式升级为 `1.0.0`（`versionCode: 35`）；
+   - 更新 `package.json`、`package-lock.json`、`build.gradle`、`AppConfigurationTest.java`、`release-utils.mjs`、`release-utils.test.ts`、`hero.svg`、`README.md` 与发布文档 `docs/releases/1.0.0.md`；
+   - 运行 `scripts/gen-version.mjs` 输出全新 `public/version.json`，全套 79 组测试套件 472 项测试 100% 通过。
+
+### 28. 0.3 秒云端极速通道更新检测与阶梯探测拦截架构 (0.9.15)
+
+1. **痛点根治**：
+   - 彻底解决点击「检查更新」时，因无条件执行局域网 254 个 IP 探测而强行等待 8~10 秒的问题；
+   - 建立「云端极速通道 + 阶梯探测 + 发现即拦截」响应体系。
+2. **构建期自动生成轻量级版本元数据（`scripts/gen-version.mjs` & `public/version.json`）**：
+   - 挂载至 `npm run build:web`，打包前自动提取版本号、构建号、发布日期、下载链接、文件大小与更新日志；
+   - 输出 `dist/version.json` 并自动随网页端部署至 Cloudflare Pages 全球 CDN（`https://xiaoyaohe.pages.dev/version.json`），全国 50~150ms 秒级加载。
+3. **Cloudflare 边缘极速探测通道（`apkTransport.ts`）**：
+   - 新增 `checkFastCloudVersion()`，获取轻量 JSON（~400 字节），设置 2 秒超时熔断；
+   - 支持 `source: 'cloud'` 更新源，沿用原生 HTTP 流式下载与签名校验。
+4. **GitHub Releases 多镜像并发竞速（`apkTransport.ts`）**：
+   - 采用 `Promise.any` 驱动官方 API 及 3 个国内镜像（`ghfast.top`、`ghproxy.net`、`gh-proxy.com`）**并发竞速**，率先响应者胜出并取消其余请求，耗时由数秒压缩至 300~600ms。
+5. **阶梯探测与发现即拦截（`apkTransport.ts`）**：
+   - `checkForAppUpdates` 并发启动线上检测与局域网扫描；
+   - 云端一旦发现新版本（~0.3s），**立即拦截并弹窗呈现，直接跳过漫长的局域网扫描**；
+   - 仅当云端无更新时，才提示「云端已是最新，正在扫描周边设备...」并等待局域网探测（全局严格限时 3 秒）。
+6. **UI 实时状态反馈与 AI 工具扩展（`Settings.ts` & `assistantTools.ts`）**：
+   - 设置页更新按钮实时显示分步阶段文本；
+   - AI 工具卡片与提示文案适配「云端极速通道」来源。
+7. **全绿验证门**：
+   - `npm run typecheck`（0 errors）；
+   - Vitest 79 个测试套件，472 项测试全部通过（新增 5 项云端检测、极速拦截与下载测试）；
+   - `npm run build:web` 编译通过。
 
 ### 27. Web 端 PWA 静态在线部署（Cloudflare Pages 正式上线）、Vite 相对路径适配与 GitHub Actions 自动发版流水线 (0.9.15)
 

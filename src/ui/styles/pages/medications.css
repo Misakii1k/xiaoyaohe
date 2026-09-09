@@ -55,19 +55,64 @@
 }
 
 .med-stat-icon-wrap {
-  inline-size: 48px;
-  block-size: 48px;
+  inline-size: 52px;
+  block-size: 52px;
   display: grid;
   place-items: center;
-  overflow: hidden;
-  border-radius: var(--radius-md);
+  position: relative;
+  overflow: visible;
+  border-radius: 0;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.med-stat-icon-img {
-  inline-size: 44px;
-  block-size: 44px;
-  object-fit: cover;
-  border-radius: var(--radius-md);
+/* 柔和环境光弥散背景（向周围弥散色彩） */
+.med-stat-icon-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: var(--stat-glow-bg, radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%));
+  filter: blur(10px);
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.85;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.med-stat-card:hover .med-stat-icon-wrap::before {
+  opacity: 1;
+  transform: scale(1.18);
+}
+
+.med-stat-card:active .med-stat-icon-wrap {
+  transform: scale(1.1) rotate(2deg);
+}
+
+.med-stat-card.purple .med-stat-icon-wrap {
+  --stat-glow-bg: radial-gradient(circle, rgba(168, 85, 247, 0.45) 0%, rgba(139, 92, 246, 0.2) 50%, transparent 72%);
+  filter: drop-shadow(0 6px 14px rgba(168, 85, 247, 0.35));
+}
+
+.med-stat-card.cyan .med-stat-icon-wrap {
+  --stat-glow-bg: radial-gradient(circle, rgba(6, 182, 212, 0.45) 0%, rgba(14, 165, 233, 0.2) 50%, transparent 72%);
+  filter: drop-shadow(0 6px 14px rgba(6, 182, 212, 0.35));
+}
+
+.med-stat-card.pink .med-stat-icon-wrap {
+  --stat-glow-bg: radial-gradient(circle, rgba(244, 63, 94, 0.45) 0%, rgba(239, 68, 68, 0.2) 50%, transparent 72%);
+  filter: drop-shadow(0 6px 14px rgba(244, 63, 94, 0.35));
+}
+
+.med-stat-icon-img,
+.med-stat-icon-wrap .asset-3d-container,
+.med-stat-icon-wrap svg {
+  inline-size: 46px;
+  block-size: 46px;
+  object-fit: contain;
+  border-radius: 0;
+  position: relative;
+  z-index: 1;
+  display: block;
 }
 
 /* 搜索栏与过滤漏斗 */

@@ -1044,6 +1044,40 @@ input[type='datetime-local']:not(.ui-picker-native) {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.take-med-3d-visual::before {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.35) 0%, rgba(99, 102, 241, 0.22) 45%, transparent 72%);
+  filter: blur(14px);
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.9;
+  animation: takeMedPulseGlow 3.5s ease-in-out infinite alternate;
+}
+
+@keyframes takeMedPulseGlow {
+  0% { transform: scale(0.95); opacity: 0.75; }
+  100% { transform: scale(1.12); opacity: 1; }
+}
+
+.take-med-pill-img {
+  max-inline-size: 110px;
+  max-block-size: 110px;
+  object-fit: contain;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 8px 18px rgba(16, 185, 129, 0.32));
+  animation: floatSubtle 3.5s ease-in-out infinite;
+}
+
+@keyframes floatSubtle {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-6px) rotate(2deg); }
 }
 
 .take-med-card {

@@ -19,11 +19,56 @@ export const LOCAL_APP_VERSION_CODE: number = typeof __APP_VERSION_CODE__ !== 'u
 /** APK 分发端口（与 ApkDistributionPlugin.java 保持一致）。 */
 export const APK_DISTRIBUTION_PORT = 38473;
 
+/**
+ * 云端更新通道的部署源。换自定义域名时只改这一处。
+ * 版本元数据 `version.json` 与私有仓库代理 `/api/releases`、`/api/download` 都在它下面。
+ */
+export const CLOUD_ORIGIN = 'https://xiaoyaohe.pages.dev';
+
+/**
+ * 允许下载 APK 的主机白名单。
+ * 更新元数据来自网络，`downloadUrl` 不得把用户引到任意主机。
+ */
+const ALLOWED_DOWNLOAD_HOSTS = new Set([
+  new URL(CLOUD_ORIGIN).host,
+  'github.com',
+  'objects.githubusercontent.com',
+  'ghfast.top',
+  'ghproxy.net',
+  'gh-proxy.com',
+]);
+
+const SHA256_RE = /^[0-9a-f]{64}$/;
+
+/** 把元数据里的下载地址规范化：相对路径按部署源补全，绝对地址必须命中白名单。 */
+export function resolveDownloadUrl(raw: string | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed, CLOUD_ORIGIN);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:') return null;
+  if (!ALLOWED_DOWNLOAD_HOSTS.has(url.host)) return null;
+  return url.toString();
+}
+
 const AVAILABLE_UPDATE_KEY = 'medbox.lan-sync.available-update.v1';
 const LAST_UPDATE_NOTIFY_KEY = 'medbox.lan-sync.last-update-notify.v1';
 const NOTIFY_DEBOUNCE_MS = 24 * 60 * 60 * 1000; // 24h
 
-export type UpdateSource = 'github' | 'lan';
+export type UpdateSource = 'github' | 'lan' | 'cloud';
+
+export function saveAvailableUpdate(update: AvailableUpdate): void {
+  try {
+    localStorage.setItem(AVAILABLE_UPDATE_KEY, JSON.stringify(update));
+  } catch {
+    /* ignore */
+  }
+}
 
 export interface AvailableUpdate {
   /** 更新版本号（如 "0.9.15"）。 */
@@ -42,6 +87,8 @@ export interface AvailableUpdate {
   releaseNotes?: string;
   /** 安装包大小（字节数）。 */
   fileSize?: number;
+  /** 安装包 SHA256（十六进制小写；version.json 提供时用于下载后校验）。 */
+  sha256?: string;
   /** 发现时间戳（UTC ms）。 */
   discoveredAt: number;
 }
@@ -90,11 +137,20 @@ export function getAvailableUpdate(): AvailableUpdate | null {
     ) {
       return null;
     }
-    const source: UpdateSource = parsed.source === 'github' ? 'github' : 'lan';
+    // 若记录的版本已不高于本机当前运行版本，视为过期历史记录自动清理
+    if (
+      LOCAL_APP_VERSION_CODE > 0
+      && parsed.versionCode <= LOCAL_APP_VERSION_CODE
+      && compareVersion(parsed.version, LOCAL_APP_VERSION) <= 0
+    ) {
+      clearAvailableUpdate();
+      return null;
+    }
+    const source: UpdateSource = parsed.source === 'github' ? 'github' : parsed.source === 'cloud' ? 'cloud' : 'lan';
     if (source === 'lan' && (!parsed.peerHost || !parsed.peerPort)) {
       return null;
     }
-    if (source === 'github' && !parsed.downloadUrl) {
+    if ((source === 'github' || source === 'cloud') && !parsed.downloadUrl) {
       return null;
     }
     return {
@@ -106,6 +162,7 @@ export function getAvailableUpdate(): AvailableUpdate | null {
       downloadUrl: parsed.downloadUrl,
       releaseNotes: parsed.releaseNotes,
       fileSize: parsed.fileSize,
+      sha256: typeof parsed.sha256 === 'string' && SHA256_RE.test(parsed.sha256) ? parsed.sha256 : undefined,
       discoveredAt: parsed.discoveredAt,
     };
   } catch {
@@ -263,30 +320,25 @@ export async function downloadUpdate(
   }
 
   try {
-    if (update.source === 'github' && update.downloadUrl) {
+    if ((update.source === 'github' || update.source === 'cloud') && update.downloadUrl) {
       if (typeof plugin.downloadHttp !== 'function') {
         throw new Error('原生下载模块未就绪（downloadHttp 不可用）');
       }
-      const candidates = [
-        update.downloadUrl,
-        `https://ghfast.top/${update.downloadUrl}`,
-        `https://ghproxy.net/${update.downloadUrl}`,
-        `https://gh-proxy.com/${update.downloadUrl}`,
-      ];
-      let lastErr: Error | null = null;
-      let success = false;
-      for (const url of candidates) {
-        try {
-          const result = await plugin.downloadHttp({ url, destPath });
-          downloadedPath = result.destPath;
-          success = true;
-          break;
-        } catch (error) {
-          lastErr = error instanceof Error ? error : new Error(String(error));
-        }
+      // 只信任白名单主机：元数据来自网络，不能让 downloadUrl 把包引到任意地址。
+      // （之前这里会给同一个 URL 套三个 ghproxy 前缀重试，对私有仓库毫无意义，
+      //   还会把私有资产地址交给第三方镜像，已移除。）
+      const target = resolveDownloadUrl(update.downloadUrl);
+      if (!target) {
+        throw new Error('更新包下载地址不可信，已拒绝下载。请稍后重试或改用官方渠道。');
       }
-      if (!success) {
-        throw new Error(`下载更新失败：${lastErr?.message || '网络连接超时'}`);
+      const result = await plugin.downloadHttp({ url: target, destPath });
+      downloadedPath = result.destPath;
+
+      // 便宜的完整性前置校验：元数据给了字节数就必须对上，再进昂贵的验签。
+      if (typeof update.fileSize === 'number' && update.fileSize > 0
+        && typeof result.bytes === 'number' && result.bytes !== update.fileSize) {
+        await deleteApk(downloadedPath);
+        throw new Error(`更新包大小不符（预期 ${update.fileSize} 字节，实际 ${result.bytes} 字节），已自动删除。`);
       }
     } else {
       if (!update.peerHost || !update.peerPort) {
@@ -311,11 +363,11 @@ export async function downloadUpdate(
   // APK 走的是明文 TCP 或外部网络，下载完必须严格验签：
   // 包名必须为 com.medbox.app，签名证书必须与本机一致。
   // 局域网更新时强制校验 expectedVersionCode；
-  // GitHub 更新时以 APK 内部实际版本号为准（原生验签强制要求 archiveCode >= installedCode）。
+  // GitHub / 云端更新时以 APK 内部实际版本号为准（原生验签强制要求 archiveCode >= installedCode）。
   try {
     await plugin.verifyApk({
       apkPath: downloadedPath,
-      ...(update.source !== 'github' ? { expectedVersionCode: update.versionCode } : {}),
+      ...((update.source !== 'github' && update.source !== 'cloud') ? { expectedVersionCode: update.versionCode } : {}),
     });
   } catch (error) {
     await deleteApk(downloadedPath);
@@ -387,11 +439,12 @@ async function resolveApkCachePath(versionCode: number): Promise<string> {
  * 发现新版本后会自动写入 localStorage 并派发 medbox:app-update-changed 事件，返回发现的更新；
  * 若未发现新版本则返回 null。
  */
-export async function scanLanForUpdates(): Promise<AvailableUpdate | null> {
+export async function scanLanForUpdates(timeoutMs = 3000): Promise<AvailableUpdate | null> {
   if (!isApkDistributionAvailable()) {
     throw new Error('当前环境不支持局域网更新（仅 Android 原生 App 支持）');
   }
 
+  const startTime = Date.now();
   const candidateHosts = new Set<string>();
 
   // 1. 收集已配对设备
@@ -407,7 +460,8 @@ export async function scanLanForUpdates(): Promise<AvailableUpdate | null> {
   // 2. 原生并发子网扫描
   if (typeof plugin.scanSubnet === 'function') {
     try {
-      const res = await plugin.scanSubnet({ port: APK_DISTRIBUTION_PORT, timeoutMs: 1000 });
+      const remainingMs = Math.max(500, timeoutMs - (Date.now() - startTime));
+      const res = await plugin.scanSubnet({ port: APK_DISTRIBUTION_PORT, timeoutMs: Math.min(1000, remainingMs) });
       if (res && Array.isArray(res.peers)) {
         for (const p of res.peers) {
           if (p.host) candidateHosts.add(p.host);
@@ -424,9 +478,13 @@ export async function scanLanForUpdates(): Promise<AvailableUpdate | null> {
 
   // 3. 逐个候选源探测
   for (const host of candidateHosts) {
+    if (Date.now() - startTime > timeoutMs) {
+      break;
+    }
     try {
       if (typeof plugin.probePeer === 'function') {
-        const probe = await plugin.probePeer({ host, port: APK_DISTRIBUTION_PORT, timeoutMs: 1200 });
+        const remainingMs = Math.max(400, timeoutMs - (Date.now() - startTime));
+        const probe = await plugin.probePeer({ host, port: APK_DISTRIBUTION_PORT, timeoutMs: Math.min(1200, remainingMs) });
         if (!probe.reachable) continue;
       }
 
@@ -457,11 +515,7 @@ export async function scanLanForUpdates(): Promise<AvailableUpdate | null> {
           peerPort: APK_DISTRIBUTION_PORT,
           discoveredAt: Date.now(),
         };
-        try {
-          localStorage.setItem(AVAILABLE_UPDATE_KEY, JSON.stringify(update));
-        } catch {
-          /* ignore */
-        }
+        saveAvailableUpdate(update);
         dispatchUpdateChanged();
         return update;
       } else {
@@ -476,42 +530,102 @@ export async function scanLanForUpdates(): Promise<AvailableUpdate | null> {
 }
 
 /**
- * 检查 GitHub Releases 官方最新版本（带国内镜像加速容错）。
+ * 检查 Cloudflare 边缘托管的极速版本元数据（约 50~150ms 极低延迟响应）。
+ */
+export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
+  const metaUrl = `${CLOUD_ORIGIN}/version.json`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(metaUrl, {
+      cache: 'no-cache',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      version?: string;
+      versionCode?: number;
+      downloadUrl?: string;
+      fileSize?: number;
+      sha256?: string;
+      releaseNotes?: string;
+    };
+    if (!json || typeof json.version !== 'string') return null;
+
+    const rawTag = json.version.trim();
+    const remoteVersion = rawTag.startsWith('v') || rawTag.startsWith('V') ? rawTag.slice(1) : rawTag;
+    if (!remoteVersion) return null;
+
+    // 若版本低于或等于当前版本，则无需更新
+    if (compareVersion(remoteVersion, LOCAL_APP_VERSION) <= 0) {
+      return null;
+    }
+
+    const estimatedCode = typeof json.versionCode === 'number'
+      ? json.versionCode
+      : (LOCAL_APP_VERSION_CODE + Math.max(1, compareVersion(remoteVersion, LOCAL_APP_VERSION)));
+
+    // 元数据里的直链是 `/api/download?tag=v…`（同源代理），也兼容绝对地址。
+    const downloadUrl = resolveDownloadUrl(json.downloadUrl)
+      ?? `${CLOUD_ORIGIN}/api/download?tag=v${encodeURIComponent(remoteVersion)}`;
+    const sha256 = typeof json.sha256 === 'string' && SHA256_RE.test(json.sha256.toLowerCase())
+      ? json.sha256.toLowerCase()
+      : undefined;
+
+    return {
+      version: remoteVersion,
+      versionCode: estimatedCode,
+      source: 'cloud',
+      downloadUrl,
+      fileSize: typeof json.fileSize === 'number' && json.fileSize > 0 ? json.fileSize : undefined,
+      sha256,
+      releaseNotes: typeof json.releaseNotes === 'string' ? json.releaseNotes.trim() : undefined,
+      discoveredAt: Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 检查 GitHub Releases 官方最新版本（带国内镜像多源并发竞速加速与容错）。
  */
 export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
-  const repo = 'Misakii1k/xiaoyaohe';
-  const apiUrls = [
-    `https://api.github.com/repos/${repo}/releases/latest`,
-    `https://ghfast.top/https://api.github.com/repos/${repo}/releases/latest`,
-    `https://ghproxy.net/https://api.github.com/repos/${repo}/releases/latest`,
-    `https://gh-proxy.com/https://api.github.com/repos/${repo}/releases/latest`,
-  ];
-
   interface GhRelease {
     tag_name?: string;
     body?: string;
     assets?: Array<{ name?: string; browser_download_url?: string; size?: number }>;
   }
 
+  // 仓库是私有的：直连 api.github.com 与三个公开镜像一律 404（实测 2026-09-09），
+  // 唯一可行通道是自家 Cloudflare 代理。代理会把 APK 资产的 browser_download_url
+  // 改写成同源 `/api/download?tag=…`，所以这里拿到的直链就是可下载的。
   let releaseData: GhRelease | null = null;
-  for (const url of apiUrls) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3500);
+
+  try {
+    const res = await fetch(`${CLOUD_ORIGIN}/api/releases`, {
+      headers: { Accept: 'application/vnd.github.v3+json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const json = (await res.json()) as GhRelease;
+    if (!json || !json.tag_name) {
+      return null;
+    }
+    releaseData = json;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4500);
-      const res = await fetch(url, {
-        headers: { Accept: 'application/vnd.github.v3+json' },
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-      if (res.ok) {
-        const json = (await res.json()) as GhRelease;
-        if (json && json.tag_name) {
-          releaseData = json;
-          break;
-        }
-      }
+      controller.abort();
     } catch {
-      continue;
+      /* ignore */
     }
   }
 
@@ -533,6 +647,10 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
   if (!apkAsset || !apkAsset.browser_download_url) {
     return null;
   }
+  const downloadUrl = resolveDownloadUrl(apkAsset.browser_download_url);
+  if (!downloadUrl) {
+    return null;
+  }
 
   const diff = compareVersion(remoteVersion, LOCAL_APP_VERSION);
   const estimatedCode = diff > 0 ? LOCAL_APP_VERSION_CODE + diff : LOCAL_APP_VERSION_CODE;
@@ -541,43 +659,87 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
     version: remoteVersion,
     versionCode: estimatedCode,
     source: 'github',
-    downloadUrl: apkAsset.browser_download_url,
-    fileSize: apkAsset.size,
+    downloadUrl,
+    fileSize: typeof apkAsset.size === 'number' && apkAsset.size > 0 ? apkAsset.size : undefined,
     releaseNotes: typeof releaseData.body === 'string' ? releaseData.body.trim() : undefined,
     discoveredAt: Date.now(),
   };
 }
 
 /**
- * 统一检查更新：并行发起 GitHub 线上官方检测与局域网 Wi-Fi 设备探测，
- * 自动比对版本号，择优返回最新可用更新。
+ * 综合线上版本探测：优先竞速 Cloudflare 边缘极速通道（~50-150ms），
+ * 同步并发 GitHub Releases 镜像源校验，择优返回最新可用版本。
  */
-export async function checkForAppUpdates(): Promise<AvailableUpdate | null> {
-  const [ghResult, lanResult] = await Promise.allSettled([
-    checkGithubRelease().catch(() => null),
-    isApkDistributionAvailable() ? scanLanForUpdates().catch(() => null) : Promise.resolve(null),
+export async function checkOnlineRelease(): Promise<AvailableUpdate | null> {
+  const cloudPromise = checkFastCloudVersion().catch(() => null);
+  const ghPromise = checkGithubRelease().catch(() => null);
+
+  // 极速竞速：若 Cloudflare 边缘在 1000ms 内直接返回了可用新版本，立即返回，免除等待
+  const fastCloud = await Promise.race([
+    cloudPromise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
   ]);
-
-  const ghUpdate = ghResult.status === 'fulfilled' ? ghResult.value : null;
-  const lanUpdate = lanResult.status === 'fulfilled' ? lanResult.value : null;
-
-  let best: AvailableUpdate | null = null;
-  if (ghUpdate && lanUpdate) {
-    const cmp = compareVersion(ghUpdate.version, lanUpdate.version);
-    best = cmp >= 0 ? ghUpdate : lanUpdate;
-  } else {
-    best = ghUpdate || lanUpdate;
+  if (fastCloud) {
+    return fastCloud;
   }
 
-  if (best) {
-    try {
-      localStorage.setItem(AVAILABLE_UPDATE_KEY, JSON.stringify(best));
-    } catch {
-      /* ignore */
-    }
+  // 否则等待两者完成，择优更高版本
+  const [cloud, gh] = await Promise.all([cloudPromise, ghPromise]);
+  if (cloud && gh) {
+    return compareVersion(cloud.version, gh.version) >= 0 ? cloud : gh;
+  }
+  return cloud || gh || null;
+}
+
+export interface CheckUpdateOptions {
+  /** 状态变化回调，用于在 UI（如按钮文本）上展示分步进度 */
+  onStatus?: (status: string) => void;
+  /** 局域网探测最大超时毫秒数（默认 3000ms） */
+  timeoutLanMs?: number;
+}
+
+/**
+ * 统一检查更新：
+ * 1. 优先通过云端极速通道（Cloudflare Anycast + GitHub 镜像竞速）在 0.3s 内极速确定是否有新版本；
+ * 2. 一旦云端发现新版本，立即拦截返回并提示用户更新，不再无谓等待 8~10 秒局域网扫描；
+ * 3. 仅当云端已是最新或离线时，才启动局域网周边设备探测（带 3 秒严格超时上限）。
+ */
+export async function checkForAppUpdates(options?: CheckUpdateOptions): Promise<AvailableUpdate | null> {
+  const onStatus = options?.onStatus;
+  const timeoutLanMs = options?.timeoutLanMs ?? 3000;
+
+  onStatus?.('正在检查云端最新版本...');
+
+  // 1. 并发启动云端检测与局域网探测
+  const onlinePromise = checkOnlineRelease().catch(() => null);
+
+  const lanScanPromise = isApkDistributionAvailable()
+    ? Promise.race([
+        scanLanForUpdates(timeoutLanMs).catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutLanMs)),
+      ])
+    : Promise.resolve(null);
+
+  // 2. 检查云端是否在极短时间内返回了新版本
+  const onlineUpdate = await onlinePromise;
+  if (onlineUpdate) {
+    // 发现云端官方新版本，立即保存并派发，跳过漫长的局域网等待
+    saveAvailableUpdate(onlineUpdate);
     dispatchUpdateChanged();
-    return best;
+    return onlineUpdate;
+  }
+
+  // 3. 云端无更新或网络不可用：如果支持局域网分发，提示用户正在扫描周边设备
+  if (isApkDistributionAvailable()) {
+    onStatus?.('云端已是最新，正在扫描周边设备...');
+    const lanUpdate = await lanScanPromise;
+    if (lanUpdate) {
+      saveAvailableUpdate(lanUpdate);
+      dispatchUpdateChanged();
+      return lanUpdate;
+    }
   }
 
   return null;
 }
+

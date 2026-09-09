@@ -5,6 +5,9 @@ node_modules/
 dist/
 dev-dist/
 release/
+# 由 scripts/gen-version.mjs 在构建时生成：入库会造成「构建即脏工作区」
+# 且已提交值与线上值不一致（曾出现 32095374 与 16398223 并存）
+public/version.json
 
 # Cloudflare / Wrangler 本地状态
 .wrangler/

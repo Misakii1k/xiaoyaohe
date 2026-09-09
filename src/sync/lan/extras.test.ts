@@ -24,7 +24,6 @@ describe('LAN sync extras schema', () => {
     const result = syncExtrasSchema.safeParse({
       apiConfig: {
         llm: { baseUrl: 'https://api.example.com/v1', apiKey: 'sk-test', model: 'gpt-4o-mini' },
-        agnes: { apiKey: 'sk-agnes', apiBase: 'https://apihub.agnes-ai.com' },
       },
     });
     expect(result.success).toBe(true);
@@ -74,10 +73,22 @@ describe('LAN sync extras schema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts apiConfig with only agnes (no llm)', () => {
+  // 旧的 agnes 分支从未生效，且接收端会把密钥明文写进 localStorage。
+  // 现在旧对端发来的 agnes 字段必须被 schema 拒绝，而不是悄悄写盘。
+  it('rejects the retired agnes api config branch', () => {
     const result = syncExtrasSchema.safeParse({
       apiConfig: { agnes: { apiKey: 'sk-agnes', apiBase: 'https://apihub.agnes-ai.com' } },
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects agnes alongside llm', () => {
+    const result = syncExtrasSchema.safeParse({
+      apiConfig: {
+        llm: { baseUrl: 'https://x.com', apiKey: 'k', model: 'm' },
+        agnes: { apiKey: 'sk-agnes', apiBase: 'https://apihub.agnes-ai.com' },
+      },
+    });
+    expect(result.success).toBe(false);
   });
 });
