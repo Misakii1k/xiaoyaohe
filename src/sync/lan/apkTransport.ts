@@ -530,7 +530,7 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
       ? json.versionCode
       : (LOCAL_APP_VERSION_CODE + Math.max(1, compareVersion(remoteVersion, LOCAL_APP_VERSION)));
 
-    const downloadUrl = json.downloadUrl || `https://github.com/Misakii1k/xiaoyaohe/releases/download/v${remoteVersion}/xiaoyaohe-${remoteVersion}-android-release.apk`;
+    const downloadUrl = json.downloadUrl || `https://xiaoyaohe.pages.dev/release/xiaoyaohe-${remoteVersion}-android-release.apk`;
 
     return {
       version: remoteVersion,

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getVersionCode } from './lib/release-utils.mjs';
@@ -23,12 +23,20 @@ if (releaseNotes.length > 500) {
   releaseNotes = releaseNotes.slice(0, 480) + '...';
 }
 
+const apkFile = `xiaoyaohe-${version}-android-release.apk`;
+const apkLocalPath = join(root, 'public', 'release', apkFile);
+const hasLocalApk = existsSync(apkLocalPath);
+const fileSize = hasLocalApk ? statSync(apkLocalPath).size : 16398223;
+const downloadUrl = hasLocalApk
+  ? `https://xiaoyaohe.pages.dev/release/${apkFile}`
+  : `https://github.com/Misakii1k/xiaoyaohe/releases/download/v${version}/${apkFile}`;
+
 const versionData = {
   version,
   versionCode,
   releaseDate: new Date().toISOString().slice(0, 10),
-  downloadUrl: `https://github.com/Misakii1k/xiaoyaohe/releases/download/v${version}/xiaoyaohe-${version}-android-release.apk`,
-  fileSize: 18667703,
+  downloadUrl,
+  fileSize,
   releaseNotes,
 };
 
