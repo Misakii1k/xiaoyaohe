@@ -1,66 +1,51 @@
-﻿interface Env {
-  GITHUB_TOKEN?: string;
-}
+import {
+  assetApiUrl,
+  errorResponse,
+  fetchWithTimeout,
+  githubHeaders,
+  invalidTagResponse,
+  parseReleaseTag,
+  pickApkAsset,
+  releaseApiUrl,
+  tokenMissingResponse,
+  upstreamFailureResponse,
+  type Env,
+  type GithubRelease,
+} from './_shared';
 
+/**
+ * 私有仓库 Release APK 代理。
+ *
+ * GitHub 返回 302 到带临时签名的 S3 直链，这里把该重定向原样交给客户端
+ * （原生 `downloadHttp` 会自己跟随多跳重定向），拿不到重定向时再流式回传。
+ */
 export const onRequestGet = async (context: { request: Request; env: Env }) => {
   const { request, env } = context;
   const url = new URL(request.url);
-  const tagParam = url.searchParams.get('tag') || url.searchParams.get('version');
-  const repo = 'Misakii1k/xiaoyaohe';
-  const token = env.GITHUB_TOKEN;
+  const parsedTag = parseReleaseTag(url.searchParams.get('tag') || url.searchParams.get('version'));
+  if (!parsedTag.ok) return invalidTagResponse();
 
-  if (!token) {
-    return new Response(
-      JSON.stringify({
-        error: 'GITHUB_TOKEN_NOT_CONFIGURED',
-        message: '请在 Cloudflare Pages 控制台的「设置 -> 环境变量」中添加 GITHUB_TOKEN，即可开启私有仓库无缝下载。',
-      }),
-      {
-        status: 503,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      },
-    );
-  }
+  const token = env.GITHUB_TOKEN;
+  if (!token) return tokenMissingResponse();
 
   try {
-    const targetReleaseUrl = tagParam
-      ? `https://api.github.com/repos/${repo}/releases/tags/${tagParam.startsWith('v') ? tagParam : 'v' + tagParam}`
-      : `https://api.github.com/repos/${repo}/releases/latest`;
-
-    const releaseRes = await fetch(targetReleaseUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'Xiaoyaohe-Cloudflare-Proxy',
-      },
+    const releaseRes = await fetchWithTimeout(releaseApiUrl(parsedTag.tag), {
+      headers: githubHeaders(token, 'application/vnd.github.v3+json'),
     });
 
     if (!releaseRes.ok) {
-      return new Response(`GitHub API error: ${releaseRes.status} ${releaseRes.statusText}`, {
-        status: releaseRes.status,
-      });
+      return upstreamFailureResponse(releaseRes.status);
     }
 
-    const release = (await releaseRes.json()) as {
-      assets?: Array<{ id: number; name: string }>;
-    };
-
-    const assets = Array.isArray(release.assets) ? release.assets : [];
-    const apkAsset = assets.find((a) => a.name && a.name.endsWith('.apk'));
-
-    if (!apkAsset || !apkAsset.id) {
-      return new Response('No APK asset found in release', { status: 404 });
+    const release = (await releaseRes.json()) as GithubRelease;
+    const apkAsset = pickApkAsset(release.assets);
+    if (!apkAsset || typeof apkAsset.id !== 'number' || typeof apkAsset.name !== 'string') {
+      return errorResponse('APK_NOT_FOUND', '该版本没有可用的安装包。', 404);
     }
 
-    // 请求私有 Release 资产重定向地址（GitHub 返回 302 重定向至带临时预签名的 AWS S3 直链）
-    const assetApiUrl = `https://api.github.com/repos/${repo}/releases/assets/${apkAsset.id}`;
-    const assetRes = await fetch(assetApiUrl, {
+    const assetRes = await fetchWithTimeout(assetApiUrl(apkAsset.id), {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/octet-stream',
-        'User-Agent': 'Xiaoyaohe-Cloudflare-Proxy',
-      },
+      headers: githubHeaders(token, 'application/octet-stream'),
       redirect: 'manual',
     });
 
@@ -69,14 +54,21 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
       return Response.redirect(redirectLocation, 302);
     }
 
-    // 兜底流式回传
-    return new Response(assetRes.body, {
-      headers: {
-        'Content-Type': 'application/vnd.android.package-archive',
-        'Content-Disposition': `attachment; filename="${apkAsset.name}"`,
-      },
+    if (!assetRes.ok || !assetRes.body) {
+      return upstreamFailureResponse(assetRes.status);
+    }
+
+    const headers = new Headers({
+      'Content-Type': 'application/vnd.android.package-archive',
+      'Content-Disposition': `attachment; filename="${apkAsset.name}"`,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, max-age=0, no-store',
     });
-  } catch (err: any) {
-    return new Response(`Proxy error: ${err.message}`, { status: 500 });
+    const contentLength = assetRes.headers.get('content-length');
+    if (contentLength) headers.set('Content-Length', contentLength);
+
+    return new Response(assetRes.body, { headers });
+  } catch {
+    return upstreamFailureResponse(500);
   }
 };

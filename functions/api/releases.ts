@@ -1,54 +1,71 @@
-﻿interface Env {
-  GITHUB_TOKEN?: string;
-}
+import {
+  corsHeaders,
+  errorResponse,
+  fetchWithTimeout,
+  githubHeaders,
+  invalidTagResponse,
+  jsonResponse,
+  parseReleaseTag,
+  releaseApiUrl,
+  tokenMissingResponse,
+  upstreamFailureResponse,
+  type Env,
+  type GithubRelease,
+} from './_shared';
+
+/**
+ * 私有仓库 Release 元数据代理。
+ *
+ * 客户端只读 `tag_name` / `body` / `assets[]`。这里额外把 APK 资产的
+ * `browser_download_url` 改写成同源的 `/api/download?tag=…`：私有仓库的
+ * `browser_download_url` 对未登录用户必然 404，改写后客户端无需理解代理细节。
+ */
+export const onRequestOptions = async (context: { request: Request }) => {
+  const headers = corsHeaders(context.request);
+  if (Object.keys(headers).length === 0) {
+    return new Response(null, { status: 204, headers: { 'X-Content-Type-Options': 'nosniff' } });
+  }
+  return new Response(null, { status: 204, headers: { ...headers, 'X-Content-Type-Options': 'nosniff' } });
+};
 
 export const onRequestGet = async (context: { request: Request; env: Env }) => {
   const { request, env } = context;
   const url = new URL(request.url);
-  const tagParam = url.searchParams.get('tag');
-  const repo = 'Misakii1k/xiaoyaohe';
-  const token = env.GITHUB_TOKEN;
+  const parsedTag = parseReleaseTag(url.searchParams.get('tag'));
+  if (!parsedTag.ok) return invalidTagResponse();
 
-  if (!token) {
-    return new Response(
-      JSON.stringify({
-        error: 'GITHUB_TOKEN_NOT_CONFIGURED',
-        message: '请在 Cloudflare Pages 环境变量中配置 GITHUB_TOKEN',
-      }),
-      {
-        status: 503,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      },
-    );
-  }
+  const token = env.GITHUB_TOKEN;
+  if (!token) return tokenMissingResponse();
+
+  const cors = corsHeaders(request);
+  const cacheHeaders = { 'Cache-Control': 'public, max-age=60, s-maxage=300', ...cors };
 
   try {
-    const targetUrl = tagParam
-      ? `https://api.github.com/repos/${repo}/releases/tags/${tagParam.startsWith('v') ? tagParam : 'v' + tagParam}`
-      : `https://api.github.com/repos/${repo}/releases/latest`;
-
-    const res = await fetch(targetUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'Xiaoyaohe-Cloudflare-Proxy',
-      },
+    const res = await fetchWithTimeout(releaseApiUrl(parsedTag.tag), {
+      headers: githubHeaders(token, 'application/vnd.github.v3+json'),
     });
 
     if (!res.ok) {
-      return new Response(`GitHub API error: ${res.status}`, { status: res.status });
+      return upstreamFailureResponse(res.status);
     }
 
-    const data = await res.json();
-    return new Response(JSON.stringify(data), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=60',
-      },
-    });
-  } catch (err: any) {
-    return new Response(`Proxy error: ${err.message}`, { status: 500 });
+    const release = (await res.json()) as GithubRelease;
+    const tag = typeof release.tag_name === 'string' ? release.tag_name : parsedTag.tag;
+    const downloadProxyUrl = tag ? `${url.origin}/api/download?tag=${encodeURIComponent(tag)}` : '';
+
+    if (downloadProxyUrl && Array.isArray(release.assets)) {
+      for (const asset of release.assets) {
+        if (typeof asset?.name !== 'string') continue;
+        if (!asset.name.endsWith('.apk') || asset.name.includes('unaligned')) continue;
+        asset.browser_download_url = downloadProxyUrl;
+      }
+    }
+
+    return jsonResponse(release, 200, cacheHeaders);
+  } catch {
+    return upstreamFailureResponse(500);
   }
 };
+
+/** 只允许 GET / OPTIONS。 */
+export const onRequestPost = async () => errorResponse('METHOD_NOT_ALLOWED', '只支持 GET。', 405, { Allow: 'GET, OPTIONS' });
