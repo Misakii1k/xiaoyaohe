@@ -19,6 +19,43 @@ export const LOCAL_APP_VERSION_CODE: number = typeof __APP_VERSION_CODE__ !== 'u
 /** APK 分发端口（与 ApkDistributionPlugin.java 保持一致）。 */
 export const APK_DISTRIBUTION_PORT = 38473;
 
+/**
+ * 云端更新通道的部署源。换自定义域名时只改这一处。
+ * 版本元数据 `version.json` 与私有仓库代理 `/api/releases`、`/api/download` 都在它下面。
+ */
+export const CLOUD_ORIGIN = 'https://xiaoyaohe.pages.dev';
+
+/**
+ * 允许下载 APK 的主机白名单。
+ * 更新元数据来自网络，`downloadUrl` 不得把用户引到任意主机。
+ */
+const ALLOWED_DOWNLOAD_HOSTS = new Set([
+  new URL(CLOUD_ORIGIN).host,
+  'github.com',
+  'objects.githubusercontent.com',
+  'ghfast.top',
+  'ghproxy.net',
+  'gh-proxy.com',
+]);
+
+const SHA256_RE = /^[0-9a-f]{64}$/;
+
+/** 把元数据里的下载地址规范化：相对路径按部署源补全，绝对地址必须命中白名单。 */
+export function resolveDownloadUrl(raw: string | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed, CLOUD_ORIGIN);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:') return null;
+  if (!ALLOWED_DOWNLOAD_HOSTS.has(url.host)) return null;
+  return url.toString();
+}
+
 const AVAILABLE_UPDATE_KEY = 'medbox.lan-sync.available-update.v1';
 const LAST_UPDATE_NOTIFY_KEY = 'medbox.lan-sync.last-update-notify.v1';
 const NOTIFY_DEBOUNCE_MS = 24 * 60 * 60 * 1000; // 24h
@@ -50,6 +87,8 @@ export interface AvailableUpdate {
   releaseNotes?: string;
   /** 安装包大小（字节数）。 */
   fileSize?: number;
+  /** 安装包 SHA256（十六进制小写；version.json 提供时用于下载后校验）。 */
+  sha256?: string;
   /** 发现时间戳（UTC ms）。 */
   discoveredAt: number;
 }
@@ -123,6 +162,7 @@ export function getAvailableUpdate(): AvailableUpdate | null {
       downloadUrl: parsed.downloadUrl,
       releaseNotes: parsed.releaseNotes,
       fileSize: parsed.fileSize,
+      sha256: typeof parsed.sha256 === 'string' && SHA256_RE.test(parsed.sha256) ? parsed.sha256 : undefined,
       discoveredAt: parsed.discoveredAt,
     };
   } catch {
@@ -284,26 +324,21 @@ export async function downloadUpdate(
       if (typeof plugin.downloadHttp !== 'function') {
         throw new Error('原生下载模块未就绪（downloadHttp 不可用）');
       }
-      const candidates = [
-        update.downloadUrl,
-        `https://ghfast.top/${update.downloadUrl}`,
-        `https://ghproxy.net/${update.downloadUrl}`,
-        `https://gh-proxy.com/${update.downloadUrl}`,
-      ];
-      let lastErr: Error | null = null;
-      let success = false;
-      for (const url of candidates) {
-        try {
-          const result = await plugin.downloadHttp({ url, destPath });
-          downloadedPath = result.destPath;
-          success = true;
-          break;
-        } catch (error) {
-          lastErr = error instanceof Error ? error : new Error(String(error));
-        }
+      // 只信任白名单主机：元数据来自网络，不能让 downloadUrl 把包引到任意地址。
+      // （之前这里会给同一个 URL 套三个 ghproxy 前缀重试，对私有仓库毫无意义，
+      //   还会把私有资产地址交给第三方镜像，已移除。）
+      const target = resolveDownloadUrl(update.downloadUrl);
+      if (!target) {
+        throw new Error('更新包下载地址不可信，已拒绝下载。请稍后重试或改用官方渠道。');
       }
-      if (!success) {
-        throw new Error(`下载更新失败：${lastErr?.message || '网络连接超时'}`);
+      const result = await plugin.downloadHttp({ url: target, destPath });
+      downloadedPath = result.destPath;
+
+      // 便宜的完整性前置校验：元数据给了字节数就必须对上，再进昂贵的验签。
+      if (typeof update.fileSize === 'number' && update.fileSize > 0
+        && typeof result.bytes === 'number' && result.bytes !== update.fileSize) {
+        await deleteApk(downloadedPath);
+        throw new Error(`更新包大小不符（预期 ${update.fileSize} 字节，实际 ${result.bytes} 字节），已自动删除。`);
       }
     } else {
       if (!update.peerHost || !update.peerPort) {
@@ -498,7 +533,7 @@ export async function scanLanForUpdates(timeoutMs = 3000): Promise<AvailableUpda
  * 检查 Cloudflare 边缘托管的极速版本元数据（约 50~150ms 极低延迟响应）。
  */
 export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
-  const metaUrl = 'https://xiaoyaohe.pages.dev/version.json';
+  const metaUrl = `${CLOUD_ORIGIN}/version.json`;
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 2000);
@@ -513,6 +548,7 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
       versionCode?: number;
       downloadUrl?: string;
       fileSize?: number;
+      sha256?: string;
       releaseNotes?: string;
     };
     if (!json || typeof json.version !== 'string') return null;
@@ -530,14 +566,20 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
       ? json.versionCode
       : (LOCAL_APP_VERSION_CODE + Math.max(1, compareVersion(remoteVersion, LOCAL_APP_VERSION)));
 
-    const downloadUrl = json.downloadUrl || `https://xiaoyaohe.pages.dev/release/xiaoyaohe-${remoteVersion}-android-release.apk`;
+    // 元数据里的直链是 `/api/download?tag=v…`（同源代理），也兼容绝对地址。
+    const downloadUrl = resolveDownloadUrl(json.downloadUrl)
+      ?? `${CLOUD_ORIGIN}/api/download?tag=v${encodeURIComponent(remoteVersion)}`;
+    const sha256 = typeof json.sha256 === 'string' && SHA256_RE.test(json.sha256.toLowerCase())
+      ? json.sha256.toLowerCase()
+      : undefined;
 
     return {
       version: remoteVersion,
       versionCode: estimatedCode,
       source: 'cloud',
       downloadUrl,
-      fileSize: typeof json.fileSize === 'number' ? json.fileSize : undefined,
+      fileSize: typeof json.fileSize === 'number' && json.fileSize > 0 ? json.fileSize : undefined,
+      sha256,
       releaseNotes: typeof json.releaseNotes === 'string' ? json.releaseNotes.trim() : undefined,
       discoveredAt: Date.now(),
     };
@@ -550,44 +592,32 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
  * 检查 GitHub Releases 官方最新版本（带国内镜像多源并发竞速加速与容错）。
  */
 export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
-  const repo = 'Misakii1k/xiaoyaohe';
-  const apiUrls = [
-    'https://xiaoyaohe.pages.dev/api/releases',
-    `https://api.github.com/repos/${repo}/releases/latest`,
-    `https://ghfast.top/https://api.github.com/repos/${repo}/releases/latest`,
-    `https://ghproxy.net/https://api.github.com/repos/${repo}/releases/latest`,
-    `https://gh-proxy.com/https://api.github.com/repos/${repo}/releases/latest`,
-  ];
-
   interface GhRelease {
     tag_name?: string;
     body?: string;
     assets?: Array<{ name?: string; browser_download_url?: string; size?: number }>;
   }
 
-  async function fetchReleaseFromUrl(url: string, signal: AbortSignal): Promise<GhRelease> {
-    const res = await fetch(url, {
-      headers: { Accept: 'application/vnd.github.v3+json' },
-      signal,
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP error ${res.status}`);
-    }
-    const json = (await res.json()) as GhRelease;
-    if (!json || !json.tag_name) {
-      throw new Error('Invalid release response');
-    }
-    return json;
-  }
-
+  // 仓库是私有的：直连 api.github.com 与三个公开镜像一律 404（实测 2026-09-09），
+  // 唯一可行通道是自家 Cloudflare 代理。代理会把 APK 资产的 browser_download_url
+  // 改写成同源 `/api/download?tag=…`，所以这里拿到的直链就是可下载的。
   let releaseData: GhRelease | null = null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 3500);
 
   try {
-    releaseData = await Promise.any(
-      apiUrls.map((url) => fetchReleaseFromUrl(url, controller.signal)),
-    );
+    const res = await fetch(`${CLOUD_ORIGIN}/api/releases`, {
+      headers: { Accept: 'application/vnd.github.v3+json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const json = (await res.json()) as GhRelease;
+    if (!json || !json.tag_name) {
+      return null;
+    }
+    releaseData = json;
   } catch {
     return null;
   } finally {
@@ -617,6 +647,10 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
   if (!apkAsset || !apkAsset.browser_download_url) {
     return null;
   }
+  const downloadUrl = resolveDownloadUrl(apkAsset.browser_download_url);
+  if (!downloadUrl) {
+    return null;
+  }
 
   const diff = compareVersion(remoteVersion, LOCAL_APP_VERSION);
   const estimatedCode = diff > 0 ? LOCAL_APP_VERSION_CODE + diff : LOCAL_APP_VERSION_CODE;
@@ -625,8 +659,8 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
     version: remoteVersion,
     versionCode: estimatedCode,
     source: 'github',
-    downloadUrl: apkAsset.browser_download_url,
-    fileSize: apkAsset.size,
+    downloadUrl,
+    fileSize: typeof apkAsset.size === 'number' && apkAsset.size > 0 ? apkAsset.size : undefined,
     releaseNotes: typeof releaseData.body === 'string' ? releaseData.body.trim() : undefined,
     discoveredAt: Date.now(),
   };
