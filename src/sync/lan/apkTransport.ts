@@ -98,6 +98,15 @@ export function getAvailableUpdate(): AvailableUpdate | null {
     ) {
       return null;
     }
+    // 若记录的版本已不高于本机当前运行版本，视为过期历史记录自动清理
+    if (
+      LOCAL_APP_VERSION_CODE > 0
+      && parsed.versionCode <= LOCAL_APP_VERSION_CODE
+      && compareVersion(parsed.version, LOCAL_APP_VERSION) <= 0
+    ) {
+      clearAvailableUpdate();
+      return null;
+    }
     const source: UpdateSource = parsed.source === 'github' ? 'github' : parsed.source === 'cloud' ? 'cloud' : 'lan';
     if (source === 'lan' && (!parsed.peerHost || !parsed.peerPort)) {
       return null;

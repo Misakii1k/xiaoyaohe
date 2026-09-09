@@ -1814,6 +1814,8 @@ function buildAppUpdateBody(
         toast(`已刷新版本：v${found.version}`, 3000);
         setChip(panelEl, { text: `可更新 v${found.version}`, tone: 'info' });
       } else {
+        clearAvailableUpdate();
+        setChip(panelEl, { text: '已是最新', tone: 'ok' });
         toast('暂无更高版本');
       }
     } catch {
