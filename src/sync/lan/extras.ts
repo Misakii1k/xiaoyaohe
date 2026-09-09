@@ -20,15 +20,15 @@ const syncPhotoEntry = z.object({
   at: z.number().finite().nonnegative(),
 }).strict();
 
+// 只同步用户自己配置的 LLM 供应商。旧版还有一个 agnes 分支，它读的是
+// import.meta.env.VITE_AGNES_*（.env 里实际叫 AGNES_*，没有 VITE_ 前缀），
+// 因此从未生效；而接收端会把密钥明文写进 localStorage['medbox.agnesApi.v1']，
+// 该键全仓无人读取。已整体移除，密钥一律只走 secretStore / 安全存储。
 const syncApiConfig = z.object({
   llm: z.object({
     baseUrl: z.string().max(2048),
     apiKey: z.string().max(512),
     model: z.string().max(256),
-  }).strict().optional(),
-  agnes: z.object({
-    apiKey: z.string().max(512),
-    apiBase: z.string().max(2048),
   }).strict().optional(),
 }).strict();
 
@@ -115,22 +115,15 @@ export async function applySyncPhotos(photos: SyncPhotoEntry[]): Promise<number>
 // ---- API 配置收集 & 应用 ----
 
 /**
- * 收集本机的 API 配置（LLM + 内置 Agnes）。
+ * 收集本机的 LLM 配置。密钥经 LanSync 会话密钥加密后随 join/result 消息传输
+ * （见 session.ts 的 encryptLanSyncMessage），落盘仍走 secretStore。
  */
 export function collectSyncApiConfig(): SyncApiConfig {
   const config: SyncApiConfig = {};
 
-  // 用户自定义 LLM 配置
   const llm = getLlmConfig();
   if (llm.baseUrl && llm.apiKey) {
     config.llm = { baseUrl: llm.baseUrl, apiKey: llm.apiKey, model: llm.model };
-  }
-
-  // 内置 Agnes API（编译时环境变量；Vite 只暴露 VITE_ 前缀）
-  const agnesKey = import.meta.env.VITE_AGNES_API_KEY || '';
-  const agnesBase = import.meta.env.VITE_AGNES_API_BASE || '';
-  if (agnesKey && agnesBase) {
-    config.agnes = { apiKey: agnesKey, apiBase: agnesBase };
   }
 
   return config;
@@ -139,7 +132,6 @@ export function collectSyncApiConfig(): SyncApiConfig {
 /**
  * 将收到的 API 配置写入本机。
  * LLM 配置同步 baseUrl/model；密钥只在本地为空时才采用对端的，避免对端覆盖本机密钥。
- * Agnes 配置存入 localStorage 供运行时读取。
  */
 export async function applySyncApiConfig(config: SyncApiConfig): Promise<void> {
   if (config.llm && config.llm.baseUrl && config.llm.apiKey) {
@@ -149,16 +141,6 @@ export async function applySyncApiConfig(config: SyncApiConfig): Promise<void> {
       apiKey: local.apiKey || config.llm.apiKey,
       model: config.llm.model || 'gpt-4o-mini',
     });
-  }
-  if (config.agnes && config.agnes.apiKey && config.agnes.apiBase) {
-    try {
-      localStorage.setItem('medbox.agnesApi.v1', JSON.stringify({
-        apiKey: config.agnes.apiKey,
-        apiBase: config.agnes.apiBase,
-      }));
-    } catch {
-      // localStorage 满了不阻塞同步
-    }
   }
 }
 

@@ -205,7 +205,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
       el('label', { class: 'lan-sync-extras-item', htmlFor: apiCheckbox.id }, [
         apiCheckbox,
         icon('sparkles'),
-        el('span', { text: 'AI 接口配置' }),
+        el('span', { text: 'AI 接口配置（含密钥，加密传输）' }),
       ]),
     ]),
   ]);
