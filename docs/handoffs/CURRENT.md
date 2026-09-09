@@ -13,10 +13,11 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
 - **向周围弥散颜色（Ambient Color Diffusion）动态光晕系统**：
   - 为设置页统计卡片、药品列表统计卡片（全部药品/近期使用/需要补充）、扫码分药助手 Banner 及服药模态浮动药丸全面接入专属环境光晕；
   - 采用 `::before` 伪元素多层径向渐变（Radial Gradient）配合 `filter: drop-shadow`，根据卡片主题色彩（金橙、天蓝、珊瑚红、丁香紫、薄荷青、祖母绿）向四周自然晕染发散，卡片悬浮与激活时平滑缩放，完美融入水凝玻璃视觉体系。
-- **小药盒 1.0.0 正式里程碑发布**：
+- **小药盒 1.0.0 正式里程碑发布与桌面交付**：
   - 版本号由 `0.9.15` 正式升级为 `1.0.0`（Android `versionCode: 35`）；
-  - 同步更新 `package.json`、`package-lock.json`、`build.gradle`、`AppConfigurationTest.java`、`release-utils.mjs`、`release-utils.test.ts`、`hero.svg`、`README.md` 与发布文档 `docs/releases/1.0.0.md`；
-  - 运行 `scripts/gen-version.mjs` 重新生成 `public/version.json`，支持 0.3 秒云端极速通道在线热更新。
+  - 本地执行 Gradle `assembleRelease` 编译出最新正式版安装包 `xiaoyaohe-1.0.0-android-release.apk`（32,095,374 字节，SHA256: `cb86c34838c1be16ffd6f142c21686b40434a81b6f179910f69fbc612735d317`），已复制至用户电脑桌面 `C:\Users\87850\Desktop\`；
+  - 修复本地缓存过期问题：在 `getAvailableUpdate()` 中加入自动失效逻辑，若缓存版本 <= 本地当前运行版本，自动清空脏缓存；
+  - 彻底解决 GitHub 私有仓库 404：新增 Cloudflare Pages Functions（`functions/api/releases.ts` 与 `functions/api/download.ts`），由 Cloudflare 边缘安全中转私有 GitHub Releases 资产，免去登录且不泄露源码。
 
 ## 0.3s Fast Cloud Update Check & Ladder Probing Architecture 2026-09-08 (workspace/claude)
 
