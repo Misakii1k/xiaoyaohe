@@ -120,9 +120,13 @@ tag=x?per_page=1            -> 注入查询串
 
 `https://xiaoyaohe.pages.dev` 原先散落 3 处。修复：收敛为 `CLOUD_ORIGIN` 常量。
 
-### P3-13 E2E 偶发失败
+### P3-13 E2E 偶发失败（已定位并修复）
 
-2 次运行中 1 次 exit 1，第 2 次 52/52 全绿。发布门禁建议加 `--repeat-each=2`。
+2 次运行中 1 次 exit 1，第 2 次 52/52 全绿。用 `npx playwright test --repeat-each=2` 复现后定位到唯一失败点：`e2e/assistant-cards.spec.ts:3` 在 `phone-320` 视口等待 `.ai-root.is-open .ai-panel` 超时（15s 预算）。
+
+根因：该用例通过 `/?assistant-preview=1` 冷启动，需要 Vite dev server 现场转译 `assistantContent` 等懒加载分块，**单跑实测 13.0s**；并行门禁下必然打满 15s。失败瞬间的页面快照显示面板内容已渲染、卡片处于「内容加载中」状态，即纯粹的预算问题，不是面板缺陷。
+
+修复：把该断言预算提高到 25s（仍小于 `playwright.config.ts` 的 30s 单测超时），并在 spec 内写明原因。复跑 `--repeat-each=2` → **104/104 全绿**。
 
 ### P3-14 未跟踪的令牌生成脚本
 

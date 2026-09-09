@@ -27,8 +27,9 @@ Latest version: `1.0.0` (Android `versionCode: 35`)
 7. **P2 元数据与 CI 治理**：`public/version.json` 移出版本控制（构建生成、不再弄脏工作区）；`release-apk.yml` 缺签名 secret 时直接失败（原先用硬编码口令 `medbox123` 现造密钥，产出的 APK 用户装不上也升不了级）；删除指向不存在站点的 `deploy-web.yml`（GitHub Pages 实测 404）。
 8. **新增验证门**：`tests/functionsApi.test.ts`（17 项，直接驱动两个 Function handler）、`tests/versionManifest.test.ts`（3 项）、`tests/lanSyncSecretContracts.test.ts`（3 项）、`tests/apkUpdateVerification.test.ts` 扩充 5 项（大小不符/主机白名单/相对直链/代理单通道）、`scripts/check-release-endpoints.mjs` 线上冒烟（已接入发布流水线）；`tsconfig` 的 `include` 增加 `functions`，后端代码纳入 `tsc --noEmit`。
 9. **已知接受项**：CSP `connect-src 'self' https:` 宽泛（用户可自配 LLM 端点，无法静态收窄）；局域网 APK 分发无配对鉴权（仅 8 字节 magic）；`sha256` 仅在客户端透传，原生侧校验待排期。
-10. **验证门**：`npm run typecheck` 0 errors；`npm run test` 全绿；`npm run test:release` 全绿；`npx playwright test` 全绿；`npm run build:web` 后 `git status` 无脏文件。
-11. **待用户处理**：Cloudflare `GITHUB_TOKEN`；轮换/删除 `scripts/check-gh.mjs` 与 `gen-token-exec.mjs` 曾创建的 PAT；决定这两个脚本与 `scratch/` 的去留（本次未删）；CI 的 4 个 Android 签名 secret。
+10. **E2E 偶发失败已定位修复（P3-13）**：`--repeat-each=2` 复现出唯一失败点 `e2e/assistant-cards.spec.ts:3`（phone-320）。根因是该用例 `/?assistant-preview=1` 冷启动要等 Vite 现场转译 `assistantContent` 懒加载分块，单跑实测 13.0s，15s 预算在并行门禁下必然打满；失败瞬间快照显示面板已渲染、卡片仍在「内容加载中」，属预算问题而非面板缺陷。预算提高到 25s 后 `--repeat-each=2` → 104/104 全绿。
+11. **验证门（全部实跑通过）**：`npm run typecheck` 0 errors（`include` 已含 `functions`）；`npm run test` 82 文件 / **501 项**全绿（原 79/472）；`npm run test:release` 12 项全绿；`npx playwright test --repeat-each=2` 104/104 全绿；`npm run build:web` 成功且 `git status` 无脏文件（仅 3 项原有未跟踪文件）。
+12. **待用户处理**：Cloudflare `GITHUB_TOKEN`；轮换/删除 `scripts/check-gh.mjs` 与 `gen-token-exec.mjs` 曾创建的 PAT；决定这两个脚本与 `scratch/` 的去留（本次未删）；CI 的 4 个 Android 签名 secret。
 
 ### 29. 全套 3D 拟物液态微质感图标重构、专属色彩向外弥散与 1.0.0 正式版发布 (1.0.0)
 

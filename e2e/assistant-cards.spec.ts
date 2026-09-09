@@ -1,9 +1,20 @@
 import { expect, test } from '@playwright/test';
 
+/**
+ * 小助手面板的首次冷启动预算。
+ *
+ * `/?assistant-preview=1` 要先让 Vite dev server 现场转译 `assistantContent` 等
+ * 懒加载分块，单跑实测约 13s（生产构建是预生成静态块，不存在这个问题）。
+ * 原来的 15s 在并行门禁下（`--repeat-each`、四套视口并发）必然打满并超时，
+ * 表现为 `.ai-root.is-open .ai-panel` 找不到 —— 是测试预算问题，不是面板缺陷。
+ * 这里放宽到 25s，仍严格小于 playwright.config.ts 的 30s 单测超时。
+ */
+const PANEL_BOOT_TIMEOUT = 25_000;
+
 test('renders assistant card variants without overflowing narrow panels', async ({ page }, testInfo) => {
   await page.goto('/?assistant-preview=1#/settings');
   const panel = page.locator('.ai-panel');
-  await expect(page.locator('.ai-root.is-open .ai-panel')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.ai-root.is-open .ai-panel')).toBeVisible({ timeout: PANEL_BOOT_TIMEOUT });
   await expect(panel.locator('.ai-content-card.is-medication')).toBeVisible();
   await expect(panel.locator('.ai-content-card.is-medication .ai-card-item')).toHaveCount(3);
   await expect(panel.locator('.ai-content-card.is-inventory')).toBeVisible();
