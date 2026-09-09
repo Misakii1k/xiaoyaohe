@@ -52,35 +52,32 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Configure Android Signing Keystore
+      # 缺密钥时必须直接失败：临时生成的签名密钥与用户已安装应用的签名不一致，
+      # 产出的 APK 既装不上（INSTALL_FAILED_UPDATE_INCOMPATIBLE）也永远升不了级。
+      - name: Require Android signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "Using release keystore provided in GitHub Secrets..."
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
-            cat <<EOF > android/app/keystore.properties
-          storeFile=release.keystore
-          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          EOF
-          else
-            echo "No custom keystore configured. Generating CI release signing key..."
-            keytool -genkey -v \
-              -keystore android/app/release.keystore \
-              -alias medbox-release \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass medbox123 \
-              -keypass medbox123 \
-              -dname "CN=Xiaoyaohe, OU=Medbox, O=Xiaoyaohe, L=Hangzhou, ST=Zhejiang, C=CN"
-            cat <<EOF > android/app/keystore.properties
-          storeFile=release.keystore
-          storePassword=medbox123
-          keyAlias=medbox-release
-          keyPassword=medbox123
-          EOF
+          missing=""
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::缺少签名密钥 secret:$missing"
+            echo "不会用临时生成的密钥签名（用户装不上也升不了级）。"
+            echo "请补齐上述 secrets，或改用本地 npm run release -- --android-variant release。"
+            exit 1
           fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          cat <<EOF > android/app/keystore.properties
+          storeFile=release.keystore
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
 
       - name: Build Android Release APK
         run: |
@@ -114,3 +111,10 @@ jobs:
             xiaoyaohe-*-android-release.apk
             SHA256SUMS.txt
           generate_release_notes: true
+
+      # 发版后立刻验证线上链路（version.json、代理、非法 tag、APK 直链）。
+      # 缺 GITHUB_TOKEN 时这里会红，正是它该红的时候。
+      - name: Smoke-check live release endpoints
+        run: node scripts/check-release-endpoints.mjs
+        env:
+          MEDBOX_CLOUD_ORIGIN: ${{ vars.MEDBOX_CLOUD_ORIGIN }}
