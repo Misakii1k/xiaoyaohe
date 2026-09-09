@@ -1112,13 +1112,13 @@ body.lan-sync-panel-active .ai-launcher {
   margin-top: 2px;
 }
 
-/* 右上角 3D 拟物图标 */
+/* 右上角 3D 拟物图标与周围环境色彩弥散 */
 .profile-stat-icon {
   position: absolute;
-  top: -6px;
-  right: -4px;
-  inline-size: 38px;
-  block-size: 38px;
+  top: -8px;
+  right: -6px;
+  inline-size: 46px;
+  block-size: 46px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -1126,16 +1126,46 @@ body.lan-sync-panel-active .ai-launcher {
   z-index: 2;
   border-radius: 0;
   overflow: visible;
-  filter: drop-shadow(0 4px 10px rgba(99, 102, 241, 0.2));
-  transition: transform 0.2s ease;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-[data-theme='dark'] .profile-stat-icon {
-  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+/* 柔和环境光弥散背景（向周围弥散色彩） */
+.profile-stat-icon::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: var(--stat-glow-bg, radial-gradient(circle, rgba(99, 102, 241, 0.35) 0%, transparent 72%));
+  filter: blur(10px);
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.85;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.profile-stat-card:hover .profile-stat-icon::before {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+/* 针对不同数据卡片定制专属主题色弥散 */
+.profile-stat-card:nth-child(1) .profile-stat-icon {
+  --stat-glow-bg: radial-gradient(circle, rgba(245, 158, 11, 0.4) 0%, rgba(139, 92, 246, 0.2) 45%, transparent 72%);
+  filter: drop-shadow(0 6px 16px rgba(245, 158, 11, 0.38));
+}
+
+.profile-stat-card:nth-child(2) .profile-stat-icon {
+  --stat-glow-bg: radial-gradient(circle, rgba(59, 130, 246, 0.45) 0%, rgba(6, 182, 212, 0.22) 45%, transparent 72%);
+  filter: drop-shadow(0 6px 16px rgba(59, 130, 246, 0.4));
+}
+
+.profile-stat-card:nth-child(3) .profile-stat-icon {
+  --stat-glow-bg: radial-gradient(circle, rgba(244, 63, 94, 0.45) 0%, rgba(239, 68, 68, 0.22) 45%, transparent 72%);
+  filter: drop-shadow(0 6px 16px rgba(244, 63, 94, 0.42));
 }
 
 .profile-stat-card:active .profile-stat-icon {
-  transform: scale(1.08) rotate(3deg);
+  transform: scale(1.12) rotate(3deg);
 }
 
 .profile-stat-icon-img,
@@ -1143,10 +1173,10 @@ body.lan-sync-panel-active .ai-launcher {
 .profile-stat-icon .asset-3d-container,
 .profile-stat-icon svg,
 .profile-stat-icon .stat-3d-icon {
-  inline-size: 38px;
-  block-size: 38px;
+  inline-size: 44px;
+  block-size: 44px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: 0;
   display: block;
 }
 

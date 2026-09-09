@@ -1,8 +1,8 @@
 {
-  "version": "0.9.15",
-  "versionCode": 34,
-  "releaseDate": "2026-09-08",
-  "downloadUrl": "https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.15/xiaoyaohe-0.9.15-android-release.apk",
+  "version": "1.0.0",
+  "versionCode": 35,
+  "releaseDate": "2026-09-09",
+  "downloadUrl": "https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.0/xiaoyaohe-1.0.0-android-release.apk",
   "fileSize": 18667703,
-  "releaseNotes": "# 小药盒 0.9.15 更新说明\r\n\r\n本次更新加固了全屏用药提醒的防退出屏障，彻底解决了上滑 Home 退出与二次进入页面出现双重背景音乐的问题。\r\n\r\n## 主要更新\r\n\r\n- **彻底封堵 Home 键与上滑手势退出**：\r\n  - **沉浸粘性全屏模式（Immersive Sticky）**：进入全屏提醒时自动隐藏系统导航栏和手势提示条。从屏幕底部边缘向上滑动仅唤出半透明系统指示条，不触发系统的 Home 退出手势，从根源上阻断误触。\r\n  - **屏幕固定保护（LockTask）**：提醒展示期间尝试锁定用药任务，在系统层面禁用 Home 键与 Recents 多任务切换；仅在用户点击「已服/延后/跳过」、扫码成功或通过暗门应急跳过时才会解锁退出。\r\n  - **任务栈强力前置拉回（REORDER_TASKS）**：声明系统任务栈重排权限。一旦检测到界面被意外压入后台，立即在主线程将用药提醒任务栈直接拉回最前台。\r\n  - **统一提醒处理闭环**：所有全屏提醒均要求用户在屏幕上完成操作，不再允许通过手势直接滑出桌面。\r\n- **全局..."
+  "releaseNotes": "# 小药盒 1.0.0 正式版发布说明\n\n小药盒迎来 1.0.0 正式里程碑版本。本版本带来了全新重构的 3D 拟物液态微质感图标系统与环境光色彩弥散效果，完成 Web 端 (PWA) 与 Android 端协同上线，并支持 0.3 秒云端极速通道更新检测。\n\n## 主要更新\n\n- **全新 3D 拟物液态微质感图标与专属环境色彩弥散**：\n  - 重构全套 9 款 Studio 级 3D 拟物视觉资产（彩虹亚克力药盒、天蓝用药规划手册、珊瑚红靶向徽章、丁香紫磨砂药瓶、薄荷青时钟药丸、急救药箱、晶莹双色胶囊、智能分药机与立体亲和头像）。\n  - 采用纯净透明背景与边缘抗锯齿抠图工艺，结合 CSS 多层径向渐变（Radial Gradient）与动态投影（Drop Shadow）实现向周围柔和弥散的氛围光晕，完美契合液态玻璃视觉语言与明暗主题。\n- **0.3 秒云端极速通道更新检测**：\n  - 引入毫秒级静态更新探测通道（`version.json` 极速直链与多源 CDN 回退），更新检测耗时由原先的数十秒骤降至 0.3 秒内，无需等待繁重网..."
 }

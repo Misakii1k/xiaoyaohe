@@ -49,14 +49,40 @@
   flex-shrink: 0;
   display: grid;
   place-items: center;
+  position: relative;
+}
+
+.scan-banner-visual::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.4) 0%, rgba(59, 130, 246, 0.18) 50%, transparent 72%);
+  filter: blur(14px);
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.9;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.scan-banner-card:hover .scan-banner-visual::before {
+  opacity: 1;
+  transform: scale(1.15);
 }
 
 .scan-banner-img {
   max-inline-size: 140px;
-  max-block-size: 80px;
-  object-fit: cover;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+  max-block-size: 85px;
+  object-fit: contain;
+  border-radius: 0;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 6px 16px rgba(99, 102, 241, 0.32));
+  transition: transform 0.25s ease;
+}
+
+.scan-banner-card:hover .scan-banner-img {
+  transform: scale(1.04);
 }
 
 /* 两大核心渐变行动卡片 */

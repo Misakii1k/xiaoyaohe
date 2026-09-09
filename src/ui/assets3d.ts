@@ -1,12 +1,12 @@
-import purpleBottleImg from '../assets/images3d/purple-bottle.jpg';
-import clockPillImg from '../assets/images3d/clock-pill.jpg';
-import aidBagImg from '../assets/images3d/aid-bag.jpg';
-import pillboxBannerImg from '../assets/images3d/pillbox-banner.jpg';
-import floatingPillImg from '../assets/images3d/floating-pill.jpg';
-import userAvatarImg from '../assets/images3d/user-avatar.jpg';
-import statNotebookImg from '../assets/images3d/stat-notebook.jpg';
-import statPillboxImg from '../assets/images3d/stat-pillbox.jpg';
-import statTargetImg from '../assets/images3d/stat-target.jpg';
+import purpleBottleImg from '../assets/images3d/purple-bottle.png';
+import clockPillImg from '../assets/images3d/clock-pill.png';
+import aidBagImg from '../assets/images3d/aid-bag.png';
+import pillboxBannerImg from '../assets/images3d/pillbox-banner.png';
+import floatingPillImg from '../assets/images3d/floating-pill.png';
+import userAvatarImg from '../assets/images3d/user-avatar.png';
+import statNotebookImg from '../assets/images3d/stat-notebook.png';
+import statPillboxImg from '../assets/images3d/stat-pillbox.png';
+import statTargetImg from '../assets/images3d/stat-target.png';
 
 export {
   purpleBottleImg,

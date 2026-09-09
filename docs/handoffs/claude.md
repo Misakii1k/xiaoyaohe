@@ -2,11 +2,24 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-08
+Updated: 2026-09-09
 Status: active
-Latest version: `0.9.15` (Android `versionCode: 34`)
+Latest version: `1.0.0` (Android `versionCode: 35`)
 
 ## Summary of Accomplished Work
+
+### 29. 全套 3D 拟物液态微质感图标重构、专属色彩向外弥散与 1.0.0 正式版发布 (1.0.0)
+
+1. **3D 拟物资产重绘与精准边缘抗锯齿抠图**：
+   - 使用 Gemini Imagen 3 重绘 9 款 Studio 级 3D 拟物资产（药盒、规划本、靶向徽章、药瓶、时钟药丸、急救包、浮动胶囊、分药机、亲和头像）；
+   - 自主研发并运行 `scripts/cutout_assets.py`（基于 OpenCV GrabCut 算法与中性边缘平滑先验），生成无杂色、零毛边的 512x512 高清透明 PNG，保存在 `src/assets/images3d/`。
+2. **专属环境色彩弥散（Ambient Color Diffusion）**：
+   - 彻底摆脱传统图标方框与矩形裁切限制，在 `settings.css`、`medications.css`、`scanner.css`、`primitives.css` 中为所有 3D 拟物图标定制微质感环境发散光晕（`::before` 径向渐变结合动态 `filter: drop-shadow`）；
+   - 根据卡片语义色（金橙、天蓝、珊瑚红、丁香紫、薄荷青、祖母绿）动态渲染柔和彩色光雾，在卡片悬停与点击时呈现平滑呼吸回弹，完美融入液态玻璃与明暗主题。
+3. **1.0.0 里程碑正式发版**：
+   - 版本由 `0.9.15` 正式升级为 `1.0.0`（`versionCode: 35`）；
+   - 更新 `package.json`、`package-lock.json`、`build.gradle`、`AppConfigurationTest.java`、`release-utils.mjs`、`release-utils.test.ts`、`hero.svg`、`README.md` 与发布文档 `docs/releases/1.0.0.md`；
+   - 运行 `scripts/gen-version.mjs` 输出全新 `public/version.json`，全套 79 组测试套件 472 项测试 100% 通过。
 
 ### 28. 0.3 秒云端极速通道更新检测与阶梯探测拦截架构 (0.9.15)
 

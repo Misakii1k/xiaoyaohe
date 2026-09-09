@@ -1,9 +1,22 @@
 # Current Integration State
 
-Updated: 2026-09-08
+Updated: 2026-09-09
 Integration branch: `main`
-Product version: `0.9.15`
+Product version: `1.0.0`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## 3D Liquid-Glass Icons & Ambient Diffusion & v1.0.0 Milestone 2026-09-09 (workspace/claude)
+
+- **全套 9 款 3D 拟物液态玻璃微质感资产生成与无损边缘抠图**：
+  - 基于 Gemini Imagen 3 重绘全套 Studio 级 3D 拟物资产（彩虹亚克力药盒、天蓝用药计划本、珊瑚红靶向徽章、丁香紫磨砂瓶、薄荷青时钟药丸、急救包、晶莹双色胶囊、智能分药机与立体头像）；
+  - 编写 `scripts/cutout_assets.py`，采用 OpenCV GrabCut 算法结合中性背景先验与边缘平滑，将资产转为零毛边、无背景色残留的 512x512 高清透明 PNG，保存在 `src/assets/images3d/`。
+- **向周围弥散颜色（Ambient Color Diffusion）动态光晕系统**：
+  - 为设置页统计卡片、药品列表统计卡片（全部药品/近期使用/需要补充）、扫码分药助手 Banner 及服药模态浮动药丸全面接入专属环境光晕；
+  - 采用 `::before` 伪元素多层径向渐变（Radial Gradient）配合 `filter: drop-shadow`，根据卡片主题色彩（金橙、天蓝、珊瑚红、丁香紫、薄荷青、祖母绿）向四周自然晕染发散，卡片悬浮与激活时平滑缩放，完美融入水凝玻璃视觉体系。
+- **小药盒 1.0.0 正式里程碑发布**：
+  - 版本号由 `0.9.15` 正式升级为 `1.0.0`（Android `versionCode: 35`）；
+  - 同步更新 `package.json`、`package-lock.json`、`build.gradle`、`AppConfigurationTest.java`、`release-utils.mjs`、`release-utils.test.ts`、`hero.svg`、`README.md` 与发布文档 `docs/releases/1.0.0.md`；
+  - 运行 `scripts/gen-version.mjs` 重新生成 `public/version.json`，支持 0.3 秒云端极速通道在线热更新。
 
 ## 0.3s Fast Cloud Update Check & Ladder Probing Architecture 2026-09-08 (workspace/claude)
 

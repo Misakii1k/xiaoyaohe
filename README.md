@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 ![小药盒封面横幅](assets/readme/hero.png)
 
@@ -65,7 +65,7 @@
 
 Android 客户端支持完整的原生全屏提醒、后台保活、震动控制与扫码核验。
 
-1. 进入 [Releases 页面](https://github.com/Misakii1k/xiaoyaohe/releases) 下载最新版的发布包（例如 `xiaoyaohe-0.9.15-android-release.apk`）；
+1. 进入 [Releases 页面](https://github.com/Misakii1k/xiaoyaohe/releases) 下载最新版的发布包（例如 `xiaoyaohe-1.0.0-android-release.apk`）；
 2. 在手机上打开并完成安装；
 3. 首次打开时，根据系统提示授予「通知权限」与「忽略电池优化」权限，以保证系统能在熄屏时准时唤醒提醒。
 

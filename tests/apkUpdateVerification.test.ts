@@ -122,16 +122,16 @@ describe('局域网 APK 更新的安装前校验', () => {
       nativePlugin.download.mockResolvedValue({ bytes: 2048, destPath: 'medbox-update-probe.apk' });
       nativePlugin.verifyApk.mockResolvedValue({
         packageName: 'com.medbox.app',
-        versionCode: 35,
-        versionName: '0.9.12',
+        versionCode: 36,
+        versionName: '1.0.1',
       });
       nativePlugin.deleteApk.mockResolvedValue({ deleted: true });
 
       const update = await scanLanForUpdates();
 
       expect(update).not.toBeNull();
-      expect(update?.version).toBe('0.9.12');
-      expect(update?.versionCode).toBe(35);
+      expect(update?.version).toBe('1.0.1');
+      expect(update?.versionCode).toBe(36);
       expect(update?.peerHost).toBe('192.168.1.120');
       expect(update?.peerPort).toBe(38473);
 
@@ -142,7 +142,7 @@ describe('局域网 APK 更新的安装前校验', () => {
       const saved = localStorage.getItem('medbox.lan-sync.available-update.v1');
       expect(saved).not.toBeNull();
       const parsed = JSON.parse(saved!);
-      expect(parsed.versionCode).toBe(35);
+      expect(parsed.versionCode).toBe(36);
     });
 
     it('当探测到的版本不高于本机版本时，删除 probe 且返回 null', async () => {
@@ -192,13 +192,13 @@ describe('局域网 APK 更新的安装前校验', () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          tag_name: 'v0.9.99',
+          tag_name: 'v1.1.0',
           body: '1. 新增强提醒无障碍保护\n2. 优化音频焦点恢复',
           assets: [
             {
-              name: 'xiaoyaohe-0.9.99-android-release.apk',
+              name: 'xiaoyaohe-1.1.0-android-release.apk',
               size: 18646307,
-              browser_download_url: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.99/xiaoyaohe-0.9.99-android-release.apk',
+              browser_download_url: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.1.0/xiaoyaohe-1.1.0-android-release.apk',
             },
           ],
         }),
@@ -207,9 +207,9 @@ describe('局域网 APK 更新的安装前校验', () => {
       try {
         const update = await checkGithubRelease();
         expect(update).not.toBeNull();
-        expect(update?.version).toBe('0.9.99');
+        expect(update?.version).toBe('1.1.0');
         expect(update?.source).toBe('github');
-        expect(update?.downloadUrl).toContain('xiaoyaohe-0.9.99-android-release.apk');
+        expect(update?.downloadUrl).toContain('xiaoyaohe-1.1.0-android-release.apk');
         expect(update?.fileSize).toBe(18646307);
         expect(update?.releaseNotes).toContain('新增强提醒无障碍保护');
       } finally {
@@ -249,12 +249,12 @@ describe('局域网 APK 更新的安装前校验', () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          tag_name: 'v0.9.16',
+          tag_name: 'v1.0.1',
           assets: [
             {
-              name: 'xiaoyaohe-0.9.16-android-release.apk',
+              name: 'xiaoyaohe-1.0.1-android-release.apk',
               size: 18000000,
-              browser_download_url: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.16/xiaoyaohe-0.9.16-android-release.apk',
+              browser_download_url: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.1/xiaoyaohe-1.0.1-android-release.apk',
             },
           ],
         }),
@@ -265,7 +265,7 @@ describe('局域网 APK 更新的安装前校验', () => {
       try {
         const best = await checkForAppUpdates();
         expect(best).not.toBeNull();
-        expect(best?.version).toBe('0.9.16');
+        expect(best?.version).toBe('1.0.1');
         expect(best?.source).toBe('github');
       } finally {
         globalThis.fetch = originalFetch;
@@ -277,10 +277,10 @@ describe('局域网 APK 更新的安装前校验', () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          version: '0.9.18',
+          version: '1.0.2',
           versionCode: 38,
           releaseDate: '2026-09-08',
-          downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.18/xiaoyaohe-0.9.18-android-release.apk',
+          downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.2/xiaoyaohe-1.0.2-android-release.apk',
           fileSize: 19123456,
           releaseNotes: '云端极速通道更新测试',
         }),
@@ -289,7 +289,7 @@ describe('局域网 APK 更新的安装前校验', () => {
       try {
         const update = await checkFastCloudVersion();
         expect(update).not.toBeNull();
-        expect(update?.version).toBe('0.9.18');
+        expect(update?.version).toBe('1.0.2');
         expect(update?.versionCode).toBe(38);
         expect(update?.source).toBe('cloud');
         expect(update?.fileSize).toBe(19123456);
@@ -351,9 +351,9 @@ describe('局域网 APK 更新的安装前校验', () => {
           return {
             ok: true,
             json: async () => ({
-              version: '0.9.20',
+              version: '1.0.3',
               versionCode: 40,
-              downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v0.9.20/app.apk',
+              downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.3/app.apk',
             }),
           };
         }
@@ -370,7 +370,7 @@ describe('局域网 APK 更新的安装前校验', () => {
           timeoutLanMs: 200,
         });
         expect(result).not.toBeNull();
-        expect(result?.version).toBe('0.9.20');
+        expect(result?.version).toBe('1.0.3');
         expect(result?.source).toBe('cloud');
         // 验证第一步提示为检查云端
         expect(statuses).toContain('正在检查云端最新版本...');
