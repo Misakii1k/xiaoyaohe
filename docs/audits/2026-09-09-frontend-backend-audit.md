@@ -130,7 +130,9 @@ tag=x?per_page=1            -> 注入查询串
 
 ### P3-14 未跟踪的令牌生成脚本
 
-`scripts/check-gh.mjs` 与 `scripts/gen-token-exec.mjs` 内容基本重复，通过 CDP 驱动真实浏览器创建 GitHub PAT（申请全量 `repo` 权限）并写入 `scratch/gh_token.tmp`。本次未删除，处置待定。
+`scripts/check-gh.mjs` 与 `scripts/gen-token-exec.mjs` 内容基本重复，通过 CDP 驱动真实浏览器创建 GitHub PAT（申请全量 `repo` 权限）并写入 `scratch/gh_token.tmp`。
+
+**处置（2026-09-09，ZCode 经电脑操作核实）**：两个脚本与 `scratch/` 下 3 张调试截图已删除。GitHub 上确实存在该流程创建的 classic PAT `xiaoyaohe-release-proxy`（全量 `repo`、GitHub 记录 `Never used`、ID `5416890922`），已在 `https://github.com/settings/tokens` 删除；classic 与 fine-grained 列表现均为空。该令牌的权限（全量 `repo`）与有效期（90 天）与脚本参数完全一致，但 `scratch/gh_token.tmp` 现已不存在，无法排除它曾被写入后被清理——「明文写盘」本身就是必须消除的设计。替代令牌须为 fine-grained + 仅 `Contents: Read`，新建同样受 sudo 模式限制，需用户本人在 `https://github.com/settings/personal-access-tokens/new` 完成。
 
 ### P3-15 局域网 APK 分发无配对鉴权
 

@@ -29,7 +29,12 @@ Latest version: `1.0.0` (Android `versionCode: 35`)
 9. **已知接受项**：CSP `connect-src 'self' https:` 宽泛（用户可自配 LLM 端点，无法静态收窄）；局域网 APK 分发无配对鉴权（仅 8 字节 magic）；`sha256` 仅在客户端透传，原生侧校验待排期。
 10. **E2E 偶发失败已定位修复（P3-13）**：`--repeat-each=2` 复现出唯一失败点 `e2e/assistant-cards.spec.ts:3`（phone-320）。根因是该用例 `/?assistant-preview=1` 冷启动要等 Vite 现场转译 `assistantContent` 懒加载分块，单跑实测 13.0s，15s 预算在并行门禁下必然打满；失败瞬间快照显示面板已渲染、卡片仍在「内容加载中」，属预算问题而非面板缺陷。预算提高到 25s 后 `--repeat-each=2` → 104/104 全绿。
 11. **验证门（全部实跑通过）**：`npm run typecheck` 0 errors（`include` 已含 `functions`）；`npm run test` 82 文件 / **501 项**全绿（原 79/472）；`npm run test:release` 12 项全绿；`npx playwright test --repeat-each=2` 104/104 全绿；`npm run build:web` 成功且 `git status` 无脏文件（仅 3 项原有未跟踪文件）。
-12. **待用户处理**：Cloudflare `GITHUB_TOKEN`；轮换/删除 `scripts/check-gh.mjs` 与 `gen-token-exec.mjs` 曾创建的 PAT；决定这两个脚本与 `scratch/` 的去留（本次未删）；CI 的 4 个 Android 签名 secret。
+12. **待用户处理**（2026-09-09 ZCode 经电脑操作核实并部分完成）：
+    - **已撤销**：GitHub 上确实存在该流程创建的 classic PAT `xiaoyaohe-release-proxy`（全量 `repo` 权限，2026-12-08 过期，GitHub 记录 **Never used**，ID `5416890922`）。已在 `https://github.com/settings/tokens` 删除；classic 与 fine-grained 列表现均为空。其权限与有效期同脚本参数完全一致，但 `scratch/gh_token.tmp` 现已不存在，不能排除曾被写盘后清理。
+    - **已删除**：`scripts/check-gh.mjs`、`scripts/gen-token-exec.mjs`（CDP 驱动真实浏览器申请全量 `repo` PAT 并明文写盘）与 `scratch/` 下 3 张调试截图。
+    - **待用户**：替代令牌须为 fine-grained、仅 `Contents: Read`、仅 `Misakii1k/xiaoyaohe`。新建时 GitHub 强制 sudo 模式（GitHub Mobile 一次性数字），自动化无法完成；浏览器已停在 `https://github.com/settings/personal-access-tokens/new` 的 Confirm access 页，输入数字即可继续。生成后填入 Cloudflare Pages 的 `GITHUB_TOKEN` 并重新部署。
+    - **额外风险**：Chrome 仍以远程调试端口 9222 运行（`DevToolsActivePort` 存在），本机任意进程都可驱动这个已登录的浏览器；用完建议关掉该端口。
+    - **仍未处理**：Cloudflare `GITHUB_TOKEN`；CI 的 4 个 Android 签名 secret。
 
 ### 29. 全套 3D 拟物液态微质感图标重构、专属色彩向外弥散与 1.0.0 正式版发布 (1.0.0)
 
