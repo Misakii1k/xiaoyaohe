@@ -965,15 +965,14 @@ export async function renderMedEditPage(
       type: 'button',
     } as any) as HTMLButtonElement;
     aiGenBtn.append(icon('sparkles'));
-    aiGenBtn.append(el('span', { html: 'AI 生成大图' }));
+    aiGenBtn.append(el('span', { html: 'AI 增强照片' }));
     aiGenBtn.onclick = () => {
-      const name = nameInput.value.trim();
-      if (!name && !pendingPhoto) {
-        toast('请先填写药名或拍一张照片');
-        nameInput.focus();
+      const photoSource = originalPhoto ?? pendingPhoto;
+      if (!photoSource) {
+        toast('请先拍一张药盒照片');
         return;
       }
-      void triggerSilentPackshot(originalPhoto ?? pendingPhoto ?? undefined);
+      void triggerSilentPackshot(photoSource);
     };
 
     const cropBtn = el('button', {
@@ -1017,7 +1016,7 @@ export async function renderMedEditPage(
       }
     }
 
-    async function triggerSilentPackshot(sourceBlob?: Blob): Promise<void> {
+    async function triggerSilentPackshot(sourceBlob: Blob): Promise<void> {
       if (isSilentGenBusy) {
         silentGenAbort?.abort();
       }
@@ -1026,7 +1025,7 @@ export async function renderMedEditPage(
       isSilentGenBusy = true;
       statusBadge.hidden = false;
       statusBadge.className = 'box-photo-ai-badge is-loading';
-      statusBadge.textContent = '✨ AI 展台大图生成中…';
+      statusBadge.textContent = '✨ AI 药盒增强中…';
 
       try {
         const packshot = await generateMedPackshot({
@@ -1044,15 +1043,15 @@ export async function renderMedEditPage(
         photoKind = 'ai_packshot';
         if (sourceBlob) originalPhoto = sourceBlob;
         showPhoto(URL.createObjectURL(packshot), { local: true, isPackshot: true });
-        toast('已生成白底药盒展台大图，保存后生效');
+        toast('已生成药盒增强图，保存后生效');
       } catch (error) {
         if (abort.signal.aborted || !isActive()) return;
         console.error('silent packshot gen failed', error);
         statusBadge.className = 'box-photo-ai-badge is-error';
-        statusBadge.textContent = '⚠️ 展台图未完成 (已保留原照)';
+        statusBadge.textContent = '⚠️ 增强未完成 (已保留原照)';
         updatePhotoStatusBadges();
         const msg = error instanceof Error ? error.message : String(error);
-        toast(`展台大图未生成：${msg}，已保留原照`);
+        toast(`药盒增强未完成：${msg}，已保留原照`);
       } finally {
         isSilentGenBusy = false;
       }
@@ -1083,11 +1082,16 @@ export async function renderMedEditPage(
       }
 
       const regen = createButton({
-        label: '重新生成 AI 展台大图',
+        label: '重新增强药盒照片',
         icon: 'sparkles',
         onClick: () => {
           sheet.close();
-          void triggerSilentPackshot(originalPhoto ?? pendingPhoto ?? undefined);
+          const photoSource = originalPhoto ?? pendingPhoto;
+          if (!photoSource) {
+            toast('没有可用的原始照片');
+            return;
+          }
+          void triggerSilentPackshot(photoSource);
         },
       });
       buttons.push(regen);

@@ -13,9 +13,9 @@ export interface ImageGenPanelResult {
 }
 
 const PRESET_MODELS = [
-  { label: 'DALL·E 3 (OpenAI)', model: 'dall-e-3' },
+  { label: 'GPT Image 1 (OpenAI, 推荐)', model: 'gpt-image-1' },
+  { label: 'DALL·E 2 (OpenAI, 支持 edits)', model: 'dall-e-2' },
   { label: '通义万相 (阿里)', model: 'wanx-v1' },
-  { label: 'FLUX.1-schnell (硅基流动)', model: 'black-forest-labs/FLUX.1-schnell' },
   { label: 'CogView-3 (智谱)', model: 'cogview-3-plus' },
 ];
 
@@ -78,23 +78,23 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
 
     const desc = el('div', {
       class: 'muted',
-      text: '在「编辑药品」拍照或输入药名后，后台静默将药盒生成为纯净白底、微透视、字迹清晰的商业展台大图。无照片时也可一键根据药名生成。',
+      text: '在「编辑药品」拍照后，后台将药盒照片增强为纯白底、清晰、透视矫正的扫描效果图。需要支持 /images/edits 接口的服务商（如 GPT Image 系列）。',
     });
 
     // 1. 开关行
     const toggleRow = el('div', { class: 'settings-toggle-row mt-3' });
     const toggleCopy = el('div', { class: 'settings-toggle-copy' });
     toggleCopy.append(
-      el('div', { class: 'settings-toggle-title', text: '启用药盒展台大图生成' }),
+      el('div', { class: 'settings-toggle-title', text: '启用药盒照片增强' }),
       el('div', {
         class: 'settings-toggle-desc',
-        text: '拍照后自动排队生成白底大图；生成后可在原照片与展台大图之间随时无缝切换。',
+        text: '拍照后自动排队增强照片；增强后可在原照片与增强图之间随时切换。',
       }),
     );
     const toggleSwitch = el('input', {
       type: 'checkbox',
       role: 'switch',
-      'aria-label': '启用药盒展台大图生成',
+      'aria-label': '启用药盒照片增强',
     }) as HTMLInputElement;
     toggleSwitch.checked = current.enabled;
     toggleRow.append(toggleCopy, toggleSwitch);
@@ -111,7 +111,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
       await setImageGenConfig(next);
       refreshChip();
       renderContent();
-      toast(next.enabled ? '已开启 AI 展台大图生成' : '已关闭 AI 生图功能');
+      toast(next.enabled ? '已开启 AI 药盒照片增强' : '已关闭 AI 照片增强功能');
     };
 
     // BaseURL
@@ -125,7 +125,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     }) as HTMLInputElement;
     const urlHint = el('div', {
       class: 'muted text-xs mt-1',
-      text: '留空时自动复用「AI 服务商」的地址。需支持 OpenAI 兼容的 /images/generations 接口。',
+      text: '留空时自动复用「AI 服务商」的地址。需支持 OpenAI 兼容的 /images/edits 接口。',
     });
     urlField.append(urlLabel, urlInput, urlHint);
 
@@ -153,8 +153,8 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     const modelInput = el('input', {
       type: 'text',
       class: 'input',
-      placeholder: '例如：dall-e-3、wanx-v1、flux-schnell',
-      value: current.model || 'dall-e-3',
+      placeholder: '例如：gpt-image-1、dall-e-2',
+      value: current.model || 'gpt-image-1',
     }) as HTMLInputElement;
 
     const presetChipsWrap = el('div', { class: 'chips mt-2', style: 'flex-wrap: wrap; gap: 6px;' });
@@ -197,7 +197,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
           enabled: true,
           baseUrl: urlInput.value.trim(),
           apiKey: keyInput.value.trim(),
-          model: modelInput.value.trim() || 'dall-e-3',
+          model: modelInput.value.trim() || 'gpt-image-1',
         };
         const res = await pingImageGenService(testCfg);
         if (res.state === 'ok') {
@@ -224,11 +224,11 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
           enabled: toggleSwitch.checked,
           baseUrl: urlInput.value.trim(),
           apiKey: keyInput.value.trim(),
-          model: modelInput.value.trim() || 'dall-e-3',
+          model: modelInput.value.trim() || 'gpt-image-1',
         };
         await setImageGenConfig(next);
         refreshChip();
-        toast('AI 生图配置已保存');
+        toast('AI 照片增强配置已保存');
       } catch (e) {
         toast('保存失败：' + String(e instanceof Error ? e.message : e));
       } finally {

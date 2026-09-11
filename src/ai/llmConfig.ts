@@ -420,7 +420,7 @@ export const DEFAULT_IMAGE_GEN_CONFIG: ImageGenConfig = {
   enabled: true,
   baseUrl: '',
   apiKey: '',
-  model: 'dall-e-3',
+  model: 'gpt-image-1',
 };
 
 /** 读取当前保存的生图独立配置 */
@@ -433,7 +433,7 @@ export function getImageGenConfig(): ImageGenConfig {
       enabled: parsed.enabled !== false,
       baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl.trim() : '',
       apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey.trim() : '',
-      model: typeof parsed.model === 'string' && parsed.model.trim() ? parsed.model.trim() : 'dall-e-3',
+      model: typeof parsed.model === 'string' && parsed.model.trim() ? parsed.model.trim() : 'gpt-image-1',
     };
   } catch {
     return { ...DEFAULT_IMAGE_GEN_CONFIG };
@@ -450,7 +450,7 @@ export async function setImageGenConfig(cfg: ImageGenConfig): Promise<void> {
     enabled: cfg.enabled !== false,
     baseUrl: normalizedBaseUrl,
     apiKey: cfg.apiKey.trim(),
-    model: cfg.model.trim() || 'dall-e-3',
+    model: cfg.model.trim() || 'gpt-image-1',
   };
   await serializeConfigMutation(async () => {
     await setSessionSecret(JSON.stringify(clean), IMAGE_GEN_CONFIG_SECRET_KEY);
@@ -477,7 +477,7 @@ export function getEffectiveImageGenConfig(): {
 
   const baseUrl = hasCustomUrl ? cfg.baseUrl.trim() : activeLlm.baseUrl.trim();
   const apiKey = hasCustomKey ? cfg.apiKey.trim() : activeLlm.apiKey.trim();
-  const model = cfg.model.trim() || 'dall-e-3';
+  const model = cfg.model.trim() || 'gpt-image-1';
   const isConfigured = cfg.enabled && Boolean(baseUrl && apiKey);
   const isDerivedFromMain = isConfigured && (!hasCustomUrl || !hasCustomKey);
 
@@ -496,7 +496,7 @@ export async function pingImageGenService(cfg?: ImageGenConfig): Promise<LlmHeal
   const effective = cfg ? {
     baseUrl: cfg.baseUrl.trim() || getActiveLlmProvider().baseUrl.trim(),
     apiKey: cfg.apiKey.trim() || getActiveLlmProvider().apiKey.trim(),
-    model: cfg.model.trim() || 'dall-e-3',
+    model: cfg.model.trim() || 'gpt-image-1',
   } : getEffectiveImageGenConfig();
 
   const now = Date.now();
