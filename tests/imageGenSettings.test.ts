@@ -1,5 +1,20 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { mockConfirmDialog, mockPromptDialog } = vi.hoisted(() => ({
+  mockConfirmDialog: vi.fn().mockResolvedValue(true),
+  mockPromptDialog: vi.fn().mockResolvedValue('我的 Agnes 专线'),
+}));
+
+vi.mock('../src/ui/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/ui/components')>();
+  return {
+    ...actual,
+    confirmDialog: mockConfirmDialog,
+    promptDialog: mockPromptDialog,
+  };
+});
+
 import { renderImageGenSettingsPanel } from '../src/ui/imageGenSettingsPanel';
 import {
   saveImageGenProfile,
@@ -58,7 +73,7 @@ describe('imageGenSettingsPanel custom profile management & zero preset template
     expect(keyInput.value).toBe('sk-agnes-custom-key');
 
     // 找到删除按钮并确认删除
-    vi.stubGlobal('confirm', () => true);
+    mockConfirmDialog.mockResolvedValueOnce(true);
     const delBtn = Array.from(element.querySelectorAll('button')).find((b) =>
       b.title?.includes('删除「Agnes 2.1 极速版」'),
     );
@@ -66,11 +81,12 @@ describe('imageGenSettingsPanel custom profile management & zero preset template
     await (delBtn as unknown as { onclick: (e: MouseEvent) => Promise<void> }).onclick(new MouseEvent('click'));
 
     // 检查已从持久化中移除
+    expect(mockConfirmDialog).toHaveBeenCalledWith('确定删除生图配置「Agnes 2.1 极速版」吗？', '删除', true);
     expect(getSavedImageGenProfiles().length).toBe(0);
   });
 
   it('allows saving currently filled form as a new custom profile via prompt', async () => {
-    vi.stubGlobal('prompt', () => '我的 Agnes 专线');
+    mockPromptDialog.mockResolvedValueOnce('我的 Agnes 专线');
     const { element } = renderImageGenSettingsPanel();
 
     const urlInput = element.querySelector('input[type="url"]') as HTMLInputElement;
@@ -87,6 +103,7 @@ describe('imageGenSettingsPanel custom profile management & zero preset template
     expect(saveProfileBtn).toBeDefined();
 
     await (saveProfileBtn as unknown as { onclick: () => Promise<void> }).onclick();
+    expect(mockPromptDialog).toHaveBeenCalled();
 
     const saved = getSavedImageGenProfiles();
     expect(saved.length).toBe(1);

@@ -45,15 +45,16 @@ export class ImageGenError extends Error {
 /** 模式 A (edits)：原图修图 Prompt 预设 */
 export const PROMPT_CLEAN = [
   'Clean up this medicine box photo: remove the background and replace with pure white,',
-  'enhance sharpness and contrast, correct perspective distortion.',
+  'remove any hands, fingers, or background clutter, correct perspective to flat straight-on front view,',
+  'enhance sharpness and contrast.',
   'Keep every text character, logo, color, and layout element exactly as they appear in the original.',
   'Do not redesign, do not add or remove any visual elements.',
 ].join(' ');
 
 export const PROMPT_SCANNER = [
   'Process this medicine packaging photo as a high-quality flatbed scanner would:',
-  'pure white background, even lighting, no shadows, corrected perspective to perfectly rectangular,',
-  'enhanced text sharpness.',
+  'pure white background, seamless and clean, perfectly rectangular flat front elevation view facing the camera directly,',
+  'remove all hands, fingers, holding gestures, and shadows, enhance text sharpness.',
   'Preserve all original text, logos, graphics, and colors with 100% fidelity.',
   'Do not alter, redesign, or reinterpret any part of the packaging.',
 ].join(' ');
@@ -61,8 +62,11 @@ export const PROMPT_SCANNER = [
 /** edits 模式默认生效的修图 Prompt */
 const ACTIVE_EDIT_PROMPT = PROMPT_SCANNER;
 
-/** 模式 B (generations)：构建用于商业展台摄影的 Prompt */
-export function buildStudioPackshotPrompt(features: MedVisualFeatures): string {
+/** 模式 B (generations)：构建用于商业展台摄影的 Prompt（正面平视大图） */
+export function buildStudioPackshotPrompt(
+  features: MedVisualFeatures,
+  hasReferenceImage = false,
+): string {
   const title = features.name.trim() || 'Pharmaceutical Medicine';
   const spec = features.dosageText.trim() ? `with printed specification "${features.dosageText.trim()}"` : '';
   const colors = features.boxColorTheme?.trim() || 'clean clinical white and pharmaceutical green or blue';
@@ -71,14 +75,23 @@ export function buildStudioPackshotPrompt(features: MedVisualFeatures): string {
     ? 'cylindrical medical plastic pill bottle with white safety screw cap and clean printed label'
     : 'crisp rectangular pharmaceutical paper packaging carton box';
 
+  const viewDesc = features.form === 'bottle'
+    ? 'Direct eye-level front view facing the camera straight-on, centered, displaying the front label clearly.'
+    : 'Direct straight-on front view (eye-level frontal orthographic product shot), facing the camera directly, perfectly flat and horizontal with zero tilt, zero rotation, no 3D side angle, no isometric slant, strictly showing exclusively the complete front face of the medicine box.';
+
+  const referenceDirective = hasReferenceImage
+    ? '提取出参考素材中的药盒图片，去除手持与多余杂物，变成纯白底正面平视大图的形式。Extract and isolate the medicine packaging box from the reference photo, removing any hands, fingers, holding gestures, or background clutter. Display the isolated box as a crisp, flat front-facing studio packshot.'
+    : '';
+
   return [
+    referenceDirective,
     `Commercial pharmaceutical product photography, studio packshot of a single ${formDesc}.`,
     `Seamless pure white background with soft subtle contact drop shadow directly beneath the base of the box.`,
-    `Three-quarter isometric front perspective view, showing both the front panel and one side panel cleanly.`,
+    viewDesc,
     `The packaging prominently and legibly displays the medicine name "${title}" in sharp, crisp typography, ${spec}.`,
     `Packaging color palette: ${colors}. Graphic design details: ${notes}.`,
     `Studio softbox diffuse lighting, 8k resolution, razor-sharp focus, professional medical advertisement product shot, immaculate paper texture, straight edges, no background clutter, no hands, no human.`,
-  ].join(' ');
+  ].filter(Boolean).join(' ');
 }
 
 /** 从药名中推测默认的包装形式与色系（无原图或特征提取失败时的保底） */
@@ -206,8 +219,8 @@ export async function generateMedPackshot(options: GeneratePackshotOptions): Pro
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-    const prompt = buildStudioPackshotPrompt(features);
-    onProgress?.(referencePhotoBase64 ? '正在通过图生图生成展台药盒…' : '正在生成商业级展台大图…');
+    const prompt = buildStudioPackshotPrompt(features, Boolean(referencePhotoBase64));
+    onProgress?.(referencePhotoBase64 ? '正在提取药盒并生成正面大图…' : '正在生成商业级正面大图…');
 
     const imageUrl = resolveImageGenUrl(cleanBaseUrl);
     let raw: Blob;

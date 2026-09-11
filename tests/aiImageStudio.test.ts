@@ -33,7 +33,7 @@ describe('aiImageStudio prompts & default features', () => {
     expect(PROMPT_CLEAN).toContain('Do not redesign');
   });
 
-  it('builds commercial studio packshot prompt correctly', () => {
+  it('builds commercial studio packshot prompt correctly with straight-on front view', () => {
     const prompt = buildStudioPackshotPrompt({
       name: '布洛芬缓释胶囊',
       dosageText: '0.3g*20粒',
@@ -45,6 +45,19 @@ describe('aiImageStudio prompts & default features', () => {
     expect(prompt).toContain('布洛芬缓释胶囊');
     expect(prompt).toContain('0.3g*20粒');
     expect(prompt).toContain('white carton with red wave');
+    expect(prompt).toContain('Direct straight-on front view');
+    expect(prompt).not.toContain('Three-quarter isometric');
+
+    const promptWithRef = buildStudioPackshotPrompt(
+      {
+        name: '布洛芬缓释胶囊',
+        dosageText: '0.3g*20粒',
+        form: 'paper_box',
+      },
+      true,
+    );
+    expect(promptWithRef).toContain('提取出参考素材中的药盒图片');
+    expect(promptWithRef).toContain('Direct straight-on front view');
   });
 
   it('infers default visual features according to medicine name and dosage', () => {

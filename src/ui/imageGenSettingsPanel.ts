@@ -1,4 +1,4 @@
-import { el, icon, toast } from './components';
+import { el, icon, toast, confirmDialog, promptDialog } from './components';
 import {
   getImageGenConfig,
   setImageGenConfig,
@@ -247,7 +247,8 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
         });
         delBtn.onclick = async (e) => {
           e.stopPropagation();
-          if (confirm(`确定删除生图配置「${p.name}」吗？`)) {
+          const confirmed = await confirmDialog(`确定删除生图配置「${p.name}」吗？`, '删除', true);
+          if (confirmed) {
             await deleteImageGenProfile(p.id);
             refreshProfilesList();
             toast(`已删除配置「${p.name}」`);
@@ -261,8 +262,11 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
 
     refreshProfilesList();
 
-    // 操作按钮
-    const btnRow = el('div', { class: 'btn-row mt-3', style: 'flex-wrap: wrap; gap: 8px;' });
+    // 操作按钮（2列响应式网格，杜绝按钮文案折行挤压）
+    const btnRow = el('div', {
+      class: 'image-gen-actions mt-3',
+      style: 'display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;' as any,
+    });
     const saveBtn = el('button', { class: 'btn', type: 'button', text: '保存当前配置' });
     const saveProfileBtn = el('button', { class: 'btn tonal', type: 'button', text: '存为新配置' });
     const testBtn = el('button', { class: 'btn tonal', type: 'button', text: '测试生图连接' });
@@ -270,7 +274,13 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
 
     saveProfileBtn.onclick = async () => {
       const defaultName = modelInput.value.trim() || '自定义配置';
-      const name = window.prompt('请输入该生图配置的名称（如：Agnes 2.1、中转生图等）：', defaultName);
+      const name = await promptDialog({
+        title: '存为新配置',
+        message: '请输入该生图配置的名称（如：Agnes 2.1、中转生图等）：',
+        defaultValue: defaultName,
+        placeholder: '配置名称',
+        okText: '保存',
+      });
       if (!name || !name.trim()) return;
 
       try {
