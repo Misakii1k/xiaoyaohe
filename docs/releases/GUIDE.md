@@ -96,9 +96,12 @@
 ## 三、版本发布标准作业流程 (SOP Checklist)
 
 > [!IMPORTANT]
-> **切记**：应用更新强依赖 GitHub Releases 上的 APK 附件。**绝不能只打 Git Tag，必须完成全流程打包、推送并创建附带 APK 的 GitHub Release**，否则应用内检测到更新后点击下载会 404。
+> **核心铁律**：
+> 1. 应用更新强依赖 GitHub Releases 上的 APK 与 Web 增量包附件。**绝不能只打 Git Tag，必须完成全流程打包、推送并创建附带 APK 与 Web Bundle 的 GitHub Release**，否则应用内检测到更新后点击下载会 404。
+> 2. **严禁向用户个人电脑桌面复制任何构建产物**：所有安装包、增量包、校验和一律且仅存放在 `release/` 目录与云端 GitHub Releases，严禁污染用户电脑桌面。
+> 3. **每次向云端（远程仓库）推送前必须将版本号向上加一**。
 
-按以下 10 个步骤顺序执行：
+按以下步骤顺序执行：
 
 ### 步骤 1：确认分支与工作区状态
 ```powershell
@@ -143,9 +146,9 @@ git branch --show-current
 
 ### 步骤 6：全量质量门禁验证
 ```powershell
-npm test             # 必须 100% 测试通过
+npm test             # 必须 85 个测试套件 100% 通过（包含增量更新包验证）
 npm run typecheck    # 必须 0 错误
-npm run build:web    # 生产构建与静态资源校验
+npm run build:web    # 生产构建与静态资源校验（自动执行 bundle:web 生成 release/xiaoyaohe-<X.Y.Z>-web-bundle.zip）
 npm run cap:sync     # 同步 web 构建产物到 Android assets
 ```
 
@@ -166,7 +169,7 @@ cd ..
 
 ### 步骤 9：归档 APK、计算 SHA256 与体积比对
 ```powershell
-# 复制到 release 目录并命名为规范文件名
+# 复制到 release 目录并命名为规范文件名（严禁复制到用户个人电脑桌面）
 Copy-Item android\app\build\outputs\apk\release\app-release.apk release\xiaoyaohe-1.0.x-android-release.apk
 
 # 计算 SHA256 哈希
@@ -175,7 +178,7 @@ Get-FileHash -Algorithm SHA256 release\xiaoyaohe-1.0.x-android-release.apk
 # 写入校验和文件
 "<sha256_hash_lowercase> *xiaoyaohe-1.0.x-android-release.apk" | Set-Content -Encoding utf8 release\xiaoyaohe-1.0.x-SHA256SUMS.txt
 
-# 同步更新 public/version.json（提取真实体积与哈希）
+# 同步更新 public/version.json 与 dist/version.json（自动提取 APK 与 Web Bundle 真实体积与哈希）
 node scripts/gen-version.mjs
 ```
 > [!TIP]
@@ -187,8 +190,8 @@ node scripts/gen-version.mjs
 git push origin <当前分支名>
 git push origin v1.0.x
 
-# 使用 GitHub CLI 创建带有 APK 附件的正式 Release
-gh release create v1.0.x release\xiaoyaohe-1.0.x-android-release.apk release\xiaoyaohe-1.0.x-SHA256SUMS.txt --title "v1.0.x" --notes-file docs\releases\1.0.x.md
+# 使用 GitHub CLI 创建带有 APK 与 Web 增量包附件的正式 Release
+gh release create v1.0.x release\xiaoyaohe-1.0.x-android-release.apk release\xiaoyaohe-1.0.x-web-bundle.zip release\xiaoyaohe-1.0.x-SHA256SUMS.txt --title "v1.0.x" --notes-file docs\releases\1.0.x.md
 ```
 
 ### 步骤 11：自动化线上链路冒烟检查

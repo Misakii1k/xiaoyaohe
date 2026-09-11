@@ -14,6 +14,11 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - 安装包体积从 49.7MB 锐减至 17.96MB（18,835,967 字节）。
 - **永久规则确立：严禁向用户电脑桌面复制安装包**：
   - 用户明确规则：发版产物一律仅保存在 `medbox/release/` 目录并通过 GitHub Releases 分发，严禁复制到 `$HOME/Desktop`；已清理桌面上的历史 APK 文件。
+- **经验沉淀与发版技能固化 (/learn)**：
+  - 更新项目规则 `AGENTS.md`、`medbox/AGENTS.md` 与发版技能 `.agents/skills/medbox-release/SKILL.md`；
+  - 确立构建产物（APK / Web Bundle）严禁拷贝至用户个人桌面的硬性红线；
+  - 将 1.8MB Web 增量热更新包（`web-bundle.zip`）自动构建、哈希注入与 `gh release create` 多资产上传纳入标准发版 SOP；
+  - 确立全量 85 个测试套件质量门禁基线，强化每次推送到远端前强制递增版本号与 oil-tone 零黑话文风约束。
 - **零服务器成本增量热更新实现与落地（已完成实施与验证）**：
   - 基于 Cloudflare Pages + GitHub Releases 打造零服务器成本无感增量热更新链路；
   - `ApkDistributionPlugin.java` 新增 `downloadAndUnpackBundle`、`applyWebBundle`、`resetWebBundle` 与 `getActiveWebBundle`，内建 SHA-256 校验、Zip Slip 路径穿越防御与 index.html 存在性断言；

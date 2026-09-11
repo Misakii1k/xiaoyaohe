@@ -18,7 +18,12 @@ Latest version: `1.0.8` (Android `versionCode: 43`)
 2. **桌面拷贝清理与规则确立**：
    - 已彻底删除放置在用户电脑桌面上的旧版 APK 文件；
    - 明确规则：后续所有发布流程严禁向用户桌面复制安装包，安装包一律只保留在 `medbox/release/` 目录和 GitHub Releases 线上。
-3. **零服务器成本增量更新方案实施与落地（已完成）**：
+3. **经验沉淀与发版技能固化 (/learn)**：
+   - 更新全局规则 `AGENTS.md`、子模块规则 `medbox/AGENTS.md`、发版全指南 `docs/releases/GUIDE.md` 与发布技能 `.agents/skills/medbox-release/SKILL.md`；
+   - 确立构建产物（APK / Web 增量包）严禁拷贝至用户桌面的硬性红线；
+   - 将 1.8MB Web 增量包打包、哈希与大小同步注入以及 `gh release create` 多资产上传纳入标准发版 SOP；
+   - 确立 85 个测试套件质量门禁基线，强化推送到远端前必须版本加一与 oil-tone 零黑话文风约束。
+4. **零服务器成本增量更新方案实施与落地（已完成）**：
    - 基于现有 Cloudflare Pages + GitHub Releases 打造无感增量热更新机制；
    - `ApkDistributionPlugin.java` 实现 `downloadAndUnpackBundle`、`applyWebBundle`、`resetWebBundle` 与 `getActiveWebBundle` 原生安全桥接；
    - 增加 `scripts/bundle-web.mjs`，与 `gen-version.mjs`、`package.json` 联动自动化归档 `web-bundle.zip` 并注入 `version.json`；
