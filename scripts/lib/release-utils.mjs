@@ -47,6 +47,7 @@ export const VERSION_CODE_BY_VERSION = Object.freeze({
   '0.9.15': 34,
   '1.0.0': 35,
   '1.0.1': 36,
+  '1.0.2': 37,
 });
 
 /**

@@ -2,8 +2,8 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  buildStudioPackshotPrompt,
-  inferDefaultVisualFeatures,
+  PROMPT_SCANNER,
+  PROMPT_CLEAN,
   generateMedPackshot,
   ImageGenError,
 } from '../src/features/aiImageStudio';
@@ -21,32 +21,14 @@ vi.mock('../src/features/medPhotos', async (importOriginal) => {
   };
 });
 
-describe('aiImageStudio packshot prompt & feature inference', () => {
-  it('builds commercial pharmaceutical packaging prompt with white background and subtle shadow', () => {
-    const prompt = buildStudioPackshotPrompt({
-      name: '瑞舒伐他汀钙片',
-      dosageText: '10mg*7片/板',
-      boxColorTheme: '纯白底配双道翠绿波浪线条',
-      featureNotes: 'LuNan brand logo on top left',
-    });
+describe('aiImageStudio enhancement prompts', () => {
+  it('defines scanner-like and clean-up reproduction prompts', () => {
+    expect(PROMPT_SCANNER).toContain('flatbed scanner');
+    expect(PROMPT_SCANNER).toContain('pure white background');
+    expect(PROMPT_SCANNER).toContain('Preserve all original text');
 
-    expect(prompt).toContain('Commercial pharmaceutical product photography');
-    expect(prompt).toContain('Seamless pure white background with soft subtle contact drop shadow');
-    expect(prompt).toContain('Three-quarter isometric front perspective view');
-    expect(prompt).toContain('瑞舒伐他汀钙片');
-    expect(prompt).toContain('10mg*7片/板');
-    expect(prompt).toContain('纯白底配双道翠绿波浪线条');
-    expect(prompt).toContain('no background clutter, no hands, no human');
-  });
-
-  it('infers bottle form for syrup or liquid medicines and carton box for tablets/capsules', () => {
-    const syrup = inferDefaultVisualFeatures('止咳糖浆', '100mL/瓶');
-    expect(syrup.form).toBe('bottle');
-    expect(syrup.boxColorTheme).toContain('bottle');
-
-    const capsule = inferDefaultVisualFeatures('布洛芬缓释胶囊', '0.3g*20粒');
-    expect(capsule.form).toBe('paper_box');
-    expect(capsule.name).toBe('布洛芬缓释胶囊');
+    expect(PROMPT_CLEAN).toContain('remove the background and replace with pure white');
+    expect(PROMPT_CLEAN).toContain('Do not redesign');
   });
 });
 
@@ -55,6 +37,13 @@ describe('generateMedPackshot network & parsing behavior', () => {
     vi.restoreAllMocks();
     localStorage.clear();
     sessionStorage.clear();
+  });
+
+  it('throws ImageGenError when photoBlob is missing', async () => {
+    await expect(generateMedPackshot({
+      photoBlob: null as unknown as Blob,
+      name: '阿司匹林肠溶片',
+    })).rejects.toThrow('需要药盒照片才能进行增强处理');
   });
 
   it('throws ImageGenError when neither image service nor active LLM is configured', async () => {
@@ -66,22 +55,23 @@ describe('generateMedPackshot network & parsing behavior', () => {
       failover: false,
     });
 
+    const photo = new Blob(['sample-photo-data'], { type: 'image/jpeg' });
     await expect(generateMedPackshot({
+      photoBlob: photo,
       name: '阿司匹林肠溶片',
       dosageText: '100mg',
     })).rejects.toThrow(ImageGenError);
   });
 
-  it('generates packshot from mock OpenAI-compatible b64_json response', async () => {
+  it('submits multipart form-data to /images/edits and parses b64_json response', async () => {
     const { setImageGenConfig } = await import('../src/ai/llmConfig');
     await setImageGenConfig({
       enabled: true,
       baseUrl: 'https://api.mockimage.com/v1',
       apiKey: 'test-key',
-      model: 'dall-e-3',
+      model: 'gpt-image-1',
     });
 
-    // 1x1 transparent PNG in base64
     const sampleB64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     const fakeFetch = vi.fn(async () => ({
       ok: true,
@@ -93,7 +83,9 @@ describe('generateMedPackshot network & parsing behavior', () => {
     vi.stubGlobal('fetch', fakeFetch);
 
     const progressSteps: string[] = [];
+    const photo = new Blob(['photo-bytes'], { type: 'image/png' });
     const blob = await generateMedPackshot({
+      photoBlob: photo,
       name: '阿司匹林肠溶片',
       dosageText: '100mg',
       onProgress: (step) => progressSteps.push(step),
@@ -102,7 +94,7 @@ describe('generateMedPackshot network & parsing behavior', () => {
     expect(blob).toBeInstanceOf(Blob);
     expect(progressSteps.length).toBeGreaterThan(0);
     expect(fakeFetch).toHaveBeenCalledWith(
-      'https://api.mockimage.com/v1/images/generations',
+      'https://api.mockimage.com/v1/images/edits',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -112,13 +104,38 @@ describe('generateMedPackshot network & parsing behavior', () => {
     );
   });
 
-  it('handles error response and throws detailed ImageGenError with statusCode', async () => {
+  it('handles 404/405 gracefully with unsupported edits interface explanation', async () => {
     const { setImageGenConfig } = await import('../src/ai/llmConfig');
     await setImageGenConfig({
       enabled: true,
       baseUrl: 'https://api.mockimage.com/v1',
       apiKey: 'test-key',
-      model: 'dall-e-3',
+      model: 'gpt-image-1',
+    });
+
+    const fakeFetch = vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({
+        error: { message: 'Not found' },
+      }),
+    } as unknown as Response));
+    vi.stubGlobal('fetch', fakeFetch);
+
+    const photo = new Blob(['photo-bytes'], { type: 'image/png' });
+    await expect(generateMedPackshot({
+      photoBlob: photo,
+      name: '测试药品',
+    })).rejects.toThrow('当前 AI 服务商不支持图片编辑接口');
+  });
+
+  it('handles 400 error response and throws detailed ImageGenError with statusCode', async () => {
+    const { setImageGenConfig } = await import('../src/ai/llmConfig');
+    await setImageGenConfig({
+      enabled: true,
+      baseUrl: 'https://api.mockimage.com/v1',
+      apiKey: 'test-key',
+      model: 'gpt-image-1',
     });
 
     const fakeFetch = vi.fn(async () => ({
@@ -130,7 +147,9 @@ describe('generateMedPackshot network & parsing behavior', () => {
     } as unknown as Response));
     vi.stubGlobal('fetch', fakeFetch);
 
+    const photo = new Blob(['photo-bytes'], { type: 'image/png' });
     await expect(generateMedPackshot({
+      photoBlob: photo,
       name: '测试药品',
     })).rejects.toMatchObject({
       name: 'ImageGenError',

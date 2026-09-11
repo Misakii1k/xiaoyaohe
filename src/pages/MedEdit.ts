@@ -8,7 +8,7 @@ import {
   deleteRule,
   recomputeReminderPeriodReviewState,
 } from '../db/local';
-import { getLatestMedPhotoBlob, getMedPhotoUrl, getMedPhotoRecord, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
+import { getMedPhotoUrl, getMedPhotoRecord, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import { generateMedPackshot } from '../features/aiImageStudio';
 import { getEffectiveImageGenConfig } from '../ai/llmConfig';
@@ -101,6 +101,7 @@ export async function renderMedEditPage(
 
   let pendingPhoto: Blob | null = null;
   let originalPhoto: Blob | null = null;
+  let existingPhotoBlob: Blob | null = null;
   let photoKind: 'original' | 'ai_packshot' = 'original';
 
   if (!editing) {
@@ -916,6 +917,7 @@ export async function renderMedEditPage(
           if (!isActive()) return;
           pendingPhoto = prepared;
           originalPhoto = prepared;
+          existingPhotoBlob = prepared;
           showPhoto(URL.createObjectURL(prepared), { local: true });
         } catch {
           if (isActive() && pendingPhoto) showPhoto(URL.createObjectURL(pendingPhoto), { local: true });
@@ -925,11 +927,30 @@ export async function renderMedEditPage(
       void getMedPhotoRecord(med.id).then((record) => {
         if (record && isActive() && !pendingPhoto) {
           photoKind = record.kind || 'original';
-          originalPhoto = record.originalBlob || null;
+          originalPhoto = record.originalBlob || (photoKind === 'original' ? record.blob : null);
+          existingPhotoBlob = record.blob;
           showPhoto(URL.createObjectURL(record.blob), { local: true });
           updatePhotoStatusBadges();
         }
       });
+    }
+
+    /** 取当前已有药盒照片（原拍摄图、待存图或库中已有照片） */
+    async function getAvailablePhotoBlob(): Promise<Blob | null> {
+      if (originalPhoto) return originalPhoto;
+      if (pendingPhoto) return pendingPhoto;
+      if (existingPhotoBlob) return existingPhotoBlob;
+      if (editing) {
+        const record = await getMedPhotoRecord(med.id);
+        if (record) {
+          existingPhotoBlob = record.blob;
+          if (!originalPhoto) {
+            originalPhoto = record.originalBlob || (record.kind === 'ai_packshot' ? null : record.blob);
+          }
+          return record.originalBlob || record.blob;
+        }
+      }
+      return null;
     }
 
     const file = el('input', {
@@ -954,6 +975,7 @@ export async function renderMedEditPage(
     restoreBtn.onclick = () => {
       if (originalPhoto) {
         pendingPhoto = originalPhoto;
+        existingPhotoBlob = originalPhoto;
         photoKind = 'original';
         showPhoto(URL.createObjectURL(originalPhoto), { local: true });
         toast('已恢复为原拍摄照片');
@@ -965,11 +987,12 @@ export async function renderMedEditPage(
       type: 'button',
     } as any) as HTMLButtonElement;
     aiGenBtn.append(icon('sparkles'));
-    aiGenBtn.append(el('span', { html: 'AI 增强照片' }));
-    aiGenBtn.onclick = () => {
-      const photoSource = originalPhoto ?? pendingPhoto;
+    aiGenBtn.append(el('span', { html: 'AI 生成大图' }));
+    aiGenBtn.onclick = async () => {
+      const photoSource = await getAvailablePhotoBlob();
       if (!photoSource) {
-        toast('请先拍一张药盒照片');
+        toast('请先拍一张药盒照片或选择图片');
+        file.click();
         return;
       }
       void triggerSilentPackshot(photoSource);
@@ -989,7 +1012,7 @@ export async function renderMedEditPage(
       cropBusy = true;
       setButtonBusy(cropBtn, '正在打开…');
       try {
-        const source = originalPhoto ?? pendingPhoto ?? (editing ? await getLatestMedPhotoBlob(med.id) : null);
+        const source = await getAvailablePhotoBlob();
         if (!isActive()) return;
         if (!source) {
           toast('先拍一张药盒照片');
@@ -999,6 +1022,7 @@ export async function renderMedEditPage(
         if (!cropped || !isActive()) return;
         await usePhoto(cropped);
         originalPhoto = cropped;
+        existingPhotoBlob = cropped;
         photoKind = 'original';
         updatePhotoStatusBadges();
         toast('已更新裁切照片');
@@ -1042,6 +1066,7 @@ export async function renderMedEditPage(
         pendingPhoto = packshot;
         photoKind = 'ai_packshot';
         if (sourceBlob) originalPhoto = sourceBlob;
+        existingPhotoBlob = packshot;
         showPhoto(URL.createObjectURL(packshot), { local: true, isPackshot: true });
         toast('已生成药盒增强图，保存后生效');
       } catch (error) {
@@ -1073,6 +1098,7 @@ export async function renderMedEditPage(
           onClick: () => {
             sheet.close();
             pendingPhoto = originalPhoto;
+            existingPhotoBlob = originalPhoto;
             photoKind = 'original';
             showPhoto(URL.createObjectURL(originalPhoto!), { local: true });
             toast('已恢复为原拍摄照片');
@@ -1084,9 +1110,9 @@ export async function renderMedEditPage(
       const regen = createButton({
         label: '重新增强药盒照片',
         icon: 'sparkles',
-        onClick: () => {
+        onClick: async () => {
           sheet.close();
-          const photoSource = originalPhoto ?? pendingPhoto;
+          const photoSource = await getAvailablePhotoBlob();
           if (!photoSource) {
             toast('没有可用的原始照片');
             return;
@@ -1148,6 +1174,7 @@ export async function renderMedEditPage(
       try {
         await usePhoto(f, true);
         originalPhoto = pendingPhoto;
+        existingPhotoBlob = pendingPhoto;
         photoKind = 'original';
         updatePhotoStatusBadges();
 
