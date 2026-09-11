@@ -128,10 +128,9 @@ git branch --show-current
    ```
 
 ### 步骤 3：编写面向用户的发布说明
-- 在 `docs/releases/` 目录下新增 `1.0.x.md`，包含：
-  - 版本更新核心亮点（白话说明）；
-  - 修复的问题与改进；
-  - 示例参考：`docs/releases/1.0.5.md`。
+- 在 `docs/releases/` 目录下新增 `1.0.x.md`。
+- **强制遵循 `oil-tone` 规范并减少专业术语**：面向普通用户平铺直叙，陈述客观改动和实际体验变化，严禁出现 DOM、CSS 类名、FAB、操作坞、微拟物、径向渐变、JNI、API 等晦涩技术黑话；成稿必须通过 `py C:\Users\87850\.gemini\config\skills\oil-tone\scripts\tone_lint.py docs/releases/1.0.x.md` 校验。
+- 示例参考：`docs/releases/1.0.7.md`。
 
 ### 步骤 4：更新多工具交接文档 (Handoff)
 - 更新 `docs/handoffs/CURRENT.md`：更新顶部 `Product version: 1.0.x`，增加本次改动的完成条目。

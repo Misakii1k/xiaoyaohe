@@ -32,5 +32,6 @@ This repository is edited from Claude, GPT/Codex, Grok, Trae, and Qoder. Chat hi
 - Preserve the project's existing versioning and packaging policy recorded in `docs/worktrees/README.md`.
 - Release and in-app update SOP is documented in `docs/releases/GUIDE.md` and automated by skill `medbox-release`. A version bump requires a full GitHub Release with APK attachment via `gh release create`, not just a bare git tag. After APK generation, run `node scripts/gen-version.mjs` before tests, and verify online endpoints via `node scripts/check-release-endpoints.mjs`.
 - **每次向云端推送时必须将版本号向上加一**：每次 push 提交到云端远程仓库前，必须同步递增版本号与 Android `versionCode`（如 1.0.6/41 -> 1.0.7/42），同步 `package.json`、`package-lock.json`、`android/app/build.gradle`，生成对应 `docs/releases/X.Y.Z.md` 发布记录，并同步 `tests/apkUpdateVerification.test.ts` 中的 mock 候选版本。
+- **版本更新说明必须使用 oil-tone 并减少专业术语**：用户明确规则——后期的所有版本更新介绍与说明（`docs/releases/*.md` 及应用内更新弹窗文案）必须遵循 `oil-tone` 文风规范，**减少专业术语**。面向普通用户平铺直叙，陈述客观改动和实际体验变化，严禁出现 DOM、CSS 类名、FAB、操作坞、微拟物、径向渐变、JNI、API 等晦涩技术黑话；成稿需经 `tone_lint.py` 校验。
 
 
