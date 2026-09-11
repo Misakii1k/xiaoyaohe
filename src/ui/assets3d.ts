@@ -7,6 +7,13 @@ import userAvatarImg from '../assets/images3d/user-avatar.png';
 import statNotebookImg from '../assets/images3d/stat-notebook.png';
 import statPillboxImg from '../assets/images3d/stat-pillbox.png';
 import statTargetImg from '../assets/images3d/stat-target.png';
+import natureBokehImg from '../assets/images3d/nature-header-bokeh.png';
+import todayFloatingCapsuleImg from '../assets/images3d/today-floating-capsule.png';
+import inventoryHealthShieldImg from '../assets/images3d/inventory-health-shield.png';
+import medBottle3dImg from '../assets/images3d/med-bottle-3d.png';
+import medRecentMortarImg from '../assets/images3d/med-recent-mortar.png';
+import medAidKit3dImg from '../assets/images3d/med-aid-kit-3d.png';
+import userAvatar3dImg from '../assets/images3d/user-avatar-3d.png';
 
 export {
   purpleBottleImg,
@@ -18,6 +25,13 @@ export {
   statNotebookImg,
   statPillboxImg,
   statTargetImg,
+  natureBokehImg,
+  todayFloatingCapsuleImg,
+  inventoryHealthShieldImg,
+  medBottle3dImg,
+  medRecentMortarImg,
+  medAidKit3dImg,
+  userAvatar3dImg,
 };
 
 const svgParser = typeof DOMParser !== 'undefined' ? new DOMParser() : null;
@@ -291,3 +305,35 @@ export function getStatSavings3dSvg(): string {
       <text x="24" y="29" font-size="11" font-weight="900" fill="#713f12" text-anchor="middle" font-family="system-ui, sans-serif">¥</text>
     </svg>`;
 }
+
+/** 11. 3D 库存健康盾牌 (翡翠绿与发光打勾) */
+export function getInventoryHealthShield3dSvg(): string {
+  return `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="asset-3d-svg">
+      <defs>
+        <linearGradient id="hs-grad" x1="20" y1="15" x2="80" y2="90" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#34d399"/>
+          <stop offset="60%" stop-color="#10b981"/>
+          <stop offset="100%" stop-color="#047857"/>
+        </linearGradient>
+      </defs>
+      <path d="M 50 16 L 76 26 C 76 56 50 82 50 82 C 50 82 24 56 24 26 Z" fill="url(#hs-grad)"/>
+      <path d="M 40 48 L 47 55 L 63 39" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+}
+
+/** 12. 3D 今日浮动胶囊 (蓝白高光 45° 倾角) */
+export function getTodayFloatingCapsule3dSvg(): string {
+  return `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="asset-3d-svg">
+      <defs>
+        <linearGradient id="fc-blue" x1="25" y1="25" x2="55" y2="55" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#60a5fa"/>
+          <stop offset="100%" stop-color="#2563eb"/>
+        </linearGradient>
+      </defs>
+      <g transform="rotate(-30 50 50)">
+        <rect x="25" y="32" width="50" height="36" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+        <path d="M 25 50 A 18 18 0 0 1 43 32 L 50 32 L 50 68 L 43 68 A 18 18 0 0 1 25 50 Z" fill="url(#fc-blue)"/>
+      </g>
+    </svg>`;
+}
+

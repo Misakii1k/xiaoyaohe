@@ -2,11 +2,251 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-09
+Updated: 2026-09-11
 Status: active
-Latest version: `1.0.0` (Android `versionCode: 35`)
+Latest version: `1.0.9` (Android `versionCode: 44`)
 
 ## Summary of Accomplished Work
+
+### 42. 首个增量热更新底座版本发布、发布 SOP 技能升级与测试用例同步 (1.0.9)
+
+1. **版本递增与底座支持**：
+   - 将应用版本号升至 `1.0.9`，Android `versionCode` 升至 `44`；
+   - 固化 `MIN_NATIVE_BUNDLE_VERSION_CODE = 44`，确立 1.0.9 为首个具备原生 Web Bundle 解压与基座动态切换能力的底座版本；
+   - 编写符合 `oil-tone` 规范且经 `tone_lint.py` 验证的 `docs/releases/1.0.9.md`。
+2. **测试门禁与构建验证**：
+   - 同步 `tests/release-utils.test.ts`、`tests/apkUpdateVerification.test.ts` 与 `tests/bundleUpdateVerification.test.ts`，候选 mock 升至 1.0.10 / 45；
+   - 全量 85 个测试套件 523 项测试 100% 通过；
+   - `npm run build:web` 自动生成约 1.8MB 增量包 `release/xiaoyaohe-1.0.9-web-bundle.zip`。
+
+### 41. 安装包大幅瘦身 (-31.76MB)、桌面拷贝清理规则与零服务器成本增量更新方案实施与落地 (1.0.8)
+
+1. **安装包大幅瘦身（-31.76MB，净降 63.9%）**：
+   - 清除历史遗留在 `public/release/` 下的旧版 APK（31.3MB），杜绝 Vite 打包与 Capacitor 静态资源复制泄露；
+   - 修改 `scripts/gen-version.mjs` 仅扫描仓库根目录 `release/`；
+   - `android/app/build.gradle` 的 `aaptOptions.ignoreAssetsPattern` 追加 `:*.apk`，在 Gradle 编译层彻底阻断任何 APK 文件混入 assets；
+   - 安装包体积从 49.7MB 降低至 17.96MB（18,835,967 字节）。
+2. **桌面拷贝清理与规则确立**：
+   - 已彻底删除放置在用户电脑桌面上的旧版 APK 文件；
+   - 明确规则：后续所有发布流程严禁向用户桌面复制安装包，安装包一律只保留在 `medbox/release/` 目录和 GitHub Releases 线上。
+3. **经验沉淀与发版技能固化 (/learn)**：
+   - 更新全局规则 `AGENTS.md`、子模块规则 `medbox/AGENTS.md`、发版全指南 `docs/releases/GUIDE.md` 与发布技能 `.agents/skills/medbox-release/SKILL.md`；
+   - 确立构建产物（APK / Web 增量包）严禁拷贝至用户桌面的硬性红线；
+   - 将 1.8MB Web 增量包打包、哈希与大小同步注入以及 `gh release create` 多资产上传纳入标准发版 SOP；
+   - 确立 85 个测试套件质量门禁基线，强化推送到远端前必须版本加一与 oil-tone 零黑话文风约束。
+4. **零服务器成本增量更新方案实施与落地（已完成）**：
+   - 基于现有 Cloudflare Pages + GitHub Releases 打造无感增量热更新机制；
+   - `ApkDistributionPlugin.java` 实现 `downloadAndUnpackBundle`、`applyWebBundle`、`resetWebBundle` 与 `getActiveWebBundle` 原生安全桥接；
+   - 增加 `scripts/bundle-web.mjs`，与 `gen-version.mjs`、`package.json` 联动自动化归档 `web-bundle.zip` 并注入 `version.json`；
+   - 客户端 `apkTransport.ts` 与 `Settings.ts` 动态判断底座版本并支持「一键秒级更新」；
+   - 新增 `tests/bundleUpdateVerification.test.ts`，全量 85 个测试套件 523 项测试 100% 通过，Gradle 编译验证通过。
+
+### 40. 设置页纯平铺分类卡片架构、五彩微拟物图标重绘与药品列表/批量管理排版全面优化 (1.0.7)
+
+1. **设置页（我的）内容去重与架构扁平化**：
+   - 移除原「顶部 6 行菜单卡片 (`profile-menu-card`)」及右上角「齿轮菜单按钮 (`gearBtn`)」，彻底解决设置功能三重重复的问题；
+   - 确立纯平铺分类卡片群架构，划分为「提醒与外观」、「数据与同步」、「智能助手与高级」及居中展台「关于小药盒」。
+2. **全套 11 项五彩微拟物图标重绘与深色模式自适应**：
+   - 参考原 6 行菜单的圆角彩底微拟物图标体系（32x32px、`border-radius: 8px`、高品质语义浅彩底色），重绘全量设置项图标：
+     - 系统通知（`amber` 暖橙琥珀）
+     - 时段提醒设置（`emerald` 生机翠绿）
+     - 外观偏好（`violet` 梦幻紫罗兰）
+     - 后台保活与防杀（`orange` 警示珊瑚橙）
+     - 家庭同步（`sky` 晴空天蓝）
+     - 本地数据与备份（`teal` 沉稳松石绿）
+     - 检查应用更新（`blue` 活力宝蓝）
+     - AI 大模型服务商（`purple` 智能深紫）
+     - AI 生图服务商（`rose` 灵感玫瑰粉）
+     - AI 外发授权（`gold` 安全金黄）
+     - 诊断记录（`cyan` 极客青蓝）
+   - 为深色模式配备专属微光背景与高饱和前景。
+3. **关于小药盒居中展台重新排版**：
+   - 顶部居中渲染 56px 渐变药盒图标与多层微光晕，搭配版本号药丸徽章；
+   - 居中平铺 2x2 精致特性磁贴卡片（Tile Card），展现安全隐私、离线优先等核心能力；
+   - 底部柔和淡灰居中呈现健康免责声明，视觉层次大幅跃升。
+4. **药品页「添加药品」FAB 移入右下角操作坞**：
+   - 将原随页面滚动的添加按钮脱离主内容流，挂载到底部操作坞（`createActionDock([fabAdd])`）；
+   - 操作坞背景设为透明，非按钮区域穿透，确保右下角悬浮停靠且严守无 `position: fixed` 的契约规范。
+5. **药品页三大指标卡去圈改环境光晕**：
+   - 彻底清除「全部药品、近期使用、需补充」指标卡图标下方的实色圆盘底色（`background: transparent !important`）；
+   - 升级为多层渐变与大范围模糊滤镜（`inset: -12px; filter: blur(10px)`）构成的自然环境光晕（Halo）。
+6. **批量管理页面针对性排版根治**：
+   - **卡片独立质感**：2 列药品从紧密挤贴在同一个大白底框升级为带独立边框、圆角、阴影与点击缩放反馈的独立微卡片单元；
+   - **复选框可见度与整卡点选**：加深未选复选框边框为 `#94a3b8`（杜绝白底隐形），支持点击卡片任意位置切换勾选；
+   - **操作条单行极简瘦身**：移除操作栏内重复的「已选 0 种」，将 4 个操作按钮优化为 50px 超薄毛玻璃单行浮动胶囊工具栏，彻底消除遮挡大半屏药品的缺陷。
+
+### 39. 药盒生图提示词正面平视化、应用内输入弹窗统一与更新排版优化 (1.0.6)
+
+1. **药盒生图全面重构为正面平视大图**：
+   - 彻底清除提示词中导致 45 度侧视透视的 `Three-quarter isometric front perspective view`；
+   - 替换为正面正视平投指令 `Direct straight-on front view (eye-level frontal orthographic product shot)`，确保药盒完整正面朝向镜头，0 倾角无侧面；
+   - 融入参考图双语提纯指令，彻底去除拍摄时的手持、手指与杂乱背景，输出通透纯白底加柔和落地阴影的商业大图。
+2. **应用内输入弹窗统一，清退原生弹窗**：
+   - 全局封装卡片式 `promptDialog` 组件，替换系统原生 `window.prompt` 与 `confirm` 弹窗；
+   - 解决软键盘遮挡输入框问题，并支持回车确定、ESC 取消；
+   - 将生图设置面板底部按钮优化为 2 列栅格，杜绝按钮文字截断。
+3. **应用更新面板与 Markdown 发布说明排版根治**：
+   - 将原更新面板从引发 Flex 行挤压折行的 `.banner.info` 升级为专用竖向卡片架构 `.app-update-card`；
+   - 新增零体积依赖轻量原生 Markdown 渲染器，发布说明语义化高保真显示。
+
+### 38. 线上更新分发与版本发布完整指南与 SOP 标准化 (1.0.5)
+
+1. **体系化沉淀线上更新分发架构**：
+   - 撰写了系统详尽的 [`docs/releases/GUIDE.md`](./GUIDE.md)；
+   - 深入剖析了 GitHub Releases（产物宿主）+ Cloudflare Pages Functions（海外边缘流式代理）+ Android 原生安全下载器的三层更新架构；
+   - 彻底阐明为什么不能直接用 GitHub 直链（私有仓库匿名 404）以及为什么不能 302 重定向到 Azure Blob（国内移动端 403 阻断）。
+2. **制定 10 步标准化发版 SOP 操作检查单**：
+   - 从版本递增、测试用例同步、双重门禁（Vitest + Typecheck + Web 构建 + Capacitor 同步）、正式 Android Release 打包、体积哈希校验、分支与 Tag 推送、GitHub Release 附件上传到最后的自动化线上全链路冒烟；
+   - 明确了所有多工具团队开发者在需要发版时的统一标准流程。
+3. **高频故障排查与避坑手册**：
+   - 包含 GitHub Token 权限缺失 (503)、只打 Git Tag 导致 404、Gradle 下载截断及本地测试版本 Mock 冲突等典型问题的排查与解决方法。
+
+### 37. Agnes 及同类多模态 AI 生图协议自适应兼容与配置管理 (1.0.5)
+
+1. **协议层深度自适应（解决 Agnes 等服务商报 400 及图出不来问题）**：
+   - 彻底移除顶层不兼容字段（如 `response_format` 与 `n: 1`），避免被严格校验后端拒收；
+   - 智能注入多模态格式参数：`return_base64: true`、`extra_body: { response_format: 'b64_json' }`，同时根据模型类型自适应注入分辨率/比例字段（如 `size: '1K'`, `ratio: '1:1'`）；
+   - 彻底解决 Base64 返回格式可能携带 `data:image/...;base64,` 前缀导致的 Blob 解码损坏问题。
+2. **多模态图生图（Img2Img）三级平滑降级**：
+   - 当提供原始药盒照片时，优先尝试 `/images/edits` 原图修图；
+   - 若接口不支持（如 Agnes 仅有 `/images/generations`），自动切换为以 `extra_body.image: [base64]` 形式传递底图进行图生图；
+   - 若图生图仍不支持，平滑降级为纯文本提示词文生图，保证出图成功率。
+3. **海外存储节点（GCS）超时降级兜底**：
+   - 针对部分服务商默认返回 `storage.googleapis.com` 导致国内无法加载图片的问题，增加 10s 快速超时并在失败时给出明确提示。
+4. **生图设置面板移除硬编码预设，支持自定义配置管理**：
+   - 移除固定的模型预设列表，彻底避免硬编码配置过期；
+   - 支持将当前输入的完整配置（名称、Base URL、API Key、模型名、接口模式）一键「存为新配置」；
+   - 界面直观展示已保存的配置标签，点击快速切换载入，支持点击 `×` 删除配置。
+5. **质量保证**：
+   - 全量 84 套件 518 项单元与集成测试 100% 通过；
+   - 静态类型检查 `npm run typecheck` 0 错误；
+   - Web 生产构建 `npm run build:web` 顺利完成。
+
+### 36. AI 药盒生图与修图双模引擎及自动平滑回退 (1.0.4)
+
+1. **同时支持两种生图接口**：
+   - 原图扫描修图模式（`/images/edits`，multipart/form-data）：类似扫描全能王，白底化、去阴影、透视矫正与文字清晰度增强，100% 保真原始药盒字迹与品牌标识；
+   - 商业展台文生图模式（`/images/generations`，JSON）：商业摄影 Prompt 驱动，支持根据药盒特征或药名/规格推断生成专业级药盒展台大图，兼容几乎所有主流 OpenAI 兼容服务商（DALL·E 3、通义万相、CogView 等）。
+2. **智能平滑自动回退（Auto Mode）**：
+   - 有照片时优先尝试原图修图；若服务商不支持该接口（返回 404/405/501），自动无缝平滑回退至文生大图，绝不中断或抛错；
+   - 无照片但输入药名时，支持直接调用文生图生成大图。
+3. **生图独立设置面板强化**：
+   - 新增「生图接口模式」配置（自动推荐 / 仅原图修图 / 仅文生大图）；
+   - 预设常用生图模型（GPT Image 1、DALL·E 3、DALL·E 2、通义万相、CogView-3）。
+4. **质量验证**：
+   - 全量 83 套件 511 项测试 100% 通过（新增与重构双模式测试覆盖），TypeScript 0 错误，Web 与 Android 编译打包通过。
+
+### 35. 修复 Cloudflare 代理下载 APK 报 HTTP error 403 缺陷 (1.0.1)
+
+1. **403 根因定位**：
+   - 过去 `functions/api/download.ts` 收到客户端请求后，通过 `redirect: 'manual'` 截获 GitHub API 的 302 重定向并直接向客户端下发 `Response.redirect(redirectLocation, 302)`。
+   - 这导致国内安卓客户端直接与 GitHub 底层的临时存储节点 `release-assets.githubusercontent.com`（Azure Blob）建立连接。在国内移动网络/DNS 环境下，该直连受运营商策略拦截、防盗链签名或网络策略影响，返回 `HTTP error 403: Forbidden`。
+2. **边缘流式直传架构重构**：
+   - `functions/api/download.ts` 改为 `redirect: 'follow'`，由 Cloudflare 边缘节点（海外骨干网）在内部跟随 GitHub 302 跳转获取真实二进制流；
+   - 彻底移除向客户端抛出 302 跳转的逻辑，改为由 Cloudflare 边缘直接以 `Response(assetRes.body)` 流式代理回传 APK，设置正确的 `Content-Type: application/vnd.android.package-archive`、`Content-Length` 与 `Content-Disposition`；
+   - 客户端全程仅与同源的 `https://xiaoyaohe.pages.dev/api/download` 通信，彻底杜绝客户端直连 `githubusercontent.com`，根除 403 Forbidden。
+3. **原生下载客户端 User-Agent 规范化**：
+   - `ApkDistributionPlugin.java` 原生 `doDownloadHttp` 请求头 User-Agent 从非常规的 `Xiaoyaohe/app` 改为标准化移动端 User-Agent，避免触发 CDN WAF 机器人拦截，并在抛出异常时附带具体目标 URL 方便排查。
+4. **质量验证**：
+   - `tests/functionsApi.test.ts` 16 项测试全数通过；
+   - 全量 83 个测试套件 506 项测试全绿，`npm run build:web` 编译成功。
+
+### 34. 主导航与四屏 1:1 视觉复刻与真实后端数据联通 (1.0.0)
+
+1. **主导航更新**：第 5 项 Tab 命名更新为「我的」（原为「设置」），并兼容原有契约测试。
+2. **Screen 1「今天」**：
+   - 移除冗余背景与次级文字，精简顶栏为大标题「今天」+ 真实日期 + 右侧「✦ AI 助手」；
+   - 居中均衡展示「今日用药进度」卡片与环形进度条、已服用/待服用/跳过图例（颜色严格对齐设计图：已服用高饱和宝蓝 `#2563eb`、待服用翡翠绿 `#10b981`、跳过中灰 `#94a3b8`）；
+   - 时段过滤提供「全部 / 早上 / 中午 / 晚上」；支持时段一键批量打卡与圆形 Radio 勾选打卡，修复 Radio 单击直接写库与撤回逻辑，修复频次动态计算与库存单位自适应展示。
+3. **Screen 2「药品」**：
+   - 指标卡规范展示真实药品统计（全部药品、近期使用、需补充），对齐空格间距；
+   - 药品列表行规范为单行副标题（规格 + 服药频次，如 `5mg · 1片 · 每日1次`）与库存徽章（`库存充足 剩余36片`）；右侧规范为标准单箭头 `>` 跳转编辑；
+   - 激活态分类胶囊统一采用高保真宝蓝色 (`#2563eb`)。
+4. **Screen 3「库存」**：
+   - 顶部保留「✦ AI 助手」，首行独占「库存健康」卡片（带发光盾牌徽章、健康副标语与指标行），头部点击支持直接呼出智能录入、历史操作与撤销、批量预扣、分享清单等全部底层操作；
+   - 搜索框紧跟概览卡片后（占位符「搜索药品名称」）并配备筛选漏斗；
+   - 库存卡采用紧凑双行信息（首行规格与包装量，次行剩余与折算天数）及单标签状态（充足/临期/不足/已过期）。
+5. **Screen 4「我的」**：
+   - 顶栏右侧配置系统齿轮按钮 ⚙，修复 DOM 节点移位 Bug，提供专用「高级系统设置」快捷面板直达 AI 密钥、局域网同步、备份和诊断；
+   - 修复移动端基础网格 CSS，实现高保真 1x3 数据卡片平铺排布；
+   - 个人信息卡：左侧 3D 头像带编辑相机角标，右侧展示用户名「小药盒用户」、副标语「用药管理 第 X 天」与优雅浅蓝打卡徽章「✔ 已记录 x 次服药」；
+   - 菜单列表：规范实现 iOS 风格 6 行功能入口，对齐图标底色与主色。
+6. **质量门验证**：
+   - `npm run typecheck`（0 错误）；
+   - `npm test`（83 套件，507 项测试全部通过）；
+   - `npm run build:web` 构建成功。
+
+### 33. 全面清退 Emoji 统一 SVG 矢量图标体系与页面像素级还原 (1.0.0)
+
+1. **全面清退 Emoji 统一矢量图标 (`/oil-icon`)**：
+   - 贯彻用户全局总要求，清退所有页面与通知中的 Unicode emoji（🔔、⚠️、💡、✓、🎉、☀️、🌙、✨、📅、🔍、⚙、📦、📋、❤️、📷 等）；
+   - 全面使用 Tabler / Lucide 统一纯矢量 SVG 图标体系。
+2. **今日页面细节还原 (`media_1789100010055.png`)**：
+   - 顶部晨光背景毛玻璃遮罩 (`backdrop-filter: blur(14px)`)；
+   - Slogan 笔刷强调线；
+   - 右侧专属紧凑胶囊卡片（48px 小型高光 3D 胶囊 + 中文治愈手写体「坚持用药 / 很重要～」+ 箭头）；
+   - 今日用药计划左侧紫色日历 squircle SVG 徽章，右侧「✓ 一键打卡」；时段头部太阳/月亮 squircle SVG 徽章。
+3. **药品与库存页面细节还原 (`media_1789100238351.png`)**：
+   - **药品**：顶栏「药品」+「≔ 批量管理」+「✦ AI 助手」；3 个纯白 (18px) 指标卡（全部药品 12 种、近期使用 12 种、需补充 0 种），底部蓝/绿/粉圆形环境光光晕托盘分别承托药瓶、研磨器与急救箱。
+   - **库存**：顶栏「库存」+「✦ AI 助手」；独占「库存健康」卡片（48px 翡翠绿圆形底座 3D 勾选盾牌 +「库存健康」+「整体充足，暂无风险」+ 箭头 `>`），下方 4 列数据（全部药品、近期使用、需补充、已过期），标签在上数值在下（「12 种」）；浮动「+ 添加库存」FAB。
+4. **自包含原型 (`preview/design_mockup_preview.html`) 同步**：
+   - 零 emoji 校验，截取四屏全景并列与深色模式交互截图。
+5. **质量门禁**：
+   - `npm run typecheck`（0 errors）；
+   - `npm test`（83 测试套件，507 项测试 100% 全绿）；
+   - `npm run build:web` 构建成功。
+
+### 32. 药盒拍照静默生成商业纯白底展台大图与独立 AI 生图服务商配置 (1.0.0)
+
+1. **药盒拍摄静默生成商业纯白底展台大图 (AI Studio Packshot)**：
+   - **交互流程零阻塞**：拍照或从相册选图后，直接加载原照片并进入编辑表单，不再强制弹起四角裁切打断；后台静默排队进行视觉特征提取与生图，完成后以平滑淡入动效自动替换预览图；
+   - **底片保留与无损切换**：底层数据模型扩展 `PhotoBlob.originalBlob` 与 `kind: 'original' | 'ai_packshot'`。在药盒照片区域提供「恢复原图」、「AI 生成展台图」与「重新裁切原图」快捷入口，无网络或生图失败时优雅保留原照片；
+   - **两阶段智能管线 (`aiImageStudio.ts`)**：
+     - 第一阶段：视觉大模型（若有原图）抽取药盒形态、品牌色调与版式特征（无原图时根据药名与规格智能启发推测）；
+     - 第二阶段：拼装商业静物摄影 Prompt，调用 OpenAI 兼容图像接口（`/v1/images/generations`，支持 `b64_json` 与 `url` 兜底拉取）；
+     - 第三阶段：生成图入库前自动由 `compressBoxPhoto` 压缩至 720px 与 220KB 限制内，杜绝 Android WebView OOM。
+2. **独立「AI 生图服务商」配置面板 (`imageGenSettingsPanel.ts`)**：
+   - 在「设置」-「智能助手与高级」中开辟独立生图服务商卡片；
+   - 支持快捷预设胶囊（DALL·E 3、通义万相、FLUX、CogView-3）；
+   - 未单独配置或启用时，自动继承当前活跃的主 AI 文本服务商（Base URL 与 API Key）；
+   - 配备一键连通性测试与模型连通状态提示。
+3. **全绿验证门**：
+   - `npm run typecheck` (0 errors)；
+   - `npm test`（83 个测试套件，507 项测试 100% 全绿，新增 `tests/aiImageStudio.test.ts` 6 项测试）；
+   - `npm run build:web` 成功编译通过。
+
+### 31. 前端高保真设计全面优化、Gemini 3D 资产生成与交互落地 (1.0.0)
+
+1. **Gemini 3D 拟物与真实微质感非 SVG 视觉资产生成与无损透明边缘抠图**：
+   - 基于设计稿与 Gemini Imagen 3 专项生成全套 3D 拟物资产：
+     - `nature-header-bokeh.png`（晨光自然绿植与柔和散斑光晕，左侧及下方平滑羽化渐变融合）；
+     - `today-floating-capsule.png`（今日卡片 45° 蓝白高光 3D 浮动胶囊，带水凝高光与透明通道）；
+     - `inventory-health-shield.png`（3D 翡翠绿库存健康盾牌徽章，带发光勾选与微拟物厚度）；
+     - `med-bottle-3d.png`（全部药品 3D 水晶蓝药瓶）；
+     - `med-recent-mortar.png`（近期使用 3D 薄荷绿研磨器与闹钟药丸）；
+     - `med-aid-kit-3d.png`（需补充 3D 珊瑚粉急救箱）；
+     - `user-avatar-3d.png`（专属 3D 阳光少年头像，戴耳机、立领夹克，像素级对齐设计稿）。
+   - 保存在 `src/assets/images3d/` 并通过 `src/ui/assets3d.ts` 集中管理，提供标准降级 SVG。
+2. **零污染交付安全机制与双模 HTML 交互原型（Phase 1~3）**：
+   - 在修改生产代码前，先创建 `preview/design_mockup_preview.html`（4.2MB 自包含纯单文件网页原型，内嵌全套 Base64 资产）；
+   - 提供全景四屏并列模式与 iPhone 15 Pro 仿真模拟器，实现打卡联动、环形进度条偏移动画、时段药丸筛选与深色模式；
+   - 经自动化走查与用户评审确认后，无缝正式落地至 `medbox/` 生产代码。
+3. **页面层级与样式重构落地（Phase 4）**：
+   - **「今日」页面 (`Today.ts`, `today.css`)**：
+     - 注入晨光绿植背景 (`.today-nature-bokeh-bg`)，增加日期与天气状态胶囊 (`.today-weather-pill`)；
+     - 在今日用药进度卡片引入 3D 蓝白悬浮胶囊 (`.today-capsule-float`)，附带轻柔呼吸浮动动效 (`floatPill`) 与环境投影；
+     - 完美兼容所有 UI 契约 (`todayUiContracts.test.ts` 5/5 全过)。
+   - **「药品」页面 (`MedList.ts`)**：
+     - 顶部三枚 3D 统计卡片接入水晶蓝药瓶、薄荷绿研磨器与珊瑚粉急救箱；
+     - 保持原有操作坞、批量管理与筛选契约 (`medListUiContracts.test.ts` 2/2 全过)。
+   - **「库存」页面 (`MedInventory.ts`, `inventory.css`)**：
+     - 概览卡片升级为「库存健康」卡片，右上角常驻渲染 3D 翡翠绿发光盾牌徽章 (`.inventory-health-shield-wrap`)，配合微拟物光晕；
+     - 动态计算并展示健康状态（「良好」/「需关注」）与风险提示文案，保留全部统计指标与添加按钮 (`inventoryPageHelpers.test.ts` 6/6 全过)。
+4. **全绿验证门**：
+   - `npm run typecheck` (0 errors)；
+   - `npm test`（82 个测试套件，501 项测试 100% 全绿）；
+   - `npm run build:web` 成功构建；
+   - 32 个内嵌图标与构建期元数据校验全数通过。
 
 ### 30. 前端与后端全面检查与修复（1.0.0 基线）
 

@@ -1,7 +1,9 @@
 package com.medbox.app.lansync;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
@@ -24,6 +26,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.MessageDigest;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.InetSocketAddress;
@@ -447,6 +452,240 @@ public final class ApkDistributionPlugin extends Plugin {
         call.resolve(result);
     }
 
+    /**
+     * 下载并安全解压 Web 增量更新包到应用私有目录（context.getFilesDir() + "/bundles/" + version）。
+     * 全流程包含 SHA-256 完整性校验、Zip Slip 路径穿越防御以及 index.html 存在性断言。
+     */
+    @PluginMethod
+    public void downloadAndUnpackBundle(PluginCall call) {
+        String urlString = call.getString("url");
+        String version = call.getString("version");
+        String expectedSha256 = call.getString("sha256");
+
+        if (urlString == null || urlString.isEmpty()) {
+            call.reject("url is required", "INVALID_URL");
+            return;
+        }
+        if (version == null || version.isEmpty() || !version.matches("^[a-zA-Z0-9._-]+$")) {
+            call.reject("valid version string is required", "INVALID_VERSION");
+            return;
+        }
+
+        ioExecutor.execute(() -> {
+            File tempZip = null;
+            try {
+                Context context = getContext();
+                if (context == null) throw new IOException("Context is null");
+                File cacheDir = context.getCacheDir();
+                tempZip = new File(cacheDir, "bundle-temp-" + System.currentTimeMillis() + ".zip");
+
+                // 1. 通过既有安全 HTTP 客户端下载至临时 zip
+                long bytes = doDownloadHttp(urlString, tempZip.getAbsolutePath());
+                if (bytes <= 0) throw new IOException("Downloaded 0 bytes");
+
+                // 2. 校验 SHA-256 完整性（若元数据提供）
+                if (expectedSha256 != null && !expectedSha256.isEmpty()) {
+                    String actualHash = computeFileSha256(tempZip);
+                    if (!expectedSha256.equalsIgnoreCase(actualHash)) {
+                        throw new SecurityException("Bundle SHA256 mismatch: expected " + expectedSha256 + ", got " + actualHash);
+                    }
+                }
+
+                // 3. 解压到应用私有安全目录 bundles/<version>
+                File bundlesDir = new File(context.getFilesDir(), "bundles");
+                File targetDir = new File(bundlesDir, version);
+                if (targetDir.exists()) {
+                    deleteRecursively(targetDir);
+                }
+                if (!targetDir.mkdirs()) {
+                    throw new IOException("Cannot create target directory: " + targetDir.getAbsolutePath());
+                }
+
+                unpackZipSafely(tempZip, targetDir);
+
+                // 4. 关键文件校验：index.html 必须存在且非空
+                File indexHtml = new File(targetDir, "index.html");
+                if (!indexHtml.exists() || indexHtml.length() == 0) {
+                    deleteRecursively(targetDir);
+                    throw new IOException("Extracted bundle is missing index.html");
+                }
+
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("version", version);
+                ret.put("basePath", targetDir.getAbsolutePath());
+                call.resolve(ret);
+            } catch (Exception error) {
+                call.reject("Failed to unpack bundle: " + error.getMessage(), "UNPACK_FAILED");
+            } finally {
+                if (tempZip != null && tempZip.exists()) {
+                    tempZip.delete();
+                }
+            }
+        });
+    }
+
+    /**
+     * 将当前应用的基座路径切换为指定的热更新目录，并写入 Capacitor 本地持久化配置。
+     */
+    @PluginMethod
+    public void applyWebBundle(PluginCall call) {
+        String basePath = call.getString("basePath");
+        if (basePath == null || basePath.isEmpty()) {
+            call.reject("basePath is required", "INVALID_PATH");
+            return;
+        }
+
+        try {
+            Context context = getContext();
+            if (context == null) throw new IOException("Context is null");
+            File targetDir = new File(basePath);
+            File bundlesDir = new File(context.getFilesDir(), "bundles");
+
+            // 严格防穿越限定在 context.getFilesDir()/bundles/ 之下
+            String canonicalTarget = targetDir.getCanonicalPath();
+            String canonicalBundles = bundlesDir.getCanonicalPath();
+            if (!canonicalTarget.startsWith(canonicalBundles + File.separator)) {
+                call.reject("basePath is not within valid bundles directory", "INVALID_PATH");
+                return;
+            }
+
+            File indexHtml = new File(targetDir, "index.html");
+            if (!indexHtml.exists() || indexHtml.length() == 0) {
+                call.reject("target bundle does not contain index.html", "INVALID_BUNDLE");
+                return;
+            }
+
+            // 切换本地服务基座路径并持久化至 Capacitor WebView 配置
+            getBridge().setServerBasePath(canonicalTarget);
+            SharedPreferences prefs = context.getSharedPreferences(
+                com.getcapacitor.plugin.WebView.WEBVIEW_PREFS_NAME,
+                Activity.MODE_PRIVATE
+            );
+            prefs.edit().putString(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH, canonicalTarget).apply();
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("basePath", canonicalTarget);
+            call.resolve(ret);
+        } catch (Exception error) {
+            call.reject("Failed to apply bundle: " + error.getMessage(), "APPLY_FAILED");
+        }
+    }
+
+    /**
+     * 重置为 APK 内置的默认 public 资产，清除持久化路径。
+     */
+    @PluginMethod
+    public void resetWebBundle(PluginCall call) {
+        try {
+            Context context = getContext();
+            if (context != null) {
+                SharedPreferences prefs = context.getSharedPreferences(
+                    com.getcapacitor.plugin.WebView.WEBVIEW_PREFS_NAME,
+                    Activity.MODE_PRIVATE
+                );
+                prefs.edit().putString(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH, "").apply();
+            }
+            getBridge().setServerAssetPath("public");
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception error) {
+            call.reject("Failed to reset bundle: " + error.getMessage(), "RESET_FAILED");
+        }
+    }
+
+    /**
+     * 获取当前生效的热更新基座信息。
+     */
+    @PluginMethod
+    public void getActiveWebBundle(PluginCall call) {
+        try {
+            Context context = getContext();
+            String path = null;
+            if (context != null) {
+                SharedPreferences prefs = context.getSharedPreferences(
+                    com.getcapacitor.plugin.WebView.WEBVIEW_PREFS_NAME,
+                    Activity.MODE_PRIVATE
+                );
+                path = prefs.getString(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH, null);
+            }
+            JSObject ret = new JSObject();
+            ret.put("basePath", path != null ? path : "");
+            ret.put("isDefault", path == null || path.isEmpty());
+            call.resolve(ret);
+        } catch (Exception error) {
+            call.reject("Failed to get active bundle: " + error.getMessage(), "GET_FAILED");
+        }
+    }
+
+    private static String computeFileSha256(File file) throws IOException {
+        try (InputStream in = new java.io.FileInputStream(file)) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buf = new byte[BUFFER_SIZE];
+            int read;
+            while ((read = in.read(buf)) > 0) {
+                digest.update(buf, 0, read);
+            }
+            byte[] hash = digest.digest();
+            StringBuilder sb = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+                sb.append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IOException("Failed to compute SHA256: " + e.getMessage(), e);
+        }
+    }
+
+    private static void unpackZipSafely(File zipFile, File targetDir) throws IOException {
+        String canonicalTarget = targetDir.getCanonicalPath();
+        try (ZipInputStream zis = new ZipInputStream(new java.io.FileInputStream(zipFile))) {
+            ZipEntry entry;
+            byte[] buffer = new byte[BUFFER_SIZE];
+            while ((entry = zis.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (name.contains("..")) {
+                    throw new SecurityException("Zip entry traversal detected: " + name);
+                }
+                File destFile = new File(targetDir, name);
+                String canonicalDest = destFile.getCanonicalPath();
+                if (!canonicalDest.startsWith(canonicalTarget + File.separator) && !canonicalDest.equals(canonicalTarget)) {
+                    throw new SecurityException("Zip entry outside target dir: " + name);
+                }
+                if (entry.isDirectory()) {
+                    destFile.mkdirs();
+                } else {
+                    File parent = destFile.getParentFile();
+                    if (parent != null && !parent.exists()) {
+                        parent.mkdirs();
+                    }
+                    try (FileOutputStream fos = new FileOutputStream(destFile)) {
+                        int count;
+                        while ((count = zis.read(buffer)) > 0) {
+                            fos.write(buffer, 0, count);
+                        }
+                    }
+                }
+                zis.closeEntry();
+            }
+        }
+    }
+
+    private static void deleteRecursively(File fileOrDir) {
+        if (fileOrDir.isDirectory()) {
+            File[] children = fileOrDir.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        fileOrDir.delete();
+    }
+
     private void runAcceptLoop() {
         while (true) {
             ServerSocket server;
@@ -578,7 +817,7 @@ public final class ApkDistributionPlugin extends Plugin {
             conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(15_000);
             conn.setReadTimeout(60_000);
-            conn.setRequestProperty("User-Agent", "Xiaoyaohe/" + (servingApk != null ? "android" : "app"));
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 Xiaoyaohe/1.0.1");
             conn.setRequestProperty("Accept", "*/*");
             conn.connect();
 
@@ -601,7 +840,7 @@ public final class ApkDistributionPlugin extends Plugin {
 
             if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
                 conn.disconnect();
-                throw new IOException("HTTP error " + code + ": " + conn.getResponseMessage());
+                throw new IOException("HTTP error " + code + ": " + conn.getResponseMessage() + " (" + currentUrl + ")");
             }
             break;
         }

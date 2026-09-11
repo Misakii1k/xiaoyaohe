@@ -91,6 +91,7 @@
 .box-photo-block { display: grid; gap: var(--space-2); }
 
 .box-photo-preview {
+  position: relative;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -106,6 +107,60 @@
   font: inherit;
   text-align: center;
   appearance: none;
+}
+
+.box-photo-ai-badge {
+  position: absolute;
+  inset-inline-end: var(--space-2);
+  inset-block-end: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  color: #ffffff;
+  font-size: var(--fs-caption, 11px);
+  font-weight: 600;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 2;
+}
+
+.box-photo-ai-badge.is-loading {
+  background: rgba(23, 96, 63, 0.88);
+  color: #ffffff;
+  animation: pulse-badge 1.8s infinite ease-in-out;
+}
+
+.box-photo-ai-badge.is-done {
+  background: rgba(16, 185, 129, 0.88);
+  color: #ffffff;
+}
+
+.box-photo-ai-badge.is-original {
+  background: rgba(59, 130, 246, 0.85);
+  color: #ffffff;
+}
+
+.box-photo-ai-badge.is-error {
+  background: rgba(239, 68, 68, 0.85);
+  color: #ffffff;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { transform: scale(1); opacity: 0.92; }
+  50% { transform: scale(1.03); opacity: 1; }
+}
+
+.box-photo-preview img.packshot-fade-in {
+  animation: packshotFadeIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes packshotFadeIn {
+  from { opacity: 0.3; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .box-photo-sheet-actions {

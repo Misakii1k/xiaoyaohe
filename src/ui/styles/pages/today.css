@@ -5,6 +5,45 @@
   padding-top: calc(var(--safe-top) + var(--space-2));
   padding-block-start: calc(var(--safe-top) + var(--space-2));
   padding-block-end: calc(var(--space-8) + var(--safe-bottom));
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* 顶部晨光绿植背景图与毛玻璃遮罩 */
+.today-nature-bokeh-bg {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 250px;
+  height: 200px;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.today-nature-bokeh-img {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: top right;
+  opacity: 0.95;
+}
+
+.today-nature-bokeh-glass {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 75% 25%, rgba(255, 255, 255, 0.22) 0%, rgba(248, 250, 252, 0.65) 60%, rgba(248, 250, 252, 0.96) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+[data-theme='dark'] .today-nature-bokeh-glass {
+  background: radial-gradient(circle at 75% 25%, rgba(15, 23, 42, 0.25) 0%, rgba(15, 23, 42, 0.75) 60%, rgba(15, 23, 42, 0.96) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 /* 顶部问候栏 */
@@ -13,17 +52,19 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-2) var(--space-1);
+  position: relative;
+  z-index: 1;
 }
 
 .today-header-left {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .today-header-title {
   font-size: var(--fs-title1, 22px);
-  font-weight: 700;
+  font-weight: 800;
   color: var(--color-text);
   margin: 0;
   letter-spacing: -0.4px;
@@ -39,6 +80,29 @@
   font-size: var(--fs-subheadline);
   color: var(--color-text-muted);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.today-header-slogan-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 2px;
+}
+
+.today-header-slogan {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.today-slogan-brush {
+  width: 64px;
+  height: 6px;
+  margin-top: -2px;
+  margin-left: 2px;
 }
 
 .today-header-actions {
@@ -123,12 +187,65 @@
   position: relative;
   background: var(--color-surface);
   border-radius: var(--radius-xl);
-  padding: 18px 20px 16px;
+  padding: 18px 20px 16px 20px;
   box-shadow: 0 4px 20px rgba(99, 102, 241, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
   border: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  overflow: visible;
+}
+
+.today-capsule-mini-wrap {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  animation: floatPillMini 4s ease-in-out infinite alternate;
+}
+
+.today-capsule-mini-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 10px rgba(56, 189, 248, 0.32));
+}
+
+@keyframes floatPillMini {
+  0% { transform: translateY(0) rotate(0deg); }
+  100% { transform: translateY(-5px) rotate(3deg); }
+}
+
+.today-capsule-handwritten-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: 'Caveat', 'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', 'Ma Shan Zheng', cursive, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #6366f1;
+  line-height: 1.25;
+  letter-spacing: 0.3px;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+[data-theme='dark'] .today-capsule-handwritten-text {
+  color: #a5b4fc;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.today-capsule-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #818cf8;
+  opacity: 0.75;
+}
+
+.today-capsule-chevron svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.5;
 }
 
 .today-progress-title {
@@ -142,7 +259,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 28px;
+  gap: 20px;
   padding: 2px 0 4px;
 }
 
@@ -187,26 +304,26 @@
 }
 
 .today-legend-dot.taken {
-  background: var(--tint-purple-bg);
+  background: #eff6ff;
 }
 .today-legend-dot.taken .today-legend-inner {
-  background: var(--color-primary);
-  box-shadow: 0 0 6px rgba(99, 102, 241, 0.45);
+  background: #2563eb;
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.45);
 }
 
 .today-legend-dot.pending {
-  background: var(--tint-green-bg);
+  background: #ecfdf5;
 }
 .today-legend-dot.pending .today-legend-inner {
-  background: var(--color-success);
+  background: #10b981;
   box-shadow: 0 0 6px rgba(16, 185, 129, 0.45);
 }
 
 .today-legend-dot.skipped {
-  background: var(--color-surface-muted);
+  background: #f1f5f9;
 }
 .today-legend-dot.skipped .today-legend-inner {
-  background: var(--color-text-muted);
+  background: #94a3b8;
 }
 
 .today-legend-text {
@@ -241,10 +358,36 @@
   margin-top: var(--space-2);
 }
 
+.today-section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.today-title-calendar-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(99, 102, 241, 0.3);
+  flex-shrink: 0;
+}
+
+.today-title-calendar-badge svg {
+  width: 18px;
+  height: 18px;
+  stroke: #ffffff;
+  stroke-width: 2.2;
+}
+
 .today-section-title {
   font-size: var(--fs-headline);
   font-weight: 800;
   color: var(--color-text);
+  margin: 0;
 }
 
 .today-filter-tabs {
@@ -302,7 +445,54 @@
 .today-time-tag {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+}
+
+.today-slot-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  display: grid;
+  place-items: center;
+  color: #6366f1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+}
+
+.today-slot-badge svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.2;
+}
+
+.today-slot-badge.slot-morning {
+  color: #4f46e5;
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+.today-slot-badge.slot-noon {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.today-slot-badge.slot-evening {
+  color: #ec4899;
+  border-color: rgba(236, 72, 153, 0.25);
+}
+
+.today-slot-badge.slot-bedtime {
+  color: #8b5cf6;
+  border-color: rgba(139, 92, 246, 0.25);
+}
+
+[data-theme='dark'] .today-slot-badge {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.today-slot-time-text {
   font-size: var(--fs-headline);
   font-weight: 800;
   color: var(--color-text);
@@ -330,9 +520,9 @@
 .today-batch-take-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-block-size: 30px;
-  padding: 0 12px;
+  gap: 5px;
+  min-block-size: 32px;
+  padding: 0 13px;
   border-radius: var(--radius-full);
   border: 1px solid rgba(99, 102, 241, 0.35);
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(79, 70, 229, 0.16) 100%);

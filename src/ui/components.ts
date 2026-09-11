@@ -357,6 +357,95 @@ export function infoDialog(message: string, okText = '知道了'): Promise<void>
   return showDialog(message, { okText, danger: false, cancellable: false }).then(() => undefined);
 }
 
+export interface PromptDialogOptions {
+  title: string;
+  message?: string;
+  defaultValue?: string;
+  placeholder?: string;
+  okText?: string;
+  cancelText?: string;
+}
+
+/** 统一卡片输入弹窗，替换系统原生 window.prompt，实现全平台自适应圆角、无障碍与键盘适配 */
+export function promptDialog(options: PromptDialogOptions): Promise<string | null> {
+  const titleId = `prompt-dialog-title-${++dialogSeq}`;
+  const title = el('div', { class: 'big', text: options.title, id: titleId });
+  const children: HTMLElement[] = [title];
+
+  if (options.message) {
+    const msg = el('div', {
+      class: 'muted text-xs mt-1',
+      style: 'margin-bottom: 12px; line-height: 1.45;' as any,
+      text: options.message,
+    });
+    children.push(msg);
+  }
+
+  const input = el('input', {
+    type: 'text',
+    value: options.defaultValue ?? '',
+    placeholder: options.placeholder ?? '',
+    autocomplete: 'off',
+    autocapitalize: 'none',
+    spellcheck: false,
+    style: 'width: 100%; box-sizing: border-box; margin-bottom: 20px;' as any,
+  }) as HTMLInputElement;
+  children.push(input);
+
+  const cancel = el('button', { class: 'btn text', type: 'button', text: options.cancelText ?? '取消' });
+  const ok = el('button', { class: 'btn', type: 'button', text: options.okText ?? '确定' });
+  const actions = el(
+    'div',
+    { style: 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;' } as any,
+    [cancel, ok],
+  );
+  children.push(actions);
+
+  const box = el(
+    'div',
+    {
+      class: 'card prompt-dialog-card',
+      style: 'max-width: 360px; width: 90vw; margin: 36px auto 0;' as any,
+    },
+    children,
+  );
+  let overlay: HTMLElement | null = null;
+
+  return new Promise<string | null>((resolve) => {
+    let settled = false;
+    const close = (value: string | null, dismissedByDialog = false) => {
+      if (settled) return;
+      settled = true;
+      if (overlay && !dismissedByDialog) closeDialog(overlay);
+      resolve(value);
+    };
+
+    ok.onclick = () => close(input.value.trim());
+    cancel.onclick = () => close(null);
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        close(input.value.trim());
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        close(null);
+      }
+    };
+
+    overlay = openDialog(box, {
+      labelId: titleId,
+      onClose: () => close(null, true),
+      initialFocus: input,
+    });
+    overlay.classList.add('confirm-dialog-overlay');
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 60);
+  });
+}
+
+
 /** ---------- slot 标签（M3 assist chip 色版） ---------- */
 export function slotTag(slot: Slot): HTMLElement {
   return el('span', { class: `slot-tag slot-${slot}`, html: SLOT_LABEL[slot] });

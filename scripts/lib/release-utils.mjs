@@ -46,7 +46,23 @@ export const VERSION_CODE_BY_VERSION = Object.freeze({
   '0.9.14': 33,
   '0.9.15': 34,
   '1.0.0': 35,
+  '1.0.1': 36,
+  '1.0.2': 37,
+  '1.0.3': 38,
+  '1.0.4': 39,
+  '1.0.5': 40,
+  '1.0.6': 41,
+  '1.0.7': 42,
+  '1.0.8': 43,
+  '1.0.9': 44,
+  '1.0.10': 45,
 });
+
+/**
+ * 首次引入 Android 原生增量包解压与基座动态切换（ApkDistributionPlugin.downloadAndUnpackBundle）
+ * 的最低原生 APK versionCode。低版本底座无法运行 Web Bundle，需全量更新 APK。
+ */
+export const MIN_NATIVE_BUNDLE_VERSION_CODE = 44;
 
 /**
  * 在 vite.config.ts 中由构建期注入到 WebView：把 package.json 的 version

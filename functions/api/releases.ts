@@ -56,8 +56,11 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
     if (downloadProxyUrl && Array.isArray(release.assets)) {
       for (const asset of release.assets) {
         if (typeof asset?.name !== 'string') continue;
-        if (!asset.name.endsWith('.apk') || asset.name.includes('unaligned')) continue;
-        asset.browser_download_url = downloadProxyUrl;
+        if (asset.name.endsWith('.apk') && !asset.name.includes('unaligned')) {
+          asset.browser_download_url = downloadProxyUrl;
+        } else if (asset.name.endsWith('.zip') && (asset.name.includes('bundle') || asset.name.includes('web'))) {
+          asset.browser_download_url = `${downloadProxyUrl}&asset=bundle`;
+        }
       }
     }
 

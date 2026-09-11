@@ -120,7 +120,8 @@ export function openTakeMedModal(options: TakeMedModalOptions): void {
 
   const medFreqBadge = document.createElement('span');
   medFreqBadge.className = 'take-med-badge';
-  medFreqBadge.textContent = '每日1次';
+  const freqText = med.slots && med.slots.length > 0 ? `每日${med.slots.length}次` : '每日1次';
+  medFreqBadge.textContent = freqText;
 
   medInfo.append(medName, medMeta, medFreqBadge);
   medCard.append(photoThumb, medInfo);
@@ -132,12 +133,12 @@ export function openTakeMedModal(options: TakeMedModalOptions): void {
   const takeBtn = document.createElement('button');
   takeBtn.type = 'button';
   takeBtn.className = 'take-med-primary-btn';
-  takeBtn.append(el('span', { text: '✓ 已服用' }));
+  takeBtn.append(icon('check'), el('span', { text: '已服用' }));
   takeBtn.onclick = async () => {
     try {
       takeBtn.disabled = true;
       await setOccurrenceAction(occurrence, 'taken');
-      toast('🎉 服药打卡成功！');
+      toast('服药打卡成功！');
       close();
       onDone?.();
     } catch {

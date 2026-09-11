@@ -26,9 +26,10 @@ import {
   type ReminderPeriodSetting,
   type MedicationReminderMode,
 } from '../db/schema';
-import { confirmDialog, el, renderPage, toast, icon, field, type IconName, topbarAiPill } from '../ui/components';
+import { confirmDialog, el, renderPage, toast, icon, field, type IconName } from '../ui/components';
 import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
 import { openBottomSheet } from '../ui/primitives/BottomSheet';
+import { navigate } from '../router';
 import QRCode from 'qrcode';
 import { getThemePreference, setThemePreference, type ThemePreference } from '../ui/theme';
 import {
@@ -96,9 +97,11 @@ import {
   WEB_SECRET_STORAGE_NOTICE,
 } from '../ai/secretStore';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
+import { renderImageGenSettingsPanel } from '../ui/imageGenSettingsPanel';
 import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
 import {
   clearAvailableUpdate,
+  downloadAndApplyWebBundle,
   downloadUpdate,
   getAvailableUpdate,
   installApk,
@@ -190,15 +193,16 @@ export async function renderSettingsPage(
     el('div', { class: 'profile-user-name', text: '小药盒用户' }),
     el('div', {
       class: 'profile-user-sub',
-      text: daysManaging > 0 ? `用药管理第 ${daysManaging} 天` : '开启科学用药管理',
+      text: daysManaging > 0 ? `用药管理 第 ${daysManaging} 天` : '开启科学用药管理',
     })
   );
   userRow.append(avatarWrap, userInfo);
 
+  const takenCount = logs.filter((l) => l.status === 'taken').length || logs.length;
   const streakBadge = el('div', { class: 'profile-streak-badge' });
-  streakBadge.append(icon(logs.length > 0 ? 'sparkles' : 'shield'));
+  streakBadge.append(icon('check'));
   streakBadge.append(el('span', {
-    text: logs.length > 0 ? `已记录 ${logs.length} 次服药` : '本地安全离线存储',
+    text: `已记录 ${takenCount} 次服药`,
   }));
 
   profileHero.append(userRow, streakBadge);
@@ -211,13 +215,13 @@ export async function renderSettingsPage(
   const statsGrid = el('div', { class: 'profile-stats-grid' });
   statsGrid.append(
     createProfileStatCard('全部药品', `${meds.length} 种`, '在库管理', statPillboxImg, getStatBox3dSvg, () => {
-      location.hash = '#/meds';
+      navigate('/meds');
     }),
     createProfileStatCard('用药计划', `${activeRulesCount} 条`, '今日待服', statNotebookImg, getStatLog3dSvg, () => {
-      location.hash = '#/today';
+      navigate('/today');
     }),
-    createProfileStatCard('打卡记录', `${logs.length} 次`, '历史日历', statTargetImg, getStatRate3dSvg, () => {
-      location.hash = '#/history';
+    createProfileStatCard('打卡记录', `${takenCount} 次`, '历史日历', statTargetImg, getStatRate3dSvg, () => {
+      navigate('/history');
     })
   );
   statsSection.append(statsGrid);
@@ -240,7 +244,6 @@ export async function renderSettingsPage(
     renderAppearancePanel(),
     renderKeepAlivePanel(),
   ]);
-  content.append(reminderAppearanceGroup);
 
   // 4. 分组 2：数据与家庭同步
   const lanSyncPanel = renderLanSyncSettingsPanel(signal);
@@ -255,19 +258,26 @@ export async function renderSettingsPage(
     backupCard.element,
     appUpdatePanel.element,
   ]);
-  content.append(dataSyncGroup);
 
-  // 5. 分组 3：AI 智能助手与诊断
+  // 5. 分组 3：AI 智能助手与高级
   const llmPanel = renderLlmPanel();
+  const imageGenPanel = renderImageGenSettingsPanel();
   const aiDiagnosticsGroup = createSettingsGroup('智能助手与高级', 'sparkles', [
     llmPanel.element,
+    imageGenPanel.element,
     renderAiConsentPanel(),
     renderDiagnosticsPanel(),
   ]);
-  content.append(aiDiagnosticsGroup);
 
-  // 6. 分组 4：关于小药盒
-  content.append(renderAboutSection());
+  // 6. 分组卡片与关于小药盒平铺挂载
+  const settingsWrapper = el('div', { class: 'profile-advanced-wrapper' });
+  settingsWrapper.append(
+    reminderAppearanceGroup,
+    dataSyncGroup,
+    aiDiagnosticsGroup,
+    renderAboutSection(),
+  );
+  content.append(settingsWrapper);
 
   settingsPageCleanupByRoot.get(root)?.();
   let cleaned = false;
@@ -275,6 +285,7 @@ export async function renderSettingsPage(
     if (cleaned) return;
     cleaned = true;
     llmPanel.cleanup();
+    imageGenPanel.cleanup();
     lanSyncPanel.cleanup();
     appUpdatePanel.cleanup();
     backupCard.cleanup();
@@ -286,47 +297,63 @@ export async function renderSettingsPage(
   settingsPageCleanupByRoot.set(root, cleanup);
   signal?.addEventListener('abort', cleanup, { once: true });
 
-  renderPage({ root, title: '我的', activeTab: 'settings', topRight: topbarAiPill(), content });
+  renderPage({ root, title: '我的', activeTab: 'settings', content });
   return cleanup;
 }
 
 function renderAboutSection(): HTMLElement {
   const aboutSection = el('section', { class: 'settings-group-section settings-about-section' });
-  const aboutHead = el('div', { class: 'settings-group-header' });
-  aboutHead.append(icon('info', 'settings-group-icon'));
-  aboutHead.append(el('h2', { class: 'settings-group-title', text: '关于小药盒' }));
-  aboutSection.append(aboutHead);
 
-  const aboutCard = el('div', { class: 'settings-group-card settings-about-card' });
+  const aboutCard = el('div', { class: 'settings-group-card settings-about-card settings-about-center' });
 
-  const brandRow = el('div', { class: 'settings-about-brand-row' });
+  // 1. 居中药盒 Logo 与光晕底座
+  const logoWrap = el('div', { class: 'settings-about-logo-wrap' });
   const logo = el('div', { class: 'settings-about-logo' });
   logo.append(icon('pill'));
-  const titleWrap = el('div', { class: 'settings-about-title-wrap' });
-  titleWrap.append(
-    el('div', { class: 'settings-about-app-name', text: '小药盒 · 家庭健康用药管家' }),
-    el('div', { class: 'settings-about-version', text: `版本 v${__APP_VERSION__} (正式版)` }),
-  );
-  brandRow.append(logo, titleWrap);
+  logoWrap.append(logo);
 
+  // 2. 居中标题与副标
+  const title = el('h2', { class: 'settings-about-app-name', text: '小药盒' });
+  const subtitle = el('div', { class: 'settings-about-app-sub', text: '家庭健康用药管家' });
+
+  // 3. 优雅版本药丸胶囊
+  const badgeWrap = el('div', { class: 'settings-about-badge-wrap' });
+  const versionBadge = el('span', { class: 'settings-about-badge', text: `v${__APP_VERSION__} (正式版)` });
+  badgeWrap.append(versionBadge);
+
+  // 4. 品牌简介
   const intro = el('div', {
     class: 'settings-about-intro',
     text: '用于家庭日常用药管理。服药提醒、药品信息与库存记录均保存在本地设备中，不展示广告，无需注册账号。',
   });
 
-  const highlights = el('div', { class: 'settings-about-highlights' }, [
-    el('div', { class: 'settings-about-hl-item', text: '✔ 定时服药提醒与记录' }),
-    el('div', { class: 'settings-about-hl-item', text: '✔ 药箱余量预警' }),
-    el('div', { class: 'settings-about-hl-item', text: '✔ 数据保存在本地设备' }),
-    el('div', { class: 'settings-about-hl-item', text: '✔ 局域网面对面免流量同步' }),
+  // 5. 2x2 精致特性磁贴
+  const createTile = (tileTitle: string, tileDesc: string, iconName: IconName, tone: string) => {
+    const tile = el('div', { class: `settings-about-tile tone-${tone}` });
+    const tileHead = el('div', { class: 'settings-about-tile-head' });
+    const tileIcon = el('span', { class: 'settings-about-tile-icon' });
+    tileIcon.append(icon(iconName));
+    const titleEl = el('span', { class: 'settings-about-tile-title', text: tileTitle });
+    tileHead.append(tileIcon, titleEl);
+    const descEl = el('span', { class: 'settings-about-tile-desc', text: tileDesc });
+    tile.append(tileHead, descEl);
+    return tile;
+  };
+
+  const highlights = el('div', { class: 'settings-about-grid' }, [
+    createTile('定时服药', '准时提醒与打卡记录', 'bell', 'amber'),
+    createTile('药箱余量', '低余量智能实时预警', 'box', 'emerald'),
+    createTile('纯净本地', '全量数据保存在本地设备', 'shield', 'violet'),
+    createTile('家庭同步', '局域网面对面免流量互传', 'cloud', 'blue'),
   ]);
 
+  // 6. 底部健康免责声明
   const disclaimer = el('div', {
     class: 'settings-about-disclaimer muted',
     text: '健康声明：小药盒的服药提醒与助手建议仅供日常健康管理参考，不构成处方或临床诊断意见。如有不适，请咨询专业医生。',
   });
 
-  aboutCard.append(brandRow, intro, highlights, disclaimer);
+  aboutCard.append(logoWrap, title, subtitle, badgeWrap, intro, highlights, disclaimer);
   aboutSection.append(aboutCard);
   return aboutSection;
 }
@@ -343,6 +370,14 @@ function createProfileStatCard(
     class: 'profile-stat-card',
     type: 'button',
   } as any);
+
+  const iconWrap = el('div', { class: 'profile-stat-icon' });
+  if (img) {
+    iconWrap.append(render3dMedia(img, svgFn, label, 'profile-stat-icon-img'));
+  } else {
+    iconWrap.append(parseSvg(svgFn()));
+  }
+
   const info = el('div', { class: 'profile-stat-info' });
   info.append(
     el('div', { class: 'profile-stat-label', text: label }),
@@ -351,13 +386,7 @@ function createProfileStatCard(
   if (sub) {
     info.append(el('div', { class: 'profile-stat-sub', text: sub }));
   }
-  const iconWrap = el('div', { class: 'profile-stat-icon' });
-  if (img) {
-    iconWrap.append(render3dMedia(img, svgFn, label, 'profile-stat-icon-img'));
-  } else {
-    iconWrap.append(parseSvg(svgFn()));
-  }
-  card.append(info, iconWrap);
+  card.append(iconWrap, info);
   if (onClick) {
     card.onclick = onClick;
   }
@@ -472,6 +501,7 @@ function renderBackupCard(
   const element = panel({
     title: '本地数据与备份',
     iconName: 'box',
+    iconTone: 'teal',
     chip: { text: countSummary, tone: 'ok' },
     renderBody: (body) => {
       body.classList.add('settings-backup-panel-body');
@@ -558,6 +588,7 @@ export function renderDiagnosticsPanel(
   const p = panel({
     title: '诊断记录',
     iconName: 'info',
+    iconTone: 'cyan',
     chip: diagnosticsChip(),
     renderBody: (body) => {
       const description = el('div', {
@@ -610,9 +641,23 @@ interface PanelChip {
   text: string;
   tone: 'ok' | 'warn' | 'info' | 'muted';
 }
+export type PanelIconTone =
+  | 'amber'
+  | 'emerald'
+  | 'violet'
+  | 'orange'
+  | 'sky'
+  | 'teal'
+  | 'blue'
+  | 'purple'
+  | 'rose'
+  | 'gold'
+  | 'cyan';
+
 interface PanelOpts {
   title: string;
   iconName: IconName;
+  iconTone?: PanelIconTone;
   chip: PanelChip;
   defaultOpen?: boolean;
   renderBody: (body: HTMLElement) => void;
@@ -629,8 +674,9 @@ function panel(opts: PanelOpts): HTMLElement {
   head.setAttribute('aria-expanded', String(Boolean(opts.defaultOpen)));
   head.setAttribute('aria-controls', bodyId);
   const lead = el('span', { class: 'panel-lead' });
-  lead.append(icon(opts.iconName, 'panel-icon'));
-  lead.append(el('span', { class: 'panel-title', text: opts.title }));
+  const iconWrap = el('span', { class: `panel-icon panel-icon-${opts.iconTone || 'blue'}` });
+  iconWrap.append(icon(opts.iconName));
+  lead.append(iconWrap, el('span', { class: 'panel-title', text: opts.title }));
   head.append(lead);
 
   const right = el('span', { class: 'panel-right' });
@@ -685,6 +731,7 @@ function renderAppearancePanel(): HTMLElement {
   return panel({
     title: '外观',
     iconName: 'moon',
+    iconTone: 'violet',
     chip: appearancePanelChip(),
     defaultOpen: false,
     renderBody: (body) => {
@@ -759,6 +806,7 @@ function renderReminderPanel(): HTMLElement {
   const p = panel({
     title: '系统通知',
     iconName: 'bell-ring',
+    iconTone: 'amber',
     chip: reminderPanelChip(),
     renderBody: (body) => buildReminderBody(body, () => {
       body.replaceChildren();
@@ -890,7 +938,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     const grantBtn = el('button', { class: 'btn', html: '开启系统通知' });
     grantBtn.onclick = async () => {
       const r = await requestPermission();
-      if (r === 'granted') toast('已开启 ✓');
+      if (r === 'granted') toast('已开启');
       else if (r === 'denied') toast('被拒绝，请在系统设置里开');
       else toast('未授权');
       rerender();
@@ -1089,7 +1137,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     scanCard.append(
       el('div', {
         class: 'muted text-xs mt-2',
-        text: '💡 网页端支持提前绑定与查看，数据可通过设置页「家庭同步」互传至手机。全屏响铃仅在 Android App 生效。',
+        text: '网页端支持提前绑定与查看，数据可通过设置页「家庭同步」互传至手机。全屏响铃仅在 Android App 生效。',
       }),
     );
   }
@@ -1235,7 +1283,8 @@ function openUnlockQrSheet(rerender: () => void, activate: boolean = true): void
   );
   const hintP2 = el('p', { class: 'muted text-xs mt-2' });
   hintP2.append(
-    '💡 ',
+    icon('info'),
+    ' ',
     el('strong', { text: '没有打印机？' }),
     '您也可以直接点击下方按钮，绑定药盒或生活物品上的已有条码/二维码。',
   );
@@ -1453,6 +1502,7 @@ function renderPeriodSettingsPanel(): HTMLElement {
   panelEl = panel({
     title: '时段提醒设置',
     iconName: 'clock',
+    iconTone: 'emerald',
     chip: { text: '…', tone: 'muted' },
     renderBody: (body) => {
       // 延迟到 panel() 返回后再执行，避免在 panelEl 赋值前引用（TDZ）
@@ -1646,7 +1696,8 @@ async function renderPeriodEditor(
 function renderKeepAlivePanel(): HTMLElement {
   const p = panel({
     title: '后台保活与防杀',
-    iconName: 'plug',
+    iconName: 'shield',
+    iconTone: 'orange',
     chip: { text: '检查中', tone: 'muted' },
     renderBody: (body) => {
       // 延迟到 panel() 返回后再执行，避免在 p 赋值前引用 p（TDZ）
@@ -1670,6 +1721,7 @@ function renderAppUpdatePanel(): SettingsRenderPart {
   const p = panel({
     title: '应用更新',
     iconName: 'cloud',
+    iconTone: 'blue',
     chip,
     renderBody: (body) => {
       const refresh = () => buildAppUpdateBody(body, p, available);
@@ -1692,6 +1744,69 @@ function renderAppUpdatePanel(): SettingsRenderPart {
     element: p,
     cleanup: () => window.removeEventListener('medbox:app-update-changed', onUpdate),
   };
+}
+
+function appendFormattedInline(parent: HTMLElement, text: string): void {
+  const sanitized = text.replaceAll('$\\to$', '→').replaceAll('\\to', '→');
+  const regex = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(sanitized)) !== null) {
+    if (match.index > lastIndex) {
+      parent.append(document.createTextNode(sanitized.slice(lastIndex, match.index)));
+    }
+    const token = match[0];
+    if (token.startsWith('**') && token.endsWith('**')) {
+      parent.append(el('strong', { text: token.slice(2, -2) }));
+    } else if (token.startsWith('`') && token.endsWith('`')) {
+      parent.append(el('code', { class: 'app-update-code', text: token.slice(1, -1) }));
+    }
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < sanitized.length) {
+    parent.append(document.createTextNode(sanitized.slice(lastIndex)));
+  }
+}
+
+function renderFormattedReleaseNotes(rawNotes: string): HTMLElement {
+  const container = el('div', { class: 'app-update-release-notes' });
+  const lines = rawNotes.split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith('# ')) {
+      const heading = el('div', { class: 'app-update-notes-h1' });
+      appendFormattedInline(heading, trimmed.slice(2).trim());
+      container.append(heading);
+    } else if (trimmed.startsWith('## ')) {
+      const heading = el('div', { class: 'app-update-notes-h2' });
+      appendFormattedInline(heading, trimmed.slice(3).trim());
+      container.append(heading);
+    } else if (trimmed.startsWith('### ')) {
+      const heading = el('div', { class: 'app-update-notes-h3' });
+      appendFormattedInline(heading, trimmed.slice(4).trim());
+      container.append(heading);
+    } else if (/^\s*[-*]\s+/.test(line)) {
+      const isSub = /^\s{2,}[-*]\s+/.test(line);
+      const li = el('div', { class: `app-update-notes-li${isSub ? ' sub' : ''}` });
+      const bullet = el('span', { class: 'app-update-notes-bullet', text: isSub ? '◦' : '•' });
+      const content = el('span', { class: 'app-update-notes-li-content' });
+      const itemText = line.replace(/^\s*[-*]\s+/, '');
+      appendFormattedInline(content, itemText);
+      li.append(bullet, content);
+      container.append(li);
+    } else {
+      const p = el('div', { class: 'app-update-notes-p' });
+      appendFormattedInline(p, trimmed);
+      container.append(p);
+    }
+  }
+
+  return container;
 }
 
 function buildAppUpdateBody(
@@ -1763,26 +1878,41 @@ function buildAppUpdateBody(
   }
 
   // 发现可用更新：显示版本、来源、更新说明、操作按钮与进度条
-  const updateBanner = el('div', { class: 'banner info mt-3' });
-  const updateTitle = el('div');
-  updateTitle.append('发现新版本 ', el('strong', { text: `v${update.version}` }));
+  const updateCard = el('div', { class: 'app-update-card mt-3' });
 
-  const sourceDesc = update.source === 'cloud'
-    ? `来源：云端极速通道${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`
-    : update.source === 'github'
-    ? `来源：GitHub 官方发布${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`
-    : `来源：局域网设备 ${update.peerHost ?? ''}`;
-  const updateSource = el('div', {
-    class: 'muted text-xs mt-1',
+  const updateHeader = el('div', { class: 'app-update-header' });
+  const titleRow = el('div', { class: 'app-update-title-row' });
+  const title = el('div', { class: 'app-update-title' });
+  title.append(icon('sparkles'), '发现新版本 ', el('strong', { text: `v${update.version}` }));
+
+  const isIncremental = update.updateType === 'incremental' && Boolean(update.bundleUrl);
+  const badge = el('span', { class: 'app-update-badge', text: isIncremental ? '轻量热更新' : '新版本' });
+  titleRow.append(title, badge);
+
+  let sourceDesc = '';
+  if (isIncremental) {
+    const sizeText = update.bundleSize ? ` · 大小：${(update.bundleSize / (1024 * 1024)).toFixed(1)} MB` : '';
+    sourceDesc = `方式：秒级增量更新${sizeText}（无需重新安装）`;
+  } else if (update.source === 'cloud') {
+    sourceDesc = `来源：云端极速通道${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`;
+  } else if (update.source === 'github') {
+    sourceDesc = `来源：GitHub 官方发布${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`;
+  } else {
+    sourceDesc = `来源：局域网设备 ${update.peerHost ?? ''}`;
+  }
+  const updateMeta = el('div', {
+    class: 'app-update-meta',
     text: sourceDesc,
   });
-  updateBanner.append(updateTitle, updateSource);
+
+  updateHeader.append(titleRow, updateMeta);
+  updateCard.append(updateHeader);
 
   if (update.releaseNotes) {
-    const notesBox = el('div', { class: 'app-update-release-notes', text: update.releaseNotes });
-    updateBanner.append(notesBox);
+    const notesBox = renderFormattedReleaseNotes(update.releaseNotes);
+    updateCard.append(notesBox);
   }
-  body.append(updateBanner);
+  body.append(updateCard);
 
   // 下载进度容器（初始隐藏）
   const progressBox = el('div', { class: 'app-update-progress-box', style: 'display: none;' });
@@ -1797,7 +1927,10 @@ function buildAppUpdateBody(
   body.append(progressBox);
 
   const row = el('div', { class: 'btn-row mt-3' });
-  const downloadBtn = el('button', { class: 'btn', text: '下载并安装' });
+  const downloadBtn = el('button', {
+    class: 'btn',
+    text: isIncremental ? '一键秒级更新' : '下载并安装',
+  });
   const recheckBtn = el('button', { class: 'btn tonal', text: '重新检查' });
   const skipBtn = el('button', { class: 'btn tonal', text: '本次跳过' });
 
@@ -1830,12 +1963,39 @@ function buildAppUpdateBody(
   downloadBtn.onclick = async () => {
     if (downloadBtn.getAttribute('aria-busy') === 'true') return;
     downloadBtn.setAttribute('aria-busy', 'true');
-    downloadBtn.textContent = '准备下载...';
     downloadBtn.disabled = true;
     recheckBtn.disabled = true;
     skipBtn.disabled = true;
     progressBox.style.display = 'block';
 
+    if (isIncremental) {
+      try {
+        downloadBtn.textContent = '正在下载更新...';
+        progressText.textContent = '正在下载增量包...';
+        await downloadAndApplyWebBundle(update, (status) => {
+          downloadBtn.textContent = status;
+          progressText.textContent = status;
+        });
+        toast(`已更新至 v${update.version}，正在刷新生效...`, 2500);
+        setTimeout(() => {
+          window.location.reload();
+        }, 800);
+        return;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : '未知错误';
+        toast(`增量更新失败：${msg}`, 4200);
+      } finally {
+        downloadBtn.removeAttribute('aria-busy');
+        downloadBtn.textContent = isIncremental ? '一键秒级更新' : '下载并安装';
+        downloadBtn.disabled = false;
+        recheckBtn.disabled = false;
+        skipBtn.disabled = false;
+        progressBox.style.display = 'none';
+      }
+      return;
+    }
+
+    downloadBtn.textContent = '准备下载...';
     try {
       const apkPath = await downloadUpdate(update, (percent, received, total) => {
         progressFill.style.width = `${percent}%`;
@@ -1852,7 +2012,7 @@ function buildAppUpdateBody(
       toast(`更新失败：${msg}`, 4200);
     } finally {
       downloadBtn.removeAttribute('aria-busy');
-      downloadBtn.textContent = '下载并安装';
+      downloadBtn.textContent = isIncremental ? '一键秒级更新' : '下载并安装';
       downloadBtn.disabled = false;
       recheckBtn.disabled = false;
       skipBtn.disabled = false;
@@ -2224,6 +2384,7 @@ function renderLlmPanel(): SettingsRenderPart {
   const p = panel({
     title: 'AI 服务商',
     iconName: 'robot',
+    iconTone: 'purple',
     chip,
     renderBody: (body) => buildLlmBody(body, (h) => setChip(p, healthToChip(h))),
   });
@@ -2540,6 +2701,7 @@ function renderAiConsentPanel(): HTMLElement {
   panelElement = panel({
     title: 'AI 外发授权',
     iconName: 'lock',
+    iconTone: 'gold',
     chip: aiConsentChip(),
     renderBody: (body) => {
       body.append(

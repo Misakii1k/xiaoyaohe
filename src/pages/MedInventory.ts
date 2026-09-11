@@ -28,6 +28,7 @@ import {
 } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
+import { inventoryHealthShieldImg } from '../ui/assets3d';
 import { navigate } from '../router';
 import { el, emptyState, icon, renderPage, toast, topbarAiPill } from '../ui/components';
 import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/BottomSheet';
@@ -86,60 +87,62 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
     return;
   }
 
+  const openOperationsSheet = () => {
+    let sheet: BottomSheetHandle | undefined;
+    const title = el('h2', { class: 'inventory-sheet-title', text: '库存操作' });
+    const grid = el('div', { class: 'inventory-more-grid' });
+
+    const items: Array<{ title: string; desc: string; icon: any; onClick: () => void }> = [
+      {
+        title: '智能录入',
+        desc: '拍照/相册数药量',
+        icon: 'sparkles',
+        onClick: () => { sheet?.close(); openInventorySmartSheet(root, sorted, rulesByMedId, signal); },
+      },
+      {
+        title: '历史操作',
+        desc: '近3天变动与撤销',
+        icon: 'clock',
+        onClick: () => { sheet?.close(); openInventoryHistorySheet(root, signal); },
+      },
+      {
+        title: '批量预扣',
+        desc: '核对已服药扣库存',
+        icon: 'box',
+        onClick: () => { sheet?.close(); openBatchDeductSheet(root, meds, rules, signal); },
+      },
+      {
+        title: '分享库存',
+        desc: '导出需购或完整清单',
+        icon: 'share',
+        onClick: () => { sheet?.close(); openShareSheet(sorted, rulesByMedId); },
+      },
+    ];
+
+    for (const item of items) {
+      const tile = el('button', {
+        class: 'inventory-more-tile',
+        type: 'button',
+      });
+      const iconWrap = el('div', { class: 'inventory-more-tile-icon' });
+      iconWrap.append(icon(item.icon));
+      tile.append(
+        iconWrap,
+        el('div', { class: 'inventory-more-tile-title', text: item.title }),
+        el('div', { class: 'inventory-more-tile-desc', text: item.desc }),
+      );
+      tile.onclick = item.onClick;
+      grid.append(tile);
+    }
+
+    const cancelBtn = createButton({ label: '取消', variant: 'text', onClick: () => sheet?.close() });
+    sheet = openBottomSheet({ label: '库存操作', content: [title, grid, cancelBtn] });
+  };
+
   const moreBtn = createIconButton({
     icon: 'dots',
     label: '更多操作',
-    onClick: () => {
-      let sheet: BottomSheetHandle | undefined;
-      const title = el('h2', { class: 'inventory-sheet-title', text: '库存操作' });
-      const grid = el('div', { class: 'inventory-more-grid' });
-
-      const items: Array<{ title: string; desc: string; icon: any; onClick: () => void }> = [
-        {
-          title: '智能录入',
-          desc: '拍照/相册数药量',
-          icon: 'sparkles',
-          onClick: () => { sheet?.close(); openInventorySmartSheet(root, sorted, rulesByMedId, signal); },
-        },
-        {
-          title: '历史操作',
-          desc: '近3天变动与撤销',
-          icon: 'clock',
-          onClick: () => { sheet?.close(); openInventoryHistorySheet(root, signal); },
-        },
-        {
-          title: '批量预扣',
-          desc: '核对已服药扣库存',
-          icon: 'box',
-          onClick: () => { sheet?.close(); openBatchDeductSheet(root, meds, rules, signal); },
-        },
-        {
-          title: '分享库存',
-          desc: '导出需购或完整清单',
-          icon: 'share',
-          onClick: () => { sheet?.close(); openShareSheet(sorted, rulesByMedId); },
-        },
-      ];
-
-      for (const item of items) {
-        const tile = el('button', {
-          class: 'inventory-more-tile',
-          type: 'button',
-        });
-        const iconWrap = el('div', { class: 'inventory-more-tile-icon' });
-        iconWrap.append(icon(item.icon));
-        tile.append(
-          iconWrap,
-          el('div', { class: 'inventory-more-tile-title', text: item.title }),
-          el('div', { class: 'inventory-more-tile-desc', text: item.desc }),
-        );
-        tile.onclick = item.onClick;
-        grid.append(tile);
-      }
-
-      const cancelBtn = createButton({ label: '取消', variant: 'text', onClick: () => sheet?.close() });
-      sheet = openBottomSheet({ label: '库存操作', content: [title, grid, cancelBtn] });
-    },
+    onClick: openOperationsSheet,
   });
 
   const topRight = el('div', { class: 'topbar-actions' });
@@ -170,62 +173,63 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
   }
 
   const overviewCard = el('div', { class: 'inventory-overview-card' });
-  overviewCard.append(el('div', { class: 'inventory-overview-title', text: '库存概览' }));
 
+  const header = el('div', { class: 'inventory-overview-header' });
+  const shieldWrap = el('div', { class: 'inventory-shield-badge' });
+  const shieldImg = el('img', {
+    class: 'inventory-shield-img',
+    src: inventoryHealthShieldImg,
+    alt: '库存健康',
+  });
+  shieldWrap.append(shieldImg);
+
+  const headerText = el('div', { class: 'inventory-overview-header-text' });
+  const isAllHealthy = lowCount === 0 && expiredCount === 0;
+  headerText.append(
+    el('div', { class: 'inventory-overview-title', text: '库存健康' }),
+    el('div', {
+      class: 'inventory-overview-subtitle',
+      text: isAllHealthy
+        ? '整体充足，暂无风险'
+        : `当前有 ${lowCount} 种需补充 · ${expiringCount > 0 ? `${expiringCount} 种临期 · ` : ''}${expiredCount} 种已过期`,
+    }),
+  );
+
+  const chevronWrap = el('div', { class: 'inventory-overview-chevron' });
+  chevronWrap.append(icon('chevron-right'));
+
+  header.style.cursor = 'pointer';
+  header.onclick = openOperationsSheet;
+  header.append(shieldWrap, headerText, chevronWrap);
+  overviewCard.append(header);
+
+  const activeCount = meds.filter((m) => m.slots && m.slots.length > 0).length || meds.length;
   const statsRow = el('div', { class: 'inventory-stats-row' });
   statsRow.append(
-    createOverviewCol(`${meds.length}`, '全部药品', ''),
-    createOverviewCol(`${lowCount}`, '库存不足', 'low'),
-    createOverviewCol(`${expiringCount}`, '即将过期', 'expiring'),
-    createOverviewCol(`${expiredCount}`, '已过期', 'expired')
+    createOverviewCol(`${meds.length} 种`, '全部药品', ''),
+    createOverviewCol(`${activeCount} 种`, '近期使用', ''),
+    createOverviewCol(`${lowCount} 种`, '需补充', lowCount > 0 ? 'low' : ''),
+    createOverviewCol(`${expiredCount} 种`, '已过期', expiredCount > 0 ? 'expired' : ''),
   );
   overviewCard.append(statsRow);
-
-  const addStockBtn = el('button', {
-    class: 'inventory-add-btn',
-    type: 'button',
-  });
-  addStockBtn.append(icon('plus'), el('span', { text: '添加库存' }));
-  addStockBtn.onclick = () => openInventoryMedicationPicker(root, sorted, rulesByMedId, photoUrls, signal);
-  overviewCard.append(addStockBtn);
   content.append(overviewCard);
 
-  // 2. 状态筛选 Tab
-  const filterRow = el('div', { class: 'inventory-filter-tabs' });
-  const filterList: Array<{ key: InventoryFilter; label: string }> = [
-    { key: 'all', label: '全部' },
-    { key: 'low', label: '库存不足' },
-    { key: 'days_low', label: '即将过期' },
-    { key: 'empty', label: '已过期' },
-  ];
-  let currentFilter: InventoryFilter = 'all';
-
-  const list = el('div', { class: 'inventory-card-list' });
-
-  filterList.forEach(({ key, label }) => {
-    const pill = el('button', {
-      class: `inventory-filter-pill${key === 'all' ? ' active' : ''}`,
-      type: 'button',
-      text: label,
-    });
-    pill.onclick = () => {
-      currentFilter = key;
-      filterRow.querySelectorAll('.inventory-filter-pill').forEach((p) => p.classList.remove('active'));
-      pill.classList.add('active');
-      applyFilters();
-    };
-    filterRow.append(pill);
-  });
-  content.append(filterRow);
-
-  // 即时搜索栏
+  const fabAdd = el('button', {
+    class: 'med-fab-add inventory-fab-add',
+    type: 'button',
+    'aria-label': '添加库存',
+  } as any);
+  fabAdd.append(icon('plus'), el('span', { text: '添加库存' }));
+  fabAdd.onclick = () => openInventoryMedicationPicker(root, sorted, rulesByMedId, photoUrls, signal);
+  // 2. 即时搜索栏
   const searchWrap = el('div', { class: 'inventory-main-search-wrap' });
+  const searchInputWrap = el('div', { class: 'inventory-search-input-wrap' });
   const searchIcon = el('span', { class: 'search-icon' });
   searchIcon.append(icon('search'));
   const searchInput = el('input', {
     type: 'search',
     class: 'inventory-search',
-    placeholder: '搜索药名、规格或拼音…',
+    placeholder: '搜索药品名称',
     'aria-label': '搜索库存药品',
   } as any) as HTMLInputElement;
   const clearBtn = el('button', {
@@ -245,10 +249,48 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
     clearBtn.hidden = !searchInput.value;
     applyFilters();
   });
-  searchWrap.append(searchIcon, searchInput, clearBtn);
-  content.append(searchWrap);
+  searchInputWrap.append(searchIcon, searchInput, clearBtn);
+
+  // 状态筛选 Tab
+  const filterRow = el('div', { class: 'inventory-filter-tabs' });
+  filterRow.hidden = true;
+  const filterList: Array<{ key: InventoryFilter; label: string }> = [
+    { key: 'all', label: '全部' },
+    { key: 'low', label: '库存不足' },
+    { key: 'days_low', label: '即将过期' },
+    { key: 'empty', label: '已过期' },
+  ];
+  let currentFilter: InventoryFilter = 'all';
+
+  filterList.forEach(({ key, label }) => {
+    const pill = el('button', {
+      class: `inventory-filter-pill${key === 'all' ? ' active' : ''}`,
+      type: 'button',
+      text: label,
+    });
+    pill.onclick = () => {
+      currentFilter = key;
+      filterRow.querySelectorAll('.inventory-filter-pill').forEach((p) => p.classList.remove('active'));
+      pill.classList.add('active');
+      applyFilters();
+    };
+    filterRow.append(pill);
+  });
+
+  const filterBtn = el('button', {
+    class: 'inventory-filter-btn',
+    type: 'button',
+    'aria-label': '筛选',
+  });
+  filterBtn.append(icon('filter'));
+  filterBtn.onclick = () => {
+    filterRow.hidden = !filterRow.hidden;
+  };
+  searchWrap.append(searchInputWrap, filterBtn);
+  content.append(searchWrap, filterRow);
 
   // 3. 药品卡片列表
+  const list = el('div', { class: 'inventory-card-list' });
   const rowByMedId = new Map<string, HTMLElement>();
   for (const med of sorted) {
     const medRules = rulesByMedId.get(med.id) ?? [];
@@ -289,8 +331,8 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
 function createOverviewCol(val: string, label: string, tone: string): HTMLElement {
   const col = el('div', { class: 'inventory-stat-col' });
   col.append(
-    el('div', { class: `inventory-stat-val ${tone}`, text: val }),
-    el('div', { class: 'inventory-stat-label', text: label })
+    el('div', { class: 'inventory-stat-label', text: label }),
+    el('div', { class: `inventory-stat-val ${tone}`.trim(), text: val }),
   );
   return col;
 }
@@ -315,22 +357,46 @@ function renderModernInventoryCard(
   const info = el('div', { class: 'inventory-card-info' });
   info.append(el('div', { class: 'inventory-card-name', text: med.name }));
 
-  const remaining = med.inventory?.remaining ?? 18;
-  const pack = med.inventory?.packageQuantity ? `${med.inventory.packageQuantity}片/盒` : '30片/盒';
-  const dose = med.amountPerDose || med.dosageText || '20mg';
-  info.append(el('div', { class: 'inventory-card-spec', text: `${dose} · ${pack} · 剩余 ${remaining}片` }));
+  const unit = med.inventory?.unit || med.doseUnit || '粒';
+  const remaining = med.inventory?.remaining ?? 36;
+  const packQuantity = med.inventory?.packageQuantity ?? remaining;
+  const dose = med.dosageText || med.amountPerDose || '';
+  const specLine = [dose, `${packQuantity}${unit}`].filter(Boolean).join(' · ');
+  if (specLine) {
+    info.append(el('div', { class: 'inventory-card-spec', text: specLine }));
+  }
 
-  // 右侧状态与天数
-  const right = el('div', { class: 'inventory-card-right' });
   const low = isLowStock(med);
   const daysLeft = estimateDaysLeft(med, rules) ?? (low ? 2 : 12);
-  const statusPill = el('span', {
-    class: `inventory-status-pill ${low ? 'low' : 'ok'}`,
-    text: low ? '库存不足' : '库存充足',
-  });
-  const daysText = el('span', { class: 'inventory-days-text', text: `约 ${daysLeft}天用量` });
+  info.append(el('div', { class: 'inventory-card-days', text: `剩余 ${remaining}${unit} · 约 ${daysLeft}天用量` }));
 
-  right.append(statusPill, daysText);
+  // 右侧状态徽章
+  const right = el('div', { class: 'inventory-card-right' });
+  const today = toLocalDate();
+  const expiringCutoff = addLocalDays(today, 30);
+  const exp = getMedicationExpiryLocalDate(med);
+  const isExpired = exp ? exp < today : false;
+  const isExpiring = exp ? exp <= expiringCutoff : false;
+
+  let statusText = '充足';
+  let statusClass = 'ok';
+  if (isExpired) {
+    statusText = '已过期';
+    statusClass = 'expired';
+  } else if (isExpiring) {
+    statusText = '临期';
+    statusClass = 'expiring';
+  } else if (low) {
+    statusText = '不足';
+    statusClass = 'low';
+  }
+
+  const statusPill = el('span', {
+    class: `inventory-status-pill ${statusClass}`,
+    text: statusText,
+  });
+
+  right.append(statusPill);
   card.append(thumb, info, right);
   card.onclick = onOpenActions;
   return card;

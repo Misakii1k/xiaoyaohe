@@ -55,8 +55,8 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     'aria-controls': bodyId,
   });
   const lead = el('span', { class: 'panel-lead' });
-  const panelIcon = el('span', { class: 'panel-icon', 'aria-hidden': 'true' });
-  panelIcon.append(icon('devices'));
+  const panelIcon = el('span', { class: 'panel-icon panel-icon-sky', 'aria-hidden': 'true' });
+  panelIcon.append(icon('cloud'));
   lead.append(panelIcon, el('span', { class: 'panel-title', text: '家庭同步' }));
   const trailing = el('span', { class: 'panel-right' });
   const chip = el('span', {

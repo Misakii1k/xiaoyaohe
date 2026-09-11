@@ -8,8 +8,10 @@ import {
   deleteRule,
   recomputeReminderPeriodReviewState,
 } from '../db/local';
-import { getLatestMedPhotoBlob, getMedPhotoUrl, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
+import { getMedPhotoUrl, getMedPhotoRecord, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
+import { generateMedPackshot } from '../features/aiImageStudio';
+import { getEffectiveImageGenConfig } from '../ai/llmConfig';
 import { uid } from '../db/local';
 import {
   SLOTS,
@@ -98,6 +100,9 @@ export async function renderMedEditPage(
   for (const r of existingRules) ruleTimeBySlot.set(r.slot, r.timeLocal);
 
   let pendingPhoto: Blob | null = null;
+  let originalPhoto: Blob | null = null;
+  let existingPhotoBlob: Blob | null = null;
+  let photoKind: 'original' | 'ai_packshot' = 'original';
 
   if (!editing) {
     const pf = takePendingPrefill();
@@ -487,7 +492,10 @@ export async function renderMedEditPage(
       let photoFailed = false;
       if (pendingPhoto) {
         try {
-          await saveMedPhoto(med.id, pendingPhoto);
+          await saveMedPhoto(med.id, pendingPhoto, {
+            kind: photoKind,
+            originalBlob: originalPhoto || undefined,
+          });
         } catch (error) {
           photoFailed = true;
           console.error('saveMedPhoto failed', error);
@@ -834,14 +842,18 @@ export async function renderMedEditPage(
     const placeholder = el('div', { class: 'box-photo-placeholder' });
     placeholder.append(icon('camera'));
     placeholder.append(el('span', { html: '拍一张药盒正面，之后找药看图就行' }));
-    preview.append(img, placeholder);
+
+    const statusBadge = el('div', { class: 'box-photo-ai-badge', hidden: true });
+    preview.append(img, placeholder, statusBadge);
 
     /** 当前预览 URL（本地创建的才需要 revoke，库里缓存的留给 medPhotos 管） */
     let localPreviewUrl: string | null = null;
     let hasPhoto = Boolean(pendingPhoto) || false;
     let cropBusy = false;
+    let silentGenAbort: AbortController | null = null;
+    let isSilentGenBusy = false;
 
-    const showPhoto = (url: string, options: { local?: boolean } = {}) => {
+    const showPhoto = (url: string, options: { local?: boolean; isPackshot?: boolean } = {}) => {
       if (localPreviewUrl) {
         URL.revokeObjectURL(localPreviewUrl);
         localPreviewUrl = null;
@@ -849,12 +861,16 @@ export async function renderMedEditPage(
       if (options.local) localPreviewUrl = url;
       img.src = url;
       img.hidden = false;
+      if (options.isPackshot) {
+        img.classList.remove('packshot-fade-in');
+        void img.offsetWidth;
+        img.classList.add('packshot-fade-in');
+      }
       preview.classList.remove('is-empty');
       preview.setAttribute('aria-label', '查看药盒照片操作');
       placeholder.hidden = true;
       hasPhoto = true;
-      shootBtn.querySelector('span')!.textContent = '重拍药盒';
-      cropBtn.hidden = false;
+      updatePhotoStatusBadges();
     };
 
     cleanups.push(() => {
@@ -862,24 +878,79 @@ export async function renderMedEditPage(
         URL.revokeObjectURL(localPreviewUrl);
         localPreviewUrl = null;
       }
+      silentGenAbort?.abort();
     });
 
-    // 编辑已有药或带预填照片时，异步载入当前照片
+    function updatePhotoStatusBadges(): void {
+      shootBtn.querySelector('span')!.textContent = hasPhoto ? '重拍药盒' : '拍照/选图';
+      if (photoKind === 'ai_packshot') {
+        statusBadge.hidden = false;
+        statusBadge.className = 'box-photo-ai-badge is-done';
+        statusBadge.textContent = '✨ AI 展台大图';
+        restoreBtn.hidden = !originalPhoto;
+        cropBtn.hidden = false;
+        aiGenBtn.querySelector('span')!.textContent = '重新生成大图';
+      } else if (hasPhoto) {
+        if (originalPhoto && photoKind === 'original') {
+          statusBadge.hidden = false;
+          statusBadge.className = 'box-photo-ai-badge is-original';
+          statusBadge.textContent = '原拍摄照';
+        } else {
+          statusBadge.hidden = true;
+        }
+        restoreBtn.hidden = true;
+        cropBtn.hidden = false;
+        aiGenBtn.querySelector('span')!.textContent = 'AI 生成大图';
+      } else {
+        statusBadge.hidden = true;
+        restoreBtn.hidden = true;
+        cropBtn.hidden = true;
+        aiGenBtn.querySelector('span')!.textContent = 'AI 生成大图';
+      }
+    }
+
+    // 编辑已有药或带预填照片时，异步载入当前照片与原图
     if (pendingPhoto) {
       void (async () => {
         try {
           const prepared = await prepareBoxPhoto(pendingPhoto!);
           if (!isActive()) return;
           pendingPhoto = prepared;
+          originalPhoto = prepared;
+          existingPhotoBlob = prepared;
           showPhoto(URL.createObjectURL(prepared), { local: true });
         } catch {
           if (isActive() && pendingPhoto) showPhoto(URL.createObjectURL(pendingPhoto), { local: true });
         }
       })();
     } else if (editing) {
-      void getMedPhotoUrl(med.id).then((url) => {
-        if (url && isActive() && !pendingPhoto) showPhoto(url);
+      void getMedPhotoRecord(med.id).then((record) => {
+        if (record && isActive() && !pendingPhoto) {
+          photoKind = record.kind || 'original';
+          originalPhoto = record.originalBlob || (photoKind === 'original' ? record.blob : null);
+          existingPhotoBlob = record.blob;
+          showPhoto(URL.createObjectURL(record.blob), { local: true });
+          updatePhotoStatusBadges();
+        }
       });
+    }
+
+    /** 取当前已有药盒照片（原拍摄图、待存图或库中已有照片） */
+    async function getAvailablePhotoBlob(): Promise<Blob | null> {
+      if (originalPhoto) return originalPhoto;
+      if (pendingPhoto) return pendingPhoto;
+      if (existingPhotoBlob) return existingPhotoBlob;
+      if (editing) {
+        const record = await getMedPhotoRecord(med.id);
+        if (record) {
+          existingPhotoBlob = record.blob;
+          if (!originalPhoto) {
+            originalPhoto = record.originalBlob || (record.kind === 'ai_packshot' ? null : record.blob);
+          }
+          return record.originalBlob || record.blob;
+        }
+      }
+      return null;
     }
 
     const file = el('input', {
@@ -888,10 +959,45 @@ export async function renderMedEditPage(
       style: 'display:none',
     } as any) as HTMLInputElement;
     file.setAttribute('capture', 'environment');
+
     const shootBtn = el('button', { class: 'btn tonal box-photo-btn', type: 'button' } as any);
     shootBtn.append(icon('camera'));
-    shootBtn.append(el('span', { html: '裁切药盒图' }));
+    shootBtn.append(el('span', { html: '拍照/选图' }));
     shootBtn.onclick = () => file.click();
+
+    const restoreBtn = el('button', {
+      class: 'btn tonal box-photo-btn',
+      type: 'button',
+      hidden: true,
+    } as any) as HTMLButtonElement;
+    restoreBtn.append(icon('undo'));
+    restoreBtn.append(el('span', { html: '恢复原图' }));
+    restoreBtn.onclick = () => {
+      if (originalPhoto) {
+        pendingPhoto = originalPhoto;
+        existingPhotoBlob = originalPhoto;
+        photoKind = 'original';
+        showPhoto(URL.createObjectURL(originalPhoto), { local: true });
+        toast('已恢复为原拍摄照片');
+      }
+    };
+
+    const aiGenBtn = el('button', {
+      class: 'btn outlined box-photo-btn',
+      type: 'button',
+    } as any) as HTMLButtonElement;
+    aiGenBtn.append(icon('sparkles'));
+    aiGenBtn.append(el('span', { html: 'AI 生成大图' }));
+    aiGenBtn.onclick = async () => {
+      const photoSource = await getAvailablePhotoBlob();
+      const medName = nameInput.value.trim();
+      if (!photoSource && !medName) {
+        toast('请先输入药品名称，或拍一张药盒照片');
+        file.click();
+        return;
+      }
+      void triggerSilentPackshot(photoSource);
+    };
 
     const cropBtn = el('button', {
       class: 'btn outlined box-photo-btn',
@@ -907,7 +1013,7 @@ export async function renderMedEditPage(
       cropBusy = true;
       setButtonBusy(cropBtn, '正在打开…');
       try {
-        const source = pendingPhoto ?? (editing ? await getLatestMedPhotoBlob(med.id) : null);
+        const source = await getAvailablePhotoBlob();
         if (!isActive()) return;
         if (!source) {
           toast('先拍一张药盒照片');
@@ -916,7 +1022,15 @@ export async function renderMedEditPage(
         const cropped = await openBoxPhotoCropSheet(source, { signal });
         if (!cropped || !isActive()) return;
         await usePhoto(cropped);
-        toast('已重新裁切，保存后生效');
+        originalPhoto = cropped;
+        existingPhotoBlob = cropped;
+        photoKind = 'original';
+        updatePhotoStatusBadges();
+        toast('已更新裁切照片');
+        const imgCfg = getEffectiveImageGenConfig();
+        if (imgCfg.isConfigured) {
+          void triggerSilentPackshot(cropped);
+        }
       } catch (error) {
         if (!isActive()) return;
         console.error('crop box photo failed', error);
@@ -927,12 +1041,88 @@ export async function renderMedEditPage(
       }
     }
 
-    /** 点照片：没图直接拍；有图弹出「重拍 / 重新裁切」 */
+    async function triggerSilentPackshot(sourceBlob: Blob | null): Promise<void> {
+      if (isSilentGenBusy) {
+        silentGenAbort?.abort();
+      }
+      const abort = new AbortController();
+      silentGenAbort = abort;
+      isSilentGenBusy = true;
+      statusBadge.hidden = false;
+      statusBadge.className = 'box-photo-ai-badge is-loading';
+      statusBadge.textContent = '✨ AI 药盒生成中…';
+
+      try {
+        const packshot = await generateMedPackshot({
+          photoBlob: sourceBlob || undefined,
+          name: nameInput.value.trim(),
+          dosageText: dosageInput.value.trim(),
+          signal: abort.signal,
+          onProgress: (step) => {
+            if (!isActive() || abort.signal.aborted) return;
+            statusBadge.textContent = `✨ ${step}`;
+          },
+        });
+        if (!isActive() || abort.signal.aborted) return;
+        pendingPhoto = packshot;
+        photoKind = 'ai_packshot';
+        if (sourceBlob) originalPhoto = sourceBlob;
+        existingPhotoBlob = packshot;
+        showPhoto(URL.createObjectURL(packshot), { local: true, isPackshot: true });
+        toast('已生成药盒大图，保存后生效');
+      } catch (error) {
+        if (abort.signal.aborted || !isActive()) return;
+        console.error('silent packshot gen failed', error);
+        statusBadge.className = 'box-photo-ai-badge is-error';
+        statusBadge.textContent = '⚠️ 生成未完成 (已保留原图)';
+        updatePhotoStatusBadges();
+        const msg = error instanceof Error ? error.message : String(error);
+        toast(`药盒生图未完成：${msg}`);
+      } finally {
+        isSilentGenBusy = false;
+      }
+    }
+
+    /** 点照片：没图直接拍；有图弹出「重拍 / 恢复原图 / 重新生成 / 裁切」 */
     function openPhotoActions(): void {
       if (!hasPhoto) {
         file.click();
         return;
       }
+      const buttons: HTMLElement[] = [];
+
+      if (originalPhoto && photoKind === 'ai_packshot') {
+        const restore = createButton({
+          label: '恢复为原始拍摄照片',
+          variant: 'secondary',
+          icon: 'undo',
+          onClick: () => {
+            sheet.close();
+            pendingPhoto = originalPhoto;
+            existingPhotoBlob = originalPhoto;
+            photoKind = 'original';
+            showPhoto(URL.createObjectURL(originalPhoto!), { local: true });
+            toast('已恢复为原拍摄照片');
+          },
+        });
+        buttons.push(restore);
+      }
+
+      const regen = createButton({
+        label: '重新增强药盒照片',
+        icon: 'sparkles',
+        onClick: async () => {
+          sheet.close();
+          const photoSource = await getAvailablePhotoBlob();
+          if (!photoSource) {
+            toast('没有可用的原始照片');
+            return;
+          }
+          void triggerSilentPackshot(photoSource);
+        },
+      });
+      buttons.push(regen);
+
       const retake = createButton({
         label: '重拍/换一张',
         variant: 'secondary',
@@ -942,29 +1132,38 @@ export async function renderMedEditPage(
           file.click();
         },
       });
+      buttons.push(retake);
+
       const recrop = createButton({
-        label: '重新裁切',
+        label: '重新裁切原图',
+        variant: 'secondary',
         icon: 'scan',
         onClick: () => {
           sheet.close();
           void cropExistingPhoto();
         },
       });
+      buttons.push(recrop);
+
       const cancel = createButton({
         label: '取消',
         variant: 'text',
         onClick: () => sheet.close(),
       });
-      const title = el('div', { class: 'big', html: '药盒照片' });
+      buttons.push(cancel);
+
+      const title = el('div', { class: 'big', html: '药盒照片与展台大图' });
       const hint = el('div', {
         class: 'muted',
-        html: '可以重拍，或拖动四个角重新裁切。所有处理都在本机完成。',
+        html: photoKind === 'ai_packshot'
+          ? '当前呈现为纯白底 AI 商业展台大图。可以随时恢复为原始拍摄照片，或再次生成。'
+          : '当前呈现为原拍摄照片。可以点击生成 AI 展台大图，或重新拍照/裁切。',
       });
-      const actions = el('div', { class: 'box-photo-sheet-actions' }, [recrop, retake, cancel]);
+      const actions = el('div', { class: 'box-photo-sheet-actions' }, buttons);
       const sheet = openBottomSheet({
-        label: '药盒照片',
+        label: '药盒照片操作',
         content: [title, hint, actions],
-        initialFocus: recrop,
+        initialFocus: buttons[0] || cancel,
       });
     }
 
@@ -974,12 +1173,20 @@ export async function renderMedEditPage(
       if (!f || !isActive()) return;
       shootBtn.setAttribute('disabled', 'true');
       try {
-        const cropped = await openBoxPhotoCropSheet(f, { signal });
-        if (!cropped || !isActive()) return;
-        await usePhoto(cropped, true);
+        await usePhoto(f, true);
+        originalPhoto = pendingPhoto;
+        existingPhotoBlob = pendingPhoto;
+        photoKind = 'original';
+        updatePhotoStatusBadges();
+
+        // 拍照/选图成功后，若生图服务已配置，后台静默排队生成展台大图（省去强制裁切打断）
+        const imgCfg = getEffectiveImageGenConfig();
+        if (imgCfg.isConfigured && pendingPhoto) {
+          void triggerSilentPackshot(pendingPhoto);
+        }
       } catch (error) {
         if (!isActive()) return;
-        console.error('prepare cropped box photo failed', error);
+        console.error('prepare photo failed', error);
         toast('照片处理失败，请重拍或用整张图');
       } finally {
         if (isActive()) shootBtn.removeAttribute('disabled');
@@ -1003,7 +1210,7 @@ export async function renderMedEditPage(
     preview.onclick = () => openPhotoActions();
 
     const btnRow = el('div', { class: 'box-photo-actions' });
-    btnRow.append(shootBtn, cropBtn);
+    btnRow.append(shootBtn, restoreBtn, aiGenBtn, cropBtn);
     wrap.append(preview, btnRow, file);
     return wrap;
   }

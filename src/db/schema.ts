@@ -489,12 +489,16 @@ export interface DataSnapshot {
   updatedAt: number;
 }
 
-/** 本地存储的药盒原图（不上云） */
+/** 本地存储的药盒原图与 AI 展台大图（不上云） */
 export interface PhotoBlob {
   id: string;
   medId: string;
   blob: Blob;
   at: number;
+  /** 照片类型：用户真实拍摄原图 或 AI 生成的商业白底展台大图 */
+  kind?: 'original' | 'ai_packshot';
+  /** 若当前展示图为 AI 展台大图，可在此保留一份压缩后的真实拍摄原图，方便无损恢复 */
+  originalBlob?: Blob;
 }
 
 /** 提醒推送状态（仅本地，防重复 + 升级用） */

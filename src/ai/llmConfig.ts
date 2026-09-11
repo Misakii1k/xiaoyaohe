@@ -8,6 +8,8 @@ import {
   getSessionSecret,
   initializeSecretStore,
   LLM_CONFIG_SECRET_KEY,
+  IMAGE_GEN_CONFIG_SECRET_KEY,
+  IMAGE_GEN_PROFILES_SECRET_KEY,
   setSessionSecret,
 } from './secretStore';
 
@@ -404,5 +406,200 @@ function buildLegacyLlmConfig(legacy: Partial<LlmConfig>): LlmConfig {
   } catch {
     // 端点无效时整组失败关闭，避免"默认端点 + 旧服务商密钥"的危险重配对。
     return { ...DEFAULT_LLM_CONFIG, model };
+  }
+}
+
+export type ImageGenEndpointMode = 'auto' | 'edits' | 'generations';
+
+/** 独立 AI 生图服务商配置 */
+export interface ImageGenConfig {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  endpointMode?: ImageGenEndpointMode;
+}
+
+export const DEFAULT_IMAGE_GEN_CONFIG: ImageGenConfig = {
+  enabled: true,
+  baseUrl: '',
+  apiKey: '',
+  model: 'gpt-image-1',
+  endpointMode: 'auto',
+};
+
+/** 读取当前保存的生图独立配置 */
+export function getImageGenConfig(): ImageGenConfig {
+  const stored = getSessionSecret(IMAGE_GEN_CONFIG_SECRET_KEY);
+  if (!stored) return { ...DEFAULT_IMAGE_GEN_CONFIG };
+  try {
+    const parsed = JSON.parse(stored) as Partial<ImageGenConfig>;
+    const mode = parsed.endpointMode === 'edits' || parsed.endpointMode === 'generations'
+      ? parsed.endpointMode
+      : 'auto';
+    return {
+      enabled: parsed.enabled !== false,
+      baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl.trim() : '',
+      apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey.trim() : '',
+      model: typeof parsed.model === 'string' && parsed.model.trim() ? parsed.model.trim() : 'gpt-image-1',
+      endpointMode: mode,
+    };
+  } catch {
+    return { ...DEFAULT_IMAGE_GEN_CONFIG };
+  }
+}
+
+/** 提交生图独立配置 */
+export async function setImageGenConfig(cfg: ImageGenConfig): Promise<void> {
+  let normalizedBaseUrl = '';
+  if (cfg.baseUrl.trim()) {
+    normalizedBaseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
+  }
+  const clean: ImageGenConfig = {
+    enabled: cfg.enabled !== false,
+    baseUrl: normalizedBaseUrl,
+    apiKey: cfg.apiKey.trim(),
+    model: cfg.model.trim() || 'gpt-image-1',
+    endpointMode: cfg.endpointMode === 'edits' || cfg.endpointMode === 'generations'
+      ? cfg.endpointMode
+      : 'auto',
+  };
+  await serializeConfigMutation(async () => {
+    await setSessionSecret(JSON.stringify(clean), IMAGE_GEN_CONFIG_SECRET_KEY);
+  });
+}
+
+export interface ImageGenProfile {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  endpointMode: ImageGenEndpointMode;
+  createdAt: number;
+}
+
+/** 读取所有保存的生图自定义配置 */
+export function getSavedImageGenProfiles(): ImageGenProfile[] {
+  const stored = getSessionSecret(IMAGE_GEN_PROFILES_SECRET_KEY);
+  if (!stored) return [];
+  try {
+    const list = JSON.parse(stored);
+    if (!Array.isArray(list)) return [];
+    return list.map((item) => ({
+      id: typeof item.id === 'string' ? item.id : `igp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : '未命名配置',
+      baseUrl: typeof item.baseUrl === 'string' ? item.baseUrl.trim() : '',
+      apiKey: typeof item.apiKey === 'string' ? item.apiKey.trim() : '',
+      model: typeof item.model === 'string' && item.model.trim() ? item.model.trim() : 'gpt-image-1',
+      endpointMode: (item.endpointMode === 'edits' || item.endpointMode === 'generations' ? item.endpointMode : 'auto') as ImageGenEndpointMode,
+      createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** 保存或更新生图配置档案 */
+export async function saveImageGenProfile(profile: Omit<ImageGenProfile, 'id' | 'createdAt'> & { id?: string }): Promise<ImageGenProfile> {
+  const list = getSavedImageGenProfiles();
+  let normalizedBaseUrl = '';
+  if (profile.baseUrl.trim()) {
+    normalizedBaseUrl = normalizeAndValidateBaseUrl(profile.baseUrl);
+  }
+  const id = profile.id || `igp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const item: ImageGenProfile = {
+    id,
+    name: profile.name.trim() || '自定义生图配置',
+    baseUrl: normalizedBaseUrl,
+    apiKey: profile.apiKey.trim(),
+    model: profile.model.trim() || 'gpt-image-1',
+    endpointMode: profile.endpointMode === 'edits' || profile.endpointMode === 'generations' ? profile.endpointMode : 'auto',
+    createdAt: Date.now(),
+  };
+  const existingIdx = list.findIndex((p) => p.id === id);
+  if (existingIdx >= 0) {
+    list[existingIdx] = item;
+  } else {
+    list.unshift(item);
+  }
+  await serializeConfigMutation(async () => {
+    await setSessionSecret(JSON.stringify(list), IMAGE_GEN_PROFILES_SECRET_KEY);
+  });
+  return item;
+}
+
+/** 删除指定的生图配置档案 */
+export async function deleteImageGenProfile(id: string): Promise<void> {
+  const list = getSavedImageGenProfiles().filter((p) => p.id !== id);
+  await serializeConfigMutation(async () => {
+    await setSessionSecret(JSON.stringify(list), IMAGE_GEN_PROFILES_SECRET_KEY);
+  });
+}
+
+
+/**
+ * 获取生图实际生效的配置：
+ * 若单独配置了 baseUrl / apiKey 则优先使用；
+ * 若未单独填写，且主 AI 服务商可用，则自动复用主 AI 服务商的凭据，极大降低配置门槛。
+ */
+export function getEffectiveImageGenConfig(): {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  endpointMode: ImageGenEndpointMode;
+  isConfigured: boolean;
+  isDerivedFromMain: boolean;
+} {
+  const cfg = getImageGenConfig();
+  const activeLlm = getActiveLlmProvider();
+  const hasCustomUrl = Boolean(cfg.baseUrl.trim());
+  const hasCustomKey = Boolean(cfg.apiKey.trim());
+
+  const baseUrl = hasCustomUrl ? cfg.baseUrl.trim() : activeLlm.baseUrl.trim();
+  const apiKey = hasCustomKey ? cfg.apiKey.trim() : activeLlm.apiKey.trim();
+  const model = cfg.model.trim() || 'gpt-image-1';
+  const endpointMode = cfg.endpointMode || 'auto';
+  const isConfigured = cfg.enabled && Boolean(baseUrl && apiKey);
+  const isDerivedFromMain = isConfigured && (!hasCustomUrl || !hasCustomKey);
+
+  return {
+    enabled: cfg.enabled,
+    baseUrl,
+    apiKey,
+    model,
+    endpointMode,
+    isConfigured,
+    isDerivedFromMain,
+  };
+}
+
+/** 测试生图服务连通性（检测对应端点 /models 或网络连通度） */
+export async function pingImageGenService(cfg?: ImageGenConfig): Promise<LlmHealth> {
+  const effective = cfg ? {
+    baseUrl: cfg.baseUrl.trim() || getActiveLlmProvider().baseUrl.trim(),
+    apiKey: cfg.apiKey.trim() || getActiveLlmProvider().apiKey.trim(),
+    model: cfg.model.trim() || 'gpt-image-1',
+  } : getEffectiveImageGenConfig();
+
+  const now = Date.now();
+  if (!effective.baseUrl || !effective.apiKey) {
+    return { state: 'error', message: '未配置 API 地址或密钥', at: now };
+  }
+  try {
+    const models = await listModels({
+      baseUrl: effective.baseUrl,
+      apiKey: effective.apiKey,
+      model: effective.model,
+    });
+    return {
+      state: 'ok',
+      message: models.length > 0 ? `已连接 · 发现 ${models.length} 个模型` : '已连接',
+      at: now,
+      models,
+    };
+  } catch (e) {
+    return { state: 'error', message: String(e instanceof Error ? e.message : e), at: now };
   }
 }

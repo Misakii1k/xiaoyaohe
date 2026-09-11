@@ -184,11 +184,10 @@ export function buildMedicationReminderPlan({
   );
 }
 
-/** 时段整体提醒标题，如「🔔 早上服药时间到了」 */
+/** 时段整体提醒标题，如「早上服药时间到了」 */
 export function buildReminderGroupTitle(slot: Slot, count: number): string {
-  const icon = count === 1 ? '🔔' : count === 2 ? '⚠️' : '‼️';
-  const prefix = count >= 3 ? `第 ${count} 次提醒 · ` : '';
-  return `${icon} ${prefix}${SLOT_LABEL[slot]}服药时间到了`;
+  const prefix = count >= 3 ? `第 ${count} 次提醒 · ` : count === 2 ? '再次提醒 · ' : '';
+  return `${prefix}${SLOT_LABEL[slot]}服药时间到了`;
 }
 
 /** 时段整体提醒正文：每个药物一行「二甲双胍 1片」，迟到 ≥2 分钟追加提示行 */
@@ -204,9 +203,8 @@ export function buildReminderGroupBody(
 }
 
 export function buildReminderTitle(med: Medication, count: number): string {
-  const icon = count === 1 ? '🔔' : count === 2 ? '⚠️' : '‼️';
-  const prefix = count >= 3 ? `第 ${count} 次提醒` : '';
-  return `${icon} ${prefix ? prefix + ' · ' : ''}该吃 ${med.name} 了`;
+  const prefix = count >= 3 ? `第 ${count} 次提醒 · ` : count === 2 ? '再次提醒 · ' : '';
+  return `${prefix}该吃 ${med.name} 了`;
 }
 
 export function buildReminderBody(

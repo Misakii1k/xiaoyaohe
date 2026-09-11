@@ -73,5 +73,7 @@ Run broader browser/Android gates when affected. After integration, enter each t
 
 - Preserve Git history and `.git`.
 - Product changes must consider the app version and packaging before handoff.
-- Large product changes normally increment the version and create a new package.
+- Large product changes normally increment the version and create a new package following `docs/releases/GUIDE.md`.
 - Small or repository-only changes do not automatically change the product version; document why no product build was needed.
+- Full release and in-app online push workflow is documented in `docs/releases/GUIDE.md`.
+

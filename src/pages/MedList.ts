@@ -33,6 +33,9 @@ import {
   purpleBottleImg,
   clockPillImg,
   aidBagImg,
+  medBottle3dImg,
+  medRecentMortarImg,
+  medAidKit3dImg,
   getMedBottle3dSvg,
   getClockPill3dSvg,
   getAidBag3dSvg,
@@ -60,9 +63,9 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
 
   const statGrid = el('div', { class: 'med-stat-grid' });
   statGrid.append(
-    createStatCard('purple', '全部药品', `${totalCount} 种`, purpleBottleImg, getMedBottle3dSvg),
-    createStatCard('cyan', '近期使用', `${activeCount} 种`, clockPillImg, getClockPill3dSvg),
-    createStatCard('pink', '需要补充', `${lowStockCount} 种`, aidBagImg, getAidBag3dSvg)
+    createStatCard('blue', '全部药品', `${totalCount} 种`, medBottle3dImg || purpleBottleImg, getMedBottle3dSvg),
+    createStatCard('green', '近期使用', `${activeCount} 种`, medRecentMortarImg || clockPillImg, getClockPill3dSvg),
+    createStatCard('pink', '需补充', `${lowStockCount} 种`, medAidKit3dImg || aidBagImg, getAidBag3dSvg),
   );
   content.append(statGrid);
 
@@ -171,56 +174,47 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
 
       // 信息
       const info = el('div', { class: 'med-item-info' });
-      info.append(el('div', { id: medNameId, class: 'medication-batch-name', text: m.name || '未命名' }));
+      info.append(el('div', { id: medNameId, class: 'med-item-name medication-batch-name', text: m.name || '未命名' }));
 
       const dose = med.amountPerDose || med.dosageText || '1片';
       const spec = med.dosageText && med.amountPerDose ? `${med.dosageText} · ${med.amountPerDose}` : dose;
-      info.append(el('div', { class: 'med-item-spec', text: spec }));
-
       const freqText = med.slots.length > 0 ? `每日${med.slots.length}次` : '按需服用';
-      info.append(el('div', { class: 'med-item-freq', text: freqText }));
+      info.append(el('div', { class: 'med-item-spec', text: `${spec} · ${freqText}` }));
 
       const badges = el('div', { class: 'med-item-badges' });
       const stock = med.inventory?.remaining ?? 36;
       const low = isLowStock(med);
+      const unit = med.doseUnit || '片';
       const stockPill = el('span', {
         class: `med-stock-pill ${low ? 'low' : 'ok'}`,
-        text: low ? `库存不足 剩余 ${stock}片` : `库存充足 剩余 ${stock}片`,
+        text: low ? `库存不足 剩余${stock}${unit}` : `库存充足 剩余${stock}${unit}`,
       });
       badges.append(stockPill);
       info.append(badges);
 
-      // 编辑按钮
-      const editBtn = el('button', {
-        class: 'med-item-edit-btn',
-        type: 'button',
-        'aria-label': '编辑药品',
-      } as any);
-      editBtn.append(icon('edit'));
-      editBtn.onclick = (e) => {
-        e.stopPropagation();
-        navigate(`/meds/${med.id}/edit`);
-      };
+      // 右侧引导箭头
+      const chevron = el('div', { class: 'med-item-chevron' });
+      chevron.append(icon('chevron-right'));
 
       card.onclick = () => navigate(`/meds/${med.id}/edit`);
-      card.append(thumb, info, editBtn);
+      card.append(thumb, info, chevron);
       listContainer.append(card);
     }
   }
 
   renderFilteredCards();
 
-  // 5. 底部悬浮 "+ 添加药品" 按钮
+  // 5. 底部右下角悬浮 "+ 添加药品" 按钮（通过 actionDock 稳定挂载）
   const fabAdd = el('button', {
     class: 'med-fab-add',
     type: 'button',
-  });
+    'aria-label': '添加药品',
+  } as any);
   fabAdd.append(icon('plus'), el('span', { text: '添加药品' }));
   fabAdd.onclick = () => navigate('/meds/create');
-  content.append(fabAdd);
 
   if (!signal?.aborted) {
-    const dock = createActionDock();
+    const dock = createActionDock([fabAdd]);
     const topRight = el('div', { class: 'topbar-actions medication-list-actions' });
     const batchBtn = topbarPill({
       icon: 'list',
@@ -307,6 +301,12 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
       if (cb.checked) selected.add(m.id); else selected.delete(m.id);
       refreshSelectionState();
     };
+    card.onclick = (e) => {
+      if ((e.target as HTMLElement).closest('.medication-batch-checkbox-wrap')) return;
+      if (selected.has(m.id)) selected.delete(m.id);
+      else selected.add(m.id);
+      refreshSelectionState();
+    };
     checkboxWrap.append(cb);
     checkboxByMedId.set(m.id, cb);
     rowByMedId.set(m.id, card);
@@ -343,12 +343,11 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
 
   const dock = createActionDock();
   dock.classList.add('medication-batch-dock');
-  const dockCounter = el('span', { class: 'medication-batch-dock-count', text: '已选 0 种' });
   const enableButton = createButton({ label: '启用', variant: 'secondary', onClick: () => void setRulesForSelected(true) });
   const disableButton = createButton({ label: '禁用', variant: 'secondary', onClick: () => void setRulesForSelected(false) });
-  const slotButton = createButton({ label: '修改时段', variant: 'secondary', icon: 'clock', onClick: openSlotMenu });
-  const deleteButton = createButton({ label: '删除所选', variant: 'danger', icon: 'trash', onClick: () => void deleteSelected() });
-  dock.append(dockCounter, enableButton, disableButton, slotButton, deleteButton);
+  const slotButton = createButton({ label: '改时段', variant: 'secondary', icon: 'clock', onClick: openSlotMenu });
+  const deleteButton = createButton({ label: '删除', variant: 'danger', icon: 'trash', onClick: () => void deleteSelected() });
+  dock.append(enableButton, disableButton, slotButton, deleteButton);
 
   renderPage({ root, title: '批量管理', activeTab: 'meds', topRight, content, actionDock: dock });
 
@@ -364,7 +363,6 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
     const selSpan = selectAllBtn.querySelector('span');
     if (selSpan) selSpan.textContent = selected.size === meds.length ? '取消全选' : '全选';
     counterLabel.textContent = text;
-    dockCounter.textContent = text;
   }
 
   async function setRulesForSelected(enabled: boolean): Promise<void> {
