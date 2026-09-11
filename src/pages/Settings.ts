@@ -1884,6 +1884,69 @@ function renderAppUpdatePanel(): SettingsRenderPart {
   };
 }
 
+function appendFormattedInline(parent: HTMLElement, text: string): void {
+  const sanitized = text.replaceAll('$\\to$', '→').replaceAll('\\to', '→');
+  const regex = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(sanitized)) !== null) {
+    if (match.index > lastIndex) {
+      parent.append(document.createTextNode(sanitized.slice(lastIndex, match.index)));
+    }
+    const token = match[0];
+    if (token.startsWith('**') && token.endsWith('**')) {
+      parent.append(el('strong', { text: token.slice(2, -2) }));
+    } else if (token.startsWith('`') && token.endsWith('`')) {
+      parent.append(el('code', { class: 'app-update-code', text: token.slice(1, -1) }));
+    }
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < sanitized.length) {
+    parent.append(document.createTextNode(sanitized.slice(lastIndex)));
+  }
+}
+
+function renderFormattedReleaseNotes(rawNotes: string): HTMLElement {
+  const container = el('div', { class: 'app-update-release-notes' });
+  const lines = rawNotes.split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith('# ')) {
+      const heading = el('div', { class: 'app-update-notes-h1' });
+      appendFormattedInline(heading, trimmed.slice(2).trim());
+      container.append(heading);
+    } else if (trimmed.startsWith('## ')) {
+      const heading = el('div', { class: 'app-update-notes-h2' });
+      appendFormattedInline(heading, trimmed.slice(3).trim());
+      container.append(heading);
+    } else if (trimmed.startsWith('### ')) {
+      const heading = el('div', { class: 'app-update-notes-h3' });
+      appendFormattedInline(heading, trimmed.slice(4).trim());
+      container.append(heading);
+    } else if (/^\s*[-*]\s+/.test(line)) {
+      const isSub = /^\s{2,}[-*]\s+/.test(line);
+      const li = el('div', { class: `app-update-notes-li${isSub ? ' sub' : ''}` });
+      const bullet = el('span', { class: 'app-update-notes-bullet', text: isSub ? '◦' : '•' });
+      const content = el('span', { class: 'app-update-notes-li-content' });
+      const itemText = line.replace(/^\s*[-*]\s+/, '');
+      appendFormattedInline(content, itemText);
+      li.append(bullet, content);
+      container.append(li);
+    } else {
+      const p = el('div', { class: 'app-update-notes-p' });
+      appendFormattedInline(p, trimmed);
+      container.append(p);
+    }
+  }
+
+  return container;
+}
+
 function buildAppUpdateBody(
   body: HTMLElement,
   panelEl: HTMLElement,
@@ -1953,26 +2016,34 @@ function buildAppUpdateBody(
   }
 
   // 发现可用更新：显示版本、来源、更新说明、操作按钮与进度条
-  const updateBanner = el('div', { class: 'banner info mt-3' });
-  const updateTitle = el('div');
-  updateTitle.append('发现新版本 ', el('strong', { text: `v${update.version}` }));
+  const updateCard = el('div', { class: 'app-update-card mt-3' });
+
+  const updateHeader = el('div', { class: 'app-update-header' });
+  const titleRow = el('div', { class: 'app-update-title-row' });
+  const title = el('div', { class: 'app-update-title' });
+  title.append(icon('sparkles'), '发现新版本 ', el('strong', { text: `v${update.version}` }));
+
+  const badge = el('span', { class: 'app-update-badge', text: '新版本' });
+  titleRow.append(title, badge);
 
   const sourceDesc = update.source === 'cloud'
     ? `来源：云端极速通道${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`
     : update.source === 'github'
     ? `来源：GitHub 官方发布${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`
     : `来源：局域网设备 ${update.peerHost ?? ''}`;
-  const updateSource = el('div', {
-    class: 'muted text-xs mt-1',
+  const updateMeta = el('div', {
+    class: 'app-update-meta',
     text: sourceDesc,
   });
-  updateBanner.append(updateTitle, updateSource);
+
+  updateHeader.append(titleRow, updateMeta);
+  updateCard.append(updateHeader);
 
   if (update.releaseNotes) {
-    const notesBox = el('div', { class: 'app-update-release-notes', text: update.releaseNotes });
-    updateBanner.append(notesBox);
+    const notesBox = renderFormattedReleaseNotes(update.releaseNotes);
+    updateCard.append(notesBox);
   }
-  body.append(updateBanner);
+  body.append(updateCard);
 
   // 下载进度容器（初始隐藏）
   const progressBox = el('div', { class: 'app-update-progress-box', style: 'display: none;' });
