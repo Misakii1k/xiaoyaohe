@@ -5,6 +5,14 @@ Integration branch: `main`
 Product version: `1.0.5`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## App Update Card Layout & Markdown Release Notes Optimization 2026-09-11 (workspace/claude)
+
+- **设置页应用更新面板排版布局根治与发布说明轻量渲染优化 (`src/pages/Settings.ts`, `src/ui/styles/pages/settings.css`)**：
+  - **排版折行挤压根治**：定位并解决原更新区域错误继承 `.banner`（`display: flex; align-items: center;`）导致标题与来源文本被挤压成 1 字符宽垂直单列的排版缺陷；升级为独立的竖向卡片架构 `.app-update-card`；
+  - **标题与元数据美化**：引入 `icon('sparkles')` 品牌图标与 `app-update-badge` 药丸标签，主标题、版本号与来源大小信息呈现清晰自然的横向结构与层级；
+  - **发布说明格式化渲染**：新增零依赖轻量 Markdown 解析函数 `renderFormattedReleaseNotes`，在严格保证不污染主包、不引入外部库（维持 `assistantContentLazyLoading` 契约测试）的前提下，将标题、条目列表、加粗语法 `**text**` 与内联代码 `` `code` `` 转换为语义化高保真 DOM 节点；
+  - **本地保留**：已在本地提交，保持未推送至远端云端状态，等待下一次统一发版时合并推送。
+
 ## Online Update & Release Distribution Guide 2026-09-11 (workspace/claude)
 
 - **线上更新分发与版本发布完整指南与 SOP 标准化 (`docs/releases/GUIDE.md`)**：
