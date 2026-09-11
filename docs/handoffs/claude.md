@@ -4,7 +4,7 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-11
 Status: active
-Latest version: `1.0.0` (Android `versionCode: 35`)
+Latest version: `1.0.1` (Android `versionCode: 36`)
 
 ## Summary of Accomplished Work
 

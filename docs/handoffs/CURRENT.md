@@ -2,7 +2,7 @@
 
 Updated: 2026-09-11
 Integration branch: `main`
-Product version: `1.0.0`
+Product version: `1.0.1`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
 ## 1:1 Design Mockup Reproduction & Real Backend Integration 2026-09-11 (workspace/claude)
