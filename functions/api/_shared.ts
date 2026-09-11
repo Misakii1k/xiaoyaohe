@@ -87,6 +87,14 @@ export function pickApkAsset(assets: GithubAsset[] | undefined): GithubAsset | n
     && !asset.name.includes('unaligned')) ?? null;
 }
 
+/** 客户端与代理共用的 Web 增量更新包选择规则：第一个 .zip 资产（如 web-bundle-*.zip）。 */
+export function pickBundleAsset(assets: GithubAsset[] | undefined): GithubAsset | null {
+  if (!Array.isArray(assets)) return null;
+  return assets.find((asset) => typeof asset.name === 'string'
+    && asset.name.endsWith('.zip')
+    && (asset.name.includes('bundle') || asset.name.includes('web'))) ?? null;
+}
+
 export function githubHeaders(token: string, accept: string): Record<string, string> {
   return {
     Authorization: `Bearer ${token}`,

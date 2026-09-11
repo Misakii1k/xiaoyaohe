@@ -101,6 +101,7 @@ import { renderImageGenSettingsPanel } from '../ui/imageGenSettingsPanel';
 import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
 import {
   clearAvailableUpdate,
+  downloadAndApplyWebBundle,
   downloadUpdate,
   getAvailableUpdate,
   installApk,
@@ -1884,14 +1885,21 @@ function buildAppUpdateBody(
   const title = el('div', { class: 'app-update-title' });
   title.append(icon('sparkles'), '发现新版本 ', el('strong', { text: `v${update.version}` }));
 
-  const badge = el('span', { class: 'app-update-badge', text: '新版本' });
+  const isIncremental = update.updateType === 'incremental' && Boolean(update.bundleUrl);
+  const badge = el('span', { class: 'app-update-badge', text: isIncremental ? '轻量热更新' : '新版本' });
   titleRow.append(title, badge);
 
-  const sourceDesc = update.source === 'cloud'
-    ? `来源：云端极速通道${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`
-    : update.source === 'github'
-    ? `来源：GitHub 官方发布${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`
-    : `来源：局域网设备 ${update.peerHost ?? ''}`;
+  let sourceDesc = '';
+  if (isIncremental) {
+    const sizeText = update.bundleSize ? ` · 大小：${(update.bundleSize / (1024 * 1024)).toFixed(1)} MB` : '';
+    sourceDesc = `方式：秒级增量更新${sizeText}（无需重新安装）`;
+  } else if (update.source === 'cloud') {
+    sourceDesc = `来源：云端极速通道${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`;
+  } else if (update.source === 'github') {
+    sourceDesc = `来源：GitHub 官方发布${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`;
+  } else {
+    sourceDesc = `来源：局域网设备 ${update.peerHost ?? ''}`;
+  }
   const updateMeta = el('div', {
     class: 'app-update-meta',
     text: sourceDesc,
@@ -1919,7 +1927,10 @@ function buildAppUpdateBody(
   body.append(progressBox);
 
   const row = el('div', { class: 'btn-row mt-3' });
-  const downloadBtn = el('button', { class: 'btn', text: '下载并安装' });
+  const downloadBtn = el('button', {
+    class: 'btn',
+    text: isIncremental ? '一键秒级更新' : '下载并安装',
+  });
   const recheckBtn = el('button', { class: 'btn tonal', text: '重新检查' });
   const skipBtn = el('button', { class: 'btn tonal', text: '本次跳过' });
 
@@ -1952,12 +1963,39 @@ function buildAppUpdateBody(
   downloadBtn.onclick = async () => {
     if (downloadBtn.getAttribute('aria-busy') === 'true') return;
     downloadBtn.setAttribute('aria-busy', 'true');
-    downloadBtn.textContent = '准备下载...';
     downloadBtn.disabled = true;
     recheckBtn.disabled = true;
     skipBtn.disabled = true;
     progressBox.style.display = 'block';
 
+    if (isIncremental) {
+      try {
+        downloadBtn.textContent = '正在下载更新...';
+        progressText.textContent = '正在下载增量包...';
+        await downloadAndApplyWebBundle(update, (status) => {
+          downloadBtn.textContent = status;
+          progressText.textContent = status;
+        });
+        toast(`已更新至 v${update.version}，正在刷新生效...`, 2500);
+        setTimeout(() => {
+          window.location.reload();
+        }, 800);
+        return;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : '未知错误';
+        toast(`增量更新失败：${msg}`, 4200);
+      } finally {
+        downloadBtn.removeAttribute('aria-busy');
+        downloadBtn.textContent = isIncremental ? '一键秒级更新' : '下载并安装';
+        downloadBtn.disabled = false;
+        recheckBtn.disabled = false;
+        skipBtn.disabled = false;
+        progressBox.style.display = 'none';
+      }
+      return;
+    }
+
+    downloadBtn.textContent = '准备下载...';
     try {
       const apkPath = await downloadUpdate(update, (percent, received, total) => {
         progressFill.style.width = `${percent}%`;
@@ -1974,7 +2012,7 @@ function buildAppUpdateBody(
       toast(`更新失败：${msg}`, 4200);
     } finally {
       downloadBtn.removeAttribute('aria-busy');
-      downloadBtn.textContent = '下载并安装';
+      downloadBtn.textContent = isIncremental ? '一键秒级更新' : '下载并安装';
       downloadBtn.disabled = false;
       recheckBtn.disabled = false;
       skipBtn.disabled = false;

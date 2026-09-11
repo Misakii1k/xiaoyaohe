@@ -7,22 +7,25 @@ Status: active
 Latest version: `1.0.8` (Android `versionCode: 43`)
 
 ## Summary of Accomplished Work
- 
-+### 41. 安装包大幅瘦身 (-31.76MB)、桌面拷贝清理规则与零服务器成本增量更新方案规划 (1.0.8)
-+
-+1. **安装包大幅瘦身（-31.76MB，净降 63.9%）**：
-+   - 清除历史遗留在 `public/release/` 下的旧版 APK（31.3MB），杜绝 Vite 打包与 Capacitor 静态资源复制泄露；
-+   - 修改 `scripts/gen-version.mjs` 仅扫描仓库根目录 `release/`；
-+   - `android/app/build.gradle` 的 `aaptOptions.ignoreAssetsPattern` 追加 `:*.apk`，在 Gradle 编译层彻底阻断任何 APK 文件混入 assets；
-+   - 安装包体积从 49.7MB 降低至 17.96MB（18,835,967 字节）。
-+2. **桌面拷贝清理与规则确立**：
-+   - 已彻底删除放置在用户电脑桌面上的旧版 APK 文件；
-+   - 明确规则：后续所有发布流程严禁向用户桌面复制安装包，安装包一律只保留在 `medbox/release/` 目录和 GitHub Releases 线上。
-+3. **零服务器成本增量更新方案规划**：
-+   - 基于现成 Cloudflare Pages + GitHub Releases 打造无感增量热更新机制；
-+   - 包含构建脚本打包 `web-bundle.zip`、`version.json` 声明增量地址与最低底座版本、原生插件安全下载解压与 Capacitor 基座热切换，设计详见 `implementation_plan.md`。
-+
- ### 40. 设置页纯平铺分类卡片架构、五彩微拟物图标重绘与药品列表/批量管理排版全面优化 (1.0.7)
+
+### 41. 安装包大幅瘦身 (-31.76MB)、桌面拷贝清理规则与零服务器成本增量更新方案实施与落地 (1.0.8)
+
+1. **安装包大幅瘦身（-31.76MB，净降 63.9%）**：
+   - 清除历史遗留在 `public/release/` 下的旧版 APK（31.3MB），杜绝 Vite 打包与 Capacitor 静态资源复制泄露；
+   - 修改 `scripts/gen-version.mjs` 仅扫描仓库根目录 `release/`；
+   - `android/app/build.gradle` 的 `aaptOptions.ignoreAssetsPattern` 追加 `:*.apk`，在 Gradle 编译层彻底阻断任何 APK 文件混入 assets；
+   - 安装包体积从 49.7MB 降低至 17.96MB（18,835,967 字节）。
+2. **桌面拷贝清理与规则确立**：
+   - 已彻底删除放置在用户电脑桌面上的旧版 APK 文件；
+   - 明确规则：后续所有发布流程严禁向用户桌面复制安装包，安装包一律只保留在 `medbox/release/` 目录和 GitHub Releases 线上。
+3. **零服务器成本增量更新方案实施与落地（已完成）**：
+   - 基于现有 Cloudflare Pages + GitHub Releases 打造无感增量热更新机制；
+   - `ApkDistributionPlugin.java` 实现 `downloadAndUnpackBundle`、`applyWebBundle`、`resetWebBundle` 与 `getActiveWebBundle` 原生安全桥接；
+   - 增加 `scripts/bundle-web.mjs`，与 `gen-version.mjs`、`package.json` 联动自动化归档 `web-bundle.zip` 并注入 `version.json`；
+   - 客户端 `apkTransport.ts` 与 `Settings.ts` 动态判断底座版本并支持「一键秒级更新」；
+   - 新增 `tests/bundleUpdateVerification.test.ts`，全量 85 个测试套件 523 项测试 100% 通过，Gradle 编译验证通过。
+
+### 40. 设置页纯平铺分类卡片架构、五彩微拟物图标重绘与药品列表/批量管理排版全面优化 (1.0.7)
 
 1. **设置页（我的）内容去重与架构扁平化**：
    - 移除原「顶部 6 行菜单卡片 (`profile-menu-card`)」及右上角「齿轮菜单按钮 (`gearBtn`)」，彻底解决设置功能三重重复的问题；

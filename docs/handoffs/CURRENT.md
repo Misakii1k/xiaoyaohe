@@ -14,8 +14,13 @@ Latest integration commit: `merge: integrate workspace consolidation and LAN APK
   - 安装包体积从 49.7MB 锐减至 17.96MB（18,835,967 字节）。
 - **永久规则确立：严禁向用户电脑桌面复制安装包**：
   - 用户明确规则：发版产物一律仅保存在 `medbox/release/` 目录并通过 GitHub Releases 分发，严禁复制到 `$HOME/Desktop`；已清理桌面上的历史 APK 文件。
-- **零服务器成本增量热更新实现方案（已规划）**：
-  - 详细设计规划详见 `implementation_plan.md`，基于现成 Cloudflare Pages + GitHub Releases 免费体系打造无感秒级增量热更新（web-bundle.zip 约 1.8MB）。
+- **零服务器成本增量热更新实现与落地（已完成实施与验证）**：
+  - 基于 Cloudflare Pages + GitHub Releases 打造零服务器成本无感增量热更新链路；
+  - `ApkDistributionPlugin.java` 新增 `downloadAndUnpackBundle`、`applyWebBundle`、`resetWebBundle` 与 `getActiveWebBundle`，内建 SHA-256 校验、Zip Slip 路径穿越防御与 index.html 存在性断言；
+  - Cloudflare Pages Functions (`_shared.ts`, `download.ts`, `releases.ts`) 支持 `?asset=bundle` 增量包流式代理下载与直链改写；
+  - `scripts/bundle-web.mjs` 与 `scripts/gen-version.mjs` 联动将 `dist/` 归档为 `web-bundle.zip` 并向 `public/version.json` 与 `dist/version.json` 注入增量元数据；
+  - `apkTransport.ts` 与 `Settings.ts` 动态评估底座版本（`minNativeVersionCode`），优先呈现「轻量热更新」与「一键秒级更新」，免调起安装器秒级刷新生效；
+  - 新增 `tests/bundleUpdateVerification.test.ts` 专项套件，全量 85 个测试套件 523 项测试 100% PASS，Android Gradle 编译 BUILD SUCCESSFUL。
 
 ## Settings Flat-Card Architecture, Colorful Squircle Icons & Medication List/Batch Layout Overhaul 2026-09-11 (workspace/claude)
 

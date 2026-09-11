@@ -70,6 +70,8 @@ export function saveAvailableUpdate(update: AvailableUpdate): void {
   }
 }
 
+export type UpdateType = 'incremental' | 'full';
+
 export interface AvailableUpdate {
   /** 更新版本号（如 "0.9.15"）。 */
   version: string;
@@ -77,12 +79,22 @@ export interface AvailableUpdate {
   versionCode: number;
   /** 更新来源类型。 */
   source?: UpdateSource;
+  /** 更新方式类型：增量热更新（秒级就地生效）或全量安装包更新。 */
+  updateType?: UpdateType;
   /** 分发源 IPv4（局域网更新有效）。 */
   peerHost?: string;
   /** 分发源 TCP 端口（一般是 38473，局域网更新有效）。 */
   peerPort?: number;
   /** 远程下载直链（GitHub/HTTP 更新有效）。 */
   downloadUrl?: string;
+  /** Web 增量更新包直链（如有）。 */
+  bundleUrl?: string;
+  /** Web 增量更新包大小（字节数）。 */
+  bundleSize?: number;
+  /** Web 增量更新包 SHA256 校验码。 */
+  bundleSha256?: string;
+  /** Web 增量更新包依赖的最低底座原生版本代码。 */
+  minNativeVersionCode?: number;
   /** 更新日志/说明。 */
   releaseNotes?: string;
   /** 安装包大小（字节数）。 */
@@ -108,6 +120,14 @@ interface ApkDistributionPlugin {
   }>;
   installApk(options: { apkPath: string; expectedVersionCode?: number }): Promise<void>;
   deleteApk(options: { apkPath: string }): Promise<{ deleted: boolean }>;
+  downloadAndUnpackBundle?(options: { url: string; version: string; sha256?: string }): Promise<{
+    success: boolean;
+    version: string;
+    basePath: string;
+  }>;
+  applyWebBundle?(options: { basePath: string }): Promise<{ success: boolean; basePath: string }>;
+  resetWebBundle?(): Promise<{ success: boolean }>;
+  getActiveWebBundle?(): Promise<{ basePath: string; isDefault: boolean }>;
   addListener?(
     eventName: string,
     listenerFunc: (data: any) => void,
@@ -404,6 +424,74 @@ export async function deleteApk(apkPath: string): Promise<void> {
 }
 
 /**
+ * 下载并就地激活 Web 增量热更新。
+ * 成功后返回 true，调用方可通知用户或触发 window.location.reload()。
+ */
+export async function downloadAndApplyWebBundle(
+  update: AvailableUpdate,
+  onProgress?: (status: string) => void,
+): Promise<boolean> {
+  if (!isApkDistributionAvailable()) {
+    throw new Error('当前环境不支持增量更新（仅 Android App 支持）');
+  }
+  if (!update.bundleUrl) {
+    throw new Error('未提供增量更新包下载地址');
+  }
+  if (typeof plugin.downloadAndUnpackBundle !== 'function' || typeof plugin.applyWebBundle !== 'function') {
+    throw new Error('原生增量更新模块未就绪');
+  }
+
+  const target = resolveDownloadUrl(update.bundleUrl);
+  if (!target) {
+    throw new Error('增量更新包下载地址不可信，已拒绝下载。');
+  }
+
+  onProgress?.('正在下载轻量更新包...');
+  const unpackResult = await plugin.downloadAndUnpackBundle({
+    url: target,
+    version: update.version,
+    sha256: update.bundleSha256,
+  });
+
+  if (!unpackResult || !unpackResult.success || !unpackResult.basePath) {
+    throw new Error('解压增量更新包失败');
+  }
+
+  onProgress?.('正在激活新版本...');
+  const applyResult = await plugin.applyWebBundle({
+    basePath: unpackResult.basePath,
+  });
+
+  if (!applyResult || !applyResult.success) {
+    throw new Error('激活增量更新失败');
+  }
+
+  // 清除可用更新提示，避免重复触发
+  clearAvailableUpdate();
+  return true;
+}
+
+/** 重置为 APK 内置资产。 */
+export async function resetWebBundle(): Promise<void> {
+  if (!isApkDistributionAvailable() || typeof plugin.resetWebBundle !== 'function') return;
+  try {
+    await plugin.resetWebBundle();
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 获取当前激活的 WebBundle 状态。 */
+export async function getActiveWebBundle(): Promise<{ basePath: string; isDefault: boolean } | null> {
+  if (!isApkDistributionAvailable() || typeof plugin.getActiveWebBundle !== 'function') return null;
+  try {
+    return await plugin.getActiveWebBundle();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 简单的 semver 比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 相等。
  * 仅支持数字段（"0.9.1" → [0,9,1]），不支持预发布标签。
  */
@@ -549,6 +637,10 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
       downloadUrl?: string;
       fileSize?: number;
       sha256?: string;
+      bundleUrl?: string;
+      bundleSize?: number;
+      bundleSha256?: string;
+      minNativeVersionCode?: number;
       releaseNotes?: string;
     };
     if (!json || typeof json.version !== 'string') return null;
@@ -566,6 +658,18 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
       ? json.versionCode
       : (LOCAL_APP_VERSION_CODE + Math.max(1, compareVersion(remoteVersion, LOCAL_APP_VERSION)));
 
+    // 增量包校验与判断
+    const bundleUrl = resolveDownloadUrl(json.bundleUrl);
+    const bundleSha256 = typeof json.bundleSha256 === 'string' && SHA256_RE.test(json.bundleSha256.toLowerCase())
+      ? json.bundleSha256.toLowerCase()
+      : undefined;
+    const minNativeCode = typeof json.minNativeVersionCode === 'number' ? json.minNativeVersionCode : estimatedCode;
+    const canIncremental = Boolean(
+      bundleUrl
+      && LOCAL_APP_VERSION_CODE > 0
+      && LOCAL_APP_VERSION_CODE >= minNativeCode,
+    );
+
     // 元数据里的直链是 `/api/download?tag=v…`（同源代理），也兼容绝对地址。
     const downloadUrl = resolveDownloadUrl(json.downloadUrl)
       ?? `${CLOUD_ORIGIN}/api/download?tag=v${encodeURIComponent(remoteVersion)}`;
@@ -577,7 +681,12 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
       version: remoteVersion,
       versionCode: estimatedCode,
       source: 'cloud',
+      updateType: canIncremental ? 'incremental' : 'full',
       downloadUrl,
+      bundleUrl: bundleUrl ?? undefined,
+      bundleSize: typeof json.bundleSize === 'number' && json.bundleSize > 0 ? json.bundleSize : undefined,
+      bundleSha256,
+      minNativeVersionCode: minNativeCode,
       fileSize: typeof json.fileSize === 'number' && json.fileSize > 0 ? json.fileSize : undefined,
       sha256,
       releaseNotes: typeof json.releaseNotes === 'string' ? json.releaseNotes.trim() : undefined,
@@ -652,14 +761,22 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
     return null;
   }
 
+  const bundleAsset = assets.find((a) => a.name?.endsWith('.zip') && (a.name.includes('bundle') || a.name.includes('web')));
+  const bundleUrl = bundleAsset?.browser_download_url ? resolveDownloadUrl(bundleAsset.browser_download_url) : null;
+
   const diff = compareVersion(remoteVersion, LOCAL_APP_VERSION);
   const estimatedCode = diff > 0 ? LOCAL_APP_VERSION_CODE + diff : LOCAL_APP_VERSION_CODE;
+  const canIncremental = Boolean(bundleUrl && LOCAL_APP_VERSION_CODE > 0 && LOCAL_APP_VERSION_CODE >= estimatedCode);
 
   return {
     version: remoteVersion,
     versionCode: estimatedCode,
     source: 'github',
+    updateType: canIncremental ? 'incremental' : 'full',
     downloadUrl,
+    bundleUrl: bundleUrl ?? undefined,
+    bundleSize: typeof bundleAsset?.size === 'number' && bundleAsset.size > 0 ? bundleAsset.size : undefined,
+    minNativeVersionCode: estimatedCode,
     fileSize: typeof apkAsset.size === 'number' && apkAsset.size > 0 ? apkAsset.size : undefined,
     releaseNotes: typeof releaseData.body === 'string' ? releaseData.body.trim() : undefined,
     discoveredAt: Date.now(),
