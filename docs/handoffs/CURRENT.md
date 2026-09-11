@@ -1,9 +1,108 @@
 # Current Integration State
 
-Updated: 2026-09-09
+Updated: 2026-09-11
 Integration branch: `main`
 Product version: `1.0.0`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## 1:1 Design Mockup Reproduction & Real Backend Integration 2026-09-11 (workspace/claude)
+
+- **主导航与四屏 1:1 视觉复刻与真实后端数据联通 (`media_1789105284209.jpg`) 深度复审与 Bug 修复**：
+  - **Screen 1「今天」**：
+    - 修复药品卡片圆形 Radio 打卡按钮交互：点击直接一键切换打卡/撤回状态并写入 IndexedDB，撤回/打卡均联动清除或更新系统通知；点击卡片主体仍打开剂量确认弹窗；
+    - 修复频次文案硬编码问题：从静态「每日1次」改为根据 `med.slots` 动态推导 `每日N次`；
+    - 修复库存单位硬编码问题：从静态「片」改为按药品配置 `med.inventory.unit || med.doseUnit` 自适应呈现（如「48粒」）；
+    - 调整环形进度条状态指示点颜色：已服用设为高饱和宝蓝 `#2563eb`（浅蓝底 `#eff6ff`），待服用为翡翠绿 `#10b981`，跳过为中灰 `#94a3b8`，完美吻合设计图。
+  - **Screen 2「药品」**：
+    - 指标卡数量规范间距（`${totalCount} 种`），与图 2、图 3 对齐；
+    - 药品列表行、分类过滤器及「+ 添加药品」FAB 保持 100% 契约与视觉一致。
+  - **Screen 3「库存」**：
+    - 首行「库存健康」卡片不仅视觉呈现 3D 发光勾选盾牌与右侧箭头 `>`，且为头部增加点击联动：点击卡片头部即可直接呼出智能录入、历史操作与撤销、批量预扣、导出清单等全部库存底层操作。
+  - **Screen 4「我的」**：
+    - **修复致命 DOM 节点夺取 Bug**：此前齿轮按钮 ⚙ 点击直接将 `advancedWrapper` 内的三个设置分组 DOM 节点挪移至 BottomSheet，导致关闭弹窗后主页面底层所有设置节点永久丢失。现改为提供专用「高级系统设置」快捷操作面板，支持平滑滚动与直接唤起弹窗，主页面 DOM 树始终稳固完好；
+    - **修复移动端网格样式缺失**：补全 `.profile-stats-grid`、`.profile-stat-card`、`.profile-stat-icon` 等移动端基础 CSS，在手机端呈现高保真 1x3 独立卡片网格；
+    - 统一路由跳转为标准 `navigate()` 方法；文案对齐「用药管理 第 X 天」；
+    - 对齐 6 行菜单项的图标底色与主色调（通知-暖橙、时段-生机绿、外观-紫罗兰、保活-橙红、帮助-青蓝、关于-宝蓝）。
+- **全绿验证门**：
+  - `npm run typecheck`（0 errors）；
+  - `npm test`（83 个测试套件，507 项测试 100% 全绿）；
+  - `npm run build:web` 成功编译构建。
+
+## Pixel-Perfect Visual Refinement & Zero-Emoji Vector System 2026-09-11 (workspace/claude)
+
+- **严格清退全部 Emoji，全面贯彻统一矢量 SVG 图标体系 (`/oil-icon`)**：
+  - 响应用户全局总要求「不使用 emoji，优先采用统一风格绘制的 icon」；
+  - 清理所有前端页面（`Today.ts`, `Settings.ts`, `TakeMedModal.ts`, `llmProviderEditor.ts`）、系统通知（`medicationReminderPlan.ts`）以及自包含预览原型（`design_mockup_preview.html`）中的 emoji 字符（🔔、⚠️、💡、✓ 字符、🎉、☀️、🌙、✨、📅、🔍、⚙、📦、📋、❤️、📷 等）；
+  - 全面替换为规范统一的 Tabler / Lucide 风格 SVG 纯矢量图标（1.75~2.2 stroke-width，带无障碍标签与自适应色彩）。
+- **「今天」页面细节对齐 (`media_1789100010055.png`)**：
+  - 顶部晨光绿植背景新增微散斑毛玻璃遮罩 (`.today-nature-bokeh-glass`，`backdrop-filter: blur(14px)`)；
+  - 标语「按时用药，守护健康」配笔刷强调下划线 SVG；
+  - 进度卡右侧收窄为专属紧凑悬浮胶囊卡片 (`.today-capsule-card`)，搭载 48px 小型高光 3D 胶囊与中文字体治愈手写体「坚持用药 / 很重要～」及微型引导箭头；
+  - 「今日用药计划」标题左侧增加紫色圆角日历 SVG 徽章，右侧常驻渲染「✓ 一键打卡」胶囊按钮；
+  - 时段小节标题左侧增加圆角太阳/月亮 SVG 徽章。
+- **「药品」与「库存」页面顶栏与卡片对齐 (`media_1789100238351.png`)**：
+  - **药品页**：
+    - 顶栏并列展示大字号「药品」标题与「≔ 批量管理」及「✦ AI 助手」两枚胶囊按钮；
+    - 顶部 3 个指标卡（全部药品 12 种、近期使用 12 种、需补充 0 种）重塑为纯白圆角 (18px) 卡片，底部设柔和环境光弥散托盘（蓝/绿/粉色圆形碟盘底座分别托举 3D 水晶药瓶、研磨器与急救箱）。
+  - **库存页**：
+    - 顶栏右侧常驻「✦ AI 助手」胶囊按钮；
+    - 顶部独占「库存健康」卡片：首行左侧为 48px 翡翠绿圆形底座加持的 3D 发光勾选盾牌徽章，中段为「库存健康」与「整体充足，暂无风险」，右侧带引导箭头 `>`；下方水平平铺 4 列数据（全部药品、近期使用、需补充、已过期），标签在上、数值在下（如「12 种」）；右下角设浮动「+ 添加库存」FAB。
+- **自包含原型与自动化走查**：
+  - 更新 `preview/design_mockup_preview.html`，正则扫描确保 0 个 emoji，截取最新四屏并列全景、打卡联动、深色模式与真机模拟器截图。
+- **全绿验证门**：
+  - `npm run typecheck`（0 errors）；
+  - `npm test`（83 个测试套件，507 项测试 100% 全绿）；
+  - `npm run build:web` 成功构建（5.17s）。
+
+- **药盒拍摄静默生成商业纯白底展台大图 (AI Studio Packshot)**：
+  - **交互流程零阻塞**：拍照或从相册选图后，直接加载原照片并进入编辑表单，杜绝强制裁切弹窗打断；后台静默排队进行特征提取与生图，完成后以平滑淡入动画替换预览；
+  - **底片保留与无损切换**：底层数据模型扩展 `PhotoBlob.originalBlob` 与 `kind: 'original' | 'ai_packshot'`。提供「恢复原图」、「AI 生成展台图」与「重新裁切原图」快捷入口；
+  - **两阶段智能管线 (`aiImageStudio.ts`)**：
+    1. 视觉大模型（若有原图）抽取药盒形态、品牌色调与版式特征（无原图时根据药名与规格智能启发推测）；
+    2. 拼装商业静物摄影 Prompt，调用 OpenAI 兼容图像接口（`/v1/images/generations`，支持 `b64_json` 与 `url` 兜底拉取）；
+    3. 生成图入库前自动由 `compressBoxPhoto` 压缩至 720px 与 220KB 限制内，杜绝 Android WebView OOM。
+- **独立「AI 生图服务商」配置面板 (`imageGenSettingsPanel.ts`)**：
+  - 在「设置」-「智能助手与高级」中开辟独立生图服务商卡片；
+  - 支持快捷预设胶囊（DALL·E 3、通义万相、FLUX、CogView-3）；
+  - 未单独配置或启用时，自动继承当前活跃的主 AI 文本服务商（Base URL 与 API Key）；
+  - 配备连通性测试与模型连通状态提示。
+- **全绿验证门**：
+  - `npm run typecheck` (0 errors)；
+  - `npm test`（83 个测试套件，507 项测试 100% 全绿，新增 `tests/aiImageStudio.test.ts` 6 项测试）；
+  - `npm run build:web` 成功编译通过。
+
+## Frontend High-Fidelity Design Optimization & Gemini 3D Assets 2026-09-11 (workspace/claude)
+
+- **Gemini 3D 拟物与真实微质感非 SVG 视觉资产生成与无损透明边缘抠图**：
+  - 基于设计稿与 Gemini Imagen 3 专项生成全套 3D 拟物资产：
+    - `nature-header-bokeh.png`（晨光自然绿植与柔和散斑光晕，左侧及下方平滑羽化渐变融合）；
+    - `today-floating-capsule.png`（今日卡片 45° 蓝白高光 3D 浮动胶囊，带水凝高光与透明通道）；
+    - `inventory-health-shield.png`（3D 翡翠绿库存健康盾牌徽章，带发光勾选与微拟物厚度）；
+    - `med-bottle-3d.png`（全部药品 3D 水晶蓝药瓶）；
+    - `med-recent-mortar.png`（近期使用 3D 薄荷绿研磨器与闹钟药丸）；
+    - `med-aid-kit-3d.png`（需补充 3D 珊瑚粉急救箱）；
+    - `user-avatar-3d.png`（专属 3D 阳光少年头像，戴耳机、立领夹克，像素级对齐设计稿）。
+  - 保存在 `src/assets/images3d/` 并通过 `src/ui/assets3d.ts` 集中管理，提供标准降级 SVG。
+- **零污染交付安全机制与双模 HTML 交互原型（Phase 1~3）**：
+  - 在修改生产代码前，先创建 `preview/design_mockup_preview.html`（4.2MB 自包含纯单文件网页原型，内嵌全套 Base64 资产）；
+  - 提供全景四屏并列模式与 iPhone 15 Pro 仿真模拟器，实现打卡联动、环形进度条偏移动画、时段药丸筛选与深色模式；
+  - 经自动化走查与用户评审确认后，无缝正式落地至 `medbox/` 生产代码。
+- **页面层级与样式重构落地（Phase 4）**：
+  - **「今日」页面 (`Today.ts`, `today.css`)**：
+    - 注入晨光绿植背景 (`.today-nature-bokeh-bg`)，增加日期与天气状态胶囊 (`.today-weather-pill`)；
+    - 在今日用药进度卡片引入 3D 蓝白悬浮胶囊 (`.today-capsule-float`)，附带轻柔呼吸浮动动效 (`floatPill`) 与环境投影；
+    - 完美兼容所有 UI 契约 (`todayUiContracts.test.ts` 5/5 全过)。
+  - **「药品」页面 (`MedList.ts`)**：
+    - 顶部三枚 3D 统计卡片接入水晶蓝药瓶、薄荷绿研磨器与珊瑚粉急救箱；
+    - 保持原有操作坞、批量管理与筛选契约 (`medListUiContracts.test.ts` 2/2 全过)。
+  - **「库存」页面 (`MedInventory.ts`, `inventory.css`)**：
+    - 概览卡片升级为「库存健康」卡片，右上角常驻渲染 3D 翡翠绿发光盾牌徽章 (`.inventory-health-shield-wrap`)，配合微拟物光晕；
+    - 动态计算并展示健康状态（「良好」/「需关注」）与风险提示文案，保留全部统计指标与添加按钮 (`inventoryPageHelpers.test.ts` 6/6 全过)。
+- **全绿验证门**：
+  - `npm run typecheck` (0 errors)；
+  - `npm test`（82 个测试套件，501 项测试 100% 全绿）；
+  - `npm run build:web` 成功构建；
+  - 32 个内嵌图标与构建期元数据校验全数通过。
 
 ## 3D Liquid-Glass Icons & Ambient Diffusion & v1.0.0 Milestone 2026-09-09 (workspace/claude)
 

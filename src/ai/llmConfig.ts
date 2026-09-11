@@ -8,6 +8,7 @@ import {
   getSessionSecret,
   initializeSecretStore,
   LLM_CONFIG_SECRET_KEY,
+  IMAGE_GEN_CONFIG_SECRET_KEY,
   setSessionSecret,
 } from './secretStore';
 
@@ -404,5 +405,117 @@ function buildLegacyLlmConfig(legacy: Partial<LlmConfig>): LlmConfig {
   } catch {
     // 端点无效时整组失败关闭，避免"默认端点 + 旧服务商密钥"的危险重配对。
     return { ...DEFAULT_LLM_CONFIG, model };
+  }
+}
+
+/** 独立 AI 生图服务商配置 */
+export interface ImageGenConfig {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export const DEFAULT_IMAGE_GEN_CONFIG: ImageGenConfig = {
+  enabled: true,
+  baseUrl: '',
+  apiKey: '',
+  model: 'dall-e-3',
+};
+
+/** 读取当前保存的生图独立配置 */
+export function getImageGenConfig(): ImageGenConfig {
+  const stored = getSessionSecret(IMAGE_GEN_CONFIG_SECRET_KEY);
+  if (!stored) return { ...DEFAULT_IMAGE_GEN_CONFIG };
+  try {
+    const parsed = JSON.parse(stored) as Partial<ImageGenConfig>;
+    return {
+      enabled: parsed.enabled !== false,
+      baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl.trim() : '',
+      apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey.trim() : '',
+      model: typeof parsed.model === 'string' && parsed.model.trim() ? parsed.model.trim() : 'dall-e-3',
+    };
+  } catch {
+    return { ...DEFAULT_IMAGE_GEN_CONFIG };
+  }
+}
+
+/** 提交生图独立配置 */
+export async function setImageGenConfig(cfg: ImageGenConfig): Promise<void> {
+  let normalizedBaseUrl = '';
+  if (cfg.baseUrl.trim()) {
+    normalizedBaseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
+  }
+  const clean: ImageGenConfig = {
+    enabled: cfg.enabled !== false,
+    baseUrl: normalizedBaseUrl,
+    apiKey: cfg.apiKey.trim(),
+    model: cfg.model.trim() || 'dall-e-3',
+  };
+  await serializeConfigMutation(async () => {
+    await setSessionSecret(JSON.stringify(clean), IMAGE_GEN_CONFIG_SECRET_KEY);
+  });
+}
+
+/**
+ * 获取生图实际生效的配置：
+ * 若单独配置了 baseUrl / apiKey 则优先使用；
+ * 若未单独填写，且主 AI 服务商可用，则自动复用主 AI 服务商的凭据，极大降低配置门槛。
+ */
+export function getEffectiveImageGenConfig(): {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  isConfigured: boolean;
+  isDerivedFromMain: boolean;
+} {
+  const cfg = getImageGenConfig();
+  const activeLlm = getActiveLlmProvider();
+  const hasCustomUrl = Boolean(cfg.baseUrl.trim());
+  const hasCustomKey = Boolean(cfg.apiKey.trim());
+
+  const baseUrl = hasCustomUrl ? cfg.baseUrl.trim() : activeLlm.baseUrl.trim();
+  const apiKey = hasCustomKey ? cfg.apiKey.trim() : activeLlm.apiKey.trim();
+  const model = cfg.model.trim() || 'dall-e-3';
+  const isConfigured = cfg.enabled && Boolean(baseUrl && apiKey);
+  const isDerivedFromMain = isConfigured && (!hasCustomUrl || !hasCustomKey);
+
+  return {
+    enabled: cfg.enabled,
+    baseUrl,
+    apiKey,
+    model,
+    isConfigured,
+    isDerivedFromMain,
+  };
+}
+
+/** 测试生图服务连通性（检测对应端点 /models 或网络连通度） */
+export async function pingImageGenService(cfg?: ImageGenConfig): Promise<LlmHealth> {
+  const effective = cfg ? {
+    baseUrl: cfg.baseUrl.trim() || getActiveLlmProvider().baseUrl.trim(),
+    apiKey: cfg.apiKey.trim() || getActiveLlmProvider().apiKey.trim(),
+    model: cfg.model.trim() || 'dall-e-3',
+  } : getEffectiveImageGenConfig();
+
+  const now = Date.now();
+  if (!effective.baseUrl || !effective.apiKey) {
+    return { state: 'error', message: '未配置 API 地址或密钥', at: now };
+  }
+  try {
+    const models = await listModels({
+      baseUrl: effective.baseUrl,
+      apiKey: effective.apiKey,
+      model: effective.model,
+    });
+    return {
+      state: 'ok',
+      message: models.length > 0 ? `已连接 · 发现 ${models.length} 个模型` : '已连接',
+      at: now,
+      models,
+    };
+  } catch (e) {
+    return { state: 'error', message: String(e instanceof Error ? e.message : e), at: now };
   }
 }

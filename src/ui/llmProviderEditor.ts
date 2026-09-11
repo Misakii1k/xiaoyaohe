@@ -254,7 +254,7 @@ export function openLlmProviderEditor(
       if (!granted) return;
       await onSave({ id: existing?.id ?? createLlmProviderId(), label, baseUrl, apiKey, model });
       close();
-      toast('已保存 ✓');
+      toast('已保存');
     } catch (e) {
       toast('保存失败：' + (e instanceof Error ? e.message : String(e)));
     }

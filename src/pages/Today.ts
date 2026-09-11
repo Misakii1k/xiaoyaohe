@@ -32,8 +32,6 @@ import {
 } from '../ui/components';
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
-import { getUserAvatar3dSvg, parseSvg } from '../ui/assets3d';
-import { getAvatarById, getActiveAvatarId } from '../ui/avatars';
 import { openTakeMedModal } from '../ui/TakeMedModal';
 import { navigate } from '../router';
 import { closeNotificationsByTag } from '../features/notifier';
@@ -81,6 +79,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   if (signal?.aborted) return;
 
   const content = el('div', { class: 'page today-page' });
+
   const activeItems = items.filter((item) => !item.isRest && item.occurrence);
   const total = activeItems.length;
   const taken = activeItems.filter((item) => item.log?.status === 'taken').length;
@@ -94,7 +93,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   const headerLeft = el('div', { class: 'today-header-left' });
   headerLeft.append(
     el('h1', { class: 'today-header-title', text: '今天' }),
-    el('div', { class: 'today-header-date', text: dateStr })
+    el('div', { class: 'today-header-date', text: dateStr }),
   );
 
   const headerActions = el('div', { class: 'today-header-actions' });
@@ -107,26 +106,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   aiBtn.append(icon('sparkles'), el('span', { text: 'AI 助手' }));
   aiBtn.onclick = () => void import('../ui/AiAssistant').then((m) => m.openAssistantPanel());
 
-  const activeAvatar = getAvatarById(getActiveAvatarId());
-  const avatarBtn = el('button', {
-    class: 'today-header-avatar-btn',
-    type: 'button',
-    'aria-label': '个人中心',
-    style: `background-color: ${activeAvatar.bgColor};`,
-  } as any);
-  if (activeAvatar.imgUrl) {
-    const avatarImg = el('img', {
-      class: 'today-header-avatar-img',
-      src: activeAvatar.imgUrl,
-      alt: activeAvatar.name,
-    });
-    avatarBtn.append(avatarImg);
-  } else {
-    avatarBtn.append(parseSvg(getUserAvatar3dSvg()));
-  }
-  avatarBtn.onclick = () => navigate('/settings');
-
-  headerActions.append(aiBtn, avatarBtn);
+  headerActions.append(aiBtn);
   headerRow.append(headerLeft, headerActions);
   content.append(headerRow);
 
@@ -136,8 +116,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   progressCard.append(el('div', { class: 'today-progress-title', text: '今日用药进度' }));
 
   const progressBody = el('div', { class: 'today-progress-body' });
-  const ringWrap = el('div', { class: 'today-summary-progress' });
-  ringWrap.classList.add('today-progress-ring-wrap');
+  const ringWrap = el('div', { class: 'today-summary-progress today-progress-ring-wrap' });
   ringWrap.append(progressRing(taken, total));
 
   const legend = el('div', { class: 'today-progress-legend' });
@@ -273,8 +252,9 @@ function renderSlotGroup(
 
   const header = el('div', { class: 'today-time-header today-slot-actions' });
   const tag = el('div', { class: 'today-time-tag' });
-  tag.append(icon(group.slot === 'morning' ? 'sun' : group.slot === 'noon' ? 'sun-high' : group.slot === 'evening' ? 'sunset' : 'moon'));
-  tag.append(el('span', { text: `${group.earliestTime} ${slotName}` }));
+  const slotBadge = el('div', { class: `today-slot-badge slot-${group.slot}` });
+  slotBadge.append(icon(group.slot === 'morning' ? 'sun' : group.slot === 'noon' ? 'sun-high' : group.slot === 'evening' ? 'sunset' : 'moon'));
+  tag.append(slotBadge, el('span', { class: 'today-slot-time-text', text: `${group.earliestTime} ${slotName}` }));
 
   if (allTaken) {
     const statusPill = el('span', {
@@ -340,14 +320,16 @@ function renderSlotGroup(
 
     const dose = item.med.amountPerDose || item.med.dosageText || '1片';
     const meal = formatMealRels([...(item.revision.mealRels || [])]);
-    info.append(el('div', { class: 'today-card-meta', text: `${dose}${meal ? ' · ' + meal : ''} · 每日1次` }));
+    const freqText = item.med.slots && item.med.slots.length > 0 ? `每日${item.med.slots.length}次` : '每日1次';
+    info.append(el('div', { class: 'today-card-meta', text: `${dose}${meal ? ' · ' + meal : ''} · ${freqText}` }));
 
     const badges = el('div', { class: 'today-card-badges' });
     const stockCount = item.med.inventory?.remaining ?? 36;
     const isLow = stockCount <= (item.med.inventory?.lowThreshold ?? 5);
+    const unit = item.med.inventory?.unit || item.med.doseUnit || '片';
     const stockBadge = el('span', {
       class: `today-stock-tag ${isLow ? 'low' : 'ok'}`,
-      text: isLow ? `库存不足 剩余${stockCount}片` : `库存充足 剩余${stockCount}片`,
+      text: isLow ? `库存不足 剩余${stockCount}${unit}` : `库存充足 剩余${stockCount}${unit}`,
     });
     badges.append(stockBadge);
 
@@ -388,19 +370,21 @@ function renderSlotGroup(
           toast('操作失败');
         }
       } else {
-        if (item.occurrence) {
-          closeNotificationsByTag(item.occurrence.id);
-          closeNotificationsByTag(item.occurrence.legacyLogId);
+        try {
+          const res = await setOccurrenceAction(item.occurrence, 'taken');
+          if (item.occurrence) {
+            closeNotificationsByTag(item.occurrence.id);
+            closeNotificationsByTag(item.occurrence.legacyLogId);
+          }
+          if (res.lowStock && res.lowStockMessage) {
+            toast(res.lowStockMessage);
+          } else {
+            toast(`已完成 ${item.med.name} 服药打卡`);
+          }
+          onRefresh();
+        } catch {
+          toast('打卡失败');
         }
-        openTakeMedModal({
-          med: item.med,
-          revision: item.revision,
-          occurrence: item.occurrence,
-          dueAt: item.dueAt,
-          slot: item.revision.slot,
-          photoUrl: photoUrls.get(item.med.id),
-          onDone: onRefresh,
-        });
       }
     };
 

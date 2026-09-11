@@ -180,7 +180,7 @@ describe('secretStore persistence', () => {
     finishPrefix();
     await Promise.all([first, second]);
     expect(secureStorage.setDefaultKeychainAccess).toHaveBeenCalledTimes(1);
-    expect(secureStorage.get).toHaveBeenCalledTimes(2);
+    expect(secureStorage.get).toHaveBeenCalledTimes(3);
   });
 
   it('retries native initialization after secure storage temporarily fails', async () => {
@@ -196,7 +196,7 @@ describe('secretStore persistence', () => {
     await expect(store.initializeSecretStore()).resolves.toBeUndefined();
 
     expect(secureStorage.setKeyPrefix).toHaveBeenCalledTimes(2);
-    expect(secureStorage.get).toHaveBeenCalledTimes(2);
+    expect(secureStorage.get).toHaveBeenCalledTimes(3);
   });
 
   it('does not commit a partial native read when one key fails', async () => {

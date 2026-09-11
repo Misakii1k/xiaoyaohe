@@ -939,21 +939,339 @@ body.lan-sync-panel-active .ai-launcher {
 
 .profile-streak-badge {
   align-self: flex-start;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: var(--tone-warn-bg);
-  color: var(--tone-warn-fg);
-  border: 1px solid var(--tone-warn-border);
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #dbeafe;
   border-radius: var(--radius-full);
   padding: 4px 12px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .profile-streak-badge svg {
   inline-size: 14px;
   block-size: 14px;
+  stroke: #2563eb;
+}
+
+[data-theme='dark'] .profile-streak-badge {
+  background: rgba(37, 99, 235, 0.15);
+  color: #60a5fa;
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
+[data-theme='dark'] .profile-streak-badge svg {
+  stroke: #60a5fa;
+}
+
+/* 我的数据 1x3 统计网格移动端基础样式 */
+.profile-stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.profile-section-title {
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-stat-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  padding: 14px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  min-inline-size: 0;
+  box-sizing: border-box;
+}
+
+.profile-stat-card:active {
+  transform: scale(0.96);
+  background: var(--color-surface-muted);
+}
+
+.profile-stat-icon {
+  inline-size: 38px;
+  block-size: 38px;
+  border-radius: var(--radius-full);
+  background: #f1f5f9;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+[data-theme='dark'] .profile-stat-icon {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.profile-stat-icon svg,
+.profile-stat-icon img {
+  inline-size: 22px;
+  block-size: 22px;
+  object-fit: contain;
+}
+
+.profile-stat-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+
+.profile-stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.profile-stat-val {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--color-text);
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.profile-stat-sub {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+.profile-gear-btn {
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.profile-gear-btn:active {
+  transform: scale(0.92);
+  background: var(--color-surface-muted);
+}
+
+.profile-gear-btn svg {
+  inline-size: 18px;
+  block-size: 18px;
+  stroke: var(--color-text);
+}
+
+.profile-gear-quick-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: var(--space-2) 0;
+}
+
+.profile-gear-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.profile-gear-action-row:active {
+  background: var(--color-surface-muted);
+}
+
+.profile-gear-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-gear-action-sub {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* 菜单列表（Screen 4 我的 6行设置） */
+.profile-menu-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.04);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-theme='dark'] .profile-menu-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.profile-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background 0.15s ease;
+  box-sizing: border-box;
+}
+
+.profile-menu-row:last-child {
+  border-bottom: none;
+}
+
+.profile-menu-row:hover,
+.profile-menu-row:active {
+  background: var(--color-surface-muted);
+}
+
+.profile-menu-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-menu-icon {
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #2563eb;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.profile-menu-icon svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.profile-menu-card .profile-menu-row:nth-child(1) .profile-menu-icon {
+  background: #fffbeb;
+  color: #f59e0b;
+}
+
+.profile-menu-card .profile-menu-row:nth-child(2) .profile-menu-icon {
+  background: #ecfdf5;
+  color: #10b981;
+}
+
+.profile-menu-card .profile-menu-row:nth-child(3) .profile-menu-icon {
+  background: #f5f3ff;
+  color: #8b5cf6;
+}
+
+.profile-menu-card .profile-menu-row:nth-child(4) .profile-menu-icon {
+  background: #fff7ed;
+  color: #f97316;
+}
+
+.profile-menu-card .profile-menu-row:nth-child(5) .profile-menu-icon {
+  background: #ecfeff;
+  color: #06b6d4;
+}
+
+.profile-menu-card .profile-menu-row:nth-child(6) .profile-menu-icon {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+[data-theme='dark'] .profile-menu-icon {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--color-text) !important;
+}
+
+.profile-menu-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.profile-menu-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.profile-menu-tag {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.profile-menu-tag.tone-muted {
+  color: var(--color-text-muted);
+}
+
+.profile-menu-tag.tone-success {
+  color: #10b981;
+}
+
+.profile-menu-tag.tone-warning {
+  color: #f59e0b;
+}
+
+.profile-menu-tag.tone-info {
+  color: #2563eb;
+}
+
+.profile-menu-chevron {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.profile-menu-chevron svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.profile-advanced-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-block-start: var(--space-2);
 }
 
 /* 4 大设置分组卡片规范 */
@@ -1036,148 +1354,11 @@ body.lan-sync-panel-active .ai-launcher {
   line-height: 1.6;
 }
 
-/* 我的数据 1x3 网格 */
 .profile-stats-section {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   margin-block-start: var(--space-4);
-}
-
-.profile-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  overflow: visible;
-  padding-top: 6px;
-}
-
-.profile-stat-card {
-  position: relative;
-  background: var(--color-surface);
-  border-radius: var(--radius-xl);
-  padding: 12px 10px 10px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 78px;
-  border: 1px solid var(--color-border);
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.04);
-  overflow: visible;
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.profile-stat-card:active {
-  transform: scale(0.97);
-  background: var(--color-surface-muted);
-}
-
-[data-theme='dark'] .profile-hero-card,
-[data-theme='dark'] .profile-stat-card {
-  background: var(--color-surface);
-  border-color: var(--color-border);
-}
-
-.profile-stat-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-inline-size: 0;
-  z-index: 1;
-}
-
-.profile-stat-label {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.profile-stat-val {
-  font-size: 18px;
-  font-weight: 900;
-  color: var(--color-text);
-  letter-spacing: -0.5px;
-  line-height: 1.15;
-  margin-top: 2px;
-}
-
-.profile-stat-sub {
-  font-size: 10px;
-  color: var(--color-text-muted);
-  font-weight: 500;
-  margin-top: 2px;
-}
-
-/* 右上角 3D 拟物图标与周围环境色彩弥散 */
-.profile-stat-icon {
-  position: absolute;
-  top: -8px;
-  right: -6px;
-  inline-size: 46px;
-  block-size: 46px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  pointer-events: none;
-  z-index: 2;
-  border-radius: 0;
-  overflow: visible;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-/* 柔和环境光弥散背景（向周围弥散色彩） */
-.profile-stat-icon::before {
-  content: '';
-  position: absolute;
-  inset: -14px;
-  border-radius: 50%;
-  background: var(--stat-glow-bg, radial-gradient(circle, rgba(99, 102, 241, 0.35) 0%, transparent 72%));
-  filter: blur(10px);
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.85;
-  transition: opacity 0.25s ease, transform 0.25s ease;
-}
-
-.profile-stat-card:hover .profile-stat-icon::before {
-  opacity: 1;
-  transform: scale(1.15);
-}
-
-/* 针对不同数据卡片定制专属主题色弥散 */
-.profile-stat-card:nth-child(1) .profile-stat-icon {
-  --stat-glow-bg: radial-gradient(circle, rgba(245, 158, 11, 0.4) 0%, rgba(139, 92, 246, 0.2) 45%, transparent 72%);
-  filter: drop-shadow(0 6px 16px rgba(245, 158, 11, 0.38));
-}
-
-.profile-stat-card:nth-child(2) .profile-stat-icon {
-  --stat-glow-bg: radial-gradient(circle, rgba(59, 130, 246, 0.45) 0%, rgba(6, 182, 212, 0.22) 45%, transparent 72%);
-  filter: drop-shadow(0 6px 16px rgba(59, 130, 246, 0.4));
-}
-
-.profile-stat-card:nth-child(3) .profile-stat-icon {
-  --stat-glow-bg: radial-gradient(circle, rgba(244, 63, 94, 0.45) 0%, rgba(239, 68, 68, 0.22) 45%, transparent 72%);
-  filter: drop-shadow(0 6px 16px rgba(244, 63, 94, 0.42));
-}
-
-.profile-stat-card:active .profile-stat-icon {
-  transform: scale(1.12) rotate(3deg);
-}
-
-.profile-stat-icon-img,
-.profile-stat-icon .asset-3d-img,
-.profile-stat-icon .asset-3d-container,
-.profile-stat-icon svg,
-.profile-stat-icon .stat-3d-icon {
-  inline-size: 44px;
-  block-size: 44px;
-  object-fit: contain;
-  border-radius: 0;
-  display: block;
 }
 
 /* 全站卡片文案断行与边框约束规范 */

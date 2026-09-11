@@ -33,6 +33,9 @@ import {
   purpleBottleImg,
   clockPillImg,
   aidBagImg,
+  medBottle3dImg,
+  medRecentMortarImg,
+  medAidKit3dImg,
   getMedBottle3dSvg,
   getClockPill3dSvg,
   getAidBag3dSvg,
@@ -60,9 +63,9 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
 
   const statGrid = el('div', { class: 'med-stat-grid' });
   statGrid.append(
-    createStatCard('purple', '全部药品', `${totalCount} 种`, purpleBottleImg, getMedBottle3dSvg),
-    createStatCard('cyan', '近期使用', `${activeCount} 种`, clockPillImg, getClockPill3dSvg),
-    createStatCard('pink', '需要补充', `${lowStockCount} 种`, aidBagImg, getAidBag3dSvg)
+    createStatCard('blue', '全部药品', `${totalCount} 种`, medBottle3dImg || purpleBottleImg, getMedBottle3dSvg),
+    createStatCard('green', '近期使用', `${activeCount} 种`, medRecentMortarImg || clockPillImg, getClockPill3dSvg),
+    createStatCard('pink', '需补充', `${lowStockCount} 种`, medAidKit3dImg || aidBagImg, getAidBag3dSvg),
   );
   content.append(statGrid);
 
@@ -171,39 +174,30 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
 
       // 信息
       const info = el('div', { class: 'med-item-info' });
-      info.append(el('div', { id: medNameId, class: 'medication-batch-name', text: m.name || '未命名' }));
+      info.append(el('div', { id: medNameId, class: 'med-item-name medication-batch-name', text: m.name || '未命名' }));
 
       const dose = med.amountPerDose || med.dosageText || '1片';
       const spec = med.dosageText && med.amountPerDose ? `${med.dosageText} · ${med.amountPerDose}` : dose;
-      info.append(el('div', { class: 'med-item-spec', text: spec }));
-
       const freqText = med.slots.length > 0 ? `每日${med.slots.length}次` : '按需服用';
-      info.append(el('div', { class: 'med-item-freq', text: freqText }));
+      info.append(el('div', { class: 'med-item-spec', text: `${spec} · ${freqText}` }));
 
       const badges = el('div', { class: 'med-item-badges' });
       const stock = med.inventory?.remaining ?? 36;
       const low = isLowStock(med);
+      const unit = med.doseUnit || '片';
       const stockPill = el('span', {
         class: `med-stock-pill ${low ? 'low' : 'ok'}`,
-        text: low ? `库存不足 剩余 ${stock}片` : `库存充足 剩余 ${stock}片`,
+        text: low ? `库存不足 剩余${stock}${unit}` : `库存充足 剩余${stock}${unit}`,
       });
       badges.append(stockPill);
       info.append(badges);
 
-      // 编辑按钮
-      const editBtn = el('button', {
-        class: 'med-item-edit-btn',
-        type: 'button',
-        'aria-label': '编辑药品',
-      } as any);
-      editBtn.append(icon('edit'));
-      editBtn.onclick = (e) => {
-        e.stopPropagation();
-        navigate(`/meds/${med.id}/edit`);
-      };
+      // 右侧引导箭头
+      const chevron = el('div', { class: 'med-item-chevron' });
+      chevron.append(icon('chevron-right'));
 
       card.onclick = () => navigate(`/meds/${med.id}/edit`);
-      card.append(thumb, info, editBtn);
+      card.append(thumb, info, chevron);
       listContainer.append(card);
     }
   }

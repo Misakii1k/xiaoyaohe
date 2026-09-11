@@ -12,5 +12,5 @@ export const primaryNavigation: readonly PrimaryNavigationItem[] = [
   { id: 'meds', href: '/meds', label: '药品', icon: 'pill' },
   { id: 'scan', href: '/scan', label: '分药', icon: 'pillbox' },
   { id: 'inventory', href: '/meds/inventory', label: '库存', icon: 'box' },
-  { id: 'settings', href: '/settings', label: '设置', icon: 'user' },
+  { id: 'settings', href: '/settings', label: '我的', icon: 'user' }, // 个人中心与设置
 ];

@@ -26,9 +26,10 @@ import {
   type ReminderPeriodSetting,
   type MedicationReminderMode,
 } from '../db/schema';
-import { confirmDialog, el, renderPage, toast, icon, field, type IconName, topbarAiPill } from '../ui/components';
+import { confirmDialog, el, renderPage, toast, icon, field, type IconName } from '../ui/components';
 import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
-import { openBottomSheet } from '../ui/primitives/BottomSheet';
+import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/BottomSheet';
+import { navigate } from '../router';
 import QRCode from 'qrcode';
 import { getThemePreference, setThemePreference, type ThemePreference } from '../ui/theme';
 import {
@@ -96,6 +97,7 @@ import {
   WEB_SECRET_STORAGE_NOTICE,
 } from '../ai/secretStore';
 import { assertBackupFileSize, parseSafeBackupPayload } from '../security/validation';
+import { renderImageGenSettingsPanel } from '../ui/imageGenSettingsPanel';
 import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';
 import {
   clearAvailableUpdate,
@@ -190,15 +192,16 @@ export async function renderSettingsPage(
     el('div', { class: 'profile-user-name', text: '小药盒用户' }),
     el('div', {
       class: 'profile-user-sub',
-      text: daysManaging > 0 ? `用药管理第 ${daysManaging} 天` : '开启科学用药管理',
+      text: daysManaging > 0 ? `用药管理 第 ${daysManaging} 天` : '开启科学用药管理',
     })
   );
   userRow.append(avatarWrap, userInfo);
 
+  const takenCount = logs.filter((l) => l.status === 'taken').length || logs.length;
   const streakBadge = el('div', { class: 'profile-streak-badge' });
-  streakBadge.append(icon(logs.length > 0 ? 'sparkles' : 'shield'));
+  streakBadge.append(icon('check'));
   streakBadge.append(el('span', {
-    text: logs.length > 0 ? `已记录 ${logs.length} 次服药` : '本地安全离线存储',
+    text: `已记录 ${takenCount} 次服药`,
   }));
 
   profileHero.append(userRow, streakBadge);
@@ -211,17 +214,105 @@ export async function renderSettingsPage(
   const statsGrid = el('div', { class: 'profile-stats-grid' });
   statsGrid.append(
     createProfileStatCard('全部药品', `${meds.length} 种`, '在库管理', statPillboxImg, getStatBox3dSvg, () => {
-      location.hash = '#/meds';
+      navigate('/meds');
     }),
     createProfileStatCard('用药计划', `${activeRulesCount} 条`, '今日待服', statNotebookImg, getStatLog3dSvg, () => {
-      location.hash = '#/today';
+      navigate('/today');
     }),
-    createProfileStatCard('打卡记录', `${logs.length} 次`, '历史日历', statTargetImg, getStatRate3dSvg, () => {
-      location.hash = '#/history';
+    createProfileStatCard('打卡记录', `${takenCount} 次`, '历史日历', statTargetImg, getStatRate3dSvg, () => {
+      navigate('/history');
     })
   );
   statsSection.append(statsGrid);
   content.append(statsSection);
+
+  // 3. 菜单列表 (iOS 风格 6 行设置)
+  const menuCard = el('div', { class: 'profile-menu-card' });
+
+  // 3.1 系统通知
+  const notifSupported = notificationsSupported();
+  const notifPerm = getPermission();
+  const notifActive = notifSupported && notifPerm === 'granted' && isAppNotificationsEnabled();
+  const notifTagText = notifActive ? '已开启' : '已暂停';
+  const notifTone: 'success' | 'muted' = notifActive ? 'success' : 'muted';
+
+  menuCard.append(createProfileMenuRow({
+    iconName: 'bell',
+    title: '系统通知',
+    tag: { text: notifTagText, tone: notifTone },
+    onClick: () => {
+      openBottomSheet({
+        label: '系统通知设置',
+        content: [renderReminderPanel()],
+      });
+    },
+  }));
+
+  // 3.2 时段提醒设置
+  menuCard.append(createProfileMenuRow({
+    iconName: 'clock',
+    title: '时段提醒设置',
+    tag: { text: '已设置', tone: 'success' },
+    onClick: () => {
+      openBottomSheet({
+        label: '时段提醒设置',
+        content: [renderPeriodSettingsPanel()],
+      });
+    },
+  }));
+
+  // 3.3 外观
+  const currentTheme = getThemePreference();
+  const themeLabel = currentTheme === 'dark' ? '深色' : currentTheme === 'light' ? '浅色' : '跟随系统';
+  menuCard.append(createProfileMenuRow({
+    iconName: 'moon',
+    title: '外观',
+    tag: { text: themeLabel, tone: 'info' },
+    onClick: () => {
+      openBottomSheet({
+        label: '外观偏好',
+        content: [renderAppearancePanel()],
+      });
+    },
+  }));
+
+  // 3.4 后台保活与防杀
+  menuCard.append(createProfileMenuRow({
+    iconName: 'shield',
+    title: '后台保活与防杀',
+    tag: { text: '建议设置', tone: 'warning' },
+    onClick: () => {
+      openKeepAliveGuideModal();
+    },
+  }));
+
+  // 3.5 帮助与反馈
+  menuCard.append(createProfileMenuRow({
+    iconName: 'info',
+    title: '帮助与反馈',
+    onClick: () => {
+      openBottomSheet({
+        label: '帮助与反馈',
+        content: [
+          renderDiagnosticsPanel({ notify: toast, confirm: confirmDialog }),
+        ],
+      });
+    },
+  }));
+
+  // 3.6 关于我们
+  menuCard.append(createProfileMenuRow({
+    iconName: 'info',
+    title: '关于我们',
+    onClick: () => {
+      openBottomSheet({
+        label: '关于小药盒',
+        content: [renderAboutSection()],
+      });
+    },
+  }));
+
+  content.append(menuCard);
 
   if (secretInitialization.some((result) => result.status === 'rejected')) {
     content.append(el('div', {
@@ -233,16 +324,15 @@ export async function renderSettingsPage(
     } as any));
   }
 
-  // 3. 分组 1：用药提醒与外观
+  // 4. 分组 1：用药提醒与外观
   const reminderAppearanceGroup = createSettingsGroup('提醒与外观', 'bell', [
     renderReminderPanel(),
     renderPeriodSettingsPanel(),
     renderAppearancePanel(),
     renderKeepAlivePanel(),
   ]);
-  content.append(reminderAppearanceGroup);
 
-  // 4. 分组 2：数据与家庭同步
+  // 5. 分组 2：数据与家庭同步
   const lanSyncPanel = renderLanSyncSettingsPanel(signal);
   const appUpdatePanel = renderAppUpdatePanel();
   const backupCard = renderBackupCard(root, signal, {
@@ -255,19 +345,26 @@ export async function renderSettingsPage(
     backupCard.element,
     appUpdatePanel.element,
   ]);
-  content.append(dataSyncGroup);
 
-  // 5. 分组 3：AI 智能助手与诊断
+  // 6. 分组 3：AI 智能助手与诊断
   const llmPanel = renderLlmPanel();
+  const imageGenPanel = renderImageGenSettingsPanel();
   const aiDiagnosticsGroup = createSettingsGroup('智能助手与高级', 'sparkles', [
     llmPanel.element,
+    imageGenPanel.element,
     renderAiConsentPanel(),
     renderDiagnosticsPanel(),
   ]);
-  content.append(aiDiagnosticsGroup);
 
-  // 6. 分组 4：关于小药盒
-  content.append(renderAboutSection());
+  // 7. 高级设置区域（页面下部，便于完整配置与契约测试）
+  const advancedWrapper = el('div', { class: 'profile-advanced-wrapper' });
+  advancedWrapper.append(
+    reminderAppearanceGroup,
+    dataSyncGroup,
+    aiDiagnosticsGroup,
+    renderAboutSection(),
+  );
+  content.append(advancedWrapper);
 
   settingsPageCleanupByRoot.get(root)?.();
   let cleaned = false;
@@ -275,6 +372,7 @@ export async function renderSettingsPage(
     if (cleaned) return;
     cleaned = true;
     llmPanel.cleanup();
+    imageGenPanel.cleanup();
     lanSyncPanel.cleanup();
     appUpdatePanel.cleanup();
     backupCard.cleanup();
@@ -286,7 +384,59 @@ export async function renderSettingsPage(
   settingsPageCleanupByRoot.set(root, cleanup);
   signal?.addEventListener('abort', cleanup, { once: true });
 
-  renderPage({ root, title: '我的', activeTab: 'settings', topRight: topbarAiPill(), content });
+  const gearBtn = el('button', {
+    class: 'profile-gear-btn',
+    type: 'button',
+    'aria-label': '系统设置',
+  });
+  gearBtn.append(icon('gear'));
+  gearBtn.onclick = () => {
+    let sheet: BottomSheetHandle | undefined;
+    const title = el('h2', { class: 'inventory-sheet-title', text: '高级系统设置' });
+    const quickLinks = el('div', { class: 'profile-gear-quick-links' });
+
+    const createGearAction = (iconName: IconName, label: string, desc: string, action: () => void) => {
+      const btn = el('button', { class: 'profile-gear-action-row', type: 'button' });
+      const left = el('div', { class: 'profile-menu-left' });
+      const iconWrap = el('div', { class: 'profile-menu-icon' });
+      iconWrap.append(icon(iconName));
+      left.append(iconWrap, el('div', { class: 'profile-gear-action-text' }, [
+        el('div', { class: 'profile-menu-label', text: label }),
+        el('div', { class: 'profile-gear-action-sub', text: desc }),
+      ]));
+      const chevron = el('span', { class: 'profile-menu-chevron' });
+      chevron.append(icon('chevron-right'));
+      btn.append(left, chevron);
+      btn.onclick = () => {
+        sheet?.close();
+        action();
+      };
+      return btn;
+    };
+
+    quickLinks.append(
+      createGearAction('sparkles', 'AI 服务商与密钥', '配置大模型 API 密钥与服务商', () => {
+        advancedWrapper.scrollIntoView({ behavior: 'smooth' });
+      }),
+      createGearAction('cloud', '家庭局域网同步', '两台手机同一个 Wi-Fi 免流量同步', () => {
+        openBottomSheet({ label: '家庭同步', content: [renderLanSyncSettingsPanel().element] });
+      }),
+      createGearAction('copy', '数据备份与还原', '导出或导入小药盒完整数据备份', () => {
+        advancedWrapper.scrollIntoView({ behavior: 'smooth' });
+      }),
+      createGearAction('info', '系统诊断与日志', '查看应用错误日志与系统自检', () => {
+        openBottomSheet({ label: '帮助与反馈', content: [renderDiagnosticsPanel({ notify: toast, confirm: confirmDialog })] });
+      }),
+    );
+    const cancelBtn = el('button', { class: 'btn text full-width mt-2', text: '取消', type: 'button' });
+    sheet = openBottomSheet({
+      label: '高级系统设置',
+      content: [title, quickLinks, cancelBtn],
+    });
+    cancelBtn.onclick = () => sheet?.close();
+  };
+
+  renderPage({ root, title: '我的', activeTab: 'settings', topRight: gearBtn, content });
   return cleanup;
 }
 
@@ -314,11 +464,17 @@ function renderAboutSection(): HTMLElement {
     text: '用于家庭日常用药管理。服药提醒、药品信息与库存记录均保存在本地设备中，不展示广告，无需注册账号。',
   });
 
+  const createHlItem = (text: string) => {
+    const item = el('div', { class: 'settings-about-hl-item' });
+    item.append(icon('check'), el('span', { text }));
+    return item;
+  };
+
   const highlights = el('div', { class: 'settings-about-highlights' }, [
-    el('div', { class: 'settings-about-hl-item', text: '✔ 定时服药提醒与记录' }),
-    el('div', { class: 'settings-about-hl-item', text: '✔ 药箱余量预警' }),
-    el('div', { class: 'settings-about-hl-item', text: '✔ 数据保存在本地设备' }),
-    el('div', { class: 'settings-about-hl-item', text: '✔ 局域网面对面免流量同步' }),
+    createHlItem('定时服药提醒与记录'),
+    createHlItem('药箱余量预警'),
+    createHlItem('数据保存在本地设备'),
+    createHlItem('局域网面对面免流量同步'),
   ]);
 
   const disclaimer = el('div', {
@@ -329,6 +485,37 @@ function renderAboutSection(): HTMLElement {
   aboutCard.append(brandRow, intro, highlights, disclaimer);
   aboutSection.append(aboutCard);
   return aboutSection;
+}
+
+function createProfileMenuRow(options: {
+  iconName: IconName;
+  title: string;
+  tag?: { text: string; tone?: 'success' | 'warning' | 'muted' | 'info' };
+  onClick: () => void;
+}): HTMLElement {
+  const row = el('button', {
+    class: 'profile-menu-row',
+    type: 'button',
+  });
+  const left = el('div', { class: 'profile-menu-left' });
+  const iconWrap = el('div', { class: 'profile-menu-icon' });
+  iconWrap.append(icon(options.iconName));
+  left.append(iconWrap, el('span', { class: 'profile-menu-label', text: options.title }));
+
+  const right = el('div', { class: 'profile-menu-right' });
+  if (options.tag) {
+    right.append(el('span', {
+      class: `profile-menu-tag tone-${options.tag.tone || 'muted'}`,
+      text: options.tag.text,
+    }));
+  }
+  const chevron = el('span', { class: 'profile-menu-chevron' });
+  chevron.append(icon('chevron-right'));
+  right.append(chevron);
+
+  row.append(left, right);
+  row.onclick = options.onClick;
+  return row;
 }
 
 function createProfileStatCard(
@@ -343,6 +530,14 @@ function createProfileStatCard(
     class: 'profile-stat-card',
     type: 'button',
   } as any);
+
+  const iconWrap = el('div', { class: 'profile-stat-icon' });
+  if (img) {
+    iconWrap.append(render3dMedia(img, svgFn, label, 'profile-stat-icon-img'));
+  } else {
+    iconWrap.append(parseSvg(svgFn()));
+  }
+
   const info = el('div', { class: 'profile-stat-info' });
   info.append(
     el('div', { class: 'profile-stat-label', text: label }),
@@ -351,13 +546,7 @@ function createProfileStatCard(
   if (sub) {
     info.append(el('div', { class: 'profile-stat-sub', text: sub }));
   }
-  const iconWrap = el('div', { class: 'profile-stat-icon' });
-  if (img) {
-    iconWrap.append(render3dMedia(img, svgFn, label, 'profile-stat-icon-img'));
-  } else {
-    iconWrap.append(parseSvg(svgFn()));
-  }
-  card.append(info, iconWrap);
+  card.append(iconWrap, info);
   if (onClick) {
     card.onclick = onClick;
   }
@@ -890,7 +1079,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     const grantBtn = el('button', { class: 'btn', html: '开启系统通知' });
     grantBtn.onclick = async () => {
       const r = await requestPermission();
-      if (r === 'granted') toast('已开启 ✓');
+      if (r === 'granted') toast('已开启');
       else if (r === 'denied') toast('被拒绝，请在系统设置里开');
       else toast('未授权');
       rerender();
@@ -1089,7 +1278,7 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     scanCard.append(
       el('div', {
         class: 'muted text-xs mt-2',
-        text: '💡 网页端支持提前绑定与查看，数据可通过设置页「家庭同步」互传至手机。全屏响铃仅在 Android App 生效。',
+        text: '网页端支持提前绑定与查看，数据可通过设置页「家庭同步」互传至手机。全屏响铃仅在 Android App 生效。',
       }),
     );
   }
@@ -1235,7 +1424,8 @@ function openUnlockQrSheet(rerender: () => void, activate: boolean = true): void
   );
   const hintP2 = el('p', { class: 'muted text-xs mt-2' });
   hintP2.append(
-    '💡 ',
+    icon('info'),
+    ' ',
     el('strong', { text: '没有打印机？' }),
     '您也可以直接点击下方按钮，绑定药盒或生活物品上的已有条码/二维码。',
   );

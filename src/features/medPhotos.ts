@@ -97,13 +97,71 @@ export async function getLatestMedPhotoBlob(medId: string): Promise<Blob | null>
   }
 }
 
+export interface SaveMedPhotoOptions {
+  kind?: 'original' | 'ai_packshot';
+  originalBlob?: Blob;
+}
+
 /**
  * 保存药盒照片（压缩后入库，并只保留最新一张）。
  * 覆盖旧图时清掉同药历史记录和会话 URL 缓存，避免库和内存无限涨。
+ * 支持传入 kind 标明是否为 AI 展台大图，并附带 originalBlob 保留原图底片。
  */
-export async function saveMedPhoto(medId: string, blob: Blob): Promise<void> {
+export async function saveMedPhoto(
+  medId: string,
+  blob: Blob,
+  options?: SaveMedPhotoOptions,
+): Promise<void> {
   const compressed = await compressBoxPhoto(blob);
-  await writeReplacementPhoto(medId, { id: uid(), medId, blob: compressed, at: Date.now() });
+  let originalCompressed: Blob | undefined = undefined;
+  if (options?.originalBlob) {
+    try {
+      originalCompressed = await compressBoxPhoto(options.originalBlob);
+    } catch {
+      originalCompressed = options.originalBlob;
+    }
+  }
+
+  await writeReplacementPhoto(medId, {
+    id: uid(),
+    medId,
+    blob: compressed,
+    at: Date.now(),
+    kind: options?.kind,
+    originalBlob: originalCompressed,
+  });
+}
+
+/** 获取某药的照片完整记录（包含 kind 和 originalBlob） */
+export async function getMedPhotoRecord(medId: string): Promise<PhotoBlob | null> {
+  try {
+    const photos = await getPhotosByMed(medId);
+    if (photos.length === 0) return null;
+    return photos.reduce((a, b) => (b.at > a.at ? b : a));
+  } catch {
+    return null;
+  }
+}
+
+/** 取某药保留的原图底片 Blob（若存在） */
+export async function getMedOriginalPhotoBlob(medId: string): Promise<Blob | null> {
+  const record = await getMedPhotoRecord(medId);
+  return record?.originalBlob ?? null;
+}
+
+/** 将当前展示的 AI 展台大图回退恢复为原始拍摄照片 */
+export async function restoreOriginalMedPhoto(medId: string): Promise<boolean> {
+  const record = await getMedPhotoRecord(medId);
+  if (!record || !record.originalBlob) return false;
+  await writeReplacementPhoto(medId, {
+    id: uid(),
+    medId,
+    blob: record.originalBlob,
+    at: Date.now(),
+    kind: 'original',
+    // 恢复为原图后，若用户想再次切回大图可重新生成，或保留 current blob
+  });
+  return true;
 }
 
 /** 拍照/选图后立刻压一版再挂到页面上，避免会话里一直挂着几 MB 原图 */
