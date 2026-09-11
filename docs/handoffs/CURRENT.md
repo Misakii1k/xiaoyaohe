@@ -2,7 +2,7 @@
 
 Updated: 2026-09-11
 Integration branch: `main`
-Product version: `1.0.7`
+Product version: `1.0.8`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
 ## Settings Flat-Card Architecture, Colorful Squircle Icons & Medication List/Batch Layout Overhaul 2026-09-11 (workspace/claude)

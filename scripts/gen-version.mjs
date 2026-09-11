@@ -28,9 +28,8 @@ export function buildVersionManifest({ version, versionCode, releaseDate, releas
 /** 找出本版本的正式 APK 并算出真实字节数与 SHA256；没有就返回 null（绝不编造数字）。 */
 export function readApkManifest(rootDir, version) {
   const name = `xiaoyaohe-${version}-android-release.apk`;
-  for (const dir of [join(rootDir, 'release'), join(rootDir, 'public', 'release')]) {
-    const file = join(dir, name);
-    if (!existsSync(file)) continue;
+  const file = join(rootDir, 'release', name);
+  if (existsSync(file)) {
     return {
       path: file,
       size: statSync(file).size,
