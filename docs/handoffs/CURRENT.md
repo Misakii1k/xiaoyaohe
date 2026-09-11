@@ -5,6 +5,18 @@ Integration branch: `main`
 Product version: `1.0.8`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## APK Slimming & Zero-Server Incremental Architecture 2026-09-11 (v1.0.8, versionCode 43, workspace/claude)
+
+- **安装包大幅瘦身（-31.76MB，净降 63.9%）**：
+  - 清理 `public/release/` 历史遗留的旧版 APK（31.3MB），切断 Vite 静态资源向 `dist/` 及 Capacitor 向 `assets/public/` 的泄漏链路；
+  - `scripts/gen-version.mjs` 调整为仅读取根目录 `release/`，避免打包污染；
+  - `android/app/build.gradle` 的 `aaptOptions.ignoreAssetsPattern` 追加 `:*.apk`，从 Android 原生编译层彻底阻断 APK 文件混入 assets；
+  - 安装包体积从 49.7MB 锐减至 17.96MB（18,835,967 字节）。
+- **永久规则确立：严禁向用户电脑桌面复制安装包**：
+  - 用户明确规则：发版产物一律仅保存在 `medbox/release/` 目录并通过 GitHub Releases 分发，严禁复制到 `$HOME/Desktop`；已清理桌面上的历史 APK 文件。
+- **零服务器成本增量热更新实现方案（已规划）**：
+  - 详细设计规划详见 `implementation_plan.md`，基于现成 Cloudflare Pages + GitHub Releases 免费体系打造无感秒级增量热更新（web-bundle.zip 约 1.8MB）。
+
 ## Settings Flat-Card Architecture, Colorful Squircle Icons & Medication List/Batch Layout Overhaul 2026-09-11 (workspace/claude)
 
 - **设置页（我的）内容去重与架构扁平化 (`src/pages/Settings.ts`, `src/ui/styles/pages/settings.css`, `tests/settingsUiContracts.test.ts`)**：
