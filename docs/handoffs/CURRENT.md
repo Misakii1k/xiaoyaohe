@@ -5,6 +5,15 @@ Integration branch: `main`
 Product version: `1.0.4`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## Agnes & Modern Multimodal AI Image Generation Protocol Adaptation 2026-09-11 (workspace/claude)
+
+- **Agnes AI 及同类多模态生图服务商协议自适应兼容与配置管理**：
+  - **根因根治**：彻底解决顶层 `response_format` 冲突引发的 400 校验异常，自适应注入 `return_base64: true` 与 `extra_body: { response_format: 'b64_json' }`，去除多余 `n` 字段；
+  - **支持现代多模态图生图**：针对通过 `/images/generations` 的 `extra_body.image` 接收参考图的服务商（如 Agnes），在有原图时直接注入 DataURI 开启图生图；提供原图修图 -> 图生图 -> 纯文生图三级平滑降级管线；
+  - **GCS 云端 URL 熔断与友好容错**：对 Google Cloud Storage 直链设置 10s 快速熔断，遇到网络拦截明确提示更换 Base64 方案；
+  - **用户自定义配置档案管理器**：清退硬编码的静态预设模型；在设置面板新增「存为新配置」与已保存配置管理列表，支持一键载入与安全删除，密钥受系统安全存储保护；
+  - **全绿验证门**：全量 84 个套件 518 项测试 100% 通过（新增 7 项专项测试），`npm run typecheck` 0 错误，`npm run build:web` 编译成功。
+
 ## AI Image Dual-Mode Engine (/images/edits & /images/generations) 2026-09-11 (workspace/claude)
 
 - **同时支持修图与文生大图双模式及自动平滑回退（v1.0.4）**：

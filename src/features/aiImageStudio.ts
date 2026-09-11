@@ -194,8 +194,8 @@ export async function generateMedPackshot(options: GeneratePackshotOptions): Pro
   const mode = config.endpointMode || 'auto';
   const cleanBaseUrl = config.baseUrl.trim();
 
-  // 文生大图工作流
-  const runGenerations = async (): Promise<Blob> => {
+  // 文生大图工作流（支持可选参考图进行图生图）
+  const runGenerations = async (referencePhotoBase64?: string): Promise<Blob> => {
     let features: MedVisualFeatures;
     if (photoBlob && photoBlob.size > 0) {
       onProgress?.('正在分析药盒外观特征…');
@@ -207,15 +207,23 @@ export async function generateMedPackshot(options: GeneratePackshotOptions): Pro
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
     const prompt = buildStudioPackshotPrompt(features);
-    onProgress?.('正在生成商业级展台大图…');
+    onProgress?.(referencePhotoBase64 ? '正在通过图生图生成展台药盒…' : '正在生成商业级展台大图…');
 
     const imageUrl = resolveImageGenUrl(cleanBaseUrl);
     let raw: Blob;
     try {
-      raw = await requestImageGeneration(imageUrl, config, prompt, true, signal);
+      raw = await requestImageGeneration(imageUrl, config, prompt, true, signal, referencePhotoBase64);
     } catch (firstErr) {
       if (signal?.aborted) throw firstErr;
-      // 部分服务商不支持 response_format: 'b64_json'，回退至普通 url 模式
+      // 若携带参考图图生图失败，回退尝试纯文生图
+      if (referencePhotoBase64) {
+        try {
+          return await runGenerations(undefined);
+        } catch {
+          // 继续向下尝试无 b64 的普通模式
+        }
+      }
+      // 部分服务商不支持 Base64，回退至普通 url 模式
       try {
         raw = await requestImageGeneration(imageUrl, config, prompt, false, signal);
       } catch {
@@ -240,9 +248,12 @@ export async function generateMedPackshot(options: GeneratePackshotOptions): Pro
   };
 
   let rawBlob: Blob;
+  const modelLower = config.model.toLowerCase();
+  const isAgnes = modelLower.includes('agnes');
 
   if (mode === 'generations' || cleanBaseUrl.endsWith('/images/generations')) {
-    rawBlob = await runGenerations();
+    const photoB64 = (photoBlob && photoBlob.size > 0 && isAgnes) ? await blobToBase64(photoBlob) : undefined;
+    rawBlob = await runGenerations(photoB64);
   } else if (mode === 'edits' || cleanBaseUrl.endsWith('/images/edits')) {
     try {
       rawBlob = await runEdits();
@@ -259,17 +270,23 @@ export async function generateMedPackshot(options: GeneratePackshotOptions): Pro
   } else {
     // 自动模式 (auto)
     if (photoBlob && photoBlob.size > 0) {
-      try {
-        rawBlob = await runEdits();
-      } catch (error) {
-        if (signal?.aborted) throw error;
-        const isUnsupported = error instanceof ImageGenError
-          && (error.statusCode === 404 || error.statusCode === 405 || error.statusCode === 501);
-        if (isUnsupported) {
-          onProgress?.('当前服务商不支持修图接口，正在自动切换为文生大图…');
-          rawBlob = await runGenerations();
-        } else {
-          throw error;
+      if (isAgnes) {
+        // Agnes 原生在 /images/generations 中通过 extra_body.image 实现图生图
+        onProgress?.('正在通过图生图接口增强药盒照片…');
+        const photoB64 = await blobToBase64(photoBlob);
+        rawBlob = await runGenerations(photoB64);
+      } else {
+        try {
+          rawBlob = await runEdits();
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          onProgress?.('当前服务商不支持修图接口，正在自动切换为图生图/文生大图…');
+          const photoB64 = await blobToBase64(photoBlob);
+          try {
+            rawBlob = await runGenerations(photoB64);
+          } catch {
+            rawBlob = await runGenerations(undefined);
+          }
         }
       }
     } else {
@@ -355,15 +372,54 @@ export async function requestImageGeneration(
   prompt: string,
   requestB64: boolean,
   signal?: AbortSignal,
+  inputImageBase64?: string,
 ): Promise<Blob> {
+  const modelLower = config.model.toLowerCase();
+  const isAgnes = modelLower.includes('agnes');
+  const isOpenAiStandard = modelLower.startsWith('dall-e') || modelLower.startsWith('gpt-image');
+
   const body: Record<string, unknown> = {
     model: config.model,
     prompt,
-    n: 1,
-    size: '1024x1024',
   };
-  if (requestB64) {
-    body.response_format = 'b64_json';
+
+  if (isAgnes) {
+    body.size = '1K';
+    body.ratio = '1:1';
+    if (requestB64) {
+      body.return_base64 = true;
+      body.extra_body = { response_format: 'b64_json' };
+    }
+    if (inputImageBase64) {
+      const dataUri = inputImageBase64.startsWith('data:')
+        ? inputImageBase64
+        : `data:image/jpeg;base64,${inputImageBase64}`;
+      const extra = (body.extra_body as Record<string, unknown>) || {};
+      extra.image = [dataUri];
+      body.extra_body = extra;
+    }
+  } else if (isOpenAiStandard) {
+    body.size = '1024x1024';
+    body.n = 1;
+    if (requestB64) {
+      body.response_format = 'b64_json';
+    }
+  } else {
+    // 通用兼容模式（中转、Flux、CogView 等）
+    body.size = '1024x1024';
+    if (requestB64) {
+      body.return_base64 = true;
+      body.response_format = 'b64_json';
+      body.extra_body = { response_format: 'b64_json' };
+    }
+    if (inputImageBase64) {
+      const dataUri = inputImageBase64.startsWith('data:')
+        ? inputImageBase64
+        : `data:image/jpeg;base64,${inputImageBase64}`;
+      const extra = (body.extra_body as Record<string, unknown>) || {};
+      extra.image = [dataUri];
+      body.extra_body = extra;
+    }
   }
 
   const resp = await fetch(url, {
@@ -385,22 +441,32 @@ export async function requestImageGeneration(
   }
 
   const json = await resp.json() as {
-    data?: Array<{ b64_json?: string; url?: string }>;
+    data?: Array<{ b64_json?: string; url?: string; image?: string; b64?: string }>;
+    image?: string;
   };
 
   const item = json.data?.[0];
-  if (!item) throw new ImageGenError('服务商返回的数据中没有包含图片');
+  const b64 = item?.b64_json || item?.image || item?.b64 || (typeof json.image === 'string' ? json.image : undefined);
 
-  if (item.b64_json) {
-    return base64ToBlob(item.b64_json, 'image/png');
+  if (b64) {
+    return base64ToBlob(b64, 'image/png');
   }
 
-  if (item.url) {
-    const imgResp = await fetch(item.url, {
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
-    });
-    if (!imgResp.ok) throw new ImageGenError(`拉取生成的图片失败（HTTP ${imgResp.status}）`);
-    return await imgResp.blob();
+  if (item?.url) {
+    const urlStr = item.url;
+    try {
+      const imgResp = await fetch(urlStr, {
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
+      });
+      if (!imgResp.ok) throw new ImageGenError(`拉取生成的图片失败（HTTP ${imgResp.status}）`);
+      return await imgResp.blob();
+    } catch (fetchErr) {
+      if (signal?.aborted) throw fetchErr;
+      if (urlStr.includes('storage.googleapis.com')) {
+        throw new ImageGenError('AI 服务商返回了 Google Cloud Storage 图片直链，当前网络环境或跨域限制无法直接下载。建议配置支持 Base64 返回的模型或中转。');
+      }
+      throw new ImageGenError(`拉取生成的图片失败: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`);
+    }
   }
 
   throw new ImageGenError('未能从返回结果中解析出图片');
@@ -441,7 +507,8 @@ async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 function base64ToBlob(base64: string, mimeType = 'image/png'): Blob {
-  const byteChars = atob(base64);
+  const cleanBase64 = base64.includes(',') ? (base64.split(',')[1] || '') : base64;
+  const byteChars = atob(cleanBase64);
   const byteNumbers = new Array(byteChars.length);
   for (let i = 0; i < byteChars.length; i++) {
     byteNumbers[i] = byteChars.charCodeAt(i);

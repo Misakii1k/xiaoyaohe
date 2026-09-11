@@ -3,6 +3,9 @@ import {
   getImageGenConfig,
   setImageGenConfig,
   getEffectiveImageGenConfig,
+  getSavedImageGenProfiles,
+  saveImageGenProfile,
+  deleteImageGenProfile,
   pingImageGenService,
   getActiveLlmProvider,
   type ImageGenEndpointMode,
@@ -12,14 +15,6 @@ export interface ImageGenPanelResult {
   element: HTMLElement;
   cleanup: () => void;
 }
-
-const PRESET_MODELS = [
-  { label: 'GPT Image 1 (OpenAI, 推荐)', model: 'gpt-image-1' },
-  { label: 'DALL·E 3 (OpenAI, 文生图)', model: 'dall-e-3' },
-  { label: 'DALL·E 2 (OpenAI, 支持 edits)', model: 'dall-e-2' },
-  { label: '通义万相 (阿里)', model: 'wanx-v1' },
-  { label: 'CogView-3 (智谱)', model: 'cogview-3-plus' },
-];
 
 export function renderImageGenSettingsPanel(): ImageGenPanelResult {
   let panelSeq = 0;
@@ -127,7 +122,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     }) as HTMLInputElement;
     const urlHint = el('div', {
       class: 'muted text-xs mt-1',
-      text: '留空时自动复用「AI 服务商」的地址。需支持 OpenAI 兼容的 /images/edits 接口。',
+      text: '留空时自动复用「AI 服务商」的地址。支持 OpenAI 格式及各类中转生图接口。',
     });
     urlField.append(urlLabel, urlInput, urlHint);
 
@@ -149,30 +144,16 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     });
     keyField.append(keyLabel, keyInput, keyHint);
 
-    // 生图模型名 + 预设胶囊
+    // 生图模型名
     const modelField = el('div', { class: 'field mt-2' });
     const modelLabel = el('label', { text: '生图模型名称（Image Model）' });
     const modelInput = el('input', {
       type: 'text',
       class: 'input',
-      placeholder: '例如：gpt-image-1、dall-e-2',
+      placeholder: '例如：agnes-image-2.1-flash、gpt-image-1、dall-e-3',
       value: current.model || 'gpt-image-1',
     }) as HTMLInputElement;
-
-    const presetChipsWrap = el('div', { class: 'chips mt-2', style: 'flex-wrap: wrap; gap: 6px;' });
-    PRESET_MODELS.forEach((preset) => {
-      const chipBtn = el('button', {
-        class: 'chip sm',
-        type: 'button',
-        text: preset.label,
-      });
-      chipBtn.onclick = () => {
-        modelInput.value = preset.model;
-        toast(`已选择模型：${preset.model}`);
-      };
-      presetChipsWrap.append(chipBtn);
-    });
-    modelField.append(modelLabel, modelInput, presetChipsWrap);
+    modelField.append(modelLabel, modelInput);
 
     // 接口模式选项：auto / edits / generations
     const modeField = el('div', { class: 'field mt-2' });
@@ -183,7 +164,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
       {
         value: 'auto',
         label: '自动推荐（有图优先修图，不支持自动转文生图）',
-        desc: '有拍摄照片时优先调用 /images/edits 修图；若服务商不支持则平滑回退至 /images/generations 文生大图。',
+        desc: '有拍摄照片时优先调用修图/图生图接口；若服务商不支持则平滑回退至文生大图。',
       },
       {
         value: 'edits',
@@ -216,11 +197,96 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
 
     modeField.append(modeLabel, modeSelect, modeHint);
 
+    // 已保存自定义配置列表区
+    const profilesField = el('div', { class: 'field mt-2' });
+    const profilesLabel = el('div', {
+      class: 'muted text-xs mb-1 font-medium',
+      text: '已保存的生图配置（点击快速载入）：',
+    });
+    const profilesChips = el('div', { class: 'chips', style: 'flex-wrap: wrap; gap: 6px;' });
+    profilesField.append(profilesLabel, profilesChips);
+
+    function refreshProfilesList(): void {
+      profilesChips.replaceChildren();
+      const list = getSavedImageGenProfiles();
+      if (list.length === 0) {
+        profilesChips.append(
+          el('span', {
+            class: 'muted text-xs',
+            text: '暂无已保存配置。填写好表单后点击下方「存为新配置」即可保存。',
+          }),
+        );
+        return;
+      }
+
+      list.forEach((p) => {
+        const pill = el('div', {
+          class: 'chip sm',
+          style: 'display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px;',
+        });
+        const nameBtn = el('button', {
+          type: 'button',
+          style: 'background: none; border: none; padding: 0; color: inherit; font: inherit; cursor: pointer;',
+          text: `${p.name} (${p.model})`,
+          title: `点击载入「${p.name}」配置`,
+        });
+        nameBtn.onclick = () => {
+          if (p.baseUrl) urlInput.value = p.baseUrl;
+          if (p.apiKey) keyInput.value = p.apiKey;
+          modelInput.value = p.model;
+          modeSelect.value = p.endpointMode;
+          updateModeHint(p.endpointMode);
+          toast(`已载入配置「${p.name}」`);
+        };
+
+        const delBtn = el('button', {
+          type: 'button',
+          style: 'background: none; border: none; padding: 0 2px; color: inherit; opacity: 0.55; cursor: pointer; font-size: 13px; line-height: 1;',
+          title: `删除「${p.name}」`,
+          text: '×',
+        });
+        delBtn.onclick = async (e) => {
+          e.stopPropagation();
+          if (confirm(`确定删除生图配置「${p.name}」吗？`)) {
+            await deleteImageGenProfile(p.id);
+            refreshProfilesList();
+            toast(`已删除配置「${p.name}」`);
+          }
+        };
+
+        pill.append(nameBtn, delBtn);
+        profilesChips.append(pill);
+      });
+    }
+
+    refreshProfilesList();
+
     // 操作按钮
-    const btnRow = el('div', { class: 'btn-row mt-3' });
-    const saveBtn = el('button', { class: 'btn', type: 'button', text: '保存配置' });
+    const btnRow = el('div', { class: 'btn-row mt-3', style: 'flex-wrap: wrap; gap: 8px;' });
+    const saveBtn = el('button', { class: 'btn', type: 'button', text: '保存当前配置' });
+    const saveProfileBtn = el('button', { class: 'btn tonal', type: 'button', text: '存为新配置' });
     const testBtn = el('button', { class: 'btn tonal', type: 'button', text: '测试生图连接' });
     const copyMainBtn = el('button', { class: 'btn tonal', type: 'button', text: '从主服务商复制' });
+
+    saveProfileBtn.onclick = async () => {
+      const defaultName = modelInput.value.trim() || '自定义配置';
+      const name = window.prompt('请输入该生图配置的名称（如：Agnes 2.1、中转生图等）：', defaultName);
+      if (!name || !name.trim()) return;
+
+      try {
+        await saveImageGenProfile({
+          name: name.trim(),
+          baseUrl: urlInput.value.trim(),
+          apiKey: keyInput.value.trim(),
+          model: modelInput.value.trim() || 'gpt-image-1',
+          endpointMode: (modeSelect.value as ImageGenEndpointMode) || 'auto',
+        });
+        refreshProfilesList();
+        toast(`配置「${name.trim()}」已保存`);
+      } catch (err) {
+        toast('保存配置失败：' + String(err instanceof Error ? err.message : err));
+      }
+    };
 
     copyMainBtn.onclick = () => {
       const main = getActiveLlmProvider();
@@ -282,8 +348,8 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
       }
     };
 
-    btnRow.append(saveBtn, testBtn, copyMainBtn);
-    formWrap.append(urlField, keyField, modelField, modeField, btnRow);
+    btnRow.append(saveBtn, saveProfileBtn, testBtn, copyMainBtn);
+    formWrap.append(profilesField, urlField, keyField, modelField, modeField, btnRow);
 
     body.append(desc, toggleRow, formWrap);
   }

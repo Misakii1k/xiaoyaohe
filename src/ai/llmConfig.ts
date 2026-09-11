@@ -9,6 +9,7 @@ import {
   initializeSecretStore,
   LLM_CONFIG_SECRET_KEY,
   IMAGE_GEN_CONFIG_SECRET_KEY,
+  IMAGE_GEN_PROFILES_SECRET_KEY,
   setSessionSecret,
 } from './secretStore';
 
@@ -467,6 +468,75 @@ export async function setImageGenConfig(cfg: ImageGenConfig): Promise<void> {
     await setSessionSecret(JSON.stringify(clean), IMAGE_GEN_CONFIG_SECRET_KEY);
   });
 }
+
+export interface ImageGenProfile {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  endpointMode: ImageGenEndpointMode;
+  createdAt: number;
+}
+
+/** 读取所有保存的生图自定义配置 */
+export function getSavedImageGenProfiles(): ImageGenProfile[] {
+  const stored = getSessionSecret(IMAGE_GEN_PROFILES_SECRET_KEY);
+  if (!stored) return [];
+  try {
+    const list = JSON.parse(stored);
+    if (!Array.isArray(list)) return [];
+    return list.map((item) => ({
+      id: typeof item.id === 'string' ? item.id : `igp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : '未命名配置',
+      baseUrl: typeof item.baseUrl === 'string' ? item.baseUrl.trim() : '',
+      apiKey: typeof item.apiKey === 'string' ? item.apiKey.trim() : '',
+      model: typeof item.model === 'string' && item.model.trim() ? item.model.trim() : 'gpt-image-1',
+      endpointMode: (item.endpointMode === 'edits' || item.endpointMode === 'generations' ? item.endpointMode : 'auto') as ImageGenEndpointMode,
+      createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** 保存或更新生图配置档案 */
+export async function saveImageGenProfile(profile: Omit<ImageGenProfile, 'id' | 'createdAt'> & { id?: string }): Promise<ImageGenProfile> {
+  const list = getSavedImageGenProfiles();
+  let normalizedBaseUrl = '';
+  if (profile.baseUrl.trim()) {
+    normalizedBaseUrl = normalizeAndValidateBaseUrl(profile.baseUrl);
+  }
+  const id = profile.id || `igp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const item: ImageGenProfile = {
+    id,
+    name: profile.name.trim() || '自定义生图配置',
+    baseUrl: normalizedBaseUrl,
+    apiKey: profile.apiKey.trim(),
+    model: profile.model.trim() || 'gpt-image-1',
+    endpointMode: profile.endpointMode === 'edits' || profile.endpointMode === 'generations' ? profile.endpointMode : 'auto',
+    createdAt: Date.now(),
+  };
+  const existingIdx = list.findIndex((p) => p.id === id);
+  if (existingIdx >= 0) {
+    list[existingIdx] = item;
+  } else {
+    list.unshift(item);
+  }
+  await serializeConfigMutation(async () => {
+    await setSessionSecret(JSON.stringify(list), IMAGE_GEN_PROFILES_SECRET_KEY);
+  });
+  return item;
+}
+
+/** 删除指定的生图配置档案 */
+export async function deleteImageGenProfile(id: string): Promise<void> {
+  const list = getSavedImageGenProfiles().filter((p) => p.id !== id);
+  await serializeConfigMutation(async () => {
+    await setSessionSecret(JSON.stringify(list), IMAGE_GEN_PROFILES_SECRET_KEY);
+  });
+}
+
 
 /**
  * 获取生图实际生效的配置：

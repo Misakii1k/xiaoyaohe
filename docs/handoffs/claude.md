@@ -4,9 +4,30 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-11
 Status: active
-Latest version: `1.0.4` (Android `versionCode: 39`)
+Latest version: `1.0.5` (Android `versionCode: 40`)
 
 ## Summary of Accomplished Work
+
+### 37. Agnes 及同类多模态 AI 生图协议自适应兼容与配置管理 (1.0.5)
+
+1. **协议层深度自适应（解决 Agnes 等服务商报 400 及图出不来问题）**：
+   - 彻底移除顶层不兼容字段（如 `response_format` 与 `n: 1`），避免被严格校验后端拒收；
+   - 智能注入多模态格式参数：`return_base64: true`、`extra_body: { response_format: 'b64_json' }`，同时根据模型类型自适应注入分辨率/比例字段（如 `size: '1K'`, `ratio: '1:1'`）；
+   - 彻底解决 Base64 返回格式可能携带 `data:image/...;base64,` 前缀导致的 Blob 解码损坏问题。
+2. **多模态图生图（Img2Img）三级平滑降级**：
+   - 当提供原始药盒照片时，优先尝试 `/images/edits` 原图修图；
+   - 若接口不支持（如 Agnes 仅有 `/images/generations`），自动切换为以 `extra_body.image: [base64]` 形式传递底图进行图生图；
+   - 若图生图仍不支持，平滑降级为纯文本提示词文生图，保证出图成功率。
+3. **海外存储节点（GCS）超时降级兜底**：
+   - 针对部分服务商默认返回 `storage.googleapis.com` 导致国内无法加载图片的问题，增加 10s 快速超时并在失败时给出明确提示。
+4. **生图设置面板移除硬编码预设，支持自定义配置管理**：
+   - 移除固定的模型预设列表，彻底避免硬编码配置过期；
+   - 支持将当前输入的完整配置（名称、Base URL、API Key、模型名、接口模式）一键「存为新配置」；
+   - 界面直观展示已保存的配置标签，点击快速切换载入，支持点击 `×` 删除配置。
+5. **质量保证**：
+   - 全量 84 套件 518 项单元与集成测试 100% 通过；
+   - 静态类型检查 `npm run typecheck` 0 错误；
+   - Web 生产构建 `npm run build:web` 顺利完成。
 
 ### 36. AI 药盒生图与修图双模引擎及自动平滑回退 (1.0.4)
 

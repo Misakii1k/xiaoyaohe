@@ -294,6 +294,160 @@ describe('generateMedPackshot dual-mode network & parsing behavior', () => {
       expect.anything(),
     );
   });
+
+  it('Agnes protocol: generates compliant payload without top-level response_format or n, with return_base64, ratio and extra_body', async () => {
+    const { setImageGenConfig } = await import('../src/ai/llmConfig');
+    await setImageGenConfig({
+      enabled: true,
+      baseUrl: 'https://apihub.agnes-ai.com/v1',
+      apiKey: 'agnes-secret-key',
+      model: 'agnes-image-2.1-flash',
+      endpointMode: 'auto',
+    });
+
+    let sentBody: Record<string, unknown> | null = null;
+    const fakeFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/images/generations')) {
+        sentBody = JSON.parse(init?.body as string);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [{ b64_json: sampleB64 }],
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fakeFetch);
+
+    const blob = await generateMedPackshot({
+      name: '板蓝根颗粒',
+      dosageText: '10g*10袋',
+    });
+
+    expect(blob).toBeInstanceOf(Blob);
+    expect(sentBody).not.toBeNull();
+    // 严格断言 Agnes 规范要求：
+    // 1. 绝不在顶层放置 response_format
+    expect(sentBody?.response_format).toBeUndefined();
+    // 2. 绝不在顶层发送多余的 n
+    expect(sentBody?.n).toBeUndefined();
+    // 3. 必须包含 return_base64: true
+    expect(sentBody?.return_base64).toBe(true);
+    // 4. extra_body 内应包含 response_format: 'b64_json'
+    expect((sentBody?.extra_body as Record<string, unknown>)?.response_format).toBe('b64_json');
+    // 5. 尺寸和比例规范：1K 和 1:1
+    expect(sentBody?.size).toBe('1K');
+    expect(sentBody?.ratio).toBe('1:1');
+  });
+
+  it('Agnes protocol with photo: directly invokes /images/generations with extra_body.image', async () => {
+    const { setImageGenConfig } = await import('../src/ai/llmConfig');
+    await setImageGenConfig({
+      enabled: true,
+      baseUrl: 'https://apihub.agnes-ai.com/v1',
+      apiKey: 'agnes-secret-key',
+      model: 'agnes-image-2.1-flash',
+      endpointMode: 'auto',
+    });
+
+    let sentBody: Record<string, unknown> | null = null;
+    const fakeFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/images/generations')) {
+        sentBody = JSON.parse(init?.body as string);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [{ b64_json: `data:image/png;base64,${sampleB64}` }], // 包含前缀的兼容测试
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fakeFetch);
+
+    const photo = new Blob(['sample-box-photo'], { type: 'image/jpeg' });
+    const blob = await generateMedPackshot({
+      photoBlob: photo,
+      name: '阿莫西林胶囊',
+    });
+
+    expect(blob).toBeInstanceOf(Blob);
+    expect(sentBody).not.toBeNull();
+    const extra = sentBody?.extra_body as Record<string, unknown>;
+    expect(Array.isArray(extra?.image)).toBe(true);
+    expect((extra.image as string[])[0]).toContain('data:image/');
+  });
+
+  it('handles Google Cloud Storage URL failure with friendly message', async () => {
+    const { setImageGenConfig } = await import('../src/ai/llmConfig');
+    await setImageGenConfig({
+      enabled: true,
+      baseUrl: 'https://apihub.agnes-ai.com/v1',
+      apiKey: 'agnes-secret-key',
+      model: 'agnes-image-2.1-flash',
+      endpointMode: 'generations',
+    });
+
+    const fakeFetch = vi.fn(async (url: string) => {
+      if (url.includes('/images/generations')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [{ url: 'https://storage.googleapis.com/agnes-aigc/sample.png' }],
+          }),
+        } as unknown as Response;
+      }
+      if (url.includes('storage.googleapis.com')) {
+        throw new Error('Failed to fetch');
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fakeFetch);
+
+    await expect(generateMedPackshot({
+      name: '感冒灵颗粒',
+    })).rejects.toThrow('Google Cloud Storage');
+  });
+});
+
+describe('ImageGenProfile storage operations', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  it('can save, list, and delete custom image generation profiles', async () => {
+    const {
+      getSavedImageGenProfiles,
+      saveImageGenProfile,
+      deleteImageGenProfile,
+    } = await import('../src/ai/llmConfig');
+
+    expect(getSavedImageGenProfiles()).toEqual([]);
+
+    const profile = await saveImageGenProfile({
+      name: 'Agnes 2.1 测试',
+      baseUrl: 'https://apihub.agnes-ai.com/v1',
+      apiKey: 'test-key-123',
+      model: 'agnes-image-2.1-flash',
+      endpointMode: 'auto',
+    });
+
+    expect(profile.id).toBeDefined();
+    expect(profile.name).toBe('Agnes 2.1 测试');
+
+    const list = getSavedImageGenProfiles();
+    expect(list.length).toBe(1);
+    expect(list[0].name).toBe('Agnes 2.1 测试');
+    expect(list[0].model).toBe('agnes-image-2.1-flash');
+
+    await deleteImageGenProfile(profile.id);
+    expect(getSavedImageGenProfiles().length).toBe(0);
+  });
 });
 
 describe('medPhotos packshot and original photo lifecycle', () => {

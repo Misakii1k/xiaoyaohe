@@ -5,10 +5,12 @@ const SECRET_KEY = 'ai-api-key';
 /** 新版把地址、模型和密钥放在同一条安全存储记录中，避免新旧配置交叉。 */
 export const LLM_CONFIG_SECRET_KEY = 'ai-llm-config-v1';
 export const IMAGE_GEN_CONFIG_SECRET_KEY = 'ai-image-config-v2';
+export const IMAGE_GEN_PROFILES_SECRET_KEY = 'ai-image-profiles-v1';
 const KNOWN_KEYS = [
   SECRET_KEY,
   LLM_CONFIG_SECRET_KEY,
   IMAGE_GEN_CONFIG_SECRET_KEY,
+  IMAGE_GEN_PROFILES_SECRET_KEY,
 ] as const;
 const RETIRED_IMAGE_SECRET_KEY = 'ai-image-api-key';
 const RETIRED_IMAGE_CONFIG_KEY = 'medbox.imageGenConfig.v1';
