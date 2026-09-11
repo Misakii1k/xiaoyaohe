@@ -2,8 +2,21 @@
 
 Updated: 2026-09-11
 Integration branch: `main`
-Product version: `1.0.6`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Settings Flat-Card Architecture, Colorful Squircle Icons & Medication List/Batch Layout Overhaul 2026-09-11 (workspace/claude)
+
+- **设置页（我的）内容去重与架构扁平化 (`src/pages/Settings.ts`, `src/ui/styles/pages/settings.css`, `tests/settingsUiContracts.test.ts`)**：
+  - **彻底清除三重冗余**：移除原「顶部 6 行设置菜单卡片 (`profile-menu-card`)」与右上角「齿轮弹窗菜单 (`gearBtn`)」，确立纯平铺分类卡片群架构（提醒与外观、数据与同步、智能助手与高级、关于小药盒）；
+  - **全套 11 项五彩微拟物图标重绘**：参考原 6 行菜单的圆角彩底微拟物图标体系（32x32px、`border-radius: 8px`、高品质语义色彩浅彩底色），重绘全量设置项图标（系统通知 amber、时段 emerald、外观 violet、保活 orange、同步 sky、备份 teal、检查更新 blue、大模型 purple、生图 rose、AI 授权 gold、诊断 cyan），并完美适配深色模式；
+  - **关于小药盒居中展台重新排版**：药盒 Logo 居中浮动光晕、版本号药丸胶囊、2x2 精致特性磁贴卡片（Tile Card）、柔和免责声明，大幅提升高级感与呼吸感。
+- **药品页三大指标光晕与「添加药品」右下角对齐 (`src/pages/MedList.ts`, `src/ui/styles/pages/medications.css`, `tests/medListUiContracts.test.ts`)**：
+  - **去除实色硬圈**：「全部药品、近期使用、需补充」指标卡图标下方的实色圆圈背景彻底清除（`background: transparent !important`），升级为 3 级渐变多层环境光晕（Halo / Glow），通透自然；
+  - **右下角悬浮添加按钮**：将原随页面滚动的「+ 添加药品」FAB 移入底部操作坞（`createActionDock([fabAdd])`），透明坞底、禁用非按钮区域指针穿透，严格遵守无 `position: fixed` 契约约束。
+- **批量管理页面针对性排版根治 (`src/pages/MedList.ts`, `src/ui/styles/pages/medications.css`)**：
+  - **独立微卡片单元**：2 列药品卡片从原本挤在同一大白底矩形框改为带独立边框、圆角、阴影与点击缩放反馈的独立卡片；
+  - **复选框可见度与整卡点选**：加深未选复选框边框为 `#94a3b8`，彻底解决浅色模式下白底融化隐形的问题；支持点击卡片任意位置切换勾选状态；
+  - **底部操作坞极致瘦身**：移除操作栏内冗余的「已选 0 种」，将 4 个操作按钮优化为 50px 超薄毛玻璃胶囊浮动工具栏，彻底消除遮挡半屏药品的缺陷。
 
 ## Straight-On Frontal Medicine Image Studio Prompts & Unified App Prompt Dialog 2026-09-11 (workspace/claude)
 
