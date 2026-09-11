@@ -30,5 +30,6 @@ This repository is edited from Claude, GPT/Codex, Grok, Trae, and Qoder. Chat hi
 - Merge tested commits into `main`; then merge `main` back into every long-lived tool branch before new work begins.
 - `release/` APK/checksum files, browser output, logs, caches, and secrets stay untracked. Design PNG sources use Git LFS.
 - Preserve the project's existing versioning and packaging policy recorded in `docs/worktrees/README.md`.
-- Release and in-app update SOP is documented in `docs/releases/GUIDE.md`. A version bump requires a full GitHub Release with APK attachment via `gh release create`, not just a bare git tag.
+- Release and in-app update SOP is documented in `docs/releases/GUIDE.md` and automated by skill `medbox-release`. A version bump requires a full GitHub Release with APK attachment via `gh release create`, not just a bare git tag. After APK generation, run `node scripts/gen-version.mjs` before tests, and verify online endpoints via `node scripts/check-release-endpoints.mjs`.
+
 
