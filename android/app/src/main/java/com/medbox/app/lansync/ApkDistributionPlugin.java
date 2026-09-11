@@ -578,7 +578,7 @@ public final class ApkDistributionPlugin extends Plugin {
             conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(15_000);
             conn.setReadTimeout(60_000);
-            conn.setRequestProperty("User-Agent", "Xiaoyaohe/" + (servingApk != null ? "android" : "app"));
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 Xiaoyaohe/1.0.1");
             conn.setRequestProperty("Accept", "*/*");
             conn.connect();
 
@@ -601,7 +601,7 @@ public final class ApkDistributionPlugin extends Plugin {
 
             if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
                 conn.disconnect();
-                throw new IOException("HTTP error " + code + ": " + conn.getResponseMessage());
+                throw new IOException("HTTP error " + code + ": " + conn.getResponseMessage() + " (" + currentUrl + ")");
             }
             break;
         }

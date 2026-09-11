@@ -141,31 +141,26 @@ describe('Cloudflare Functions: download 代理', () => {
     expect(res.status).toBe(404);
   });
 
-  it('把 GitHub 的 302 预签名直链原样交给客户端', async () => {
+  it('流式代理回传 APK，设置正确的 Content-Type 与 Content-Length', async () => {
     globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.includes('/assets/')) {
-        return new Response(null, { status: 302, headers: { location: 'https://objects.githubusercontent.com/signed' } });
+        return new Response(new Uint8Array([0x50, 0x4b]), {
+          status: 200,
+          headers: {
+            'content-type': 'application/vnd.android.package-archive',
+            'content-length': '32095374',
+          },
+        });
       }
       return jsonResponse(RELEASE_FIXTURE);
     }) as unknown as typeof fetch;
 
     const res = await downloadGet({ request: request('/api/download?tag=v1.0.0'), env: { GITHUB_TOKEN: TOKEN } });
-    expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('https://objects.githubusercontent.com/signed');
-  });
-
-  it('拿不到重定向时以 APK 内容类型流式回传', async () => {
-    globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.includes('/assets/')) return new Response(new Uint8Array([0x50, 0x4b]), { status: 200 });
-      return jsonResponse(RELEASE_FIXTURE);
-    }) as unknown as typeof fetch;
-
-    const res = await downloadGet({ request: request('/api/download'), env: { GITHUB_TOKEN: TOKEN } });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/vnd.android.package-archive');
     expect(res.headers.get('content-disposition')).toContain('xiaoyaohe-1.0.0-android-release.apk');
+    expect(res.headers.get('content-length')).toBe('32095374');
   });
 
   it('上游 5xx 时脱敏为 502', async () => {

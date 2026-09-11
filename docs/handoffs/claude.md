@@ -8,6 +8,21 @@ Latest version: `1.0.1` (Android `versionCode: 36`)
 
 ## Summary of Accomplished Work
 
+### 35. 修复 Cloudflare 代理下载 APK 报 HTTP error 403 缺陷 (1.0.1)
+
+1. **403 根因定位**：
+   - 过去 `functions/api/download.ts` 收到客户端请求后，通过 `redirect: 'manual'` 截获 GitHub API 的 302 重定向并直接向客户端下发 `Response.redirect(redirectLocation, 302)`。
+   - 这导致国内安卓客户端直接与 GitHub 底层的临时存储节点 `release-assets.githubusercontent.com`（Azure Blob）建立连接。在国内移动网络/DNS 环境下，该直连受运营商策略拦截、防盗链签名或网络策略影响，返回 `HTTP error 403: Forbidden`。
+2. **边缘流式直传架构重构**：
+   - `functions/api/download.ts` 改为 `redirect: 'follow'`，由 Cloudflare 边缘节点（海外骨干网）在内部跟随 GitHub 302 跳转获取真实二进制流；
+   - 彻底移除向客户端抛出 302 跳转的逻辑，改为由 Cloudflare 边缘直接以 `Response(assetRes.body)` 流式代理回传 APK，设置正确的 `Content-Type: application/vnd.android.package-archive`、`Content-Length` 与 `Content-Disposition`；
+   - 客户端全程仅与同源的 `https://xiaoyaohe.pages.dev/api/download` 通信，彻底杜绝客户端直连 `githubusercontent.com`，根除 403 Forbidden。
+3. **原生下载客户端 User-Agent 规范化**：
+   - `ApkDistributionPlugin.java` 原生 `doDownloadHttp` 请求头 User-Agent 从非常规的 `Xiaoyaohe/app` 改为标准化移动端 User-Agent，避免触发 CDN WAF 机器人拦截，并在抛出异常时附带具体目标 URL 方便排查。
+4. **质量验证**：
+   - `tests/functionsApi.test.ts` 16 项测试全数通过；
+   - 全量 83 个测试套件 506 项测试全绿，`npm run build:web` 编译成功。
+
 ### 34. 主导航与四屏 1:1 视觉复刻与真实后端数据联通 (1.0.0)
 
 1. **主导航更新**：第 5 项 Tab 命名更新为「我的」（原为「设置」），并兼容原有契约测试。

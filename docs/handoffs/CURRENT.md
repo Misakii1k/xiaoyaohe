@@ -5,6 +5,14 @@ Integration branch: `main`
 Product version: `1.0.1`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## Cloudflare Pages Release Proxy Streaming & HTTP 403 Fix 2026-09-11 (workspace/claude)
+
+- **根治应用内在线更新下载 APK 报 HTTP error 403 Forbidden 缺陷**：
+  - **403 根因**：`functions/api/download.ts` 原本使用 `redirect: 'manual'` 截获 GitHub API 资产重定向并直接向移动端下发 `Response.redirect(redirectLocation, 302)`。这迫使国内手机直接建立与微软 Azure Blob 存储节点（`release-assets.githubusercontent.com`）的连接，导致受国内移动网络或签名策略影响直接拒绝访问并返回 403 Forbidden；
+  - **重构为边缘流式直传**：Cloudflare Pages 内部使用 `redirect: 'follow'` 自主跟随 GitHub 302 跳转获取真实二进制流，彻底移除客户端 302 重定向分支，直接以 `Response(assetRes.body)` 流式代理回传 APK，设置正确的 `Content-Type: application/vnd.android.package-archive` 与 `Content-Length`。移动客户端仅与 `xiaoyaohe.pages.dev` 交互，无需直连 GitHub/Azure 存储；
+  - **客户端下载请求优化**：`ApkDistributionPlugin.java` 采用标准移动端 User-Agent，避免触发 CDN WAF 拦截，并完善异常时的目标 URL 诊断信息；
+  - **验证**：`tests/functionsApi.test.ts` 16 项测试与全量 83 套件 506 项测试 100% 全绿，`npm run build:web` 编译成功。
+
 ## 1:1 Design Mockup Reproduction & Real Backend Integration 2026-09-11 (workspace/claude)
 
 - **主导航与四屏 1:1 视觉复刻与真实后端数据联通 (`media_1789105284209.jpg`) 深度复审与 Bug 修复**：

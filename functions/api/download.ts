@@ -16,8 +16,9 @@ import {
 /**
  * 私有仓库 Release APK 代理。
  *
- * GitHub 返回 302 到带临时签名的 S3 直链，这里把该重定向原样交给客户端
- * （原生 `downloadHttp` 会自己跟随多跳重定向），拿不到重定向时再流式回传。
+ * 通过 Cloudflare 边缘代理直接流式回传私有 Release APK。
+ * 不走 302 重定向到 release-assets.githubusercontent.com，
+ * 避免国内移动端直连 GitHub/Azure 存储时因网络拦截或签名策略导致 403 Forbidden。
  */
 export const onRequestGet = async (context: { request: Request; env: Env }) => {
   const { request, env } = context;
@@ -43,16 +44,15 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
       return errorResponse('APK_NOT_FOUND', '该版本没有可用的安装包。', 404);
     }
 
-    const assetRes = await fetchWithTimeout(assetApiUrl(apkAsset.id), {
-      method: 'GET',
-      headers: githubHeaders(token, 'application/octet-stream'),
-      redirect: 'manual',
-    });
-
-    const redirectLocation = assetRes.headers.get('location');
-    if (redirectLocation) {
-      return Response.redirect(redirectLocation, 302);
-    }
+    const assetRes = await fetchWithTimeout(
+      assetApiUrl(apkAsset.id),
+      {
+        method: 'GET',
+        headers: githubHeaders(token, 'application/octet-stream'),
+        redirect: 'follow',
+      },
+      30_000,
+    );
 
     if (!assetRes.ok || !assetRes.body) {
       return upstreamFailureResponse(assetRes.status);
@@ -64,7 +64,7 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, max-age=0, no-store',
     });
-    const contentLength = assetRes.headers.get('content-length');
+    const contentLength = assetRes.headers.get('content-length') || (typeof apkAsset.size === 'number' && apkAsset.size > 0 ? String(apkAsset.size) : null);
     if (contentLength) headers.set('Content-Length', contentLength);
 
     return new Response(assetRes.body, { headers });
