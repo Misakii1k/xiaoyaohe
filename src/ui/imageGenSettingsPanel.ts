@@ -25,8 +25,9 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
   head.setAttribute('aria-controls', bodyId);
 
   const lead = el('span', { class: 'panel-lead' });
-  lead.append(icon('image', 'panel-icon'));
-  lead.append(el('span', { class: 'panel-title', text: 'AI 生图服务商' }));
+  const iconWrap = el('span', { class: 'panel-icon panel-icon-rose' });
+  iconWrap.append(icon('image'));
+  lead.append(iconWrap, el('span', { class: 'panel-title', text: 'AI 生图服务商' }));
   head.append(lead);
 
   const right = el('span', { class: 'panel-right' });

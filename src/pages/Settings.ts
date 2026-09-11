@@ -28,7 +28,7 @@ import {
 } from '../db/schema';
 import { confirmDialog, el, renderPage, toast, icon, field, type IconName } from '../ui/components';
 import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
-import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/BottomSheet';
+import { openBottomSheet } from '../ui/primitives/BottomSheet';
 import { navigate } from '../router';
 import QRCode from 'qrcode';
 import { getThemePreference, setThemePreference, type ThemePreference } from '../ui/theme';
@@ -226,94 +226,6 @@ export async function renderSettingsPage(
   statsSection.append(statsGrid);
   content.append(statsSection);
 
-  // 3. 菜单列表 (iOS 风格 6 行设置)
-  const menuCard = el('div', { class: 'profile-menu-card' });
-
-  // 3.1 系统通知
-  const notifSupported = notificationsSupported();
-  const notifPerm = getPermission();
-  const notifActive = notifSupported && notifPerm === 'granted' && isAppNotificationsEnabled();
-  const notifTagText = notifActive ? '已开启' : '已暂停';
-  const notifTone: 'success' | 'muted' = notifActive ? 'success' : 'muted';
-
-  menuCard.append(createProfileMenuRow({
-    iconName: 'bell',
-    title: '系统通知',
-    tag: { text: notifTagText, tone: notifTone },
-    onClick: () => {
-      openBottomSheet({
-        label: '系统通知设置',
-        content: [renderReminderPanel()],
-      });
-    },
-  }));
-
-  // 3.2 时段提醒设置
-  menuCard.append(createProfileMenuRow({
-    iconName: 'clock',
-    title: '时段提醒设置',
-    tag: { text: '已设置', tone: 'success' },
-    onClick: () => {
-      openBottomSheet({
-        label: '时段提醒设置',
-        content: [renderPeriodSettingsPanel()],
-      });
-    },
-  }));
-
-  // 3.3 外观
-  const currentTheme = getThemePreference();
-  const themeLabel = currentTheme === 'dark' ? '深色' : currentTheme === 'light' ? '浅色' : '跟随系统';
-  menuCard.append(createProfileMenuRow({
-    iconName: 'moon',
-    title: '外观',
-    tag: { text: themeLabel, tone: 'info' },
-    onClick: () => {
-      openBottomSheet({
-        label: '外观偏好',
-        content: [renderAppearancePanel()],
-      });
-    },
-  }));
-
-  // 3.4 后台保活与防杀
-  menuCard.append(createProfileMenuRow({
-    iconName: 'shield',
-    title: '后台保活与防杀',
-    tag: { text: '建议设置', tone: 'warning' },
-    onClick: () => {
-      openKeepAliveGuideModal();
-    },
-  }));
-
-  // 3.5 帮助与反馈
-  menuCard.append(createProfileMenuRow({
-    iconName: 'info',
-    title: '帮助与反馈',
-    onClick: () => {
-      openBottomSheet({
-        label: '帮助与反馈',
-        content: [
-          renderDiagnosticsPanel({ notify: toast, confirm: confirmDialog }),
-        ],
-      });
-    },
-  }));
-
-  // 3.6 关于我们
-  menuCard.append(createProfileMenuRow({
-    iconName: 'info',
-    title: '关于我们',
-    onClick: () => {
-      openBottomSheet({
-        label: '关于小药盒',
-        content: [renderAboutSection()],
-      });
-    },
-  }));
-
-  content.append(menuCard);
-
   if (secretInitialization.some((result) => result.status === 'rejected')) {
     content.append(el('div', {
       class: 'settings-storage-warning',
@@ -324,7 +236,7 @@ export async function renderSettingsPage(
     } as any));
   }
 
-  // 4. 分组 1：用药提醒与外观
+  // 3. 分组 1：用药提醒与外观
   const reminderAppearanceGroup = createSettingsGroup('提醒与外观', 'bell', [
     renderReminderPanel(),
     renderPeriodSettingsPanel(),
@@ -332,7 +244,7 @@ export async function renderSettingsPage(
     renderKeepAlivePanel(),
   ]);
 
-  // 5. 分组 2：数据与家庭同步
+  // 4. 分组 2：数据与家庭同步
   const lanSyncPanel = renderLanSyncSettingsPanel(signal);
   const appUpdatePanel = renderAppUpdatePanel();
   const backupCard = renderBackupCard(root, signal, {
@@ -346,7 +258,7 @@ export async function renderSettingsPage(
     appUpdatePanel.element,
   ]);
 
-  // 6. 分组 3：AI 智能助手与诊断
+  // 5. 分组 3：AI 智能助手与高级
   const llmPanel = renderLlmPanel();
   const imageGenPanel = renderImageGenSettingsPanel();
   const aiDiagnosticsGroup = createSettingsGroup('智能助手与高级', 'sparkles', [
@@ -356,15 +268,15 @@ export async function renderSettingsPage(
     renderDiagnosticsPanel(),
   ]);
 
-  // 7. 高级设置区域（页面下部，便于完整配置与契约测试）
-  const advancedWrapper = el('div', { class: 'profile-advanced-wrapper' });
-  advancedWrapper.append(
+  // 6. 分组卡片与关于小药盒平铺挂载
+  const settingsWrapper = el('div', { class: 'profile-advanced-wrapper' });
+  settingsWrapper.append(
     reminderAppearanceGroup,
     dataSyncGroup,
     aiDiagnosticsGroup,
     renderAboutSection(),
   );
-  content.append(advancedWrapper);
+  content.append(settingsWrapper);
 
   settingsPageCleanupByRoot.get(root)?.();
   let cleaned = false;
@@ -384,138 +296,65 @@ export async function renderSettingsPage(
   settingsPageCleanupByRoot.set(root, cleanup);
   signal?.addEventListener('abort', cleanup, { once: true });
 
-  const gearBtn = el('button', {
-    class: 'profile-gear-btn',
-    type: 'button',
-    'aria-label': '系统设置',
-  });
-  gearBtn.append(icon('gear'));
-  gearBtn.onclick = () => {
-    let sheet: BottomSheetHandle | undefined;
-    const title = el('h2', { class: 'inventory-sheet-title', text: '高级系统设置' });
-    const quickLinks = el('div', { class: 'profile-gear-quick-links' });
-
-    const createGearAction = (iconName: IconName, label: string, desc: string, action: () => void) => {
-      const btn = el('button', { class: 'profile-gear-action-row', type: 'button' });
-      const left = el('div', { class: 'profile-menu-left' });
-      const iconWrap = el('div', { class: 'profile-menu-icon' });
-      iconWrap.append(icon(iconName));
-      left.append(iconWrap, el('div', { class: 'profile-gear-action-text' }, [
-        el('div', { class: 'profile-menu-label', text: label }),
-        el('div', { class: 'profile-gear-action-sub', text: desc }),
-      ]));
-      const chevron = el('span', { class: 'profile-menu-chevron' });
-      chevron.append(icon('chevron-right'));
-      btn.append(left, chevron);
-      btn.onclick = () => {
-        sheet?.close();
-        action();
-      };
-      return btn;
-    };
-
-    quickLinks.append(
-      createGearAction('sparkles', 'AI 服务商与密钥', '配置大模型 API 密钥与服务商', () => {
-        advancedWrapper.scrollIntoView({ behavior: 'smooth' });
-      }),
-      createGearAction('cloud', '家庭局域网同步', '两台手机同一个 Wi-Fi 免流量同步', () => {
-        openBottomSheet({ label: '家庭同步', content: [renderLanSyncSettingsPanel().element] });
-      }),
-      createGearAction('copy', '数据备份与还原', '导出或导入小药盒完整数据备份', () => {
-        advancedWrapper.scrollIntoView({ behavior: 'smooth' });
-      }),
-      createGearAction('info', '系统诊断与日志', '查看应用错误日志与系统自检', () => {
-        openBottomSheet({ label: '帮助与反馈', content: [renderDiagnosticsPanel({ notify: toast, confirm: confirmDialog })] });
-      }),
-    );
-    const cancelBtn = el('button', { class: 'btn text full-width mt-2', text: '取消', type: 'button' });
-    sheet = openBottomSheet({
-      label: '高级系统设置',
-      content: [title, quickLinks, cancelBtn],
-    });
-    cancelBtn.onclick = () => sheet?.close();
-  };
-
-  renderPage({ root, title: '我的', activeTab: 'settings', topRight: gearBtn, content });
+  renderPage({ root, title: '我的', activeTab: 'settings', content });
   return cleanup;
 }
 
 function renderAboutSection(): HTMLElement {
   const aboutSection = el('section', { class: 'settings-group-section settings-about-section' });
-  const aboutHead = el('div', { class: 'settings-group-header' });
-  aboutHead.append(icon('info', 'settings-group-icon'));
-  aboutHead.append(el('h2', { class: 'settings-group-title', text: '关于小药盒' }));
-  aboutSection.append(aboutHead);
 
-  const aboutCard = el('div', { class: 'settings-group-card settings-about-card' });
+  const aboutCard = el('div', { class: 'settings-group-card settings-about-card settings-about-center' });
 
-  const brandRow = el('div', { class: 'settings-about-brand-row' });
+  // 1. 居中药盒 Logo 与光晕底座
+  const logoWrap = el('div', { class: 'settings-about-logo-wrap' });
   const logo = el('div', { class: 'settings-about-logo' });
   logo.append(icon('pill'));
-  const titleWrap = el('div', { class: 'settings-about-title-wrap' });
-  titleWrap.append(
-    el('div', { class: 'settings-about-app-name', text: '小药盒 · 家庭健康用药管家' }),
-    el('div', { class: 'settings-about-version', text: `版本 v${__APP_VERSION__} (正式版)` }),
-  );
-  brandRow.append(logo, titleWrap);
+  logoWrap.append(logo);
 
+  // 2. 居中标题与副标
+  const title = el('h2', { class: 'settings-about-app-name', text: '小药盒' });
+  const subtitle = el('div', { class: 'settings-about-app-sub', text: '家庭健康用药管家' });
+
+  // 3. 优雅版本药丸胶囊
+  const badgeWrap = el('div', { class: 'settings-about-badge-wrap' });
+  const versionBadge = el('span', { class: 'settings-about-badge', text: `v${__APP_VERSION__} (正式版)` });
+  badgeWrap.append(versionBadge);
+
+  // 4. 品牌简介
   const intro = el('div', {
     class: 'settings-about-intro',
     text: '用于家庭日常用药管理。服药提醒、药品信息与库存记录均保存在本地设备中，不展示广告，无需注册账号。',
   });
 
-  const createHlItem = (text: string) => {
-    const item = el('div', { class: 'settings-about-hl-item' });
-    item.append(icon('check'), el('span', { text }));
-    return item;
+  // 5. 2x2 精致特性磁贴
+  const createTile = (tileTitle: string, tileDesc: string, iconName: IconName, tone: string) => {
+    const tile = el('div', { class: `settings-about-tile tone-${tone}` });
+    const tileHead = el('div', { class: 'settings-about-tile-head' });
+    const tileIcon = el('span', { class: 'settings-about-tile-icon' });
+    tileIcon.append(icon(iconName));
+    const titleEl = el('span', { class: 'settings-about-tile-title', text: tileTitle });
+    tileHead.append(tileIcon, titleEl);
+    const descEl = el('span', { class: 'settings-about-tile-desc', text: tileDesc });
+    tile.append(tileHead, descEl);
+    return tile;
   };
 
-  const highlights = el('div', { class: 'settings-about-highlights' }, [
-    createHlItem('定时服药提醒与记录'),
-    createHlItem('药箱余量预警'),
-    createHlItem('数据保存在本地设备'),
-    createHlItem('局域网面对面免流量同步'),
+  const highlights = el('div', { class: 'settings-about-grid' }, [
+    createTile('定时服药', '准时提醒与打卡记录', 'bell', 'amber'),
+    createTile('药箱余量', '低余量智能实时预警', 'box', 'emerald'),
+    createTile('纯净本地', '全量数据保存在本地设备', 'shield', 'violet'),
+    createTile('家庭同步', '局域网面对面免流量互传', 'cloud', 'blue'),
   ]);
 
+  // 6. 底部健康免责声明
   const disclaimer = el('div', {
     class: 'settings-about-disclaimer muted',
     text: '健康声明：小药盒的服药提醒与助手建议仅供日常健康管理参考，不构成处方或临床诊断意见。如有不适，请咨询专业医生。',
   });
 
-  aboutCard.append(brandRow, intro, highlights, disclaimer);
+  aboutCard.append(logoWrap, title, subtitle, badgeWrap, intro, highlights, disclaimer);
   aboutSection.append(aboutCard);
   return aboutSection;
-}
-
-function createProfileMenuRow(options: {
-  iconName: IconName;
-  title: string;
-  tag?: { text: string; tone?: 'success' | 'warning' | 'muted' | 'info' };
-  onClick: () => void;
-}): HTMLElement {
-  const row = el('button', {
-    class: 'profile-menu-row',
-    type: 'button',
-  });
-  const left = el('div', { class: 'profile-menu-left' });
-  const iconWrap = el('div', { class: 'profile-menu-icon' });
-  iconWrap.append(icon(options.iconName));
-  left.append(iconWrap, el('span', { class: 'profile-menu-label', text: options.title }));
-
-  const right = el('div', { class: 'profile-menu-right' });
-  if (options.tag) {
-    right.append(el('span', {
-      class: `profile-menu-tag tone-${options.tag.tone || 'muted'}`,
-      text: options.tag.text,
-    }));
-  }
-  const chevron = el('span', { class: 'profile-menu-chevron' });
-  chevron.append(icon('chevron-right'));
-  right.append(chevron);
-
-  row.append(left, right);
-  row.onclick = options.onClick;
-  return row;
 }
 
 function createProfileStatCard(
@@ -661,6 +500,7 @@ function renderBackupCard(
   const element = panel({
     title: '本地数据与备份',
     iconName: 'box',
+    iconTone: 'teal',
     chip: { text: countSummary, tone: 'ok' },
     renderBody: (body) => {
       body.classList.add('settings-backup-panel-body');
@@ -747,6 +587,7 @@ export function renderDiagnosticsPanel(
   const p = panel({
     title: '诊断记录',
     iconName: 'info',
+    iconTone: 'cyan',
     chip: diagnosticsChip(),
     renderBody: (body) => {
       const description = el('div', {
@@ -799,9 +640,23 @@ interface PanelChip {
   text: string;
   tone: 'ok' | 'warn' | 'info' | 'muted';
 }
+export type PanelIconTone =
+  | 'amber'
+  | 'emerald'
+  | 'violet'
+  | 'orange'
+  | 'sky'
+  | 'teal'
+  | 'blue'
+  | 'purple'
+  | 'rose'
+  | 'gold'
+  | 'cyan';
+
 interface PanelOpts {
   title: string;
   iconName: IconName;
+  iconTone?: PanelIconTone;
   chip: PanelChip;
   defaultOpen?: boolean;
   renderBody: (body: HTMLElement) => void;
@@ -818,8 +673,9 @@ function panel(opts: PanelOpts): HTMLElement {
   head.setAttribute('aria-expanded', String(Boolean(opts.defaultOpen)));
   head.setAttribute('aria-controls', bodyId);
   const lead = el('span', { class: 'panel-lead' });
-  lead.append(icon(opts.iconName, 'panel-icon'));
-  lead.append(el('span', { class: 'panel-title', text: opts.title }));
+  const iconWrap = el('span', { class: `panel-icon panel-icon-${opts.iconTone || 'blue'}` });
+  iconWrap.append(icon(opts.iconName));
+  lead.append(iconWrap, el('span', { class: 'panel-title', text: opts.title }));
   head.append(lead);
 
   const right = el('span', { class: 'panel-right' });
@@ -874,6 +730,7 @@ function renderAppearancePanel(): HTMLElement {
   return panel({
     title: '外观',
     iconName: 'moon',
+    iconTone: 'violet',
     chip: appearancePanelChip(),
     defaultOpen: false,
     renderBody: (body) => {
@@ -948,6 +805,7 @@ function renderReminderPanel(): HTMLElement {
   const p = panel({
     title: '系统通知',
     iconName: 'bell-ring',
+    iconTone: 'amber',
     chip: reminderPanelChip(),
     renderBody: (body) => buildReminderBody(body, () => {
       body.replaceChildren();
@@ -1643,6 +1501,7 @@ function renderPeriodSettingsPanel(): HTMLElement {
   panelEl = panel({
     title: '时段提醒设置',
     iconName: 'clock',
+    iconTone: 'emerald',
     chip: { text: '…', tone: 'muted' },
     renderBody: (body) => {
       // 延迟到 panel() 返回后再执行，避免在 panelEl 赋值前引用（TDZ）
@@ -1836,7 +1695,8 @@ async function renderPeriodEditor(
 function renderKeepAlivePanel(): HTMLElement {
   const p = panel({
     title: '后台保活与防杀',
-    iconName: 'plug',
+    iconName: 'shield',
+    iconTone: 'orange',
     chip: { text: '检查中', tone: 'muted' },
     renderBody: (body) => {
       // 延迟到 panel() 返回后再执行，避免在 p 赋值前引用 p（TDZ）
@@ -1860,6 +1720,7 @@ function renderAppUpdatePanel(): SettingsRenderPart {
   const p = panel({
     title: '应用更新',
     iconName: 'cloud',
+    iconTone: 'blue',
     chip,
     renderBody: (body) => {
       const refresh = () => buildAppUpdateBody(body, p, available);
@@ -2485,6 +2346,7 @@ function renderLlmPanel(): SettingsRenderPart {
   const p = panel({
     title: 'AI 服务商',
     iconName: 'robot',
+    iconTone: 'purple',
     chip,
     renderBody: (body) => buildLlmBody(body, (h) => setChip(p, healthToChip(h))),
   });
@@ -2801,6 +2663,7 @@ function renderAiConsentPanel(): HTMLElement {
   panelElement = panel({
     title: 'AI 外发授权',
     iconName: 'lock',
+    iconTone: 'gold',
     chip: aiConsentChip(),
     renderBody: (body) => {
       body.append(

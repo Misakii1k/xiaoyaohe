@@ -62,61 +62,60 @@
   place-items: center;
   position: relative;
   overflow: visible;
+  background: transparent !important;
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* 底部圆形发光托盘 / 光晕背景 */
-.med-stat-card.blue .med-stat-icon-wrap,
-.med-stat-card.purple .med-stat-icon-wrap {
-  background: #eff6ff;
-}
+/* 柔和弥散发光光晕（彻底去除实色硬圈） */
 .med-stat-card.blue .med-stat-icon-wrap::before,
 .med-stat-card.purple .med-stat-icon-wrap::before {
   content: '';
   position: absolute;
-  inset: -6px;
+  inset: -12px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.35) 0%, transparent 70%);
-  filter: blur(6px);
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.42) 0%, rgba(59, 130, 246, 0.18) 42%, rgba(147, 197, 253, 0.06) 68%, transparent 80%);
+  filter: blur(10px);
   z-index: 0;
   pointer-events: none;
 }
 
-.med-stat-card.green .med-stat-icon-wrap,
-.med-stat-card.cyan .med-stat-icon-wrap {
-  background: #ecfdf5;
-}
 .med-stat-card.green .med-stat-icon-wrap::before,
 .med-stat-card.cyan .med-stat-icon-wrap::before {
   content: '';
   position: absolute;
-  inset: -6px;
+  inset: -12px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.35) 0%, transparent 70%);
-  filter: blur(6px);
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.42) 0%, rgba(52, 211, 153, 0.18) 42%, rgba(167, 243, 208, 0.06) 68%, transparent 80%);
+  filter: blur(10px);
   z-index: 0;
   pointer-events: none;
 }
 
-.med-stat-card.pink .med-stat-icon-wrap {
-  background: #fff1f2;
-}
 .med-stat-card.pink .med-stat-icon-wrap::before {
   content: '';
   position: absolute;
-  inset: -6px;
+  inset: -12px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(244, 63, 94, 0.35) 0%, transparent 70%);
-  filter: blur(6px);
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.42) 0%, rgba(251, 113, 133, 0.18) 42%, rgba(254, 205, 211, 0.06) 68%, transparent 80%);
+  filter: blur(10px);
   z-index: 0;
   pointer-events: none;
 }
 
-[data-theme='dark'] .med-stat-card.blue .med-stat-icon-wrap,
-[data-theme='dark'] .med-stat-card.purple .med-stat-icon-wrap { background: rgba(59, 130, 246, 0.15); }
-[data-theme='dark'] .med-stat-card.green .med-stat-icon-wrap,
-[data-theme='dark'] .med-stat-card.cyan .med-stat-icon-wrap { background: rgba(16, 185, 129, 0.15); }
-[data-theme='dark'] .med-stat-card.pink .med-stat-icon-wrap { background: rgba(244, 63, 94, 0.15); }
+[data-theme='dark'] .med-stat-card.blue .med-stat-icon-wrap::before,
+[data-theme='dark'] .med-stat-card.purple .med-stat-icon-wrap::before {
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.48) 0%, rgba(59, 130, 246, 0.18) 45%, transparent 75%);
+  filter: blur(12px);
+}
+[data-theme='dark'] .med-stat-card.green .med-stat-icon-wrap::before,
+[data-theme='dark'] .med-stat-card.cyan .med-stat-icon-wrap::before {
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.48) 0%, rgba(16, 185, 129, 0.18) 45%, transparent 75%);
+  filter: blur(12px);
+}
+[data-theme='dark'] .med-stat-card.pink .med-stat-icon-wrap::before {
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.48) 0%, rgba(244, 63, 94, 0.18) 45%, transparent 75%);
+  filter: blur(12px);
+}
 
 .med-stat-card:active .med-stat-icon-wrap {
   transform: scale(1.08);
@@ -360,26 +359,43 @@
   opacity: 1;
 }
 
-/* 底部悬浮添加按钮 */
+/* 药品列表常规页底栏浮动停靠：去外层底色，右对齐悬浮按钮 */
+.app-shell:has(.medication-list-page) > .action-dock {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+/* 底部右下角悬浮添加按钮 */
 .med-fab-add {
-  position: sticky;
-  margin-left: auto;
-  right: calc(var(--space-4) + var(--safe-right));
-  bottom: calc(72px + var(--safe-bottom));
-  padding: 10px 18px;
+  pointer-events: auto;
+  padding: 11px 20px;
   border-radius: var(--radius-full);
   background: #2563eb;
   color: #ffffff;
   border: none;
   font-size: 14px;
   font-weight: 600;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
-  display: flex;
+  letter-spacing: 0.2px;
+  box-shadow: 0 4px 18px rgba(37, 99, 235, 0.42), 0 2px 6px rgba(0, 0, 0, 0.08);
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
   z-index: 50;
-  transition: transform 0.2s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.med-fab-add:hover {
+  background: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 22px rgba(37, 99, 235, 0.5);
 }
 
 .med-fab-add:active {
@@ -417,60 +433,101 @@
   }
 }
 /* 契约兼容样式与批量管理样式 */
-.medication-batch-page { display: grid; gap: var(--space-3); padding-block-end: var(--space-5); }
-.medication-batch-toolbar { display: flex; align-items: center; gap: var(--space-3); min-block-size: var(--tap); }
-.medication-batch-counter { color: var(--color-text-muted); font-size: var(--fs-subheadline); }
+.medication-batch-page {
+  display: grid;
+  gap: var(--space-3);
+  padding-block-end: calc(76px + var(--safe-bottom));
+}
+.medication-batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-block-size: var(--tap);
+  padding-inline: 4px;
+}
+.medication-batch-counter { color: var(--color-text-muted); font-size: var(--fs-subheadline); font-weight: 500; }
 .medication-batch-list {
   display: grid;
-  padding-inline: var(--space-4);
+  padding-inline: 0;
   border-block-start: 0;
-  border-radius: var(--radius-xl);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
+  border: none;
+  background: transparent;
+  box-shadow: none;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
-/* 只作用于批量管理页：普通药品列表的卡片也带 medication-batch-row 类，
-   不加作用域会覆盖 .med-item-card 的 flex 布局，编辑按钮会掉到第二行。 */
+/* 只作用于批量管理页：独立微卡片、加深未选复选框边框、整卡支持点选 */
 .medication-batch-page .medication-batch-row {
   display: grid;
   grid-template-columns: var(--tap) minmax(0, 1fr);
   gap: var(--space-2);
   align-items: start;
   min-inline-size: 0;
-  padding-block: var(--space-3);
-  border-block-end: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  padding: 12px 10px 12px 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
   overflow-wrap: anywhere;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.15s ease;
+}
+
+.medication-batch-page .medication-batch-row:active {
+  transform: scale(0.98);
 }
 
 .medication-batch-page .medication-batch-row.is-selected {
-  margin-inline: calc(var(--space-2) * -1);
-  padding-inline: var(--space-2);
-  border-block-end-color: transparent;
-  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.05);
+  box-shadow: 0 0 0 1.5px var(--color-primary), var(--shadow-sm);
 }
-.medication-batch-checkbox-wrap { display: grid; place-items: center; min-block-size: var(--tap); cursor: pointer; }
-.medication-batch-checkbox {
-  position: relative;
-  inline-size: 24px;
-  block-size: 24px;
-  margin: 0;
-  appearance: none;
-  border: 2px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface);
+
+[data-theme='dark'] .medication-batch-page .medication-batch-row.is-selected {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.medication-batch-checkbox-wrap {
+  display: grid;
+  place-items: center;
+  min-block-size: var(--tap);
   cursor: pointer;
 }
-.medication-batch-checkbox:checked {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
+
+.medication-batch-checkbox {
+  position: relative;
+  inline-size: 22px;
+  block-size: 22px;
+  margin: 0;
+  appearance: none;
+  border: 1.5px solid #94a3b8;
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: all 0.18s ease;
 }
+
+[data-theme='dark'] .medication-batch-checkbox {
+  border-color: #64748b;
+  background: var(--color-surface-muted);
+}
+
+.medication-batch-checkbox:checked {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
 .medication-batch-checkbox:checked::after {
   content: '';
   position: absolute;
-  inset: 4px 6px 6px 4px;
-  border: solid #fff;
+  left: 6px;
+  top: 2px;
+  width: 5px;
+  height: 10px;
+  border: solid #ffffff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
@@ -491,20 +548,26 @@
 }
 .medication-batch-subline { color: var(--color-text-muted); font-size: var(--fs-footnote); }
 
-.medication-batch-slots { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.medication-batch-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .medication-slot-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   max-inline-size: 100%;
-  padding: 4px 10px;
-  border-radius: 999px;
+  padding: 2px 8px;
+  border-radius: 6px;
   background: var(--color-primary-soft);
   color: var(--color-primary);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
 }
-.medication-slot-icon { inline-size: 13px; block-size: 13px; flex: 0 0 auto; }
+
+.medication-slot-icon { inline-size: 12px; block-size: 12px; flex: 0 0 auto; }
 .medication-slot-label { white-space: nowrap; }
 .medication-slot-time { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .medication-slot-chip.is-disabled { background: var(--color-surface-muted); color: var(--color-text-muted); }
@@ -518,10 +581,47 @@
 }
 .medication-batch-no-rules { color: var(--color-text-muted); font-size: var(--fs-footnote); }
 
-/* 批量 dock：计数独占一行，四个操作 2×2，窄屏不再挤压溢出 */
-.medication-batch-dock { flex-wrap: wrap; row-gap: var(--space-2); }
-.medication-batch-dock-count { flex: 0 0 100%; color: var(--color-text-muted); font-size: var(--fs-subheadline); }
-.medication-batch-dock .ui-button { flex: 1 1 calc(50% - var(--space-2)); }
+/* 批量 dock：单行紧凑高质感操作坞，杜绝大面积遮挡列表 */
+.medication-batch-dock {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+  min-block-size: 48px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--color-border);
+  pointer-events: auto !important;
+}
+
+.medication-batch-dock-count { display: none; }
+
+.medication-batch-dock .ui-button {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  min-block-size: 34px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.medication-batch-dock .ui-button svg {
+  inline-size: 14px;
+  block-size: 14px;
+  flex-shrink: 0;
+}
 
 /* 修改时段底部弹层排版 */
 .medication-batch-sheet-title { margin: 0; font-size: var(--fs-title3); font-weight: 700; }

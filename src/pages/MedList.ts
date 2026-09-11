@@ -204,17 +204,17 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
 
   renderFilteredCards();
 
-  // 5. 底部悬浮 "+ 添加药品" 按钮
+  // 5. 底部右下角悬浮 "+ 添加药品" 按钮（通过 actionDock 稳定挂载）
   const fabAdd = el('button', {
     class: 'med-fab-add',
     type: 'button',
-  });
+    'aria-label': '添加药品',
+  } as any);
   fabAdd.append(icon('plus'), el('span', { text: '添加药品' }));
   fabAdd.onclick = () => navigate('/meds/create');
-  content.append(fabAdd);
 
   if (!signal?.aborted) {
-    const dock = createActionDock();
+    const dock = createActionDock([fabAdd]);
     const topRight = el('div', { class: 'topbar-actions medication-list-actions' });
     const batchBtn = topbarPill({
       icon: 'list',
@@ -301,6 +301,12 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
       if (cb.checked) selected.add(m.id); else selected.delete(m.id);
       refreshSelectionState();
     };
+    card.onclick = (e) => {
+      if ((e.target as HTMLElement).closest('.medication-batch-checkbox-wrap')) return;
+      if (selected.has(m.id)) selected.delete(m.id);
+      else selected.add(m.id);
+      refreshSelectionState();
+    };
     checkboxWrap.append(cb);
     checkboxByMedId.set(m.id, cb);
     rowByMedId.set(m.id, card);
@@ -337,12 +343,11 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
 
   const dock = createActionDock();
   dock.classList.add('medication-batch-dock');
-  const dockCounter = el('span', { class: 'medication-batch-dock-count', text: '已选 0 种' });
   const enableButton = createButton({ label: '启用', variant: 'secondary', onClick: () => void setRulesForSelected(true) });
   const disableButton = createButton({ label: '禁用', variant: 'secondary', onClick: () => void setRulesForSelected(false) });
-  const slotButton = createButton({ label: '修改时段', variant: 'secondary', icon: 'clock', onClick: openSlotMenu });
-  const deleteButton = createButton({ label: '删除所选', variant: 'danger', icon: 'trash', onClick: () => void deleteSelected() });
-  dock.append(dockCounter, enableButton, disableButton, slotButton, deleteButton);
+  const slotButton = createButton({ label: '改时段', variant: 'secondary', icon: 'clock', onClick: openSlotMenu });
+  const deleteButton = createButton({ label: '删除', variant: 'danger', icon: 'trash', onClick: () => void deleteSelected() });
+  dock.append(enableButton, disableButton, slotButton, deleteButton);
 
   renderPage({ root, title: '批量管理', activeTab: 'meds', topRight, content, actionDock: dock });
 
@@ -358,7 +363,6 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
     const selSpan = selectAllBtn.querySelector('span');
     if (selSpan) selSpan.textContent = selected.size === meds.length ? '取消全选' : '全选';
     counterLabel.textContent = text;
-    dockCounter.textContent = text;
   }
 
   async function setRulesForSelected(enabled: boolean): Promise<void> {
