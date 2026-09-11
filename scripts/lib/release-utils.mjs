@@ -58,6 +58,12 @@ export const VERSION_CODE_BY_VERSION = Object.freeze({
 });
 
 /**
+ * 首次引入 Android 原生增量包解压与基座动态切换（ApkDistributionPlugin.downloadAndUnpackBundle）
+ * 的最低原生 APK versionCode。低版本底座无法运行 Web Bundle，需全量更新 APK。
+ */
+export const MIN_NATIVE_BUNDLE_VERSION_CODE = 44;
+
+/**
  * 在 vite.config.ts 中由构建期注入到 WebView：把 package.json 的 version
  * 映射成 Android versionCode（与 release-utils 中的校验保持一致）。
  * 未在表中登记的版本返回 null，构建期常量变为 undefined，TS 侧用 0 兜底。

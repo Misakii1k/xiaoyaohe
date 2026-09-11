@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getVersionCode } from './lib/release-utils.mjs';
+import { getVersionCode, MIN_NATIVE_BUNDLE_VERSION_CODE } from './lib/release-utils.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -87,7 +87,7 @@ export function generateVersionFile(rootDir = root) {
     releaseNotes: readReleaseNotes(rootDir, version),
     apk,
     bundle,
-    minNativeVersionCode: versionCode,
+    minNativeVersionCode: minNativeVersionCode ?? MIN_NATIVE_BUNDLE_VERSION_CODE,
   });
 
   const target = join(rootDir, 'public', 'version.json');
