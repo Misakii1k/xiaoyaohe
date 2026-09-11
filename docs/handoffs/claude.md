@@ -8,6 +8,25 @@ Latest version: `1.0.9` (Android `versionCode: 44`)
 
 ## Summary of Accomplished Work
 
+### 43. 用药提醒专属铃声《晨间活力》配置与自由切换落地 (1.0.9, workspace/claude)
+
+1. **专属音频资源导入**：
+   - 将用户指定的本地音频文件规范导入到 Android 原生 raw 目录 `android/app/src/main/res/raw/morning_energy.mp3`（972,719 字节）；
+   - 同源部署至 Web 端静态资产目录 `public/audio/morning_energy.mp3`，供网页端及设置页在线试听。
+2. **默认铃声切换与原生播放引擎改造**：
+   - `AlarmAudioPlayer.kt`：读取原生偏好 `alarm_ringtone`，默认值为 `"morning_energy"`；
+   - 优先通过 `MediaPlayer` 以 `USAGE_ALARM` 通道循环播放专属音乐，并管理临时音频焦点；当设为 `system` 或加载异常时平滑降级至 `RingtoneManager` 播放系统铃声；
+   - `MedicationAlarmPlugin.java`：暴露 `getRingtonePreference` 与 `setRingtonePreference` 原生方法，持久化到 Android SharedPreferences。
+3. **设置页自由切换与在线试听 UI**：
+   - `Settings.ts` 与 `settings.css`：在提醒面板中新增「用药提醒铃声」卡片，提供「晨间活力（专属推荐）」与「系统默认闹钟」单选切换；
+   - 提供「试听专属提醒音乐（晨间活力）」按钮，支持一键试听与停止，切换页面或离开时自动停止；
+   - 文风严格遵守 `oil-tone` 规范，无技术黑话。
+4. **自动化测试与门禁验证**：
+   - 新建 `tests/alarmRingtone.test.ts`（6 项测试全部通过）；
+   - 全量 86 个测试套件 529 项测试 100% 通过；
+   - `npm run typecheck` 0 报错；
+   - Android Gradle 编译与 `assembleRelease` 顺利通过。
+
 ### 42. 首个增量热更新底座版本发布、发布 SOP 技能升级与测试用例同步 (1.0.9)
 
 1. **版本递增与底座支持**：

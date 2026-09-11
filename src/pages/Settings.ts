@@ -72,6 +72,14 @@ import {
   hasAlarmScanToken,
   rotateAlarmScanToken,
 } from '../features/alarmScanVerify';
+import {
+  ALARM_RINGTONE_OPTIONS,
+  getAlarmRingtonePreference,
+  isRingtonePreviewPlaying,
+  playRingtonePreview,
+  setAlarmRingtonePreference,
+  stopRingtonePreview,
+} from '../features/alarmRingtone';
 import { startScan, scanCodeFromImage, type Scanner } from '../features/scanner';
 import {
   isAppNotificationsEnabled,
@@ -284,6 +292,7 @@ export async function renderSettingsPage(
   const cleanup = () => {
     if (cleaned) return;
     cleaned = true;
+    stopRingtonePreview();
     llmPanel.cleanup();
     imageGenPanel.cleanup();
     lanSyncPanel.cleanup();
@@ -851,6 +860,102 @@ function formatCustomScanCodeSummary(customLabel?: string, token?: string): stri
   return `已绑定生活码（${raw}）`;
 }
 
+function renderAlarmRingtoneCard(onRingtoneChanged: () => void): HTMLElement {
+  const currentRingtone = getAlarmRingtonePreference();
+  const isPlaying = isRingtonePreviewPlaying();
+
+  const card = el('div', { class: 'settings-ringtone-card mt-3' });
+  const cardHeader = el('div', { class: 'settings-scan-card-header' });
+  const badge = el('span', {
+    class: 'chip-pill chip-pill-active',
+    style: 'font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px;',
+    text: currentRingtone === 'morning_energy' ? '专属音乐（默认）' : '系统自带铃声',
+  });
+  const title = el('span', {
+    style: 'font-size: 13px; font-weight: 600; color: var(--color-text);',
+    text: '用药提醒铃声',
+  });
+  cardHeader.append(badge, title);
+
+  const list = el('div', { class: 'settings-ringtone-list' });
+
+  for (const option of ALARM_RINGTONE_OPTIONS) {
+    const isSelected = currentRingtone === option.id;
+    const item = el('label', {
+      class: isSelected ? 'settings-ringtone-item active' : 'settings-ringtone-item',
+    });
+
+    const radio = el('input', {
+      type: 'radio',
+      name: 'settings-alarm-ringtone',
+      value: option.id,
+    }) as HTMLInputElement;
+    radio.checked = isSelected;
+
+    radio.onchange = async () => {
+      stopRingtonePreview();
+      await setAlarmRingtonePreference(option.id);
+      toast(option.id === 'morning_energy' ? '已切换为晨间活力专属提醒音乐' : '已切换为手机系统默认闹钟铃声');
+      onRingtoneChanged();
+    };
+
+    const copy = el('div', { class: 'settings-ringtone-copy' });
+    const nameRow = el('div', { class: 'settings-ringtone-title-row' });
+    nameRow.append(el('span', { class: 'settings-ringtone-name', text: option.name }));
+    if (option.isDefault) {
+      nameRow.append(
+        el('span', {
+          class: 'chip-pill',
+          style: 'font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: rgba(23, 96, 63, 0.1); color: var(--color-primary, #17603f);',
+          text: '推荐',
+        }),
+      );
+    }
+
+    copy.append(
+      nameRow,
+      el('span', { class: 'settings-ringtone-desc', text: option.desc }),
+    );
+
+    item.append(radio, copy);
+    list.append(item);
+  }
+
+  const previewBtn = el('button', {
+    class: 'btn tonal settings-ringtone-preview-btn',
+    type: 'button',
+  });
+
+  const updatePreviewBtn = (playing: boolean) => {
+    previewBtn.replaceChildren();
+    if (playing) {
+      previewBtn.append(icon('bell-ring'), el('span', { text: '停止试听专属铃声' }));
+    } else {
+      previewBtn.append(icon('bell'), el('span', { text: '试听专属提醒音乐（晨间活力）' }));
+    }
+  };
+  updatePreviewBtn(isPlaying);
+
+  previewBtn.onclick = () => {
+    if (isRingtonePreviewPlaying()) {
+      stopRingtonePreview();
+      updatePreviewBtn(false);
+    } else {
+      const started = playRingtonePreview('morning_energy', () => {
+        updatePreviewBtn(false);
+      });
+      if (started) {
+        updatePreviewBtn(true);
+      } else {
+        toast('当前环境不支持播放试听音频');
+      }
+    }
+  };
+
+  card.append(cardHeader, list, previewBtn);
+  return card;
+}
+
 function buildReminderBody(body: HTMLElement, rerender: () => void): void {
   const native = isNativeReminderPlatform();
   if (!notificationsSupported()) {
@@ -1038,6 +1143,9 @@ function buildReminderBody(body: HTMLElement, rerender: () => void): void {
     }
     void refreshFullScreenAlarmCapability();
   }
+
+  // ── 用药提醒铃声设置（专属音乐 vs 系统默认）──
+  body.append(renderAlarmRingtoneCard(rerender));
 
   // ── 扫码解除强制提醒（全屏响铃仅 Android 原生生效，配置与绑定全局常驻）──
   const isNativeAlarm = isNativeReminderPlatform() && nativeMedicationAlarmAvailable();

@@ -5,6 +5,15 @@ Integration branch: `main`
 Product version: `1.0.9`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## Medication Alarm Ringtone Customization & Switchable Preference 2026-09-11 (workspace/claude)
+
+- **用药提醒默认铃声定制与自由切换落地 (`src/features/alarmRingtone.ts`, `Settings.ts`, `AlarmAudioPlayer.kt`)**：
+  - **专属音频资源导入**：将用户指定的音频规范导入至 Android 原生 raw 资源 (`android/app/src/main/res/raw/morning_energy.mp3`) 与 Web 静态资产 (`public/audio/morning_energy.mp3`)；
+  - **默认铃声切换为专属音乐**：Android `AlarmAudioPlayer.kt` 优先使用 `MediaPlayer` 循环播放《晨间活力》（`AudioAttributes.USAGE_ALARM` 通道并管理临时音频焦点）；
+  - **支持系统铃声回退与自由选择**：设置面板常驻渲染「用药提醒铃声」选择卡片，提供「晨间活力（专属推荐）」与「系统默认闹钟」，用户可自由切换并即时同步到原生 SharedPreferences 与 localStorage；
+  - **支持在线试听**：设置页提供试听按钮，一键试听旋律或停止播放，退出页面自动清理；
+  - **质量门禁**：新增 `tests/alarmRingtone.test.ts`，全量 86 个测试套件 529 项测试 100% 通过，`npm run typecheck` 0 报错，Gradle 编译与 APK 构建畅通无阻。
+
 ## Web Bundle Incremental Hot-Update Release 2026-09-11 (v1.0.9, versionCode 44, workspace/claude)
 
 - **正式发布首个内置增量更新底座版本 (v1.0.9)**：

@@ -24,6 +24,8 @@ interface NativeAlarmPlugin {
   fireNow(options: { mode?: string; title?: string; body?: string; scanVerify?: boolean; scanToken?: string }): Promise<void>;
   isAccessibilityServiceEnabled(): Promise<{ enabled: boolean }>;
   openAccessibilitySettings(): Promise<void>;
+  getRingtonePreference(): Promise<{ ringtone: string }>;
+  setRingtonePreference(options: { ringtone: string }): Promise<{ ringtone: string; success: boolean }>;
 }
 
 interface NativeAlarmNotification {
@@ -149,3 +151,24 @@ export async function openAccessibilityGuardSettings(): Promise<void> {
     // 忽略异常
   }
 }
+
+export async function getNativeAlarmRingtone(): Promise<string | null> {
+  if (!nativeMedicationAlarmAvailable()) return null;
+  try {
+    const res = await plugin.getRingtonePreference();
+    return res?.ringtone ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setNativeAlarmRingtone(ringtone: string): Promise<boolean> {
+  if (!nativeMedicationAlarmAvailable()) return false;
+  try {
+    const res = await plugin.setRingtonePreference({ ringtone });
+    return res?.success ?? false;
+  } catch {
+    return false;
+  }
+}
+

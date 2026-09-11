@@ -1,6 +1,8 @@
 package com.medbox.app;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -159,5 +161,28 @@ public final class MedicationAlarmPlugin extends Plugin {
         } catch (Throwable t) {
             call.reject("无法打开系统无障碍设置", "ACCESSIBILITY_ERROR");
         }
+    }
+
+    @PluginMethod
+    public void getRingtonePreference(PluginCall call) {
+        SharedPreferences prefs = getContext().getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE);
+        String ringtone = prefs.getString("alarm_ringtone", "morning_energy");
+        JSObject result = new JSObject();
+        result.put("ringtone", ringtone != null ? ringtone : "morning_energy");
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void setRingtonePreference(PluginCall call) {
+        String ringtone = call.getString("ringtone", "morning_energy");
+        if (ringtone == null || (!ringtone.equals("morning_energy") && !ringtone.equals("system"))) {
+            ringtone = "morning_energy";
+        }
+        SharedPreferences prefs = getContext().getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE);
+        prefs.edit().putString("alarm_ringtone", ringtone).apply();
+        JSObject result = new JSObject();
+        result.put("ringtone", ringtone);
+        result.put("success", true);
+        call.resolve(result);
     }
 }

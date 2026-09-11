@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.Build
@@ -22,6 +23,7 @@ object AlarmAudioPlayer {
 
     private const val TAG = "AlarmAudioPlayer"
 
+    private var mediaPlayer: MediaPlayer? = null
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
     private var audioManager: AudioManager? = null
@@ -70,27 +72,54 @@ object AlarmAudioPlayer {
             Log.w(TAG, "Failed to request audio focus", t)
         }
 
-        try {
-            var alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            if (alertUri == null) {
-                alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            }
-            val r = RingtoneManager.getRingtone(appContext, alertUri)
-            if (r != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    r.audioAttributes = AudioAttributes.Builder()
+        val prefs = appContext.getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE)
+        val ringtonePref = prefs.getString("alarm_ringtone", "morning_energy") ?: "morning_energy"
+
+        var playedCustom = false
+        if (ringtonePref == "morning_energy") {
+            try {
+                val resId = appContext.resources.getIdentifier("morning_energy", "raw", appContext.packageName)
+                if (resId != 0) {
+                    val attributes = AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build()
+                    val mp = MediaPlayer.create(appContext, resId, attributes, 0)
+                    if (mp != null) {
+                        mp.isLooping = true
+                        mp.start()
+                        mediaPlayer = mp
+                        playedCustom = true
+                    }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    r.isLooping = true
-                }
-                r.play()
-                ringtone = r
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to start custom morning_energy MediaPlayer, fallback to system ringtone", t)
             }
-        } catch (t: Throwable) {
-            Log.e(TAG, "Failed to start ringtone", t)
+        }
+
+        if (!playedCustom) {
+            try {
+                var alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                if (alertUri == null) {
+                    alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                }
+                val r = RingtoneManager.getRingtone(appContext, alertUri)
+                if (r != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        r.audioAttributes = AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        r.isLooping = true
+                    }
+                    r.play()
+                    ringtone = r
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to start ringtone", t)
+            }
         }
 
         try {
@@ -119,6 +148,13 @@ object AlarmAudioPlayer {
     @JvmStatic
     @Synchronized
     fun stop() {
+        try {
+            mediaPlayer?.stop()
+            mediaPlayer?.release()
+        } catch (ignored: Throwable) {
+        }
+        mediaPlayer = null
+
         try {
             ringtone?.stop()
         } catch (ignored: Throwable) {
