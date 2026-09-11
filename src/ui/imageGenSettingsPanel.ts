@@ -5,6 +5,7 @@ import {
   getEffectiveImageGenConfig,
   pingImageGenService,
   getActiveLlmProvider,
+  type ImageGenEndpointMode,
 } from '../ai/llmConfig';
 
 export interface ImageGenPanelResult {
@@ -14,6 +15,7 @@ export interface ImageGenPanelResult {
 
 const PRESET_MODELS = [
   { label: 'GPT Image 1 (OpenAI, 推荐)', model: 'gpt-image-1' },
+  { label: 'DALL·E 3 (OpenAI, 文生图)', model: 'dall-e-3' },
   { label: 'DALL·E 2 (OpenAI, 支持 edits)', model: 'dall-e-2' },
   { label: '通义万相 (阿里)', model: 'wanx-v1' },
   { label: 'CogView-3 (智谱)', model: 'cogview-3-plus' },
@@ -78,7 +80,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
 
     const desc = el('div', {
       class: 'muted',
-      text: '在「编辑药品」拍照后，后台将药盒照片增强为纯白底、清晰、透视矫正的扫描效果图。需要支持 /images/edits 接口的服务商（如 GPT Image 系列）。',
+      text: '在「编辑药品」拍照后，后台生成高清纯白底药盒图。同时支持 /images/edits（原图修图高保真）与 /images/generations（文生商业大图）双接口与自动平滑回退。',
     });
 
     // 1. 开关行
@@ -172,6 +174,48 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     });
     modelField.append(modelLabel, modelInput, presetChipsWrap);
 
+    // 接口模式选项：auto / edits / generations
+    const modeField = el('div', { class: 'field mt-2' });
+    const modeLabel = el('label', { text: '生图接口模式' });
+    const modeSelect = el('select', { class: 'input' }) as HTMLSelectElement;
+
+    const modes: Array<{ value: ImageGenEndpointMode; label: string; desc: string }> = [
+      {
+        value: 'auto',
+        label: '自动推荐（有图优先修图，不支持自动转文生图）',
+        desc: '有拍摄照片时优先调用 /images/edits 修图；若服务商不支持则平滑回退至 /images/generations 文生大图。',
+      },
+      {
+        value: 'edits',
+        label: '仅原图修图（/images/edits）',
+        desc: '严格使用图片编辑接口对原照片进行白底化与清晰度增强，100% 保真原图文字。',
+      },
+      {
+        value: 'generations',
+        label: '仅文生大图（/images/generations）',
+        desc: '严格使用标准文生图接口生成商业展台大图，兼容几乎所有 OpenAI 格式生图服务商。',
+      },
+    ];
+
+    modes.forEach((m) => {
+      const opt = el('option', { value: m.value, text: m.label }) as HTMLOptionElement;
+      opt.selected = (current.endpointMode || 'auto') === m.value;
+      modeSelect.append(opt);
+    });
+
+    const modeHint = el('div', { class: 'muted text-xs mt-1' });
+    function updateModeHint(val: string): void {
+      const found = modes.find((m) => m.value === val);
+      modeHint.textContent = found ? found.desc : '';
+    }
+    updateModeHint(current.endpointMode || 'auto');
+
+    modeSelect.onchange = () => {
+      updateModeHint(modeSelect.value);
+    };
+
+    modeField.append(modeLabel, modeSelect, modeHint);
+
     // 操作按钮
     const btnRow = el('div', { class: 'btn-row mt-3' });
     const saveBtn = el('button', { class: 'btn', type: 'button', text: '保存配置' });
@@ -198,6 +242,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
           baseUrl: urlInput.value.trim(),
           apiKey: keyInput.value.trim(),
           model: modelInput.value.trim() || 'gpt-image-1',
+          endpointMode: (modeSelect.value as ImageGenEndpointMode) || 'auto',
         };
         const res = await pingImageGenService(testCfg);
         if (res.state === 'ok') {
@@ -225,10 +270,11 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
           baseUrl: urlInput.value.trim(),
           apiKey: keyInput.value.trim(),
           model: modelInput.value.trim() || 'gpt-image-1',
+          endpointMode: (modeSelect.value as ImageGenEndpointMode) || 'auto',
         };
         await setImageGenConfig(next);
         refreshChip();
-        toast('AI 照片增强配置已保存');
+        toast('AI 生图配置已保存');
       } catch (e) {
         toast('保存失败：' + String(e instanceof Error ? e.message : e));
       } finally {
@@ -237,7 +283,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     };
 
     btnRow.append(saveBtn, testBtn, copyMainBtn);
-    formWrap.append(urlField, keyField, modelField, btnRow);
+    formWrap.append(urlField, keyField, modelField, modeField, btnRow);
 
     body.append(desc, toggleRow, formWrap);
   }

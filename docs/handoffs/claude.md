@@ -4,9 +4,23 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-11
 Status: active
-Latest version: `1.0.1` (Android `versionCode: 36`)
+Latest version: `1.0.4` (Android `versionCode: 39`)
 
 ## Summary of Accomplished Work
+
+### 36. AI 药盒生图与修图双模引擎及自动平滑回退 (1.0.4)
+
+1. **同时支持两种生图接口**：
+   - 原图扫描修图模式（`/images/edits`，multipart/form-data）：类似扫描全能王，白底化、去阴影、透视矫正与文字清晰度增强，100% 保真原始药盒字迹与品牌标识；
+   - 商业展台文生图模式（`/images/generations`，JSON）：商业摄影 Prompt 驱动，支持根据药盒特征或药名/规格推断生成专业级药盒展台大图，兼容几乎所有主流 OpenAI 兼容服务商（DALL·E 3、通义万相、CogView 等）。
+2. **智能平滑自动回退（Auto Mode）**：
+   - 有照片时优先尝试原图修图；若服务商不支持该接口（返回 404/405/501），自动无缝平滑回退至文生大图，绝不中断或抛错；
+   - 无照片但输入药名时，支持直接调用文生图生成大图。
+3. **生图独立设置面板强化**：
+   - 新增「生图接口模式」配置（自动推荐 / 仅原图修图 / 仅文生大图）；
+   - 预设常用生图模型（GPT Image 1、DALL·E 3、DALL·E 2、通义万相、CogView-3）。
+4. **质量验证**：
+   - 全量 83 套件 511 项测试 100% 通过（新增与重构双模式测试覆盖），TypeScript 0 错误，Web 与 Android 编译打包通过。
 
 ### 35. 修复 Cloudflare 代理下载 APK 报 HTTP error 403 缺陷 (1.0.1)
 

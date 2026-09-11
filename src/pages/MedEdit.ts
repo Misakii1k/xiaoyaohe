@@ -990,8 +990,9 @@ export async function renderMedEditPage(
     aiGenBtn.append(el('span', { html: 'AI 生成大图' }));
     aiGenBtn.onclick = async () => {
       const photoSource = await getAvailablePhotoBlob();
-      if (!photoSource) {
-        toast('请先拍一张药盒照片或选择图片');
+      const medName = nameInput.value.trim();
+      if (!photoSource && !medName) {
+        toast('请先输入药品名称，或拍一张药盒照片');
         file.click();
         return;
       }
@@ -1040,7 +1041,7 @@ export async function renderMedEditPage(
       }
     }
 
-    async function triggerSilentPackshot(sourceBlob: Blob): Promise<void> {
+    async function triggerSilentPackshot(sourceBlob: Blob | null): Promise<void> {
       if (isSilentGenBusy) {
         silentGenAbort?.abort();
       }
@@ -1049,11 +1050,11 @@ export async function renderMedEditPage(
       isSilentGenBusy = true;
       statusBadge.hidden = false;
       statusBadge.className = 'box-photo-ai-badge is-loading';
-      statusBadge.textContent = '✨ AI 药盒增强中…';
+      statusBadge.textContent = '✨ AI 药盒生成中…';
 
       try {
         const packshot = await generateMedPackshot({
-          photoBlob: sourceBlob,
+          photoBlob: sourceBlob || undefined,
           name: nameInput.value.trim(),
           dosageText: dosageInput.value.trim(),
           signal: abort.signal,
@@ -1068,15 +1069,15 @@ export async function renderMedEditPage(
         if (sourceBlob) originalPhoto = sourceBlob;
         existingPhotoBlob = packshot;
         showPhoto(URL.createObjectURL(packshot), { local: true, isPackshot: true });
-        toast('已生成药盒增强图，保存后生效');
+        toast('已生成药盒大图，保存后生效');
       } catch (error) {
         if (abort.signal.aborted || !isActive()) return;
         console.error('silent packshot gen failed', error);
         statusBadge.className = 'box-photo-ai-badge is-error';
-        statusBadge.textContent = '⚠️ 增强未完成 (已保留原照)';
+        statusBadge.textContent = '⚠️ 生成未完成 (已保留原图)';
         updatePhotoStatusBadges();
         const msg = error instanceof Error ? error.message : String(error);
-        toast(`药盒增强未完成：${msg}，已保留原照`);
+        toast(`药盒生图未完成：${msg}`);
       } finally {
         isSilentGenBusy = false;
       }

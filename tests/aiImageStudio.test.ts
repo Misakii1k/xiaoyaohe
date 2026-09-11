@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PROMPT_SCANNER,
   PROMPT_CLEAN,
+  buildStudioPackshotPrompt,
+  inferDefaultVisualFeatures,
   generateMedPackshot,
   ImageGenError,
 } from '../src/features/aiImageStudio';
@@ -21,7 +23,7 @@ vi.mock('../src/features/medPhotos', async (importOriginal) => {
   };
 });
 
-describe('aiImageStudio enhancement prompts', () => {
+describe('aiImageStudio prompts & default features', () => {
   it('defines scanner-like and clean-up reproduction prompts', () => {
     expect(PROMPT_SCANNER).toContain('flatbed scanner');
     expect(PROMPT_SCANNER).toContain('pure white background');
@@ -30,20 +32,40 @@ describe('aiImageStudio enhancement prompts', () => {
     expect(PROMPT_CLEAN).toContain('remove the background and replace with pure white');
     expect(PROMPT_CLEAN).toContain('Do not redesign');
   });
+
+  it('builds commercial studio packshot prompt correctly', () => {
+    const prompt = buildStudioPackshotPrompt({
+      name: '布洛芬缓释胶囊',
+      dosageText: '0.3g*20粒',
+      form: 'paper_box',
+      boxColorTheme: 'white carton with red wave',
+      featureNotes: 'clear text and logo',
+    });
+    expect(prompt).toContain('Commercial pharmaceutical product photography');
+    expect(prompt).toContain('布洛芬缓释胶囊');
+    expect(prompt).toContain('0.3g*20粒');
+    expect(prompt).toContain('white carton with red wave');
+  });
+
+  it('infers default visual features according to medicine name and dosage', () => {
+    const syrup = inferDefaultVisualFeatures('止咳糖浆');
+    expect(syrup.form).toBe('bottle');
+
+    const cap = inferDefaultVisualFeatures('阿莫西林胶囊');
+    expect(cap.form).toBe('paper_box');
+
+    const tablet = inferDefaultVisualFeatures('阿司匹林片');
+    expect(tablet.form).toBe('paper_box');
+  });
 });
 
-describe('generateMedPackshot network & parsing behavior', () => {
+describe('generateMedPackshot dual-mode network & parsing behavior', () => {
+  const sampleB64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
   beforeEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
     sessionStorage.clear();
-  });
-
-  it('throws ImageGenError when photoBlob is missing', async () => {
-    await expect(generateMedPackshot({
-      photoBlob: null as unknown as Blob,
-      name: '阿司匹林肠溶片',
-    })).rejects.toThrow('需要药盒照片才能进行增强处理');
   });
 
   it('throws ImageGenError when neither image service nor active LLM is configured', async () => {
@@ -63,23 +85,43 @@ describe('generateMedPackshot network & parsing behavior', () => {
     })).rejects.toThrow(ImageGenError);
   });
 
-  it('submits multipart form-data to /images/edits and parses b64_json response', async () => {
+  it('in edits mode: throws when photo is missing', async () => {
     const { setImageGenConfig } = await import('../src/ai/llmConfig');
     await setImageGenConfig({
       enabled: true,
       baseUrl: 'https://api.mockimage.com/v1',
       apiKey: 'test-key',
       model: 'gpt-image-1',
+      endpointMode: 'edits',
     });
 
-    const sampleB64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-    const fakeFetch = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: [{ b64_json: sampleB64 }],
-      }),
-    } as unknown as Response));
+    await expect(generateMedPackshot({
+      name: '阿司匹林肠溶片',
+    })).rejects.toThrow('修图模式需要药盒照片');
+  });
+
+  it('in edits mode: submits multipart form-data to /images/edits and parses b64_json', async () => {
+    const { setImageGenConfig } = await import('../src/ai/llmConfig');
+    await setImageGenConfig({
+      enabled: true,
+      baseUrl: 'https://api.mockimage.com/v1',
+      apiKey: 'test-key',
+      model: 'gpt-image-1',
+      endpointMode: 'edits',
+    });
+
+    const fakeFetch = vi.fn(async (url: string) => {
+      if (url.includes('/images/edits')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [{ b64_json: sampleB64 }],
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
     vi.stubGlobal('fetch', fakeFetch);
 
     const progressSteps: string[] = [];
@@ -104,13 +146,14 @@ describe('generateMedPackshot network & parsing behavior', () => {
     );
   });
 
-  it('handles 404/405 gracefully with unsupported edits interface explanation', async () => {
+  it('in edits mode: handles 404 gracefully with unsupported edits interface explanation', async () => {
     const { setImageGenConfig } = await import('../src/ai/llmConfig');
     await setImageGenConfig({
       enabled: true,
       baseUrl: 'https://api.mockimage.com/v1',
       apiKey: 'test-key',
       model: 'gpt-image-1',
+      endpointMode: 'edits',
     });
 
     const fakeFetch = vi.fn(async () => ({
@@ -129,33 +172,127 @@ describe('generateMedPackshot network & parsing behavior', () => {
     })).rejects.toThrow('当前 AI 服务商不支持图片编辑接口');
   });
 
-  it('handles 400 error response and throws detailed ImageGenError with statusCode', async () => {
+  it('in generations mode: submits JSON payload to /images/generations', async () => {
+    const { setImageGenConfig } = await import('../src/ai/llmConfig');
+    await setImageGenConfig({
+      enabled: true,
+      baseUrl: 'https://api.mockimage.com/v1',
+      apiKey: 'test-key',
+      model: 'dall-e-3',
+      endpointMode: 'generations',
+    });
+
+    const fakeFetch = vi.fn(async (url: string) => {
+      if (url.includes('/images/generations')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [{ b64_json: sampleB64 }],
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fakeFetch);
+
+    const blob = await generateMedPackshot({
+      name: '板蓝根颗粒',
+      dosageText: '10g*10袋',
+    });
+
+    expect(blob).toBeInstanceOf(Blob);
+    expect(fakeFetch).toHaveBeenCalledWith(
+      'https://api.mockimage.com/v1/images/generations',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'content-type': 'application/json',
+          authorization: 'Bearer test-key',
+        }),
+      }),
+    );
+  });
+
+  it('in auto mode: tries edits first, and automatically falls back to generations when edits returns 404', async () => {
     const { setImageGenConfig } = await import('../src/ai/llmConfig');
     await setImageGenConfig({
       enabled: true,
       baseUrl: 'https://api.mockimage.com/v1',
       apiKey: 'test-key',
       model: 'gpt-image-1',
+      endpointMode: 'auto',
     });
 
-    const fakeFetch = vi.fn(async () => ({
-      ok: false,
-      status: 400,
-      json: async () => ({
-        error: { message: 'Image model quota exceeded' },
-      }),
-    } as unknown as Response));
+    const calledUrls: string[] = [];
+    const fakeFetch = vi.fn(async (url: string) => {
+      calledUrls.push(url);
+      if (url.includes('/images/edits')) {
+        // Return 404 for edits
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ error: { message: 'Route /images/edits not found' } }),
+        } as unknown as Response;
+      }
+      if (url.includes('/images/generations')) {
+        // Return 200 for generations fallback
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ data: [{ b64_json: sampleB64 }] }),
+        } as unknown as Response;
+      }
+      return { ok: false, status: 500 } as unknown as Response;
+    });
     vi.stubGlobal('fetch', fakeFetch);
 
+    const progressSteps: string[] = [];
     const photo = new Blob(['photo-bytes'], { type: 'image/png' });
-    await expect(generateMedPackshot({
+    const blob = await generateMedPackshot({
       photoBlob: photo,
-      name: '测试药品',
-    })).rejects.toMatchObject({
-      name: 'ImageGenError',
-      message: 'Image model quota exceeded',
-      statusCode: 400,
+      name: '感冒灵颗粒',
+      dosageText: '10g*9袋',
+      onProgress: (step) => progressSteps.push(step),
     });
+
+    expect(blob).toBeInstanceOf(Blob);
+    expect(calledUrls).toContain('https://api.mockimage.com/v1/images/edits');
+    expect(calledUrls).toContain('https://api.mockimage.com/v1/images/generations');
+    expect(progressSteps.some((s) => s.includes('文生大图'))).toBe(true);
+  });
+
+  it('in auto mode: directly uses generations when no photoBlob is provided', async () => {
+    const { setImageGenConfig } = await import('../src/ai/llmConfig');
+    await setImageGenConfig({
+      enabled: true,
+      baseUrl: 'https://api.mockimage.com/v1',
+      apiKey: 'test-key',
+      model: 'gpt-image-1',
+      endpointMode: 'auto',
+    });
+
+    const fakeFetch = vi.fn(async (url: string) => {
+      if (url.includes('/images/generations')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ data: [{ b64_json: sampleB64 }] }),
+        } as unknown as Response;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fakeFetch);
+
+    const blob = await generateMedPackshot({
+      name: '复合维生素片',
+    });
+
+    expect(blob).toBeInstanceOf(Blob);
+    expect(fakeFetch).toHaveBeenCalledWith(
+      'https://api.mockimage.com/v1/images/generations',
+      expect.anything(),
+    );
   });
 });
 

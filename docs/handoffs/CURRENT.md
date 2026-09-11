@@ -2,8 +2,17 @@
 
 Updated: 2026-09-11
 Integration branch: `main`
-Product version: `1.0.1`
+Product version: `1.0.4`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## AI Image Dual-Mode Engine (/images/edits & /images/generations) 2026-09-11 (workspace/claude)
+
+- **同时支持修图与文生大图双模式及自动平滑回退（v1.0.4）**：
+  - **支持原图扫描修图模式（/images/edits）**：输入拍摄照片，经 multipart/form-data 调用，类似扫描全能王，纯白底、矫正透视、增强文字清晰度，100% 保真原始药盒文字与色调；
+  - **支持商业展台文生图模式（/images/generations）**：商业摄影 Prompt 驱动，支持有图（视觉模型特征提取驱动）或无图（药名/规格推断驱动），兼容几乎所有主流 OpenAI 兼容服务商（DALL·E 3、通义万相、CogView、FLUX 等）；
+  - **自动平滑回退（Auto Mode）**：有照片时优先尝试原图修图；若服务商不支持该接口（返回 404/405/501），自动无缝平滑回退至文生大图，绝不中断或抛错；无照片但输入药名时直接调用文生图；
+  - **生图独立设置面板强化**：提供「自动模式 / 仅修图增强 / 仅文生大图」模式选择下拉框与说明，新增 DALL·E 3 等多款常用预设模型；
+  - **全绿验证门**：全量 83 套件 511 项测试 100% 通过（新增与重构双模式测试覆盖），TypeScript 0 错误，Web 与 Android 编译打包通过。
 
 ## Cloudflare Pages Release Proxy Streaming & HTTP 403 Fix 2026-09-11 (workspace/claude)
 

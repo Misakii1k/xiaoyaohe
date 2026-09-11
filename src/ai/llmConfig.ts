@@ -408,12 +408,15 @@ function buildLegacyLlmConfig(legacy: Partial<LlmConfig>): LlmConfig {
   }
 }
 
+export type ImageGenEndpointMode = 'auto' | 'edits' | 'generations';
+
 /** 独立 AI 生图服务商配置 */
 export interface ImageGenConfig {
   enabled: boolean;
   baseUrl: string;
   apiKey: string;
   model: string;
+  endpointMode?: ImageGenEndpointMode;
 }
 
 export const DEFAULT_IMAGE_GEN_CONFIG: ImageGenConfig = {
@@ -421,6 +424,7 @@ export const DEFAULT_IMAGE_GEN_CONFIG: ImageGenConfig = {
   baseUrl: '',
   apiKey: '',
   model: 'gpt-image-1',
+  endpointMode: 'auto',
 };
 
 /** 读取当前保存的生图独立配置 */
@@ -429,11 +433,15 @@ export function getImageGenConfig(): ImageGenConfig {
   if (!stored) return { ...DEFAULT_IMAGE_GEN_CONFIG };
   try {
     const parsed = JSON.parse(stored) as Partial<ImageGenConfig>;
+    const mode = parsed.endpointMode === 'edits' || parsed.endpointMode === 'generations'
+      ? parsed.endpointMode
+      : 'auto';
     return {
       enabled: parsed.enabled !== false,
       baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl.trim() : '',
       apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey.trim() : '',
       model: typeof parsed.model === 'string' && parsed.model.trim() ? parsed.model.trim() : 'gpt-image-1',
+      endpointMode: mode,
     };
   } catch {
     return { ...DEFAULT_IMAGE_GEN_CONFIG };
@@ -451,6 +459,9 @@ export async function setImageGenConfig(cfg: ImageGenConfig): Promise<void> {
     baseUrl: normalizedBaseUrl,
     apiKey: cfg.apiKey.trim(),
     model: cfg.model.trim() || 'gpt-image-1',
+    endpointMode: cfg.endpointMode === 'edits' || cfg.endpointMode === 'generations'
+      ? cfg.endpointMode
+      : 'auto',
   };
   await serializeConfigMutation(async () => {
     await setSessionSecret(JSON.stringify(clean), IMAGE_GEN_CONFIG_SECRET_KEY);
@@ -467,6 +478,7 @@ export function getEffectiveImageGenConfig(): {
   baseUrl: string;
   apiKey: string;
   model: string;
+  endpointMode: ImageGenEndpointMode;
   isConfigured: boolean;
   isDerivedFromMain: boolean;
 } {
@@ -478,6 +490,7 @@ export function getEffectiveImageGenConfig(): {
   const baseUrl = hasCustomUrl ? cfg.baseUrl.trim() : activeLlm.baseUrl.trim();
   const apiKey = hasCustomKey ? cfg.apiKey.trim() : activeLlm.apiKey.trim();
   const model = cfg.model.trim() || 'gpt-image-1';
+  const endpointMode = cfg.endpointMode || 'auto';
   const isConfigured = cfg.enabled && Boolean(baseUrl && apiKey);
   const isDerivedFromMain = isConfigured && (!hasCustomUrl || !hasCustomKey);
 
@@ -486,6 +499,7 @@ export function getEffectiveImageGenConfig(): {
     baseUrl,
     apiKey,
     model,
+    endpointMode,
     isConfigured,
     isDerivedFromMain,
   };
