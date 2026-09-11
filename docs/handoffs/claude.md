@@ -4,9 +4,20 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-11
 Status: active
-Latest version: `1.0.8` (Android `versionCode: 43`)
+Latest version: `1.0.9` (Android `versionCode: 44`)
 
 ## Summary of Accomplished Work
+
+### 42. 首个增量热更新底座版本发布、发布 SOP 技能升级与测试用例同步 (1.0.9)
+
+1. **版本递增与底座支持**：
+   - 将应用版本号升至 `1.0.9`，Android `versionCode` 升至 `44`；
+   - 固化 `MIN_NATIVE_BUNDLE_VERSION_CODE = 44`，确立 1.0.9 为首个具备原生 Web Bundle 解压与基座动态切换能力的底座版本；
+   - 编写符合 `oil-tone` 规范且经 `tone_lint.py` 验证的 `docs/releases/1.0.9.md`。
+2. **测试门禁与构建验证**：
+   - 同步 `tests/release-utils.test.ts`、`tests/apkUpdateVerification.test.ts` 与 `tests/bundleUpdateVerification.test.ts`，候选 mock 升至 1.0.10 / 45；
+   - 全量 85 个测试套件 523 项测试 100% 通过；
+   - `npm run build:web` 自动生成约 1.8MB 增量包 `release/xiaoyaohe-1.0.9-web-bundle.zip`。
 
 ### 41. 安装包大幅瘦身 (-31.76MB)、桌面拷贝清理规则与零服务器成本增量更新方案实施与落地 (1.0.8)
 

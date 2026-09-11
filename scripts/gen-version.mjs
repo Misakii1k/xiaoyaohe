@@ -33,7 +33,7 @@ export function buildVersionManifest({
       bundleUrl: `/api/download?tag=v${version}&asset=bundle`,
       bundleSize: bundle.size,
       bundleSha256: bundle.sha256,
-      minNativeVersionCode: minNativeVersionCode ?? versionCode,
+      minNativeVersionCode: minNativeVersionCode ?? MIN_NATIVE_BUNDLE_VERSION_CODE,
     } : {}),
     releaseNotes,
   };
@@ -87,7 +87,7 @@ export function generateVersionFile(rootDir = root) {
     releaseNotes: readReleaseNotes(rootDir, version),
     apk,
     bundle,
-    minNativeVersionCode: minNativeVersionCode ?? MIN_NATIVE_BUNDLE_VERSION_CODE,
+    minNativeVersionCode: MIN_NATIVE_BUNDLE_VERSION_CODE,
   });
 
   const target = join(rootDir, 'public', 'version.json');

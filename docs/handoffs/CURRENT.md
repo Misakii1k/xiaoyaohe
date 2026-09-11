@@ -2,10 +2,16 @@
 
 Updated: 2026-09-11
 Integration branch: `main`
-Product version: `1.0.8`
+Product version: `1.0.9`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
-## APK Slimming & Zero-Server Incremental Architecture 2026-09-11 (v1.0.8, versionCode 43, workspace/claude)
+## Web Bundle Incremental Hot-Update Release 2026-09-11 (v1.0.9, versionCode 44, workspace/claude)
+
+- **正式发布首个内置增量更新底座版本 (v1.0.9)**：
+  - 安卓原生底座注入解压与基座切换能力（`MIN_NATIVE_BUNDLE_VERSION_CODE = 44`）；
+  - 本次安装后，未来版本（v1.0.10+）的日常前端改动均可享受约 1.8MB 免安装秒级更新体验；
+  - 同步发布 `xiaoyaohe-1.0.9-android-release.apk` 与 `xiaoyaohe-1.0.9-web-bundle.zip`；
+  - 全量 85 个测试套件 523 项测试 100% 通过。
 
 - **安装包大幅瘦身（-31.76MB，净降 63.9%）**：
   - 清理 `public/release/` 历史遗留的旧版 APK（31.3MB），切断 Vite 静态资源向 `dist/` 及 Capacitor 向 `assets/public/` 的泄漏链路；
