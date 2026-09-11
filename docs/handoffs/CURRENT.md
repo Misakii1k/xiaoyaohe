@@ -5,6 +5,18 @@ Integration branch: `main`
 Product version: `1.0.5`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
+## Straight-On Frontal Medicine Image Studio Prompts & Unified App Prompt Dialog 2026-09-11 (workspace/claude)
+
+- **药盒 AI 生图提示词全面重构为正面平视无杂物大图 (`src/features/aiImageStudio.ts`, `tests/aiImageStudio.test.ts`)**：
+  - **杜绝侧面/斜视角度**：彻底清退原 Prompt 中的 `Three-quarter isometric front perspective view`（导致模型生成 45 度侧面/顶底透视图的根因），重构为 `Direct straight-on front view (eye-level frontal orthographic product shot), facing the camera directly, perfectly flat and horizontal with zero tilt, zero rotation, no 3D side angle, no isometric slant`；
+  - **原图提取与去手持/杂物增强**：在有参考拍摄原图时，前置注入中英双语精准提取指令（`提取出参考素材中的药盒图片，去除手持与多余杂物，变成纯白底正面平视大图的形式。Extract and isolate the medicine packaging box from the reference photo, removing any hands, fingers, holding gestures, or background clutter.`），完美复刻用户预期的白底正面大图效果；
+  - **纯白无缝背景与微弱接地投影**：强化 `Seamless pure white background (#ffffff) with soft subtle contact drop shadow directly beneath the base of the box`，保证专业商业包装展台质感。
+- **输入页控件与对话框全面统一，清退原生弹窗 (`src/ui/components.ts`, `src/ui/imageGenSettingsPanel.ts`, `tests/imageGenSettings.test.ts`)**：
+  - **新增统一组件 `promptDialog`**：封装符合应用全局微拟物/水凝玻璃设计风格的通用卡片输入弹窗，支持自动聚焦、选中文字、Enter 提交与 Escape/遮罩关闭，顶部预留安全距离防止虚拟键盘遮挡；
+  - **清退原生 `window.prompt` 与 `confirm`**：「存为新配置」接入 `promptDialog`，配置删除接入 `confirmDialog`，彻底消除 Android 原生灰绿弹窗；
+  - **操作按钮栅格化布局**：设置页底部 4 个操作按钮升级为 2 列响应式网格（`grid-template-columns: repeat(2, minmax(0, 1fr))`），杜绝移动端下文案折行挤压（如「存为新配」）；
+  - **本地保留**：已提交至本地 Git 分支，未推送远端云端。
+
 ## App Update Card Layout & Markdown Release Notes Optimization 2026-09-11 (workspace/claude)
 
 - **设置页应用更新面板排版布局根治与发布说明轻量渲染优化 (`src/pages/Settings.ts`, `src/ui/styles/pages/settings.css`)**：
