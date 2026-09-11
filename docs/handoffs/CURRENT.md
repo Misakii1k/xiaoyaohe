@@ -2,8 +2,15 @@
 
 Updated: 2026-09-11
 Integration branch: `main`
-Product version: `1.0.4`
+Product version: `1.0.5`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Online Update & Release Distribution Guide 2026-09-11 (workspace/claude)
+
+- **线上更新分发与版本发布完整指南与 SOP 标准化 (`docs/releases/GUIDE.md`)**：
+  - 沉淀了应用内在线更新（GitHub Releases + Cloudflare Pages Functions 边缘流式代理 + 原生安全下载器）架构原理与从零搭建方案；
+  - 梳理并固化了 10 步标准化发版 SOP（从版本递增、全量测试、Android Release 打包、归档哈希、推送打标到 GitHub Release 发布与 `node scripts/check-release-endpoints.mjs` 线上冒烟）；
+  - 汇总了常见高频坑（如私有仓库直链 404、302 跳转导致的国内 403 Forbidden、版本号单调性与测试用例同步等）及应对方案。
 
 ## Agnes & Modern Multimodal AI Image Generation Protocol Adaptation 2026-09-11 (workspace/claude)
 

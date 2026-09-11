@@ -8,6 +8,18 @@ Latest version: `1.0.5` (Android `versionCode: 40`)
 
 ## Summary of Accomplished Work
 
+### 38. 线上更新分发与版本发布完整指南与 SOP 标准化 (1.0.5)
+
+1. **体系化沉淀线上更新分发架构**：
+   - 撰写了系统详尽的 [`docs/releases/GUIDE.md`](./GUIDE.md)；
+   - 深入剖析了 GitHub Releases（产物宿主）+ Cloudflare Pages Functions（海外边缘流式代理）+ Android 原生安全下载器的三层更新架构；
+   - 彻底阐明为什么不能直接用 GitHub 直链（私有仓库匿名 404）以及为什么不能 302 重定向到 Azure Blob（国内移动端 403 阻断）。
+2. **制定 10 步标准化发版 SOP 操作检查单**：
+   - 从版本递增、测试用例同步、双重门禁（Vitest + Typecheck + Web 构建 + Capacitor 同步）、正式 Android Release 打包、体积哈希校验、分支与 Tag 推送、GitHub Release 附件上传到最后的自动化线上全链路冒烟；
+   - 明确了所有多工具团队开发者在需要发版时的统一标准流程。
+3. **高频故障排查与避坑手册**：
+   - 包含 GitHub Token 权限缺失 (503)、只打 Git Tag 导致 404、Gradle 下载截断及本地测试版本 Mock 冲突等典型问题的排查与解决方法。
+
 ### 37. Agnes 及同类多模态 AI 生图协议自适应兼容与配置管理 (1.0.5)
 
 1. **协议层深度自适应（解决 Agnes 等服务商报 400 及图出不来问题）**：
