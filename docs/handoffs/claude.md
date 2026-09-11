@@ -4,9 +4,23 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-11
 Status: active
-Latest version: `1.0.5` (Android `versionCode: 40`)
+Latest version: `1.0.6` (Android `versionCode: 41`)
 
 ## Summary of Accomplished Work
+
+### 39. 药盒生图提示词正面平视化、应用内输入弹窗统一与更新排版优化 (1.0.6)
+
+1. **药盒生图全面重构为正面平视大图**：
+   - 彻底清除提示词中导致 45 度侧视透视的 `Three-quarter isometric front perspective view`；
+   - 替换为正面正视平投指令 `Direct straight-on front view (eye-level frontal orthographic product shot)`，确保药盒完整正面朝向镜头，0 倾角无侧面；
+   - 融入参考图双语提纯指令，彻底去除拍摄时的手持、手指与杂乱背景，输出通透纯白底加柔和落地阴影的商业大图。
+2. **应用内输入弹窗统一，清退原生弹窗**：
+   - 全局封装卡片式 `promptDialog` 组件，替换系统原生 `window.prompt` 与 `confirm` 弹窗；
+   - 解决软键盘遮挡输入框问题，并支持回车确定、ESC 取消；
+   - 将生图设置面板底部按钮优化为 2 列栅格，杜绝按钮文字截断。
+3. **应用更新面板与 Markdown 发布说明排版根治**：
+   - 将原更新面板从引发 Flex 行挤压折行的 `.banner.info` 升级为专用竖向卡片架构 `.app-update-card`；
+   - 新增零体积依赖轻量原生 Markdown 渲染器，发布说明语义化高保真显示。
 
 ### 38. 线上更新分发与版本发布完整指南与 SOP 标准化 (1.0.5)
 

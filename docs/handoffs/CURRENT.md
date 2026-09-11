@@ -2,7 +2,7 @@
 
 Updated: 2026-09-11
 Integration branch: `main`
-Product version: `1.0.5`
+Product version: `1.0.6`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
 ## Straight-On Frontal Medicine Image Studio Prompts & Unified App Prompt Dialog 2026-09-11 (workspace/claude)
