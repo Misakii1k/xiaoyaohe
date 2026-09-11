@@ -4,11 +4,11 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-11
 Status: active
-Latest version: `1.0.6` (Android `versionCode: 41`)
+Latest version: `1.0.7` (Android `versionCode: 42`)
 
 ## Summary of Accomplished Work
 
-### 40. 设置页纯平铺分类卡片架构、五彩微拟物图标重绘与药品列表/批量管理排版全面优化 (1.0.6)
+### 40. 设置页纯平铺分类卡片架构、五彩微拟物图标重绘与药品列表/批量管理排版全面优化 (1.0.7)
 
 1. **设置页（我的）内容去重与架构扁平化**：
    - 移除原「顶部 6 行菜单卡片 (`profile-menu-card`)」及右上角「齿轮菜单按钮 (`gearBtn`)」，彻底解决设置功能三重重复的问题；

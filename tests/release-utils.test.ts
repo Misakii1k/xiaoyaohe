@@ -134,12 +134,12 @@ describe('release version validation', () => {
 
     expect(
       validateReleaseVersions({
-        packageVersion: '1.0.6',
-        lockVersion: '1.0.6',
-        androidVersionName: '1.0.6',
-        androidVersionCode: 41,
+        packageVersion: '1.0.7',
+        lockVersion: '1.0.7',
+        androidVersionName: '1.0.7',
+        androidVersionCode: 42,
       }),
-    ).toEqual({ version: '1.0.6', versionCode: 41 });
+    ).toEqual({ version: '1.0.7', versionCode: 42 });
   });
 
   it('requires plain-language notes for the current release version', () => {
@@ -354,7 +354,7 @@ describe('Android-only distribution contract', () => {
 
     expect(packageJson).toMatchObject({
       name: 'xiaoyaohe',
-      version: '1.0.6',
+      version: '1.0.7',
       description: expect.stringContaining('Android App'),
       dependencies: { qrcode: expect.any(String) },
       devDependencies: { '@types/qrcode': expect.any(String) },
