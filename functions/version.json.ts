@@ -26,6 +26,20 @@ export const onRequestOptions = async (context: { request: Request }) => {
  * 动态提取 APK 与 Web Bundle 的真实字节数与 SHA256 校验和，
  * 彻底杜绝 CDN 静态 version.json 与实际分发附件之间的哈希漂移。
  */
+function parseVersionCode(version: string, body?: string): number {
+  if (body) {
+    const m = body.match(/versionCode[:\s]+(\d+)/i) || body.match(/code[:\s]+(\d+)/i);
+    const codeStr = m?.[1];
+    if (codeStr) return parseInt(codeStr, 10);
+  }
+  const match = version.match(/^1\.0\.(\d+)$/);
+  const patchStr = match?.[1];
+  if (patchStr) {
+    return 35 + parseInt(patchStr, 10);
+  }
+  return 48;
+}
+
 export const onRequestGet = async (context: { request: Request; env: Env }) => {
   const { request, env } = context;
   const token = env.GITHUB_TOKEN;
@@ -68,6 +82,7 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
 
     const manifest: Record<string, unknown> = {
       version,
+      versionCode: parseVersionCode(version, typeof release.body === 'string' ? release.body : undefined),
       releaseDate: typeof release.published_at === 'string' ? release.published_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
       downloadUrl: `/api/download?tag=v${encodeURIComponent(version)}`,
     };
