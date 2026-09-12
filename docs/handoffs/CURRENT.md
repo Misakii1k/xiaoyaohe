@@ -2,7 +2,7 @@
 
 Updated: 2026-09-11
 Integration branch: `main`
-Product version: `1.0.9`
+Product version: `1.0.10`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
 
 ## Medication Alarm Ringtone Customization & Switchable Preference 2026-09-11 (workspace/claude)

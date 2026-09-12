@@ -4,11 +4,11 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-11
 Status: active
-Latest version: `1.0.9` (Android `versionCode: 44`)
+Latest version: `1.0.10` (Android `versionCode: 45`)
 
 ## Summary of Accomplished Work
 
-### 43. 用药提醒专属铃声《晨间活力》配置与自由切换落地 (1.0.9, workspace/claude)
+### 43. 用药提醒专属铃声《晨间活力》配置与自由切换落地 (1.0.10, workspace/claude)
 
 1. **专属音频资源导入**：
    - 将用户指定的本地音频文件规范导入到 Android 原生 raw 目录 `android/app/src/main/res/raw/morning_energy.mp3`（972,719 字节）；
