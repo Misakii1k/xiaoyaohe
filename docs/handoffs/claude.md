@@ -4,9 +4,26 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-12
 Status: active
-Latest version: `1.0.13` (Android `versionCode: 48`)
+Latest version: `1.0.14` (Android `versionCode: 49`)
 
 ## Summary of Accomplished Work
+
+### 48. 全屏覆盖唤醒与响铃引擎全面修复及 1.0.14 发版 (1.0.14, versionCode 49, workspace/claude)
+
+1. **响铃引擎与音量保障**：
+   - 修复 `AlarmAudioPlayer.kt` 中由于调用 `MediaPlayer.create(..., 0)` 传入非法 `audioSessionId = 0` 导致 Android 底层抛出异常返回 null 的严重缺陷，重构为 `openRawResourceFd` 结合 `AudioAttributes(USAGE_ALARM)` 安全构建；
+   - 响铃前增加闹钟通道（`STREAM_ALARM`）音量检测，若当前被用户调至 0 则自动调节为安全提示音量，确保在手机静音或振动模式下依然能够如真实闹钟般清晰唤醒。
+2. **到点全屏覆盖与屏幕唤醒**：
+   - 在 `MedicationAlarmContract.java` 中解除对全屏权限状态的硬拦截，始终绑定系统最高优先级全屏意图（`setFullScreenIntent`），并加入屏幕点亮唤醒锁（WakeLock）；
+   - 在 Android 14+ 下通过 `openPending.send` 配合 `MODE_BACKGROUND_ACTIVITY_START_ALLOWED`，并结合 `AlarmRingService` 前台服务进行多重拉起保活，确保到点时无论处于锁屏还是在玩手机均能直接拉起全屏界面；
+   - `MedicationAlarmPlugin.java` 增强全屏与悬浮窗设置跳转，增加逐级安全回退。
+3. **设置页权限双轨独立引导**：
+   - 在 `ReminderPanel.ts` 中拆分全屏提醒通知与在其他应用上层显示（悬浮窗）的独立检测与引导，提供一键跳转系统设置按钮。
+4. **版本发布与质量门禁**：
+   - 递增产品版本至 `1.0.14`，Android `versionCode: 49`；
+   - 编写 `docs/releases/1.0.14.md` 并通过 `tone_lint.py` 校验；
+   - 维护测试用例断言及 mock 候选版本（1.0.15/50）；
+   - 全量 89 个测试套件 557 项测试 100% PASS，`typecheck` 0 报错，`build:web` 正常完成。
 
 ### 47. Web 增量热更新机制修复与双更新模式落地 (1.0.13, versionCode 48, workspace/claude)
 

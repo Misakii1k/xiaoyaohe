@@ -383,42 +383,58 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
     }
     const fullScreen = getFullScreenAlarmCapability();
     const overlay = getOverlayAlarmCapability();
-    if (fullScreen !== 'granted') {
+    const hasOverlayIssue = overlay === 'denied';
+    const hasFullScreenIssue = fullScreen === 'denied';
+    const isFullyGranted = fullScreen === 'granted' && overlay !== 'denied';
+
+    if (isFullyGranted) {
       body.append(
-        el('div', { class: 'banner warn mt-3' }, [
+        el('div', { class: 'banner ok mt-3' }, [
           el('span', {
-            html: fullScreen === 'denied'
-              ? '全屏提醒权限尚未开启；到点提醒会以顶部通知兜底，不再自动全屏。'
-              : '当前系统不提供全屏提醒权限，到点提醒会以顶部通知兜底。',
+            html: '全屏提醒与悬浮显示已就绪：用药时间到达时将直接弹出全屏界面。',
           }),
         ]),
       );
-      if (fullScreen === 'denied') {
-        const fullScreenRow = el('div', { class: 'btn-row mt-3' });
-        const fullScreenButton = el('button', { class: 'btn tonal', html: '允许全屏提醒' });
-        fullScreenButton.onclick = async () => {
-          await requestFullScreenAlarmCapability();
-          toast('已打开系统设置，返回后会自动检查');
-        };
-        fullScreenRow.append(fullScreenButton);
-        body.append(fullScreenRow);
+    } else {
+      if (hasFullScreenIssue || fullScreen === 'unavailable') {
+        body.append(
+          el('div', { class: 'banner warn mt-3' }, [
+            el('span', {
+              html: fullScreen === 'denied'
+                ? '全屏提醒权限尚未开启；到点提醒会被系统限制在通知栏，无法全屏覆盖。'
+                : '当前系统未开放全屏提醒权限，到点将以通知栏消息提醒。',
+            }),
+          ]),
+        );
+        if (hasFullScreenIssue) {
+          const fullScreenRow = el('div', { class: 'btn-row mt-3' });
+          const fullScreenButton = el('button', { class: 'btn tonal', html: '允许全屏提醒' });
+          fullScreenButton.onclick = async () => {
+            await requestFullScreenAlarmCapability();
+            toast('已打开系统设置，返回后会自动检查');
+          };
+          fullScreenRow.append(fullScreenButton);
+          body.append(fullScreenRow);
+        }
       }
-    } else if (overlay === 'denied') {
-      body.append(
-        el('div', { class: 'banner warn mt-3' }, [
-          el('span', {
-            html: '使用其他应用时全屏弹出需要开启「在其他应用上层显示（悬浮窗）」权限；未开启时，亮屏将显示为顶部横幅。',
-          }),
-        ]),
-      );
-      const overlayRow = el('div', { class: 'btn-row mt-3' });
-      const overlayButton = el('button', { class: 'btn tonal', html: '允许在其他应用上层显示' });
-      overlayButton.onclick = async () => {
-        await requestOverlayAlarmCapability();
-        toast('已打开悬浮窗设置，返回后会自动检查');
-      };
-      overlayRow.append(overlayButton);
-      body.append(overlayRow);
+
+      if (hasOverlayIssue) {
+        body.append(
+          el('div', { class: 'banner warn mt-3' }, [
+            el('span', {
+              html: '在亮屏使用其他应用时弹出全屏需要「在其他应用上层显示（悬浮窗）」权限；未开启时仅显示顶部横幅。',
+            }),
+          ]),
+        );
+        const overlayRow = el('div', { class: 'btn-row mt-3' });
+        const overlayButton = el('button', { class: 'btn tonal', html: '允许在其他应用上层显示' });
+        overlayButton.onclick = async () => {
+          await requestOverlayAlarmCapability();
+          toast('已打开悬浮窗设置，返回后会自动检查');
+        };
+        overlayRow.append(overlayButton);
+        body.append(overlayRow);
+      }
     }
     void refreshFullScreenAlarmCapability();
     void refreshOverlayAlarmCapability();

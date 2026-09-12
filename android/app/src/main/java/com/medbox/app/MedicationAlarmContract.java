@@ -248,9 +248,22 @@ final class MedicationAlarmContract {
         }
         // requireScan 时通知不带任何动作按钮：从通知点动作可绕过全屏页扫码，
         // 一切操作都必须进全屏页、扫码解锁后才出现。
-        if (fullScreen) {
-            builder.setFullScreenIntent(openPending, true);
-        }
+        // 无论系统当前权限如何，始终绑定全屏意图与最高优先级通知
+        builder.setFullScreenIntent(openPending, true);
+
+        // ── 临时点亮屏幕与唤醒 CPU ──
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                android.os.PowerManager.WakeLock wakeLock = pm.newWakeLock(
+                    android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK
+                        | android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP
+                        | android.os.PowerManager.ON_AFTER_RELEASE,
+                    "medbox:alarm_wake"
+                );
+                wakeLock.acquire(8_000L); // 保持 8 秒唤醒
+            }
+        } catch (Throwable ignored) {}
 
         // ── 到点立即启动音频播放引擎（独占 STREAM_ALARM 闹钟流）──
         // 即使 Activity 弹窗因权限拦截或系统延迟，声音也能准时在后台响起，杜绝漏药
@@ -258,28 +271,38 @@ final class MedicationAlarmContract {
             AlarmAudioPlayer.start(context);
         } catch (Throwable ignored) {}
 
-        // ── 时序关键：必须先发通知再拉 Activity ──
-        // Android 对 setFullScreenIntent 的系统行为是只在锁屏/灭屏时拉起 Activity，
-        // 亮屏解锁时降级为顶部 heads-up。而 Android 14+ 在带 fullScreenIntent 的
-        // 通知发出后会授予短暂的「后台 Activity 启动」窗口——所以先 notify，再借
-        // 这个窗口主动 startActivity，亮屏解锁时也能拉起全屏页面。
+        // ── 时序关键：先发通知唤起系统全屏意图 ──
         context.getSystemService(NotificationManager.class).notify(id, builder.build());
-        if (fullScreen) {
-            try {
-                if (Build.VERSION.SDK_INT >= 34) {
-                    android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+
+        // ── 多重路径拉起全屏 Activity ──
+        boolean started = false;
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+                try {
                     options.setPendingIntentBackgroundActivityStartMode(
                         android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
                     );
+                } catch (Throwable ignored) {}
+                try {
+                    openPending.send(context, 0, null, null, null, null, options.toBundle());
+                    started = true;
+                } catch (Throwable sendFailed) {
                     context.startActivity(open, options.toBundle());
-                } else {
-                    context.startActivity(open);
+                    started = true;
                 }
-            } catch (Throwable directFailed) {
-                // 直接启动被拦截（BAL 限制 / OEM 定制）：前台服务兜底再拉一次。
-                AlarmRingService.launch(context, payload.toString());
+            } else {
+                context.startActivity(open);
+                started = true;
             }
+        } catch (Throwable directFailed) {
+            // 直接拉起被系统拦截
         }
+
+        // 前台服务坚固兜底：亮屏使用其他应用或后台启动受限时再拉一次
+        try {
+            AlarmRingService.launch(context, payload.toString());
+        } catch (Throwable ignored) {}
     }
 
     /**

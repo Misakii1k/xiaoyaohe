@@ -81,30 +81,64 @@ object AlarmAudioPlayer {
             Log.w(TAG, "Failed to request audio focus", t)
         }
 
+        // 确保闹钟通道音量不为 0（防用户此前将闹钟音量滑到最左侧导致无法听见）
+        try {
+            val am = audioManager
+            if (am != null) {
+                val currentVol = am.getStreamVolume(AudioManager.STREAM_ALARM)
+                val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                if (currentVol == 0 && maxVol > 0) {
+                    val safeVol = Math.max(1, (maxVol * 0.6f).toInt())
+                    am.setStreamVolume(AudioManager.STREAM_ALARM, safeVol, 0)
+                    Log.i(TAG, "Alarm volume was 0, adjusted to safe level: $safeVol/$maxVol")
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to inspect or adjust alarm stream volume", t)
+        }
+
         var playedCustom = false
         if (ringtonePref == "morning_energy") {
             try {
                 val resId = appContext.resources.getIdentifier("morning_energy", "raw", appContext.packageName)
-                if (resId != 0) {
+                val targetResId = if (resId != 0) resId else R.raw.morning_energy
+                if (targetResId != 0) {
                     val attributes = AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
-                    val mp = MediaPlayer.create(appContext, resId, attributes, 0)
-                    if (mp != null) {
-                        try {
-                            @Suppress("DEPRECATION")
-                            mp.setAudioStreamType(AudioManager.STREAM_ALARM)
-                        } catch (ignored: Throwable) {}
-                        mp.isLooping = true
-                        mp.start()
+
+                    val afd = appContext.resources.openRawResourceFd(targetResId)
+                    if (afd != null) {
+                        val mp = MediaPlayer().apply {
+                            setAudioAttributes(attributes)
+                            setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                            isLooping = true
+                            prepare()
+                            start()
+                        }
+                        afd.close()
                         mediaPlayer = mp
                         playedCustom = true
                         currentPlayingPref = ringtonePref
                     }
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "Failed to start custom morning_energy MediaPlayer, fallback to system ringtone", t)
+                Log.w(TAG, "Failed to start custom morning_energy via openRawResourceFd, trying fallback", t)
+                try {
+                    val mp = MediaPlayer.create(appContext, R.raw.morning_energy)
+                    if (mp != null) {
+                        @Suppress("DEPRECATION")
+                        mp.setAudioStreamType(AudioManager.STREAM_ALARM)
+                        mp.isLooping = true
+                        mp.start()
+                        mediaPlayer = mp
+                        playedCustom = true
+                        currentPlayingPref = ringtonePref
+                    }
+                } catch (t2: Throwable) {
+                    Log.e(TAG, "Failed to start custom morning_energy MediaPlayer fallback", t2)
+                }
             }
         }
 
@@ -114,7 +148,10 @@ object AlarmAudioPlayer {
                 if (alertUri == null) {
                     alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
                 }
-                val r = RingtoneManager.getRingtone(appContext, alertUri)
+                if (alertUri == null) {
+                    alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                }
+                val r = if (alertUri != null) RingtoneManager.getRingtone(appContext, alertUri) else null
                 if (r != null) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         r.audioAttributes = AudioAttributes.Builder()

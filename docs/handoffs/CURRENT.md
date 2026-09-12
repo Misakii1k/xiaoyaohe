@@ -2,8 +2,16 @@
 
 Updated: 2026-09-12
 Integration branch: `main`
-Product version: `1.0.13`
-Latest integration commit: `release: v1.0.13 - 修复Web增量热更新判断与校验和漂移问题，支持双模式更新`
+Product version: `1.0.14`
+Latest integration commit: `release: v1.0.14 - 解决到点未全屏覆盖与提醒无铃声问题`
+
+## Full-Screen Coverage & Alarm Ringtone Engine Fix (v1.0.14, versionCode 49, workspace/claude)
+
+- **产品正式版本发布 (v1.0.14, versionCode 49)**：
+  - 提醒响铃声音恢复正常：彻底修复了专属提醒音乐《晨间活力》在部分机型上调用底层音频引擎时因参数异常导致静音的缺陷；响铃前新增系统闹钟通道音量检查，若被用户置为 0 会自动调节至安全提示音量，确保即使手机处于静音或振动模式下也能如系统闹钟般清晰响铃；
+  - 到点全屏覆盖与屏幕唤醒：在底层提醒契约中解除对全屏权限状态的硬拦截，始终绑定系统最高优先级全屏意图（`setFullScreenIntent`），并加入屏幕点亮唤醒锁（WakeLock）；通过前台服务与后台启动豁免参数进行多重拉起保活，确保到点时无论是锁屏灭屏还是亮屏使用其他应用均能直接弹出全屏界面；
+  - 权限状态双向独立引导：在设置页提醒设置中重构权限展示逻辑，拆分全屏提醒与悬浮窗（在其他应用上层显示）的独立检测，提供一键跳转系统设置引导；
+  - 质量门禁：全量 89 个测试套件 557 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
 
 ## Web Incremental Hot Update Fix & Dual Update Mode (v1.0.13, versionCode 48, workspace/claude)
 

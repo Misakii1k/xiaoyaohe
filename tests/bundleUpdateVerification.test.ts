@@ -53,11 +53,11 @@ describe('Web 增量热更新机制与判断逻辑', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        version: '1.0.14',
-        versionCode: 49,
-        downloadUrl: '/api/download?tag=v1.0.14',
+        version: '1.0.15',
+        versionCode: 50,
+        downloadUrl: '/api/download?tag=v1.0.15',
         fileSize: 18000000,
-        bundleUrl: '/api/download?tag=v1.0.14&asset=bundle',
+        bundleUrl: '/api/download?tag=v1.0.15&asset=bundle',
         bundleSize: 1800000,
         bundleSha256: 'b'.repeat(64),
         minNativeVersionCode: 40,
@@ -67,10 +67,10 @@ describe('Web 增量热更新机制与判断逻辑', () => {
 
     const update = await checkFastCloudVersion();
     expect(update).not.toBeNull();
-    expect(update?.version).toBe('1.0.14');
-    expect(update?.versionCode).toBe(49);
+    expect(update?.version).toBe('1.0.15');
+    expect(update?.versionCode).toBe(50);
     expect(update?.updateType).toBe('incremental');
-    expect(update?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.14&asset=bundle');
+    expect(update?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.15&asset=bundle');
     expect(update?.bundleSize).toBe(1800000);
     expect(update?.bundleSha256).toBe('b'.repeat(64));
     expect(update?.minNativeVersionCode).toBe(40);
@@ -80,11 +80,11 @@ describe('Web 增量热更新机制与判断逻辑', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        version: '1.0.14',
-        versionCode: 49,
-        downloadUrl: '/api/download?tag=v1.0.14',
+        version: '1.0.15',
+        versionCode: 50,
+        downloadUrl: '/api/download?tag=v1.0.15',
         fileSize: 18000000,
-        bundleUrl: '/api/download?tag=v1.0.14&asset=bundle',
+        bundleUrl: '/api/download?tag=v1.0.15&asset=bundle',
         bundleSize: 1800000,
         bundleSha256: 'c'.repeat(64),
         minNativeVersionCode: 9999, // 极高底座要求
@@ -94,27 +94,27 @@ describe('Web 增量热更新机制与判断逻辑', () => {
 
     const update = await checkFastCloudVersion();
     expect(update).not.toBeNull();
-    expect(update?.version).toBe('1.0.14');
+    expect(update?.version).toBe('1.0.15');
     expect(update?.updateType).toBe('full');
-    expect(update?.downloadUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.14');
+    expect(update?.downloadUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.15');
   });
 
   it('当 GitHub Release 包含 web-bundle.zip 资产时，正确解析增量包地址与体积', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        tag_name: 'v1.0.14',
+        tag_name: 'v1.0.15',
         body: 'GitHub 增量包发布说明',
         assets: [
           {
-            name: 'xiaoyaohe-1.0.14-android-release.apk',
+            name: 'xiaoyaohe-1.0.15-android-release.apk',
             size: 18500000,
-            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.14',
+            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.15',
           },
           {
-            name: 'xiaoyaohe-1.0.14-web-bundle.zip',
+            name: 'xiaoyaohe-1.0.15-web-bundle.zip',
             size: 1950000,
-            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.14&asset=bundle',
+            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.15&asset=bundle',
           },
         ],
       }),
@@ -122,9 +122,9 @@ describe('Web 增量热更新机制与判断逻辑', () => {
 
     const update = await checkGithubRelease();
     expect(update).not.toBeNull();
-    expect(update?.version).toBe('1.0.14');
+    expect(update?.version).toBe('1.0.15');
     expect(update?.source).toBe('github');
-    expect(update?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.14&asset=bundle');
+    expect(update?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.15&asset=bundle');
     expect(update?.bundleSize).toBe(1950000);
     expect(update?.fileSize).toBe(18500000);
   });
