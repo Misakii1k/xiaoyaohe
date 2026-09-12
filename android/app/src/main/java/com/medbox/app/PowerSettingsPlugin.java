@@ -87,11 +87,12 @@ public final class PowerSettingsPlugin extends Plugin {
         String pkg = context.getPackageName();
 
         if ("xiaomi".equals(brand)) {
-            // 小米 / 红米 (MIUI / HyperOS)
-            opened = tryStart(new Intent("miui.intent.action.OP_AUTO_START").addCategory(Intent.CATEGORY_DEFAULT).putExtra("extra_pkgname", pkg))
+            // 小米 / 红米 (MIUI / HyperOS)：支持直接进入权限管理页（含“后台弹出界面”与“悬浮窗”）
+            opened = tryStart(new Intent("miui.intent.action.APP_PERM_EDITOR").putExtra("extra_pkgname", pkg))
+                  || tryStart(new Intent("miui.intent.action.OP_AUTO_START").addCategory(Intent.CATEGORY_DEFAULT).putExtra("extra_pkgname", pkg))
+                  || tryStart(new Intent().setComponent(new ComponentName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity")).putExtra("extra_pkgname", pkg))
                   || tryStart(new Intent().setComponent(new ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")).putExtra("extra_pkgname", pkg))
-                  || tryStart(new Intent().setComponent(new ComponentName("com.miui.securitycenter", "com.miui.powercenter.PowerSettings")))
-                  || tryStart(new Intent().setComponent(new ComponentName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity")).putExtra("extra_pkgname", pkg));
+                  || tryStart(new Intent().setComponent(new ComponentName("com.miui.securitycenter", "com.miui.powercenter.PowerSettings")));
             openedAction = opened ? "xiaomi_autostart" : "none";
         } else if ("huawei".equals(brand)) {
             // 华为 / 荣耀 (HarmonyOS / EMUI)

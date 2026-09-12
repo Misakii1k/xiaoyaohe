@@ -57,17 +57,52 @@ public final class MedicationAlarmPlugin extends Plugin {
     @PluginMethod
     public void checkFullScreenPermission(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("capability", MedicationAlarmContract.canUseFullScreen(getContext()) ? "granted" : "denied");
+        boolean fullScreen = MedicationAlarmContract.canUseFullScreen(getContext());
+        boolean overlay = MedicationAlarmContract.canDrawOverlays(getContext());
+        result.put("capability", fullScreen ? "granted" : "denied");
+        result.put("overlayCapability", overlay ? "granted" : "denied");
+        result.put("canDrawOverlays", overlay);
         call.resolve(result);
     }
 
     @PluginMethod
     public void openFullScreenSettings(PluginCall call) {
         if (Build.VERSION.SDK_INT >= 34) {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
-                .setData(Uri.parse("package:" + getContext().getPackageName()))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(intent);
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
+                    .setData(Uri.parse("package:" + getContext().getPackageName()))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            } catch (Throwable ignored) {}
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void checkOverlayPermission(PluginCall call) {
+        JSObject result = new JSObject();
+        boolean overlay = MedicationAlarmContract.canDrawOverlays(getContext());
+        result.put("capability", overlay ? "granted" : "denied");
+        result.put("granted", overlay);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void openOverlaySettings(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                    .setData(Uri.parse("package:" + getContext().getPackageName()))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            } catch (Throwable ignored) {
+                try {
+                    Intent fallback = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(Uri.parse("package:" + getContext().getPackageName()))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getContext().startActivity(fallback);
+                } catch (Throwable ignored2) {}
+            }
         }
         call.resolve();
     }

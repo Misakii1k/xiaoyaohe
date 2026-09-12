@@ -29,20 +29,29 @@ object AlarmAudioPlayer {
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var active = false
+    private var currentPlayingPref: String? = null
 
     val isAlerting: Boolean
         @Synchronized get() = active
 
     /**
      * 启动铃声与振动。
-     * 若此前已有正在播放的音频实例，强制先执行 stop() 清理，再分配启动。
+     * 若此前已有相同音频在播放，直接保持播放；若需要切换或重新播放则释放旧实例再启动。
      */
     @JvmStatic
     @Synchronized
     fun start(context: Context) {
-        stop()
-
         val appContext = context.applicationContext
+        val prefs = appContext.getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE)
+        val ringtonePref = prefs.getString("alarm_ringtone", "morning_energy") ?: "morning_energy"
+
+        // 防重入：若当前已在播放相同铃声，保持播放，避免界面拉起时声音卡顿打断
+        if (active && currentPlayingPref == ringtonePref && (mediaPlayer != null || ringtone != null)) {
+            Log.d(TAG, "AlarmAudioPlayer is already actively playing: $ringtonePref")
+            return
+        }
+
+        stop()
 
         // 申请临时音频焦点：让背景正在播放的短剧、音乐、播客等暂时暂停
         try {
@@ -72,9 +81,6 @@ object AlarmAudioPlayer {
             Log.w(TAG, "Failed to request audio focus", t)
         }
 
-        val prefs = appContext.getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE)
-        val ringtonePref = prefs.getString("alarm_ringtone", "morning_energy") ?: "morning_energy"
-
         var playedCustom = false
         if (ringtonePref == "morning_energy") {
             try {
@@ -82,14 +88,19 @@ object AlarmAudioPlayer {
                 if (resId != 0) {
                     val attributes = AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                     val mp = MediaPlayer.create(appContext, resId, attributes, 0)
                     if (mp != null) {
+                        try {
+                            @Suppress("DEPRECATION")
+                            mp.setAudioStreamType(AudioManager.STREAM_ALARM)
+                        } catch (ignored: Throwable) {}
                         mp.isLooping = true
                         mp.start()
                         mediaPlayer = mp
                         playedCustom = true
+                        currentPlayingPref = ringtonePref
                     }
                 }
             } catch (t: Throwable) {
@@ -114,8 +125,13 @@ object AlarmAudioPlayer {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                         r.isLooping = true
                     }
+                    try {
+                        @Suppress("DEPRECATION")
+                        r.streamType = AudioManager.STREAM_ALARM
+                    } catch (ignored: Throwable) {}
                     r.play()
                     ringtone = r
+                    currentPlayingPref = "system"
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to start ringtone", t)
@@ -181,6 +197,7 @@ object AlarmAudioPlayer {
         audioManager = null
 
         active = false
+        currentPlayingPref = null
     }
 
     /**

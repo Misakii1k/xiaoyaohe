@@ -35,8 +35,8 @@ final class MedicationAlarmContract {
     static final String ACTION_FINISH_ALL_ALARMS = "com.medbox.app.ACTION_FINISH_ALL_ALARMS";
     public static final String TOKEN_PREFIX = "medbox-unlock:";
     static final String EXTRA_PAYLOAD = "payload";
-    static final String CHANNEL_STRONG = "medication_strong_v2";
-    static final String CHANNEL_ALARM = "medication_alarm_v1";
+    static final String CHANNEL_STRONG = "medication_strong_v3";
+    static final String CHANNEL_ALARM = "medication_alarm_v2";
 
     private static final String PREFS = "medication_alarm_v1";
     private static final String IDS = "scheduled_ids";
@@ -47,18 +47,20 @@ final class MedicationAlarmContract {
     static void ensureChannels(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
-        Uri sound = Settings.System.DEFAULT_ALARM_ALERT_URI;
-        AudioAttributes audio = new AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build();
+        // 清理老版本带系统提示音的旧渠道，避免通知声音与 AlarmAudioPlayer 专属音乐冲突混杂
+        try {
+            manager.deleteNotificationChannel("medication_strong_v2");
+            manager.deleteNotificationChannel("medication_alarm_v1");
+        } catch (Throwable ignored) {}
+
         NotificationChannel strong = new NotificationChannel(
             CHANNEL_STRONG, "用药增强提醒", NotificationManager.IMPORTANCE_HIGH
         );
-        strong.setDescription("高优先级用药通知、声音和振动");
+        strong.setDescription("高优先级用药通知与振动（声音由专属闹钟引擎管理）");
         strong.enableVibration(true);
         strong.setVibrationPattern(new long[]{0, 500, 250, 500});
-        strong.setSound(sound, audio);
+        // 关键：通知渠道彻底静音，避免 Android 系统自动播放系统提示音
+        strong.setSound(null, null);
         strong.enableLights(true);
         strong.setLightColor(Color.rgb(23, 116, 91));
         strong.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
@@ -66,10 +68,11 @@ final class MedicationAlarmContract {
         NotificationChannel alarm = new NotificationChannel(
             CHANNEL_ALARM, "用药全屏提醒", NotificationManager.IMPORTANCE_HIGH
         );
-        alarm.setDescription("需要立即处理的全屏用药提醒");
+        alarm.setDescription("需要立即处理的全屏用药提醒（声音由专属闹钟引擎管理）");
         alarm.enableVibration(true);
         alarm.setVibrationPattern(new long[]{0, 700, 250, 700, 250, 700});
-        alarm.setSound(sound, audio);
+        // 关键：全屏通知渠道彻底静音
+        alarm.setSound(null, null);
         alarm.enableLights(true);
         alarm.setLightColor(Color.rgb(23, 116, 91));
         alarm.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
@@ -82,6 +85,11 @@ final class MedicationAlarmContract {
         return context.getSystemService(NotificationManager.class).canUseFullScreenIntent();
     }
 
+    static boolean canDrawOverlays(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true;
+        return Settings.canDrawOverlays(context);
+    }
+
     static void schedule(Context context, JSONObject payload) throws JSONException {
         int id = payload.getInt("id");
         long at = payload.getLong("at");
@@ -92,12 +100,14 @@ final class MedicationAlarmContract {
             context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
         AlarmManager manager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !manager.canScheduleExactAlarms()) {
-            // 无精确闹钟权限时的兜底：setAlarmClock 不需要该权限且始终精确，
-            // 触发时系统还会授予短暂的后台 Activity 启动窗口（全屏提醒依赖它），
-            // 比 setAndAllowWhileIdle（不精确 + 无启动窗口）可靠得多。
-            Intent clockOpen = new Intent(context, MainActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        // 优先使用 setAlarmClock 调度：
+        // setAlarmClock 在 Android 5.0+ 始终精确执行，不受 Doze 深度休眠延迟，
+        // 且在触发时由系统授予官方后台启动 Activity 豁免（BAL exemption），
+        // 是亮屏使用其他 App 时能够全屏弹出的核心系统基础。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            Intent clockOpen = new Intent(context, MedicationAlarmActivity.class)
+                .putExtra(EXTRA_PAYLOAD, payload.toString())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             PendingIntent clockPending = PendingIntent.getActivity(
                 context, id + 0x10000, clockOpen,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -218,7 +228,8 @@ final class MedicationAlarmContract {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(openPending)
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setSound(null)
+            .setDefaults(NotificationCompat.DEFAULT_VIBRATE | NotificationCompat.DEFAULT_LIGHTS)
             .setOnlyAlertOnce(false)
             .setAutoCancel(false)
             // 常驻：下拉里不能被随手划掉，必须经全屏页或按钮完成操作
@@ -240,6 +251,13 @@ final class MedicationAlarmContract {
         if (fullScreen) {
             builder.setFullScreenIntent(openPending, true);
         }
+
+        // ── 到点立即启动音频播放引擎（独占 STREAM_ALARM 闹钟流）──
+        // 即使 Activity 弹窗因权限拦截或系统延迟，声音也能准时在后台响起，杜绝漏药
+        try {
+            AlarmAudioPlayer.start(context);
+        } catch (Throwable ignored) {}
+
         // ── 时序关键：必须先发通知再拉 Activity ──
         // Android 对 setFullScreenIntent 的系统行为是只在锁屏/灭屏时拉起 Activity，
         // 亮屏解锁时降级为顶部 heads-up。而 Android 14+ 在带 fullScreenIntent 的
@@ -248,7 +266,15 @@ final class MedicationAlarmContract {
         context.getSystemService(NotificationManager.class).notify(id, builder.build());
         if (fullScreen) {
             try {
-                context.startActivity(open);
+                if (Build.VERSION.SDK_INT >= 34) {
+                    android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+                    options.setPendingIntentBackgroundActivityStartMode(
+                        android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    );
+                    context.startActivity(open, options.toBundle());
+                } else {
+                    context.startActivity(open);
+                }
             } catch (Throwable directFailed) {
                 // 直接启动被拦截（BAL 限制 / OEM 定制）：前台服务兜底再拉一次。
                 AlarmRingService.launch(context, payload.toString());

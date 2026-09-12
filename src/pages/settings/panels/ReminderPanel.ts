@@ -11,6 +11,9 @@ import {
   getFullScreenAlarmCapability,
   refreshFullScreenAlarmCapability,
   requestFullScreenAlarmCapability,
+  getOverlayAlarmCapability,
+  refreshOverlayAlarmCapability,
+  requestOverlayAlarmCapability,
   showNotification,
 } from '../../../features/notifier';
 import {
@@ -379,6 +382,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       }
     }
     const fullScreen = getFullScreenAlarmCapability();
+    const overlay = getOverlayAlarmCapability();
     if (fullScreen !== 'granted') {
       body.append(
         el('div', { class: 'banner warn mt-3' }, [
@@ -399,8 +403,25 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
         fullScreenRow.append(fullScreenButton);
         body.append(fullScreenRow);
       }
+    } else if (overlay === 'denied') {
+      body.append(
+        el('div', { class: 'banner warn mt-3' }, [
+          el('span', {
+            html: '使用其他应用时全屏弹出需要开启「在其他应用上层显示（悬浮窗）」权限；未开启时，亮屏将显示为顶部横幅。',
+          }),
+        ]),
+      );
+      const overlayRow = el('div', { class: 'btn-row mt-3' });
+      const overlayButton = el('button', { class: 'btn tonal', html: '允许在其他应用上层显示' });
+      overlayButton.onclick = async () => {
+        await requestOverlayAlarmCapability();
+        toast('已打开悬浮窗设置，返回后会自动检查');
+      };
+      overlayRow.append(overlayButton);
+      body.append(overlayRow);
     }
     void refreshFullScreenAlarmCapability();
+    void refreshOverlayAlarmCapability();
   }
 
   // ── 用药提醒铃声设置（专属音乐 vs 系统默认）──

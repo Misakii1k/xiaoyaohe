@@ -4,9 +4,27 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-12
 Status: active
-Latest version: `1.0.11` (Android `versionCode: 46`)
+Latest version: `1.0.12` (Android `versionCode: 47`)
 
 ## Summary of Accomplished Work
+
+### 46. 全屏提醒前台弹出与双重铃声混杂问题解决及 1.0.12 发版 (1.0.12, versionCode 47, workspace/claude)
+
+1. **全屏提醒前台任意页面直显**：
+   - 添加 `SYSTEM_ALERT_WINDOW`（悬浮窗）权限声明；
+   - 在 `MedicationAlarmContract.java` 中引入 `AlarmManager.setAlarmClock()` 获取系统后台拉起 Activity 豁免；
+   - 在锁屏唤醒与前台启动中配置 `ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED`，并保留前台服务 `AlarmRingService` 兜底；
+   - 原生插件 `PowerSettingsPlugin.java` 与 `MedicationAlarmPlugin.java` 提供悬浮窗权限检测与品牌特定跳转（如小米 `miui.intent.action.APP_PERM_EDITOR` 后台弹出界面）；
+   - 设置页 `ReminderPanel.ts` 与 `KeepAlivePanel.ts` 呈现全屏权限状态卡片与快捷开启引导。
+2. **响铃通道彻底剥离与双重声音消除**：
+   - 通知渠道改造为静音通知（`setSound(null, null)`），避免系统默认通知音同时作响；
+   - 闹钟声音统一切换至 `STREAM_ALARM`（`USAGE_ALARM`，`CONTENT_TYPE_SONIFICATION`），并通过 `AlarmAudioPlayer` 独立单源播放；
+   - `MedicationAlarmActivity.kt` 绑定 `volumeControlStream = AudioManager.STREAM_ALARM`，实现侧边音量键直接调节闹钟音量；
+   - 音频播放器添加幂等防护，防止 Activity 重复触发造成破音或重叠。
+3. **版本发布流程与规范落地**：
+   - 递增产品版本至 `1.0.12`，Android `versionCode: 47`；
+   - 更新 `scripts/lib/release-utils.mjs`，维护测试用例断言及 mock 候选版本（1.0.13/48）；
+   - 编写 `docs/releases/1.0.12.md` 并通过 `tone_lint.py` 校验。
 
 ### 45. 版本发布与系统架构重构全面交付 (1.0.11, versionCode 46, workspace/claude)
 

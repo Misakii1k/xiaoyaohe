@@ -2,8 +2,17 @@
 
 Updated: 2026-09-12
 Integration branch: `main`
-Product version: `1.0.11`
-Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+Product version: `1.0.12`
+Latest integration commit: `release: v1.0.12 - 解决使用其他应用时全屏提醒弹出与双重铃声混杂问题`
+
+## Full-Screen Overlay Alarm & Single Sound Stream Enhancement (v1.0.12, versionCode 47, workspace/claude)
+
+- **产品正式版本发布 (v1.0.12, versionCode 47)**：
+  - 全屏提醒前台直显：新增悬浮窗（在其他应用上层显示）与小米等品牌后台弹出界面能力，开启后用药时间到达时直接拉起全屏提醒界面，不再停留为顶部常驻通知条；
+  - 响铃通道与双重声音彻底剥离：通知渠道改造为完全静音通知（`setSound(null, null)`），仅保留顶部通知栏状态；提醒声音由原生 `AlarmAudioPlayer` 单独播放并统一切换至 `STREAM_ALARM` 闹钟音频通道，解决通知音与专属音乐混杂双重发声问题；
+  - 闹钟音量键随心调节：全屏提醒界面绑定 `volumeControlStream = STREAM_ALARM`，响铃时按手机侧边音量键可直接调节闹钟大小；
+  - 权限设置与引导完善：设置页新增全屏显示权限一键跳转开关，针对小米、华为、OPPO、vivo 等机型补充后台弹出界面与悬浮窗指引；
+  - 质量门禁：全量 89 个测试套件 557 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
 
 ## Architecture Modularization, Tab Keep-Alive & Storage/Keep-Alive Enhancements (v1.0.11, versionCode 46, workspace/claude)
 

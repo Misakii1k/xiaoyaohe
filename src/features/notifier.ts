@@ -7,6 +7,8 @@ import {
 import {
   checkFullScreenAlarmCapability,
   openFullScreenAlarmSettings,
+  checkOverlayCapability,
+  openOverlaySettings,
   type FullScreenAlarmCapability,
 } from './nativeMedicationAlarm';
 
@@ -24,6 +26,7 @@ export interface NotifyOpts {
 
 let actionCleanup: (() => void) | undefined;
 let fullScreenAlarm: FullScreenAlarmCapability = 'unavailable';
+let overlayAlarm: FullScreenAlarmCapability = 'unavailable';
 
 export function notificationsSupported(): boolean {
   return getReminderTransport().isSupported();
@@ -76,6 +79,21 @@ export async function requestFullScreenAlarmCapability(): Promise<FullScreenAlar
   return refreshFullScreenAlarmCapability();
 }
 
+export function getOverlayAlarmCapability(): FullScreenAlarmCapability {
+  return overlayAlarm;
+}
+
+export async function refreshOverlayAlarmCapability(): Promise<FullScreenAlarmCapability> {
+  overlayAlarm = await checkOverlayCapability().catch(() => 'unavailable');
+  dispatchCapabilityChange();
+  return overlayAlarm;
+}
+
+export async function requestOverlayAlarmCapability(): Promise<FullScreenAlarmCapability> {
+  await openOverlaySettings();
+  return refreshOverlayAlarmCapability();
+}
+
 export async function initializeNotifier(
   onAction?: (action: ReminderAction) => void,
 ): Promise<void> {
@@ -84,6 +102,7 @@ export async function initializeNotifier(
     transport.refreshPermission(),
     transport.checkExactAlarmCapability(),
     refreshFullScreenAlarmCapability(),
+    refreshOverlayAlarmCapability(),
   ]);
   if (onAction && !actionCleanup) {
     actionCleanup = await transport.addActionListener(onAction);
