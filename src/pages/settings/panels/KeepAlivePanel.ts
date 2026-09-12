@@ -4,6 +4,9 @@ import {
   isIgnoringBatteryOptimizations,
   requestIgnoreBatteryOptimizations,
   openAppSettings,
+  getDeviceKeepAliveInfo,
+  openOemKeepAliveSettings,
+  type OemBrand,
 } from '../../../features/keepAlive';
 import { isNativeReminderPlatform } from '../../../features/notifier';
 import {
@@ -13,65 +16,86 @@ import {
 } from '../../../features/nativeMedicationAlarm';
 import { panel, setChip } from '../components/panelPrimitives';
 
-export function openKeepAliveGuideModal(): void {
+export interface OemGuideItem {
+  id: OemBrand;
+  name: string;
+  jumpText: string;
+  steps: Array<{ title: string; desc: string }>;
+}
+
+export const OEM_GUIDES: readonly OemGuideItem[] = [
+  {
+    id: 'xiaomi',
+    name: '小米 / 红米',
+    jumpText: '前往小米自启动与省电策略设置',
+    steps: [
+      { title: '多任务后台卡片加锁', desc: '从屏幕底部上滑呼出多任务界面，长按小药盒卡片，点击「锁」图标加锁，防止被系统一键清理。' },
+      { title: '允许自启动权限', desc: '打开手机「安全中心」→「应用管理」→「权限」→「自启动管理」，找到「小药盒」并开启自启动。' },
+      { title: '省电策略设为无限制', desc: '在安全中心「应用管理」中找到小药盒，进入「省电策略」，将其修改为「无限制」。' },
+      { title: '开启无障碍服务', desc: '进入手机「系统设置」→「更多设置」→「无障碍」→「已下载的应用」，开启「小药盒无障碍服务」。' },
+    ],
+  },
+  {
+    id: 'huawei',
+    name: '华为 / 荣耀',
+    jumpText: '前往华为应用启动管理设置',
+    steps: [
+      { title: '手动管理应用启动', desc: '进入「系统设置」→「应用和服务」→「应用启动管理」，找到小药盒，关闭「自动管理」，在手动管理弹窗中开启「允许自启动」、「允许关联启动」与「允许后台活动」。' },
+      { title: '电池优化设为不允许', desc: '进入「系统设置」→「应用」→「权限管理」→右上角四点「特殊访问权限」→「电池优化」，切换为全部应用，将小药盒设为「不允许」。' },
+      { title: '多任务后台卡片加锁', desc: '呼出多任务后台，向下拉动小药盒卡片，卡片右上角出现小锁图标即锁定成功。' },
+      { title: '开启无障碍服务', desc: '进入「系统设置」→「辅助功能」→「已安装的服务」，开启「小药盒无障碍服务」。' },
+    ],
+  },
+  {
+    id: 'oppo',
+    name: 'OPPO / 一加',
+    jumpText: '前往 OPPO 耗电与自启动设置',
+    steps: [
+      { title: '允许完全后台行为', desc: '进入「系统设置」→「电池」→「应用耗电管理」→找到小药盒，开启「允许完全后台行为」与「允许应用自启动」。' },
+      { title: '多任务后台加锁', desc: '呼出多任务后台，点击小药盒卡片右上角「⋮」，选择「锁定」。' },
+      { title: '开启无障碍服务', desc: '进入「系统设置」→「其他设置」→「无障碍」，开启「小药盒无障碍服务」。' },
+    ],
+  },
+  {
+    id: 'vivo',
+    name: 'vivo / iQOO',
+    jumpText: '前往 vivo 权限与后台高耗电设置',
+    steps: [
+      { title: '允许后台高耗电', desc: '进入「系统设置」→「电池」→「后台高耗电管理」，将小药盒勾选为「允许高耗电」。' },
+      { title: '开启自启动', desc: '进入「系统设置」→「应用与权限」→「权限管理」→「自启动」，开启小药盒自启动开关。' },
+      { title: '多任务后台加锁', desc: '呼出多任务，向下拉动小药盒卡片，点击小锁图标锁定。' },
+      { title: '开启无障碍服务', desc: '进入「系统设置」→「快捷与辅助」→「无障碍」→「已下载的应用」，开启「小药盒无障碍服务」。' },
+    ],
+  },
+  {
+    id: 'generic',
+    name: '通用 Android',
+    jumpText: '打开应用系统设置',
+    steps: [
+      { title: '忽略电池优化', desc: '在应用详情设置中，将「电池」或「电池优化」设为「无限制」或「不受优化」。' },
+      { title: '多任务界面加锁', desc: '在最近任务（多任务）列表中，长按或向下拉动小药盒卡片，点击小锁图标防止一键清理。' },
+      { title: '开启无障碍服务', desc: '在系统设置「无障碍」中找到「小药盒无障碍服务」并开启。' },
+    ],
+  },
+];
+
+export function openKeepAliveGuideModal(): void;
+export function openKeepAliveGuideModal(preferredBrand?: OemBrand): void;
+export function openKeepAliveGuideModal(preferredBrand?: OemBrand): void {
   const title = el('h3', { class: 'lan-sync-sheet-title', text: '主流手机后台防杀指南' });
   const hint = el('div', {
     class: 'settings-hint mb-3',
     text: '部分手机厂商的后台清理策略较为严格，可能在熄屏后终止后台进程。请根据手机品牌完成以下设置：',
   });
 
-  const oems = [
-    {
-      id: 'xiaomi',
-      name: '小米 / 红米',
-      steps: [
-        { title: '多任务后台卡片加锁', desc: '从屏幕底部上滑呼出多任务界面，长按小药盒卡片，点击「锁」图标加锁，防止被系统一键清理。' },
-        { title: '允许自启动权限', desc: '打开手机「安全中心」→「应用管理」→「权限」→「自启动管理」，找到「小药盒」并开启自启动。' },
-        { title: '省电策略设为无限制', desc: '在安全中心「应用管理」中找到小药盒，进入「省电策略」，将其修改为「无限制」。' },
-        { title: '开启无障碍服务', desc: '进入手机「系统设置」→「更多设置」→「无障碍」→「已下载的应用」，开启「小药盒无障碍服务」。' },
-      ],
-    },
-    {
-      id: 'huawei',
-      name: '华为 / 荣耀',
-      steps: [
-        { title: '手动管理应用启动', desc: '进入「系统设置」→「应用和服务」→「应用启动管理」，找到小药盒，关闭「自动管理」，在手动管理弹窗中开启「允许自启动」、「允许关联启动」与「允许后台活动」。' },
-        { title: '电池优化设为不允许', desc: '进入「系统设置」→「应用」→「权限管理」→右上角四点「特殊访问权限」→「电池优化」，切换为全部应用，将小药盒设为「不允许」。' },
-        { title: '多任务后台卡片加锁', desc: '呼出多任务后台，向下拉动小药盒卡片，卡片右上角出现小锁图标即锁定成功。' },
-        { title: '开启无障碍服务', desc: '进入「系统设置」→「辅助功能」→「已安装的服务」，开启「小药盒无障碍服务」。' },
-      ],
-    },
-    {
-      id: 'oppo',
-      name: 'OPPO / 一加',
-      steps: [
-        { title: '允许完全后台行为', desc: '进入「系统设置」→「电池」→「应用耗电管理」→找到小药盒，开启「允许完全后台行为」与「允许应用自启动」。' },
-        { title: '多任务后台加锁', desc: '呼出多任务后台，点击小药盒卡片右上角「⋮」，选择「锁定」。' },
-        { title: '开启无障碍服务', desc: '进入「系统设置」→「其他设置」→「无障碍」，开启「小药盒无障碍服务」。' },
-      ],
-    },
-    {
-      id: 'vivo',
-      name: 'vivo / iQOO',
-      steps: [
-        { title: '允许后台高耗电', desc: '进入「系统设置」→「电池」→「后台高耗电管理」，将小药盒勾选为「允许高耗电」。' },
-        { title: '开启自启动', desc: '进入「系统设置」→「应用与权限」→「权限管理」→「自启动」，开启小药盒自启动开关。' },
-        { title: '多任务后台加锁', desc: '呼出多任务，向下拉动小药盒卡片，点击小锁图标锁定。' },
-        { title: '开启无障碍服务', desc: '进入「系统设置」→「快捷与辅助」→「无障碍」→「已下载的应用」，开启「小药盒无障碍服务」。' },
-      ],
-    },
-    {
-      id: 'generic',
-      name: '通用 Android',
-      steps: [
-        { title: '忽略电池优化', desc: '在应用详情设置中，将「电池」或「电池优化」设为「无限制」或「不受优化」。' },
-        { title: '多任务界面加锁', desc: '在最近任务（多任务）列表中，长按或向下拉动小药盒卡片，点击小锁图标防止一键清理。' },
-        { title: '开启无障碍服务', desc: '在系统设置「无障碍」中找到「小药盒无障碍服务」并开启。' },
-      ],
-    },
-  ];
+  const oems = OEM_GUIDES;
 
   let currentOemIndex = 0;
+  if (preferredBrand) {
+    const found = oems.findIndex((o) => o.id === preferredBrand);
+    if (found >= 0) currentOemIndex = found;
+  }
+
   const tabsContainer = el('div', { class: 'keepalive-oem-tabs' });
   const contentContainer = el('div', { class: 'keepalive-oem-content' });
 
@@ -102,12 +126,37 @@ export function openKeepAliveGuideModal(): void {
       stepRow.append(numBadge, textCol);
       contentContainer.append(stepRow);
     });
+
+    const jumpBtn = el('button', {
+      class: 'btn tonal mt-3',
+      style: 'width: 100%; font-size: 13px;',
+      text: activeOem.jumpText,
+    });
+    jumpBtn.onclick = async () => {
+      if (!isNativeReminderPlatform()) {
+        toast('网页版暂不支持直接调起手机系统设置，请在手机端使用');
+        return;
+      }
+      if (activeOem.id === 'generic') {
+        await openAppSettings();
+      } else {
+        const res = await openOemKeepAliveSettings(activeOem.id);
+        if (res.openedAction === 'app_details_fallback') {
+          toast('未能直接拉起厂商专属页，已打开系统应用设置');
+        }
+      }
+    };
+    contentContainer.append(jumpBtn);
   };
 
   renderOemContent();
 
-  const openSettingsBtn = el('button', { class: 'btn tonal', text: '打开应用系统设置' });
+  const openSettingsBtn = el('button', { class: 'btn tonal', text: '打开系统设置' });
   openSettingsBtn.onclick = () => {
+    if (!isNativeReminderPlatform()) {
+      toast('网页版暂不支持直接调起手机系统设置，请在手机端使用');
+      return;
+    }
     void openAppSettings();
   };
 
@@ -223,9 +272,10 @@ export function openKeepAlivePromptSheet(
 export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement): Promise<void> {
   body.replaceChildren();
   const isNative = isNativeReminderPlatform() && nativeMedicationAlarmAvailable();
-  const [ignoring, accEnabled] = await Promise.all([
+  const [ignoring, accEnabled, deviceInfo] = await Promise.all([
     isIgnoringBatteryOptimizations().catch(() => false),
     isNative ? checkAccessibilityGuardEnabled().catch(() => false) : Promise.resolve(false),
+    isNative ? getDeviceKeepAliveInfo().catch(() => ({ manufacturer: '', brand: '', model: '', sdkInt: 0, matchedOem: 'generic' as OemBrand })) : Promise.resolve({ manufacturer: '', brand: '', model: '', sdkInt: 0, matchedOem: 'generic' as OemBrand }),
   ]);
 
   const allReady = isNative ? (ignoring && accEnabled) : ignoring;
@@ -327,25 +377,54 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     // 4. 自启动与后台运行管理
     const autoItem = el('div', { class: 'keepalive-card mt-2' });
     const autoHead = el('div', { class: 'keepalive-card-head' });
+    const brandLabelMap: Record<OemBrand, string> = {
+      xiaomi: '小米 / 红米 (MIUI/HyperOS)',
+      huawei: '华为 / 荣耀 (HarmonyOS)',
+      oppo: 'OPPO / 一加 (ColorOS)',
+      vivo: 'vivo / iQOO (OriginOS)',
+      generic: '系统自启动管理',
+    };
+    const matchedGuide = OEM_GUIDES.find((o) => o.id === deviceInfo.matchedOem);
+    const isDetectedOem = deviceInfo.matchedOem !== 'generic' && !!matchedGuide;
+    const detectedName = brandLabelMap[deviceInfo.matchedOem] || '系统自启动管理';
     autoHead.append(
       el('span', { class: 'keepalive-card-title', text: '4. 自启动与后台运行权限' }),
       el('span', {
         class: 'chip-pill',
         style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.05); color: var(--color-text-muted);',
-        text: '厂商管理',
+        text: isDetectedOem ? `已识别 ${matchedGuide?.name || deviceInfo.matchedOem}` : '厂商管理',
       }),
     );
+    const brandDesc = isDetectedOem
+      ? `已检测到当前设备为【${detectedName}】。请开启自启动并允许后台无限制活动，防止熄屏后定时任务被系统休眠。`
+      : '部分手机厂商（小米、华为、OPPO、vivo 等）默认限制后台自启动，请在手机管家或权限管理中将小药盒设为允许自启动与后台活动。';
     const autoDesc = el('div', {
       class: 'keepalive-card-desc',
-      text: '部分手机厂商（小米、华为、OPPO、vivo 等）默认限制后台自启动，请在手机管家或权限管理中将小药盒设为允许自启动与后台活动。',
+      text: brandDesc,
     });
+    const autoBtnRow = el('div', { class: 'btn-row mt-2' });
+    if (isDetectedOem && matchedGuide) {
+      const directJumpBtn = el('button', {
+        class: 'btn',
+        style: 'font-size: 13px;',
+        text: matchedGuide.jumpText,
+      });
+      directJumpBtn.onclick = async () => {
+        const res = await openOemKeepAliveSettings(deviceInfo.matchedOem);
+        if (res.openedAction === 'app_details_fallback') {
+          toast('未能直接拉起厂商专属页，已打开系统应用设置');
+        }
+      };
+      autoBtnRow.append(directJumpBtn);
+    }
     const guideBtn = el('button', {
-      class: 'btn tonal mt-2',
-      style: 'font-size: 13px; width: 100%;',
-      text: '查看主流手机防杀指南',
+      class: 'btn tonal',
+      style: 'font-size: 13px;',
+      text: '查看防杀指南',
     });
-    guideBtn.onclick = () => openKeepAliveGuideModal();
-    autoItem.append(autoHead, autoDesc, guideBtn);
+    guideBtn.onclick = () => openKeepAliveGuideModal(deviceInfo.matchedOem);
+    autoBtnRow.append(guideBtn);
+    autoItem.append(autoHead, autoDesc, autoBtnRow);
     list.append(autoItem);
 
     body.append(list);

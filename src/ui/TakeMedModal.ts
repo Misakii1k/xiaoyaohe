@@ -10,7 +10,7 @@ import { setOccurrenceAction } from '../db/local';
 import { registerRouteTransitionCleanup } from '../router';
 import { toast, icon, el, makeAppInert, restoreAppAfterLastDialog, trapFocusIn } from '../ui/components';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
-import { floatingPillImg, getTakeMedPill3dSvg, render3dMedia } from './assets3d';
+import { floatingPillImg, getTakeMedPill3dSvg, render3dMedia, cleanup3dMedia } from './assets3d';
 
 export interface TakeMedModalOptions {
   med: Medication;
@@ -96,11 +96,15 @@ export function openTakeMedModal(options: TakeMedModalOptions): void {
   photoThumb.className = 'take-med-thumb';
   if (photoUrl) {
     const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.decoding = 'async';
     img.src = photoUrl;
     img.alt = med.name;
     photoThumb.append(img);
   } else {
     const img3d = document.createElement('img');
+    img3d.loading = 'lazy';
+    img3d.decoding = 'async';
     img3d.src = getOrCreateMed3DImage(med.id, med.name, med.amountPerDose || med.dosageText);
     img3d.alt = med.name;
     photoThumb.append(img3d);
@@ -158,6 +162,7 @@ export function openTakeMedModal(options: TakeMedModalOptions): void {
     closed = true;
     activeTakeMedModals.delete(close);
     removeTrap?.();
+    cleanup3dMedia(visualContainer);
     overlay.classList.add('closing');
     setTimeout(() => {
       overlay.remove();

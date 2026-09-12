@@ -8,6 +8,21 @@ import { panel, setChip } from '../src/pages/settings/components/panelPrimitives
 import { createProfileStatCard, renderStatsGrid } from '../src/pages/settings/components/StatsGrid';
 import { renderSettingsPage } from '../src/pages/settings/index';
 import { renderReminderPanel } from '../src/pages/settings/panels/ReminderPanel';
+import { renderMedEditPage } from '../src/pages/MedEdit';
+import { validateMedicationForm } from '../src/pages/medEdit/formValidation';
+import { evaluateDoseReview } from '../src/pages/medEdit/dosageHelper';
+import { buildBoxPhotoStudio } from '../src/pages/medEdit/photoStudioHelper';
+import { assistantTools, findAssistantTool, OPEN_PAGE_TOOL_NAME } from '../src/ai/assistantTools';
+import {
+  parseSvg,
+  cleanup3dMedia,
+  render3dMedia,
+  trackMediaBlobUrl,
+  safeRevokeMediaUrl,
+  revokeTrackedMediaBlobUrls,
+} from '../src/ui/assets3d';
+import { OEM_GUIDES, openKeepAliveGuideModal } from '../src/pages/settings/panels/KeepAlivePanel';
+import { getDeviceKeepAliveInfo, openOemKeepAliveSettings } from '../src/features/keepAlive';
 import type { Medication, ReminderRule, IntakeLog } from '../src/db/schema';
 
 describe('refactor integrity and modularity contracts', () => {
@@ -160,5 +175,234 @@ describe('refactor integrity and modularity contracts', () => {
     const p = renderReminderPanel();
     expect(p.classList.contains('panel')).toBe(true);
     expect(p.querySelector('.panel-title')?.textContent).toBe('系统通知');
+  });
+
+  it('renderMedEditPage mounts without ReferenceError/TDZ and initializes wizard steps', async () => {
+    const root = document.createElement('div');
+    document.body.append(root);
+
+    // Verify mounting doesn't throw ReferenceError (regression test for let photoStudio TDZ)
+    const cleanup = await renderMedEditPage(root);
+    expect(typeof cleanup).toBe('function');
+    expect(root.querySelector('.medication-edit-page')).not.toBeNull();
+    expect(root.querySelector('.med-step-1')).not.toBeNull();
+
+    // Verify wizard step buttons and action dock exist
+    const dock = root.querySelector('.medication-editor-dock');
+    expect(dock).not.toBeNull();
+    const nextBtn = dock?.querySelector('button:last-child') as HTMLButtonElement;
+    expect(nextBtn).not.toBeNull();
+
+    // Clean up
+    expect(() => cleanup()).not.toThrow();
+    root.remove();
+  });
+
+  it('validateMedicationForm validates required fields, dose pairs, and cycle start dates', () => {
+    // 1. Missing name
+    const res1 = validateMedicationForm({
+      name: '   ',
+      dosageText: '',
+      amountPerDose: '',
+      doseQuantity: undefined,
+      doseUnit: '',
+      cycleEnabled: false,
+      cycle: undefined,
+    });
+    expect(res1.valid).toBe(false);
+    expect(res1.targetField).toBe('name');
+
+    // 2. Quantity without unit
+    const res2 = validateMedicationForm({
+      name: '阿莫西林',
+      dosageText: '',
+      amountPerDose: '',
+      doseQuantity: 2,
+      doseUnit: '',
+      cycleEnabled: false,
+      cycle: undefined,
+    });
+    expect(res2.valid).toBe(false);
+    expect(res2.targetField).toBe('dose');
+
+    // 3. Cycle enabled without valid cycle days
+    const res3 = validateMedicationForm({
+      name: '阿莫西林',
+      dosageText: '',
+      amountPerDose: '',
+      doseQuantity: 1,
+      doseUnit: '片',
+      cycleEnabled: true,
+      cycle: undefined,
+    });
+    expect(res3.valid).toBe(false);
+    expect(res3.targetField).toBe('cycle');
+
+    // 4. Cycle enabled without cycleStartDate
+    const res4 = validateMedicationForm({
+      name: '阿莫西林',
+      dosageText: '',
+      amountPerDose: '',
+      doseQuantity: 1,
+      doseUnit: '片',
+      cycleEnabled: true,
+      cycle: { activeDays: 21, restDays: 7 },
+      cycleStartDate: '',
+    });
+    expect(res4.valid).toBe(false);
+    expect(res4.targetField).toBe('cycleStartDate');
+
+    // 5. Valid input
+    const res5 = validateMedicationForm({
+      name: '阿莫西林',
+      dosageText: '0.25g',
+      amountPerDose: '1片',
+      doseQuantity: 1,
+      doseUnit: '片',
+      cycleEnabled: true,
+      cycle: { activeDays: 21, restDays: 7 },
+      cycleStartDate: '2026-09-12',
+    });
+    expect(res5.valid).toBe(true);
+  });
+
+  it('evaluateDoseReview produces structured messages and tones', () => {
+    // Explicit dose
+    const explicit = evaluateDoseReview('1片', 1, '片');
+    expect(explicit.kind).toBe('explicit');
+    expect(explicit.tone).toBe('ok');
+
+    // Suggested dose from text
+    const suggested = evaluateDoseReview('每次2粒', undefined, '', '粒');
+    expect(suggested.kind).toBe('suggested');
+    expect(suggested.tone).toBe('warn');
+    expect(suggested.message).toContain('猜您每次吃 2粒');
+
+    // Empty dose
+    const empty = evaluateDoseReview('', undefined, '');
+    expect(empty.kind).toBe('empty');
+    expect(empty.tone).toBe('warn');
+  });
+
+  it('buildBoxPhotoStudio controller updates photo and originalPhoto cleanly', () => {
+    const med: Medication = {
+      id: 'med-test-1',
+      name: '测试药品',
+      slots: [],
+      mealRels: [],
+      daysOfWeek: [],
+      identity: { photoHashes: [], ocrNames: [], gtins: [], rawCodes: [] },
+      updatedAt: 0,
+      createdAt: 0,
+    };
+    const cleanups: Array<() => void> = [];
+    const studio = buildBoxPhotoStudio({
+      med,
+      editing: false,
+      initialPhoto: null,
+      isActive: () => true,
+      cleanups,
+      getMedName: () => '测试药品',
+      getDosageText: () => '1片',
+    });
+
+    expect(studio.element).toBeInstanceOf(HTMLElement);
+    expect(studio.getPendingPhoto()).toBeNull();
+
+    // Set a mock photo blob
+    const mockBlob = new Blob(['mock-data'], { type: 'image/jpeg' });
+    studio.setPendingPhoto(mockBlob, 'original');
+    expect(studio.getPendingPhoto()).toBe(mockBlob);
+    expect(studio.getOriginalPhoto()).toBe(mockBlob);
+    expect(studio.getPhotoKind()).toBe('original');
+
+    // Clear photo
+    studio.setPendingPhoto(null);
+    expect(studio.getPendingPhoto()).toBeNull();
+
+    // Trigger cleanup
+    cleanups.forEach((fn) => fn());
+  });
+
+  it('src/ai/assistantTools.ts preserves all 22 tools and barrel exports', () => {
+    expect(assistantTools.length).toBe(22);
+    expect(OPEN_PAGE_TOOL_NAME).toBe('open_page');
+
+    const canonicalToolNames = [
+      'get_today_plan',
+      'list_my_medications',
+      'get_adherence_report',
+      'mark_medication',
+      'set_reminder_time',
+      'set_reminder_period_settings',
+      'web_search_exa',
+      'present_card',
+      'open_page',
+      'edit_inventory',
+      'add_medication',
+      'update_medication',
+      'delete_medication',
+      'trigger_lan_sync',
+      'check_app_update',
+      'download_and_install_update',
+      'update_app_settings',
+      'get_inventory_logs',
+      'undo_inventory_operation',
+      'batch_deduct_inventory',
+      'check_drug_interactions',
+      'batch_import_medications',
+    ];
+
+    canonicalToolNames.forEach((toolName) => {
+      const tool = findAssistantTool(toolName);
+      expect(tool).toBeDefined();
+      expect(tool?.name).toBe(toolName);
+      expect(typeof tool?.description).toBe('string');
+      expect(typeof tool?.run).toBe('function');
+    });
+  });
+
+  it('src/ui/assets3d.ts optimizes image decoding, error bounds, and memory cleanup', () => {
+    // 1. parseSvg error boundary with invalid XML
+    const fallbackSvg = parseSvg('<<<invalid xml???');
+    expect(fallbackSvg).toBeInstanceOf(SVGSVGElement);
+
+    // 2. render3dMedia creates lazy and async decoding img
+    const container = render3dMedia('https://example.com/asset.png', () => '<svg></svg>', 'test asset');
+    const img = container.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(img?.loading).toBe('lazy');
+    expect(img?.decoding).toBe('async');
+
+    // 3. cleanup3dMedia removes images without empty src attribute
+    cleanup3dMedia(container);
+    expect(container.querySelectorAll('img').length).toBe(0);
+
+    // 4. trackMediaBlobUrl and safeRevokeMediaUrl
+    const blobUrl = 'blob:http://localhost/test-uuid';
+    expect(trackMediaBlobUrl(blobUrl)).toBe(blobUrl);
+    expect(() => safeRevokeMediaUrl(blobUrl)).not.toThrow();
+    expect(() => revokeTrackedMediaBlobUrls()).not.toThrow();
+  });
+
+  it('KeepAlive OEM guides provide complete multi-vendor coverage', async () => {
+    expect(OEM_GUIDES.length).toBe(5);
+    const brandIds = OEM_GUIDES.map((g) => g.id);
+    expect(brandIds).toEqual(['xiaomi', 'huawei', 'oppo', 'vivo', 'generic']);
+
+    OEM_GUIDES.forEach((guide) => {
+      expect(guide.name.length).toBeGreaterThan(0);
+      expect(guide.jumpText.length).toBeGreaterThan(0);
+      expect(guide.steps.length).toBeGreaterThan(0);
+    });
+
+    // getDeviceKeepAliveInfo in web environment defaults safely to generic
+    const info = await getDeviceKeepAliveInfo();
+    expect(info.matchedOem).toBe('generic');
+
+    // openOemKeepAliveSettings in web environment returns unsupported_platform
+    const res = await openOemKeepAliveSettings('xiaomi');
+    expect(res.success).toBe(false);
+    expect(res.openedAction).toBe('unsupported_platform');
   });
 });
