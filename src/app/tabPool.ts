@@ -83,14 +83,24 @@ export function getScrollContainer(container: HTMLElement): HTMLElement {
 
 export function saveTabScrollPosition(entry: TabKeepAliveEntry): void {
   const scrollEl = getScrollContainer(entry.container);
-  entry.savedScrollTop = scrollEl.scrollTop || (typeof window !== 'undefined' ? window.scrollY : 0);
+  if (scrollEl !== entry.container) {
+    entry.savedScrollTop = scrollEl.scrollTop;
+  } else {
+    entry.savedScrollTop = scrollEl.scrollTop || (typeof window !== 'undefined' ? window.scrollY : 0);
+  }
 }
 
 export function restoreTabScrollPosition(entry: TabKeepAliveEntry): void {
   const scrollEl = getScrollContainer(entry.container);
   scrollEl.scrollTop = entry.savedScrollTop;
-  if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
-    window.scrollTo(0, entry.savedScrollTop);
+  if (scrollEl === entry.container) {
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo(0, entry.savedScrollTop);
+    }
+  } else {
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo(0, 0);
+    }
   }
   if (typeof requestAnimationFrame === 'function') {
     requestAnimationFrame(() => {

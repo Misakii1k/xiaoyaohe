@@ -1,6 +1,6 @@
 // 通用 UI 组件 / 工具函数（M3，无框架，纯 DOM）
 import { SLOT_LABEL, type Slot } from '../db/schema';
-import { registerRouteTransitionCleanup } from '../router';
+import { navigate, registerRouteTransitionCleanup } from '../router';
 import { renderAppShell } from '../app/AppShell';
 import { primaryNavigation } from '../app/navigation';
 import { Icon as renderIcon } from './icons/Icon';
@@ -690,6 +690,13 @@ export function tabbar(active: string): HTMLElement {
     ic.append(icon(item.icon));
     a.append(ic);
     a.append(el('span', { html: item.label }));
+    a.addEventListener('click', (e) => {
+      const targetHash = `#${item.href}`;
+      if (typeof location !== 'undefined' && location.hash === targetHash) {
+        e.preventDefault();
+        navigate(item.href);
+      }
+    });
     bar.append(a);
   }
   return bar;
@@ -720,7 +727,9 @@ export function renderPage(opts: {
   showTabbar?: boolean;
 }): void {
   opts.root.replaceChildren();
-  document.title = `${opts.title} · 小药盒`;
+  if (!opts.root.hidden) {
+    document.title = `${opts.title} · 小药盒`;
+  }
   const left = opts.topLeft;
 
   opts.content.setAttribute('role', 'main');

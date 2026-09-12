@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getActiveTab,
@@ -12,10 +13,14 @@ import {
   startRouter,
 } from '../src/router';
 import {
+  createMedicationBatch,
   getDatabaseRevision,
   notifyDataChanged,
+  onDataChanged,
   resetDatabaseRevisionForTesting,
 } from '../src/db/local';
+import { tabbar } from '../src/ui/components';
+import { renderTodayPage } from '../src/pages/Today';
 
 interface RouterTestEnv {
   fakeLocation: { hash: string };
@@ -433,5 +438,159 @@ describe('Tab Keep-Alive / View Caching Architecture', () => {
     expect(getCachedTabs()).toEqual([]);
     expect(getActiveTab()).toBeNull();
     expect(root.children.length).toBe(0);
+  });
+
+  it('aborts active subpage AbortController and executes cleanup when switching to primary tab', async () => {
+    const { fakeLocation, listeners, root } = installTestRouterEnv('#/meds/new');
+
+    let subpageSignal: AbortSignal | null = null;
+    let subpageCleanedUp = false;
+    let todayRenderCount = 0;
+
+    route('/today', (_p, tabRoot) => {
+      todayRenderCount++;
+      tabRoot.innerHTML = '<h1>今日</h1>';
+    });
+
+    route('/meds/new', (_p, subRoot, context) => {
+      subpageSignal = context.signal;
+      subRoot.innerHTML = '<h1>录药中</h1>';
+      return () => {
+        subpageCleanedUp = true;
+      };
+    });
+
+    startRouter(root, '/today');
+    await vi.waitFor(() => expect(subpageSignal).not.toBeNull());
+    expect(subpageSignal!.aborted).toBe(false);
+
+    // Switch to /today
+    fakeLocation.hash = '#/today';
+    await listeners.get('hashchange')?.();
+
+    await vi.waitFor(() => expect(todayRenderCount).toBe(1));
+    expect(subpageSignal!.aborted).toBe(true);
+    expect(subpageCleanedUp).toBe(true);
+    expect(getActiveTab()).toBe('/today');
+    expect(root.querySelector('.tab-keepalive-subpage')?.hidden).toBe(true);
+  });
+
+  it('handles direct landing on a subpage without leaking orphaned DOM or skipping cleanups when navigating to primary tab', async () => {
+    const { fakeLocation, listeners, root } = installTestRouterEnv('#/scan');
+
+    let scanMounted = false;
+    let scanCleanedUp = false;
+
+    route('/today', (_p, tabRoot) => {
+      tabRoot.innerHTML = '<h1>今日页面</h1>';
+    });
+
+    route('/scan', (_p, subRoot) => {
+      scanMounted = true;
+      subRoot.innerHTML = '<div id="scanner-view">摄像头视图</div>';
+      return () => {
+        scanCleanedUp = true;
+      };
+    });
+
+    startRouter(root, '/today');
+    await vi.waitFor(() => expect(scanMounted).toBe(true));
+
+    const subpageContainer = root.querySelector<HTMLElement>('.tab-keepalive-subpage');
+    expect(subpageContainer).not.toBeNull();
+    expect(subpageContainer?.hidden).toBe(false);
+    expect(subpageContainer?.querySelector('#scanner-view')).not.toBeNull();
+
+    // Now navigate to /today
+    fakeLocation.hash = '#/today';
+    await listeners.get('hashchange')?.();
+
+    expect(scanCleanedUp).toBe(true);
+    expect(subpageContainer?.hidden).toBe(true);
+    expect(subpageContainer?.children.length).toBe(0);
+
+    const todayContainer = root.querySelector<HTMLElement>('[data-tab-route="/today"]');
+    expect(todayContainer).not.toBeNull();
+    expect(todayContainer?.hidden).toBe(false);
+    // Root should only contain the tab containers and subpage container, no orphaned scanner elements
+    const orphanedScanner = root.querySelector('#scanner-view');
+    expect(orphanedScanner).toBeNull();
+  });
+
+  it('re-taps active tab and triggers activation on matching tabbar anchor click', async () => {
+    const { fakeLocation, root } = installTestRouterEnv('#/today');
+
+    let activatedCount = 0;
+    onTabActivated('/today', () => {
+      activatedCount++;
+    });
+
+    route('/today', (_p, tabRoot) => {
+      tabRoot.innerHTML = '<h1>今天</h1>';
+    });
+
+    startRouter(root, '/today');
+    await vi.waitFor(() => expect(activatedCount).toBe(1));
+
+    // Render a tabbar and click the already active tab anchor
+    const bar = tabbar('today');
+    const activeLink = bar.querySelector<HTMLAnchorElement>('a[href="#/today"]')!;
+    expect(activeLink).not.toBeNull();
+
+    // Click the active tab link
+    activeLink.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    expect(activatedCount).toBe(2);
+  });
+
+  it('increments database revision on createMedicationBatch and notifies listeners', async () => {
+    const revBefore = getDatabaseRevision();
+    let notifiedScope = '';
+    const unbind = onDataChanged((scope) => {
+      notifiedScope = scope ?? '';
+    });
+
+    const uniqueId = `batch-test-${Date.now()}`;
+    const draft = {
+      id: uniqueId,
+      sourceKind: 'manual' as const,
+      selected: true,
+      medication: {
+        id: uniqueId,
+        name: '测试批量药',
+        amountPerDose: '1片',
+        doseQuantity: 1,
+        doseUnit: '片',
+        doseSourceText: '1片',
+        slots: ['morning' as const],
+      },
+      rules: [{ id: `${uniqueId}-r1`, medId: uniqueId, slot: 'morning' as const, timeLocal: '08:00', enabled: true }],
+    };
+
+    await createMedicationBatch([draft as any]);
+    expect(getDatabaseRevision()).toBeGreaterThan(revBefore);
+    expect(notifiedScope).toBe('meds');
+    unbind();
+  });
+
+  it('prevents listener multiplication and cleanly updates Today on tab:activated', async () => {
+    const root = document.createElement('div');
+    document.body.append(root);
+
+    const cleanup1 = await renderTodayPage(root);
+    expect(typeof cleanup1).toBe('function');
+
+    // Re-render multiple times on the same root
+    await renderTodayPage(root);
+    const cleanup3 = await renderTodayPage(root);
+
+    // Bump revision and dispatch tab:activated
+    notifyDataChanged('meds');
+    root.dispatchEvent(new CustomEvent('tab:activated', { bubbles: true, detail: { tab: '/today', path: '/today' } }));
+
+    await vi.waitFor(() => expect(root.querySelector('.today-page')).not.toBeNull());
+
+    cleanup3?.();
+    root.remove();
   });
 });

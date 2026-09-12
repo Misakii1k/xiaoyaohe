@@ -49,7 +49,10 @@ import { createActionDock } from '../ui/primitives/ActionDock';
 let activeCategory: 'all' | 'rx' | 'health' | 'external' = 'all';
 let searchQuery = '';
 
+const medListCleanupByRoot = new WeakMap<HTMLElement, () => void>();
+
 export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal): Promise<() => void> {
+  medListCleanupByRoot.get(root)?.();
   let meds = await listMeds();
   if (signal?.aborted) return () => undefined;
   let photoUrls = await getMedPhotoUrls(meds.map((m) => m.id));
@@ -227,9 +230,17 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
   };
   root.addEventListener('tab:activated', onActivated);
 
+  let cleaned = false;
   const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     root.removeEventListener('tab:activated', onActivated);
+    signal?.removeEventListener('abort', cleanup);
+    if (medListCleanupByRoot.get(root) === cleanup) {
+      medListCleanupByRoot.delete(root);
+    }
   };
+  medListCleanupByRoot.set(root, cleanup);
   signal?.addEventListener('abort', cleanup, { once: true });
 
   if (!signal?.aborted) {

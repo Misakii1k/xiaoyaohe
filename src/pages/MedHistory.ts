@@ -261,7 +261,10 @@ let currentYear = new Date().getFullYear();
 let currentMonth = new Date().getMonth() + 1; // 1-12
 let selectedDate: LocalDate = toLocalDate(new Date());
 
+const medHistoryCleanupByRoot = new WeakMap<HTMLElement, () => void>();
+
 export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSignal): Promise<void | (() => void)> {
+  medHistoryCleanupByRoot.get(root)?.();
   const today = toLocalDate(new Date());
   const monthStart: LocalDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01` as LocalDate;
   const lastDay = new Date(currentYear, currentMonth, 0).getDate();
@@ -579,9 +582,13 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
   backBtn.append(icon('arrow-left'));
   backBtn.onclick = () => history.back();
   let lastRevision = getDatabaseRevision();
+  let lastDate = today;
   const onActivated = async () => {
-    if (getDatabaseRevision() <= lastRevision) return;
-    lastRevision = getDatabaseRevision();
+    const currentToday = toLocalDate(new Date());
+    const currentRev = getDatabaseRevision();
+    if (currentRev <= lastRevision && currentToday === lastDate) return;
+    lastRevision = currentRev;
+    lastDate = currentToday;
     const scrollEl = root.querySelector<HTMLElement>('.app-main');
     const savedScroll = scrollEl?.scrollTop ?? 0;
     await renderMedHistoryPage(root, signal);
@@ -590,21 +597,32 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
   };
   root.addEventListener('tab:activated', onActivated);
 
+  let cleaned = false;
   const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     root.removeEventListener('tab:activated', onActivated);
+    signal?.removeEventListener('abort', cleanup);
+    if (medHistoryCleanupByRoot.get(root) === cleanup) {
+      medHistoryCleanupByRoot.delete(root);
+    }
   };
+  medHistoryCleanupByRoot.set(root, cleanup);
   signal?.addEventListener('abort', cleanup, { once: true });
 
-  if (!signal?.aborted) {
-    renderPage({
-      root,
-      title: '用药日历',
-      activeTab: 'today',
-      topLeft: backBtn,
-      topRight: todayBtn,
-      content,
-    });
+  if (signal?.aborted) {
+    cleanup();
+    return cleanup;
   }
+
+  renderPage({
+    root,
+    title: '用药日历',
+    activeTab: 'today',
+    topLeft: backBtn,
+    topRight: todayBtn,
+    content,
+  });
 
   return cleanup;
 }

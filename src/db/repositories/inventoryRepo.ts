@@ -321,6 +321,7 @@ export async function undoInventoryOperation(logId: string): Promise<{ ok: boole
   };
   await inventoryLogStore.put(undoLog);
   await tx.done;
+  notifyDataChanged('inventory');
 
   try {
     const { rescheduleMedicationReminders } = await import('../../features/reminderScheduler');
@@ -395,6 +396,7 @@ export async function batchDeductInventory(
   }
 
   await tx.done;
+  notifyDataChanged('inventory');
   try {
     const { rescheduleMedicationReminders } = await import('../../features/reminderScheduler');
     await rescheduleMedicationReminders();

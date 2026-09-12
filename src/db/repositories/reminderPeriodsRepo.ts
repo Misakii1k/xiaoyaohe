@@ -4,6 +4,7 @@ import {
   registerReminderPeriodSeeder,
   type MedboxDB,
 } from '../connection';
+import { notifyDataChanged } from '../databaseEvents';
 import {
   defaultEscalate,
   deriveReminderPeriodSettings,
@@ -113,6 +114,7 @@ export async function updateReminderPeriodSetting(
     }
     await tx.objectStore('reminderPeriods').put(next);
     await tx.done;
+    notifyDataChanged('rules');
     return next;
   } catch (error) {
     try { tx.abort(); } catch { /* Transaction may already be closed. */ }

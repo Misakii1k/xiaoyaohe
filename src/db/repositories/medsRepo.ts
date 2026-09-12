@@ -318,6 +318,7 @@ export async function createMedicationBatch(
     await tx.done.catch(() => undefined);
     throw error;
   }
+  notifyDataChanged('meds');
   return { medIds: selected.map((draft) => draft.id), reminderRescheduleRequired: selected.some((draft) => draft.rules.length > 0) };
 }
 
