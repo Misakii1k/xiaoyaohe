@@ -4,9 +4,26 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-12
 Status: active
-Latest version: `1.0.12` (Android `versionCode: 47`)
+Latest version: `1.0.13` (Android `versionCode: 48`)
 
 ## Summary of Accomplished Work
+
+### 47. Web 增量热更新机制修复与双更新模式落地 (1.0.13, versionCode 48, workspace/claude)
+
+1. **增量热更新判断缺陷修复**：
+   - 修复 `src/sync/lan/apkTransport.ts` 中 `checkGithubRelease` 的判断逻辑：此前因判定条件为 `LOCAL_APP_VERSION_CODE >= estimatedCode`，在目标版本高于当前版本时恒为 false，导致任何新版本都被误判为不支持增量更新而回退全量 APK 下载；
+   - 引入最低原生 APK versionCode 底座门槛常量 `DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE = 44`（自 v1.0.9 首次支持动态 bundle 解压运行），只要本机底座版本达到 44 即可正确触发增量更新判断；
+   - 从 GitHub Release 资产中动态提取 `bundleSha256` 与 `apkSha256`。
+2. **跨平台哈希漂移消除与边缘动态元数据**：
+   - 重构 `scripts/bundle-web.mjs` 为纯 JS 标准 zip 打包（使用 `createZipBuffer`），统一时间戳与文件路径分隔符，彻底消除 Windows 与 Linux 之间打包产物哈希不一致问题；
+   - 新增 Cloudflare Pages 动态边缘函数 `functions/version.json.ts`，直接代理 GitHub Releases 权威资产的真实文件大小与 SHA-256 哈希，彻底杜绝 CDN 静态文件与实际附件之间的哈希漂移。
+3. **双更新模式与故障自动容错**：
+   - 在 `AppUpdatePanel.ts` 中针对支持增量更新的设备增加“下载完整包”按钮，用户可自主选择一键秒级更新或全量覆盖安装；
+   - 增量热更新下载或校验失败时，提供友好提示并自动转接至完整包更新通道，杜绝流程卡死。
+4. **版本发布与质量门禁**：
+   - 递增产品版本至 `1.0.13`，Android `versionCode: 48`；
+   - 编写 `docs/releases/1.0.13.md` 并通过 `tone_lint.py` 门禁校验；
+   - 维护测试用例断言及 mock 候选版本（1.0.14/49）。
 
 ### 46. 全屏提醒前台弹出与双重铃声混杂问题解决及 1.0.12 发版 (1.0.12, versionCode 47, workspace/claude)
 

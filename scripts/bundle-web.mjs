@@ -9,11 +9,11 @@
  *   node scripts/bundle-web.mjs
  */
 
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { collectDirectoryEntries, createZipBuffer } from './lib/release-utils.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const distDir = resolve(root, 'dist');
@@ -35,50 +35,24 @@ export function createWebBundle(options = {}) {
   const bundleName = `xiaoyaohe-${version}-web-bundle.zip`;
   const bundlePath = resolve(releaseDir, bundleName);
 
-  // 优先尝试 tar.exe / tar（Windows 10/11 与现代 Linux/macOS 均内建，速度快）
-  let success = false;
-  let errorMsg = '';
+  // 使用跨平台完全确定性 (Reproducible) 纯 Node.js Zip 归档器：
+  // 固定时间戳、归一化路径、Deflate 9 压缩，杜绝不同操作系统/tar 工具产生的哈希漂移
+  const entries = collectDirectoryEntries(distDir);
+  const zipBuffer = createZipBuffer(entries);
+  writeFileSync(bundlePath, zipBuffer);
 
-  const tarCmd = process.platform === 'win32' ? 'tar.exe' : 'tar';
-  const tarRes = spawnSync(tarCmd, ['-a', '-c', '-f', bundlePath, '-C', distDir, '.'], {
-    stdio: 'pipe',
-  });
-
-  if (tarRes.status === 0 && existsSync(bundlePath)) {
-    success = true;
-  } else {
-    errorMsg = tarRes.stderr?.toString() || 'tar 执行失败';
-  }
-
-  // Windows 兜底：PowerShell Compress-Archive
-  if (!success && process.platform === 'win32') {
-    const psCmd = `Compress-Archive -Path '${distDir}/*' -DestinationPath '${bundlePath}' -Force`;
-    const psRes = spawnSync('powershell', ['-NoProfile', '-Command', psCmd], { stdio: 'pipe' });
-    if (psRes.status === 0 && existsSync(bundlePath)) {
-      success = true;
-    } else {
-      errorMsg += '; ' + (psRes.stderr?.toString() || 'PowerShell Compress-Archive 执行失败');
-    }
-  }
-
-  if (!success) {
-    throw new Error(`无法创建 Web 增量包: ${errorMsg}`);
-  }
-
-  const stat = statSync(bundlePath);
-  const buffer = readFileSync(bundlePath);
-  const sha256 = createHash('sha256').update(buffer).digest('hex').toLowerCase();
+  const sha256 = createHash('sha256').update(zipBuffer).digest('hex').toLowerCase();
 
   const checksumLine = `${sha256}  ${bundleName}\n`;
   const checksumFile = resolve(releaseDir, `xiaoyaohe-${version}-web-bundle-SHA256SUMS.txt`);
   writeFileSync(checksumFile, checksumLine, 'utf8');
 
-  console.log(`[bundle-web] v${version} -> ${bundleName} (${stat.size} bytes, sha256: ${sha256})`);
+  console.log(`[bundle-web] v${version} -> ${bundleName} (${zipBuffer.length} bytes, sha256: ${sha256})`);
 
   return {
     bundleName,
     bundlePath,
-    bundleSize: stat.size,
+    bundleSize: zipBuffer.length,
     bundleSha256: sha256,
   };
 }

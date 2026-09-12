@@ -19,6 +19,9 @@ export const LOCAL_APP_VERSION_CODE: number = typeof __APP_VERSION_CODE__ !== 'u
 /** APK 分发端口（与 ApkDistributionPlugin.java 保持一致）。 */
 export const APK_DISTRIBUTION_PORT = 38473;
 
+/** 支持 Web 增量热更新的最低原生 APK versionCode（从 v1.0.9 / code 44 首次引入）。 */
+export const DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE = 44;
+
 /**
  * 云端更新通道的部署源。换自定义域名时只改这一处。
  * 版本元数据 `version.json` 与私有仓库代理 `/api/releases`、`/api/download` 都在它下面。
@@ -714,7 +717,9 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
     const bundleSha256 = typeof json.bundleSha256 === 'string' && SHA256_RE.test(json.bundleSha256.toLowerCase())
       ? json.bundleSha256.toLowerCase()
       : undefined;
-    const minNativeCode = typeof json.minNativeVersionCode === 'number' ? json.minNativeVersionCode : estimatedCode;
+    const minNativeCode = typeof json.minNativeVersionCode === 'number'
+      ? json.minNativeVersionCode
+      : DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE;
     const canIncremental = Boolean(
       bundleUrl
       && LOCAL_APP_VERSION_CODE > 0
@@ -755,7 +760,7 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
   interface GhRelease {
     tag_name?: string;
     body?: string;
-    assets?: Array<{ name?: string; browser_download_url?: string; size?: number }>;
+    assets?: Array<{ name?: string; browser_download_url?: string; size?: number; digest?: string }>;
   }
 
   // 仓库是私有的：直连 api.github.com 与三个公开镜像一律 404（实测 2026-09-09），
@@ -815,9 +820,24 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
   const bundleAsset = assets.find((a) => a.name?.endsWith('.zip') && (a.name.includes('bundle') || a.name.includes('web')));
   const bundleUrl = bundleAsset?.browser_download_url ? resolveDownloadUrl(bundleAsset.browser_download_url) : null;
 
+  const rawBundleDigest = typeof bundleAsset?.digest === 'string' ? bundleAsset.digest : undefined;
+  const bundleSha256 = rawBundleDigest && rawBundleDigest.startsWith('sha256:')
+    ? rawBundleDigest.slice(7).toLowerCase()
+    : undefined;
+
+  const rawApkDigest = typeof apkAsset?.digest === 'string' ? apkAsset.digest : undefined;
+  const apkSha256 = rawApkDigest && rawApkDigest.startsWith('sha256:')
+    ? rawApkDigest.slice(7).toLowerCase()
+    : undefined;
+
   const diff = compareVersion(remoteVersion, LOCAL_APP_VERSION);
   const estimatedCode = diff > 0 ? LOCAL_APP_VERSION_CODE + diff : LOCAL_APP_VERSION_CODE;
-  const canIncremental = Boolean(bundleUrl && LOCAL_APP_VERSION_CODE > 0 && LOCAL_APP_VERSION_CODE >= estimatedCode);
+  const minNativeCode = DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE;
+  const canIncremental = Boolean(
+    bundleUrl
+    && LOCAL_APP_VERSION_CODE > 0
+    && LOCAL_APP_VERSION_CODE >= minNativeCode,
+  );
 
   return {
     version: remoteVersion,
@@ -827,8 +847,10 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
     downloadUrl,
     bundleUrl: bundleUrl ?? undefined,
     bundleSize: typeof bundleAsset?.size === 'number' && bundleAsset.size > 0 ? bundleAsset.size : undefined,
-    minNativeVersionCode: estimatedCode,
+    bundleSha256,
+    minNativeVersionCode: minNativeCode,
     fileSize: typeof apkAsset.size === 'number' && apkAsset.size > 0 ? apkAsset.size : undefined,
+    sha256: apkSha256,
     releaseNotes: typeof releaseData.body === 'string' ? releaseData.body.trim() : undefined,
     discoveredAt: Date.now(),
   };
@@ -851,10 +873,20 @@ export async function checkOnlineRelease(): Promise<AvailableUpdate | null> {
     return fastCloud;
   }
 
-  // 否则等待两者完成，择优更高版本
+  // 否则等待两者完成，择优更高版本并互补权威资产哈希
   const [cloud, gh] = await Promise.all([cloudPromise, ghPromise]);
   if (cloud && gh) {
-    return compareVersion(cloud.version, gh.version) >= 0 ? cloud : gh;
+    if (compareVersion(cloud.version, gh.version) === 0) {
+      return {
+        ...cloud,
+        bundleSha256: gh.bundleSha256 ?? cloud.bundleSha256,
+        bundleSize: gh.bundleSize ?? cloud.bundleSize,
+        sha256: gh.sha256 ?? cloud.sha256,
+        fileSize: gh.fileSize ?? cloud.fileSize,
+        updateType: (cloud.updateType === 'incremental' || gh.updateType === 'incremental') ? 'incremental' : 'full',
+      };
+    }
+    return compareVersion(cloud.version, gh.version) > 0 ? cloud : gh;
   }
   return cloud || gh || null;
 }

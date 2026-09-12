@@ -238,6 +238,19 @@ export function buildAppUpdateBody(
   const recheckBtn = el('button', { class: 'btn tonal', text: '重新检查' });
   const skipBtn = el('button', { class: 'btn tonal', text: '本次跳过' });
 
+  // 如果支持增量热更新，增加下载完整安装包备用按钮
+  let fullInstallBtn: HTMLElement | null = null;
+  if (isIncremental && update.downloadUrl) {
+    fullInstallBtn = el('button', {
+      class: 'btn tonal',
+      text: '下载完整包',
+    });
+    fullInstallBtn.onclick = async () => {
+      update.updateType = 'full';
+      buildAppUpdateBody(body, panelEl, available);
+    };
+  }
+
   recheckBtn.onclick = async () => {
     recheckBtn.disabled = true;
     recheckBtn.textContent = '检查中...';
@@ -270,6 +283,7 @@ export function buildAppUpdateBody(
     downloadBtn.disabled = true;
     recheckBtn.disabled = true;
     skipBtn.disabled = true;
+    if (fullInstallBtn) (fullInstallBtn as HTMLButtonElement).disabled = true;
     progressBox.style.display = 'block';
 
     if (isIncremental) {
@@ -287,13 +301,16 @@ export function buildAppUpdateBody(
         return;
       } catch (error) {
         const msg = error instanceof Error ? error.message : '未知错误';
-        toast(`增量更新失败：${msg}`, 4200);
+        toast(`增量更新失败：${msg}，已切换为完整安装包`, 4200);
+        update.updateType = 'full';
+        buildAppUpdateBody(body, panelEl, available);
       } finally {
         downloadBtn.removeAttribute('aria-busy');
         downloadBtn.textContent = isIncremental ? '一键秒级更新' : '下载并安装';
         downloadBtn.disabled = false;
         recheckBtn.disabled = false;
         skipBtn.disabled = false;
+        if (fullInstallBtn) (fullInstallBtn as HTMLButtonElement).disabled = false;
         progressBox.style.display = 'none';
       }
       return;
@@ -331,6 +348,8 @@ export function buildAppUpdateBody(
     buildAppUpdateBody(body, panelEl, available);
   };
 
-  row.append(downloadBtn, recheckBtn, skipBtn);
+  row.append(downloadBtn);
+  if (fullInstallBtn) row.append(fullInstallBtn);
+  row.append(recheckBtn, skipBtn);
   body.append(row);
 }

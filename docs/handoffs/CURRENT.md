@@ -2,10 +2,16 @@
 
 Updated: 2026-09-12
 Integration branch: `main`
-Product version: `1.0.12`
-Latest integration commit: `release: v1.0.12 - 解决使用其他应用时全屏提醒弹出与双重铃声混杂问题`
+Product version: `1.0.13`
+Latest integration commit: `release: v1.0.13 - 修复Web增量热更新判断与校验和漂移问题，支持双模式更新`
 
-## Full-Screen Overlay Alarm & Single Sound Stream Enhancement (v1.0.12, versionCode 47, workspace/claude)
+## Web Incremental Hot Update Fix & Dual Update Mode (v1.0.13, versionCode 48, workspace/claude)
+
+- **产品正式版本发布 (v1.0.13, versionCode 48)**：
+  - Web 增量热更新判断修复：修复了版本检查中对增量更新判定条件的逻辑缺陷（原逻辑因目标版本号大于本地而导致增量更新永远被误判为不可用），正确将最低原生 APK versionCode 底座门槛定为 44（v1.0.9 起引入），让合规底座设备优先走秒级轻量热更新；
+  - 杜绝跨平台校验和漂移：重构 `bundle-web.mjs` 为纯 JS 标准打包实现，消除操作系统之间生成 zip 附件的 SHA256 哈希不一致；新增 Cloudflare Pages 动态边缘函数（`functions/version.json.ts`），直接从 GitHub Releases 提取权威资产哈希与大小，彻底杜绝校验和漂移引发的更新中断；
+  - 双更新模式自主选择与故障容错：在更新界面中默认提供“一键秒级更新”，同时保留“下载完整包”选项供用户自由选择；下载轻量包发生网络或校验异常时，自动弹窗告知并无缝切换至完整包下载通道；
+  - 质量门禁：全量测试套件 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
 
 - **产品正式版本发布 (v1.0.12, versionCode 47)**：
   - 全屏提醒前台直显：新增悬浮窗（在其他应用上层显示）与小米等品牌后台弹出界面能力，开启后用药时间到达时直接拉起全屏提醒界面，不再停留为顶部常驻通知条；
