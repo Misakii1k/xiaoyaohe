@@ -1,9 +1,19 @@
 # Current Integration State
 
-Updated: 2026-09-11
+Updated: 2026-09-12
 Integration branch: `main`
 Product version: `1.0.10`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Tab Keep-Alive View Caching & Incremental Data Update Architecture 2026-09-12 (workspace/claude)
+
+- **底栏一级页面常驻缓存与滚动位置记忆 (`src/app/tabPool.ts`, `src/router.ts`, `src/db/databaseEvents.ts`)**：
+  - **一级页面常驻缓存池**：将四个主要底栏页面（今日清单 `/today`、药品列表 `/meds`、用药历史 `/history`、设置 `/settings`）切换机制改造为基于 DOM 节点保活的视图池（Tab Pool）。切换标签时不再销毁和重建整个页面，而是通过隐藏与显示保留容器节点，避免页面反复重建与白屏闪烁；
+  - **独立子页面隔离容器**：进入新增药品、药品详情、扫码分类、库存盘点等子页面时，将当前主页面隐藏并挂载子页面；返回上一级时销毁子页面并立刻恢复主页面原有状态；
+  - **滚动位置精准恢复与重复点击回顶**：离开页面前自动记录主滚动区域的滚动条位置，重新进入时自动还原；在当前页面再次点击底栏对应按钮时，平滑回到顶部并触发页面激活事件；
+  - **基于版本号的增量更新机制**：新增数据库变更通知系统与生命周期事件（`tab:activated` / `tab:deactivated`）。今日清单、药品列表与历史记录在重新切回时，仅在检测到底层数据发生新增、修改或删除时才增量刷新必要内容，无变更时保持原有展示不变；
+  - **退出设置页自动停止试听**：设置页面在切出或离开时，通过 `tab:deactivated` 自动停止正在播放的铃声试听；
+  - **质量门禁**：新增 `tests/tabKeepAlive.test.ts` 专项测试，全量 89 个测试套件 545 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
 
 ## Medication Alarm Ringtone Customization & Switchable Preference 2026-09-11 (workspace/claude)
 

@@ -5,6 +5,7 @@ import {
   listScheduleRevisions,
   setOccurrenceAction,
   setOccurrenceActions,
+  getDatabaseRevision,
 } from '../db/local';
 import {
   formatMealRels,
@@ -56,7 +57,7 @@ const WEEKDAY_CN = ['周日', '周一', '周二', '周三', '周四', '周五', 
 
 let activeSlotFilter: 'all' | 'morning' | 'noon' | 'evening' = 'all';
 
-export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
+export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): Promise<void | (() => void)> {
   const now = new Date();
   const today = toLocalDate(now);
   const { start, end } = localDayBounds(today);
@@ -213,9 +214,28 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
     content.append(emptyCard);
   }
 
+  let lastRevision = getDatabaseRevision();
+  const onActivated = async () => {
+    if (getDatabaseRevision() <= lastRevision) return;
+    lastRevision = getDatabaseRevision();
+    const scrollEl = root.querySelector<HTMLElement>('.app-main');
+    const savedScroll = scrollEl?.scrollTop ?? 0;
+    await renderTodayPage(root, signal);
+    const newScrollEl = root.querySelector<HTMLElement>('.app-main');
+    if (newScrollEl && savedScroll > 0) newScrollEl.scrollTop = savedScroll;
+  };
+  root.addEventListener('tab:activated', onActivated);
+
+  const cleanup = () => {
+    root.removeEventListener('tab:activated', onActivated);
+  };
+  signal?.addEventListener('abort', cleanup, { once: true });
+
   if (!signal?.aborted) {
     renderPage({ root, title: '今天', activeTab: 'today', content });
   }
+
+  return cleanup;
 }
 
 function createLegendRow(

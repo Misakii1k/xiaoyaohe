@@ -1,4 +1,5 @@
 import { openMedboxDatabase as db, uid } from '../connection';
+import { notifyDataChanged } from '../databaseEvents';
 import {
   createScheduleRevision,
   toLocalDate,
@@ -49,6 +50,7 @@ export async function putMed(med: Medication): Promise<void> {
   // 清理旧字段，避免 IndexedDB 里残留
   delete next.mealRel;
   await (await db()).put('meds', next);
+  notifyDataChanged('meds');
 }
 
 export interface MedicationReminderModeUpdateResult {
@@ -89,6 +91,7 @@ export async function updateMedicationReminderModes(
       results.push({ medId: med.id, medName: med.name, previousMode, mode, changed });
     }
     await tx.done;
+    notifyDataChanged('meds');
     return results;
   } catch (error) {
     try { tx.abort(); } catch { /* Transaction may already be closed. */ }
@@ -342,4 +345,5 @@ export async function softDeleteMed(id: string): Promise<void> {
     );
   }
   await tx.done;
+  notifyDataChanged('meds');
 }

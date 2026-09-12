@@ -14,3 +14,4 @@ export * from './repositories/medsRepo';
 export * from './repositories/logsRepo';
 export * from './repositories/inventoryRepo';
 export * from './repositories/importExportRepo';
+export * from './databaseEvents';

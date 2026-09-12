@@ -2,11 +2,30 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-11
+Updated: 2026-09-12
 Status: active
 Latest version: `1.0.10` (Android `versionCode: 45`)
 
 ## Summary of Accomplished Work
+
+### 44. Tab Keep-Alive 视图常驻缓存池与数据增量更新架构落地 (Phase 2, workspace/claude)
+
+1. **底栏一级页面常驻缓存池 (`src/app/tabPool.ts`, `src/router.ts`)**：
+   - 将四个主要底栏页面（今日清单 `/today`、药品列表 `/meds`、用药历史 `/history`、设置 `/settings`）及兼容别名切换机制改造为 DOM 保活视图池；
+   - 切换标签时不再清空并重构整个页面 DOM，而是通过隐藏/显示状态切换（`hidden = true` / `display: none !important`）保留页面节点，消除页面重置感与白屏闪烁；
+   - 离开页面前自动记录主滚动区域的滚动条位置，重新进入时自动还原；再次点击当前底栏标签时平滑回到顶部并派发生命周期事件。
+2. **独立子页面隔离容器与返回恢复机制**：
+   - 进入新增药品、药品详情、扫码分类、库存盘点等子页面时，将当前主页面保留在池中并隐藏，在专属子页面容器中挂载子页面；
+   - 用户点击返回或退出子页面时，执行子页面清理并彻底销毁子页面容器内容，恢复父级主页面的可见状态并还原滚动条位置。
+3. **数据库变更通知系统与生命周期增量更新 (`src/db/databaseEvents.ts`)**：
+   - 新建轻量级单调递增数据库版本号计数器与变更发射器（`getDatabaseRevision`, `notifyDataChanged`, `onDataChanged`）；
+   - 在药品、规则、日志、库存及导入导出所有数据库写操作中埋入变更通知；
+   - 各主页面监听 `tab:activated` 生命周期事件，在重新切回时比对版本号，仅在数据真正变更时局部刷新数据，未变更时保持已有 DOM 展现与滚动条绝对静止。
+4. **自动化测试与门禁验证**：
+   - 新建 `tests/tabKeepAlive.test.ts`（包含 8 项专项测试，覆盖 DOM 保活、滚动条记忆与恢复、子页面挂载与退出恢复、生命周期回调、重复点击回顶与数据库版本号递增）；
+   - 全量 89 个测试套件 545 项测试 100% 全部通过；
+   - `npm run typecheck` 0 报错；
+   - `npm run build:web` 成功打包出 Web Bundle 增量包。
 
 ### 43. 用药提醒专属铃声《晨间活力》配置与自由切换落地 (1.0.10, workspace/claude)
 

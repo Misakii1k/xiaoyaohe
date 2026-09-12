@@ -7,6 +7,20 @@
   padding: 0;
 }
 
+/* Tab Keep-Alive 视图容器池 */
+.tab-keepalive-container,
+.tab-keepalive-subpage {
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+}
+
+.tab-keepalive-container[hidden],
+.tab-keepalive-subpage[hidden] {
+  display: none !important;
+}
+
 .app-shell {
   position: relative;
   display: flex;

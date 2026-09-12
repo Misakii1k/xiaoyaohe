@@ -1,4 +1,5 @@
 import { openMedboxDatabase as db } from '../connection';
+import { notifyDataChanged } from '../databaseEvents';
 import {
   createScheduleRevision,
   freezeScheduleRevision,
@@ -48,6 +49,7 @@ export async function putRule(rule: ReminderRule): Promise<void> {
     );
   }
   await tx.done;
+  notifyDataChanged('rules');
 }
 
 export async function deleteRule(id: string): Promise<void> {
@@ -70,6 +72,7 @@ export async function deleteRule(id: string): Promise<void> {
     );
   }
   await tx.done;
+  notifyDataChanged('rules');
 }
 
 /**

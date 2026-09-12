@@ -1,4 +1,5 @@
 import { openMedboxDatabase as db, uid } from '../connection';
+import { notifyDataChanged } from '../databaseEvents';
 import { areDoseUnitsCompatible, roundStock } from '../../features/inventory';
 import type {
   InventoryActionType,
@@ -59,6 +60,7 @@ export async function logInventoryOperation(params: {
   };
   await tx.store.put(log);
   await tx.done;
+  notifyDataChanged('inventory');
   return log;
 }
 

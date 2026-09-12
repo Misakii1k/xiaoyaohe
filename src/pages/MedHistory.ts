@@ -6,6 +6,7 @@ import {
   setOccurrenceAction,
   MedicationIntakeError,
   type IntakeMutationResult,
+  getDatabaseRevision,
 } from '../db/local';
 import {
   type LocalDate,
@@ -260,7 +261,7 @@ let currentYear = new Date().getFullYear();
 let currentMonth = new Date().getMonth() + 1; // 1-12
 let selectedDate: LocalDate = toLocalDate(new Date());
 
-export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
+export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSignal): Promise<void | (() => void)> {
   const today = toLocalDate(new Date());
   const monthStart: LocalDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01` as LocalDate;
   const lastDay = new Date(currentYear, currentMonth, 0).getDate();
@@ -577,6 +578,22 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
   } as any);
   backBtn.append(icon('arrow-left'));
   backBtn.onclick = () => history.back();
+  let lastRevision = getDatabaseRevision();
+  const onActivated = async () => {
+    if (getDatabaseRevision() <= lastRevision) return;
+    lastRevision = getDatabaseRevision();
+    const scrollEl = root.querySelector<HTMLElement>('.app-main');
+    const savedScroll = scrollEl?.scrollTop ?? 0;
+    await renderMedHistoryPage(root, signal);
+    const newScrollEl = root.querySelector<HTMLElement>('.app-main');
+    if (newScrollEl && savedScroll > 0) newScrollEl.scrollTop = savedScroll;
+  };
+  root.addEventListener('tab:activated', onActivated);
+
+  const cleanup = () => {
+    root.removeEventListener('tab:activated', onActivated);
+  };
+  signal?.addEventListener('abort', cleanup, { once: true });
 
   if (!signal?.aborted) {
     renderPage({
@@ -588,4 +605,6 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
       content,
     });
   }
+
+  return cleanup;
 }

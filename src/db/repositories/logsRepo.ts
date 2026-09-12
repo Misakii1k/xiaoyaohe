@@ -1,5 +1,6 @@
 import type { IDBPTransaction } from 'idb';
 import { openMedboxDatabase as db, uid, type MedboxDB } from '../connection';
+import { notifyDataChanged } from '../databaseEvents';
 import {
   createScheduleRevision,
   getMedicationExpiryLocalDate,
@@ -72,6 +73,7 @@ export async function getLogForOccurrence(
 export async function putLog(log: IntakeLog): Promise<void> {
   log.updatedAt = Date.now();
   await (await db()).put('logs', log);
+  notifyDataChanged('logs');
 }
 
 export type IntakeAction = 'taken' | 'skipped';
@@ -200,6 +202,7 @@ export async function setOccurrenceAction(
   try {
     const result = await applyOccurrenceAction(buildOccurrenceActionAccess(tx), occurrence, action, options);
     await tx.done;
+    notifyDataChanged('logs');
     return result;
   } catch (error) {
     try { tx.abort(); } catch { /* Transaction may already be closed. */ }
@@ -227,6 +230,7 @@ export async function setOccurrenceActions(
       results.push(await applyOccurrenceAction(access, occurrence, action, options));
     }
     await tx.done;
+    notifyDataChanged('logs');
     return results;
   } catch (error) {
     try { tx.abort(); } catch { /* Transaction may already be closed. */ }
@@ -598,6 +602,7 @@ export async function recordPreDeduction(
     canUndo: false,
   });
   await tx.done;
+  notifyDataChanged('inventory');
 
   const lowStock = isLowStock(latest);
   return {

@@ -1,4 +1,5 @@
 import { openMedboxDatabase as db, type ImportBucketResult, type MedImportResult } from '../connection';
+import { notifyDataChanged } from '../databaseEvents';
 import { freezeScheduleRevision } from '../../domain/medicationSchedule';
 import {
   inflateMed,
@@ -110,5 +111,6 @@ export async function importMedsAndRules(
   }
 
   await tx.done;
+  notifyDataChanged('all');
   return result;
 }

@@ -105,11 +105,17 @@ export async function renderSettingsPage(
   );
   content.append(settingsWrapper);
 
+  const onDeactivated = () => {
+    stopRingtonePreview();
+  };
+  root.addEventListener('tab:deactivated', onDeactivated);
+
   settingsPageCleanupByRoot.get(root)?.();
   let cleaned = false;
   const cleanup = () => {
     if (cleaned) return;
     cleaned = true;
+    root.removeEventListener('tab:deactivated', onDeactivated);
     stopRingtonePreview();
     llmPanel.cleanup();
     imageGenPanel.cleanup();

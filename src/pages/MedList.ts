@@ -4,6 +4,7 @@ import {
   listRules,
   putRule,
   softDeleteMed,
+  getDatabaseRevision,
 } from '../db/local';
 import {
   el,
@@ -48,25 +49,28 @@ import { createActionDock } from '../ui/primitives/ActionDock';
 let activeCategory: 'all' | 'rx' | 'health' | 'external' = 'all';
 let searchQuery = '';
 
-export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
-  const meds = await listMeds();
-  if (signal?.aborted) return;
-  const photoUrls = await getMedPhotoUrls(meds.map((m) => m.id));
-  if (signal?.aborted) return;
+export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal): Promise<() => void> {
+  let meds = await listMeds();
+  if (signal?.aborted) return () => undefined;
+  let photoUrls = await getMedPhotoUrls(meds.map((m) => m.id));
+  if (signal?.aborted) return () => undefined;
+  let lastRevision = getDatabaseRevision();
 
   const content = el('div', { class: 'page medication-list-page' });
 
   // 1. 顶部 3 个 3D 指标卡片
-  const totalCount = meds.length;
-  const activeCount = meds.filter((m) => m.slots.length > 0).length || totalCount;
-  const lowStockCount = meds.filter((m) => isLowStock(m)).length;
-
   const statGrid = el('div', { class: 'med-stat-grid' });
-  statGrid.append(
-    createStatCard('blue', '全部药品', `${totalCount} 种`, medBottle3dImg || purpleBottleImg, getMedBottle3dSvg),
-    createStatCard('green', '近期使用', `${activeCount} 种`, medRecentMortarImg || clockPillImg, getClockPill3dSvg),
-    createStatCard('pink', '需补充', `${lowStockCount} 种`, medAidKit3dImg || aidBagImg, getAidBag3dSvg),
-  );
+  function updateStatCards() {
+    const totalCount = meds.length;
+    const activeCount = meds.filter((m) => m.slots.length > 0).length || totalCount;
+    const lowStockCount = meds.filter((m) => isLowStock(m)).length;
+    statGrid.replaceChildren(
+      createStatCard('blue', '全部药品', `${totalCount} 种`, medBottle3dImg || purpleBottleImg, getMedBottle3dSvg),
+      createStatCard('green', '近期使用', `${activeCount} 种`, medRecentMortarImg || clockPillImg, getClockPill3dSvg),
+      createStatCard('pink', '需补充', `${lowStockCount} 种`, medAidKit3dImg || aidBagImg, getAidBag3dSvg),
+    );
+  }
+  updateStatCards();
   content.append(statGrid);
 
   // 2. 搜索框与漏斗
@@ -213,6 +217,21 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
   fabAdd.append(icon('plus'), el('span', { text: '添加药品' }));
   fabAdd.onclick = () => navigate('/meds/create');
 
+  const onActivated = async () => {
+    if (getDatabaseRevision() <= lastRevision) return;
+    lastRevision = getDatabaseRevision();
+    meds = await listMeds();
+    photoUrls = await getMedPhotoUrls(meds.map((m) => m.id));
+    updateStatCards();
+    renderFilteredCards();
+  };
+  root.addEventListener('tab:activated', onActivated);
+
+  const cleanup = () => {
+    root.removeEventListener('tab:activated', onActivated);
+  };
+  signal?.addEventListener('abort', cleanup, { once: true });
+
   if (!signal?.aborted) {
     const dock = createActionDock([fabAdd]);
     const topRight = el('div', { class: 'topbar-actions medication-list-actions' });
@@ -234,6 +253,8 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
       actionDock: dock,
     });
   }
+
+  return cleanup;
 }
 
 async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<void> {
