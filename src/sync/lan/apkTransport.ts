@@ -128,6 +128,8 @@ interface ApkDistributionPlugin {
   applyWebBundle?(options: { basePath: string }): Promise<{ success: boolean; basePath: string }>;
   resetWebBundle?(): Promise<{ success: boolean }>;
   getActiveWebBundle?(): Promise<{ basePath: string; isDefault: boolean }>;
+  getCacheSize?(): Promise<{ bytes: number; formatted: string }>;
+  clearAppCache?(): Promise<{ success: boolean; freedBytes: number; formatted: string }>;
   addListener?(
     eventName: string,
     listenerFunc: (data: any) => void,
@@ -488,6 +490,55 @@ export async function getActiveWebBundle(): Promise<{ basePath: string; isDefaul
     return await plugin.getActiveWebBundle();
   } catch {
     return null;
+  }
+}
+
+export interface AppCacheInfo {
+  bytes: number;
+  formatted: string;
+}
+
+export interface AppCacheClearResult {
+  success: boolean;
+  freedBytes: number;
+  formatted: string;
+}
+
+/**
+ * 获取当前手机端缓存与临时文件占用大小。
+ * 网页端或插件不可用时返回 0 B。
+ */
+export async function getAppCacheSize(): Promise<AppCacheInfo> {
+  if (!isApkDistributionAvailable() || typeof plugin.getCacheSize !== 'function') {
+    return { bytes: 0, formatted: '0 B' };
+  }
+  try {
+    const res = await plugin.getCacheSize();
+    return {
+      bytes: res?.bytes ?? 0,
+      formatted: res?.formatted ?? '0 B',
+    };
+  } catch {
+    return { bytes: 0, formatted: '0 B' };
+  }
+}
+
+/**
+ * 清理手机端缓存与临时文件（旧安装包、临时压缩包、旧增量包与 WebView 缓存）。
+ */
+export async function clearAppCache(): Promise<AppCacheClearResult> {
+  if (!isApkDistributionAvailable() || typeof plugin.clearAppCache !== 'function') {
+    return { success: true, freedBytes: 0, formatted: '0 B' };
+  }
+  try {
+    const res = await plugin.clearAppCache();
+    return {
+      success: res?.success ?? true,
+      freedBytes: res?.freedBytes ?? 0,
+      formatted: res?.formatted ?? '0 B',
+    };
+  } catch {
+    throw new Error('清理缓存失败，请稍后重试');
   }
 }
 

@@ -1988,5 +1988,54 @@ body.lan-sync-panel-active .ai-launcher {
   transition: width 0.15s ease-out;
 }
 
+/* 存储空间与缓存管理卡片 */
+.settings-cache-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+}
+
+.settings-cache-summary-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--color-surface-subtle, rgba(0, 0, 0, 0.03));
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+}
+
+[data-theme='dark'] .settings-cache-summary-card {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.settings-cache-label {
+  font-size: 14px;
+  color: var(--color-text-secondary, #666);
+  font-weight: 500;
+}
+
+.settings-cache-size {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #222);
+}
+
+[data-theme='dark'] .settings-cache-size {
+  color: #fff;
+}
+
+.settings-cache-note {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary, #888);
+}
+
+.settings-cache-clear-btn {
+  margin-block-start: var(--space-1, 4px);
+}
+
+
 
 

@@ -32,6 +32,7 @@ public class MainActivity extends BridgeActivity {
             // 适度限制缓存，避免旧缓存资源把磁盘和内存撑爆
             settings.setCacheMode(WebSettings.LOAD_DEFAULT);
             installInsetsBridge(webView);
+            ApkDistributionPlugin.autoPruneStorageOnStartup(this, webView);
         } catch (Throwable ignored) {
             /* 原生桥未就绪时不要崩 */
         }
