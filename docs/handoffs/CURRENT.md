@@ -2,8 +2,17 @@
 
 Updated: 2026-09-12
 Integration branch: `main`
-Product version: `1.0.10`
+Product version: `1.0.11`
 Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+
+## Architecture Modularization, Tab Keep-Alive & Storage/Keep-Alive Enhancements (v1.0.11, versionCode 46, workspace/claude)
+
+- **产品正式版本发布 (v1.0.11, versionCode 46)**：
+  - 界面流畅度提升：底栏一级页面常驻缓存池与滚动位置记忆，子页面 AbortSignal 自动取消，WeakMap 引用安全防重，杜绝频繁白屏重新加载；
+  - 手机存储与缓存清理：设置页新增应用存储占用分析与一键清理临时缓存；
+  - 主流手机后台保活指引：新增小米（澎湃/MIUI）、华为（鸿蒙/EMUI）、OPPO（ColorOS）、vivo（OriginOS）的自启动与后台运行指引及快捷跳转；
+  - 巨石代码深度模块化：`Settings.ts` (2,715行 -> `src/pages/settings/`), `local.ts` (1,968行 -> `src/db/repositories/`), `assistantTools.ts` (1,776行 -> `src/ai/tools/`), `MedEdit.ts` (1,579行 -> `src/pages/medEdit/`)，100% 保持向后兼容；
+  - 质量门禁：全量 89 个测试套件 557 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
 
 ## Tab Keep-Alive View Caching & Incremental Data Update Architecture 2026-09-12 (workspace/claude)
 

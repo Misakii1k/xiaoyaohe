@@ -4,9 +4,25 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-12
 Status: active
-Latest version: `1.0.10` (Android `versionCode: 45`)
+Latest version: `1.0.11` (Android `versionCode: 46`)
 
 ## Summary of Accomplished Work
+
+### 45. 版本发布与系统架构重构全面交付 (1.0.11, versionCode 46, workspace/claude)
+
+1. **版本发布流程推进 (SOP 严格执行)**：
+   - 递增产品版本至 `1.0.11`，Android `versionCode: 46`；
+   - 更新 `scripts/lib/release-utils.mjs` 登记 `1.0.11: 46`；
+   - 维护测试用例 `release-utils.test.ts`、`apkUpdateVerification.test.ts` 与 `bundleUpdateVerification.test.ts` 的版本断言与候选 mock 版本（递增至 1.0.12/47）；
+   - 遵循 `oil-tone` 规约编写发布说明 `docs/releases/1.0.11.md` 并通过 `tone_lint.py` 门禁校验。
+2. **重构交付清单**：
+   - `Settings.ts` (2,715行) 模块化至 `src/pages/settings/`；
+   - `local.ts` (1,968行) 模块化至 `src/db/repositories/`；
+   - `assistantTools.ts` (1,776行) 模块化至 `src/ai/tools/`；
+   - `MedEdit.ts` (1,579行) 解耦出 `dosageHelper`, `formValidation`, `photoStudioHelper`；
+   - 底栏一级页面 Keep-Alive 常驻缓存池与滚动位置记忆；
+   - 主流手机（小米、华为、OPPO、vivo）自启动与后台保活设置深度跳转；
+   - 手机存储与缓存清理功能。
 
 ### 44. Tab Keep-Alive 视图常驻缓存池与数据增量更新架构落地 (Phase 2, workspace/claude)
 
