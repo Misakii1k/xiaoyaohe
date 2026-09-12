@@ -103,7 +103,7 @@ describe('alarmRingtone 铃声设置与试听', () => {
   });
 
   it('设置页 UI 契约：包含提醒铃声选择与试听按钮，文案符合 oil-tone 规范且无专业黑话', () => {
-    const settingsSource = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const settingsSource = readFileSync(join(root, 'src/pages/settings/panels/ReminderPanel.ts'), 'utf8');
     const stylesSource = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8');
 
     expect(settingsSource).toContain('function renderAlarmRingtoneCard');

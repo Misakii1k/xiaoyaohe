@@ -61,7 +61,7 @@ describe('web app resilience configuration', () => {
   });
 
   it('keeps honest browser reminder degradation visible in settings', () => {
-    const settings = readFileSync(join(root, 'src', 'pages', 'Settings.ts'), 'utf8');
+    const settings = readFileSync(join(root, 'src', 'pages', 'settings', 'panels', 'ReminderPanel.ts'), 'utf8');
 
     expect(settings).toContain('当前浏览器发不了用药提醒');
     expect(settings).toContain('需要 https 或本机地址');
