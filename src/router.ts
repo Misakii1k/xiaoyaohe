@@ -130,6 +130,19 @@ function hasKeepAliveRoutes(): boolean {
   );
 }
 
+function abortTransientController(previousTabKey: PrimaryTabRoute | null): void {
+  if (!activeController) return;
+  if (previousTabKey) {
+    const prevEntry = getCachedTabEntry(previousTabKey);
+    if (prevEntry?.rendered && prevEntry.controller === activeController) {
+      activeController = null;
+      return;
+    }
+  }
+  activeController.abort();
+  activeController = null;
+}
+
 async function dispatch(): Promise<void> {
   const navigationId = ++navigationSeq;
   const rawPath = location.hash.replace(/^#/, '') || defaultPath;
@@ -140,9 +153,8 @@ async function dispatch(): Promise<void> {
   if (targetTabKey) {
     const previousTabKey = getActiveTabKey();
 
-    // Abort transient/subpage controller if any
-    activeController?.abort();
-    activeController = null;
+    // Abort transient/subpage controller if any (preserve rendered keep-alive tab controller)
+    abortTransientController(previousTabKey);
 
     // Clean up subpage and transient cleanups
     if (activeSubpageCleanup) {
@@ -301,8 +313,7 @@ async function dispatch(): Promise<void> {
     setActiveTabKey(null);
   }
 
-  activeController?.abort();
-  activeController = null;
+  abortTransientController(previousTabKey);
   const previousCleanup = activeCleanup ?? activeSubpageCleanup;
   activeCleanup = null;
   activeSubpageCleanup = null;

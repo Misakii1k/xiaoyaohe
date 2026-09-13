@@ -1,9 +1,24 @@
 # Current Integration State
 
-Updated: 2026-09-12
+Updated: 2026-09-13
 Integration branch: `main`
-Product version: `1.0.14`
-Latest integration commit: `release: v1.0.14 - 解决到点未全屏覆盖与提醒无铃声问题`
+Product version: `1.0.15`
+Latest integration commit: `release: v1.0.15 - 修复批量管理打开异常与重构药品卡片排版`
+
+## Medication Edit Redesign, Batch Management Fix & Card Layout (v1.0.15, versionCode 50, workspace/claude)
+
+- **彻底解决「批量管理无法打开」的根因（持久 Tab 信号死锁）**：
+  - 在 `src/router.ts` 中引入 `abortTransientController(previousTabKey)`，切出视图时若上一页面为已在 TabPool 中成功渲染的持久 Tab（`prevEntry?.rendered && prevEntry.controller === activeController`），严禁 abort 它的控制器，仅在离开瞬态子页面时执行 abort；
+  - `src/pages/MedList.ts` 解除 `enterBatchMode` 对外部路由 signal 的死锁依赖，基于 `root.isConnected` 进行生命周期与挂载防护，「退出批量」无条件安全返回普通列表。
+- **批量管理界面排版升级与药品缩略图**：
+  - 并行获取药品实拍照（`getMedPhotoUrls`），每张批量卡片头部新增 `.medication-batch-thumb` 缩略图容器，展示 16:10 药盒照片或 3D 拟物药瓶/药丸图（`getOrCreateMed3DImage`）；
+  - 提醒时段改用 `display: flex; flex-wrap: wrap; gap: 3px;` 横向自然流式排版，彻底解决纵向单列堆叠拉长卡片的问题；
+  - 加深复选框边框、整卡点选、主色微光选中态，工具栏显示「共 X 种 · 已选 Y 种」。
+- **药品编辑/新增页面（MedEdit）排版重构**：
+  - 采用 `.med-section-card` 模块化卡片体系与浅色衬底输入框，强化表单内容分隔；
+  - 合并每次剂量输入与常用单位胶囊，周期用药移入第二步服药规则，危险删除区移至页面底部。
+- **质量门禁**：
+  - 全量 89 个测试套件 558 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
 
 ## Full-Screen Coverage & Alarm Ringtone Engine Fix (v1.0.14, versionCode 49, workspace/claude)
 

@@ -462,12 +462,12 @@
 .medication-batch-page .medication-batch-row {
   display: grid;
   grid-template-columns: var(--tap) minmax(0, 1fr);
-  gap: var(--space-2);
+  gap: 6px;
   align-items: start;
   min-inline-size: 0;
-  padding: 12px 10px 12px 4px;
+  padding: 10px 10px 12px 2px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1.5px solid var(--color-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
   overflow-wrap: anywhere;
@@ -482,7 +482,7 @@
 
 .medication-batch-page .medication-batch-row.is-selected {
   border-color: var(--color-primary);
-  background: rgba(37, 99, 235, 0.05);
+  background: rgba(37, 99, 235, 0.06);
   box-shadow: 0 0 0 1.5px var(--color-primary), var(--shadow-sm);
 }
 
@@ -491,16 +491,18 @@
 }
 
 .medication-batch-checkbox-wrap {
-  display: grid;
-  place-items: center;
-  min-block-size: var(--tap);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 4px;
+  min-inline-size: var(--tap);
   cursor: pointer;
 }
 
 .medication-batch-checkbox {
   position: relative;
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: 20px;
+  block-size: 20px;
   margin: 0;
   appearance: none;
   border: 1.5px solid #94a3b8;
@@ -508,6 +510,7 @@
   background: var(--color-surface);
   cursor: pointer;
   transition: all 0.18s ease;
+  flex-shrink: 0;
 }
 
 [data-theme='dark'] .medication-batch-checkbox {
@@ -526,60 +529,106 @@
   left: 6px;
   top: 2px;
   width: 5px;
-  height: 10px;
+  height: 9px;
   border: solid #ffffff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
 
-/* 批量行内排版：药名 / 副标题 / 提醒时段 chip（普通列表与批量页共用类名） */
-.medication-batch-body { display: flex; flex-direction: column; gap: var(--space-2); min-inline-size: 0; }
-.medication-batch-copy { min-inline-size: 0; }
+/* 批量行内排版：缩略图 / 药名 / 副标题 / 提醒时段 chip */
+.medication-batch-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.medication-batch-thumb {
+  inline-size: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.medication-batch-thumb img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  transition: transform 0.2s ease;
+}
+
+[data-theme='dark'] .medication-batch-thumb {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.medication-batch-copy {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .medication-batch-name {
-  font-size: var(--fs-headline);
+  font-size: 13px;
   font-weight: 700;
   color: var(--color-text);
-  line-height: 1.3;
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
-.medication-batch-subline { color: var(--color-text-muted); font-size: var(--fs-footnote); }
+
+.medication-batch-subline {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .medication-batch-slots {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 2px;
 }
 
 .medication-slot-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   max-inline-size: 100%;
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
   background: var(--color-primary-soft);
   color: var(--color-primary);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 1.3;
 }
 
-.medication-slot-icon { inline-size: 12px; block-size: 12px; flex: 0 0 auto; }
+.medication-slot-icon { inline-size: 11px; block-size: 11px; flex: 0 0 auto; }
 .medication-slot-label { white-space: nowrap; }
 .medication-slot-time { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .medication-slot-chip.is-disabled { background: var(--color-surface-muted); color: var(--color-text-muted); }
 .medication-slot-disabled {
   margin-inline-start: 2px;
-  padding-inline-start: 6px;
+  padding-inline-start: 4px;
   border-inline-start: 1px solid currentColor;
-  font-size: 11px;
+  font-size: 10px;
   opacity: 0.8;
   white-space: nowrap;
 }
-.medication-batch-no-rules { color: var(--color-text-muted); font-size: var(--fs-footnote); }
+.medication-batch-no-rules { color: var(--color-text-muted); font-size: 11px; }
 
 /* 批量 dock：单行紧凑高质感操作坞，杜绝大面积遮挡列表 */
 .medication-batch-dock {

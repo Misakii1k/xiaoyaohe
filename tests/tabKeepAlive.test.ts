@@ -593,4 +593,38 @@ describe('Tab Keep-Alive / View Caching Architecture', () => {
     cleanup3?.();
     root.remove();
   });
+
+  it('preserves tab controller and does not abort signals of cached tabs on tab switch', async () => {
+    const { fakeLocation, listeners, root } = installTestRouterEnv('#/meds');
+    let medsSignal!: AbortSignal;
+    let todaySignal!: AbortSignal;
+
+    route('/meds', (_p, tabRoot, context) => {
+      medsSignal = context.signal;
+      tabRoot.innerHTML = '<h1>药品</h1>';
+    });
+    route('/today', (_p, tabRoot, context) => {
+      todaySignal = context.signal;
+      tabRoot.innerHTML = '<h1>今日</h1>';
+    });
+
+    startRouter(root, '/meds');
+    await vi.waitFor(() => expect(medsSignal).toBeDefined());
+    expect(medsSignal.aborted).toBe(false);
+
+    // Switch to /today
+    fakeLocation.hash = '#/today';
+    await listeners.get('hashchange')?.();
+    await vi.waitFor(() => expect(todaySignal).toBeDefined());
+    expect(todaySignal.aborted).toBe(false);
+
+    // Meds signal MUST NOT have been aborted by switching away!
+    expect(medsSignal.aborted).toBe(false);
+
+    // Switch back to /meds
+    fakeLocation.hash = '#/meds';
+    await listeners.get('hashchange')?.();
+    expect(medsSignal.aborted).toBe(false);
+    expect(todaySignal.aborted).toBe(false);
+  });
 });

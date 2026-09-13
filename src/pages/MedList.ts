@@ -269,12 +269,16 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
 }
 
 async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<void> {
+  if (!root.isConnected) return;
   const [meds, rules] = await Promise.all([listMeds(), listRules()]);
-  if (signal?.aborted) return;
+  if (!root.isConnected) return;
   if (meds.length === 0) {
     toast('暂无药品可管理');
     return;
   }
+
+  const photoUrls = await getMedPhotoUrls(meds.map((m) => m.id));
+  if (!root.isConnected) return;
 
   const medRulesMap = new Map<string, ReminderRule[]>();
   for (const m of meds) {
@@ -286,7 +290,7 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
     icon: 'arrow-left',
     label: '退出批量',
     onClick: () => {
-      if (!signal?.aborted) void renderMedListPage(root, signal);
+      void renderMedListPage(root);
     },
   });
   const topRight = el('div', { class: 'topbar-actions medication-list-actions' });
@@ -295,7 +299,7 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
   const content = el('div', { class: 'page medication-batch-page' });
   const toolbar = el('div', { class: 'medication-batch-toolbar' });
   const selectAllBtn = createButton({ label: '全选', variant: 'text' });
-  const counterLabel = el('span', { class: 'medication-batch-counter', text: '已选 0 种' });
+  const counterLabel = el('span', { class: 'medication-batch-counter', text: `共 ${meds.length} 种 · 已选 0 种` });
   selectAllBtn.onclick = () => {
     if (selected.size === meds.length) {
       selected.clear();
@@ -345,6 +349,20 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
     card.append(checkboxWrap);
 
     const body = el('div', { class: 'medication-batch-body' });
+
+    // 缩略图
+    const thumb = el('div', { class: 'medication-batch-thumb' });
+    const img = el('img', {
+      src: photoUrls.get(m.id) || getOrCreateMed3DImage(m.id, m.name, m.amountPerDose || m.dosageText),
+      alt: m.name || '药品',
+      loading: 'lazy',
+    });
+    img.onerror = () => {
+      img.src = getMedBottle3dSvg();
+    };
+    thumb.append(img);
+    body.append(thumb);
+
     const titleWrap = el('div', { class: 'medication-batch-copy' });
     titleWrap.append(el('div', { id: medNameId, class: 'medication-batch-name', text: m.name || '未命名' }));
     const sub = [m.amountPerDose, m.dosageText].filter(Boolean).join(' · ');
@@ -391,14 +409,14 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
       row?.classList.toggle('is-selected', isSelected);
       row?.setAttribute('aria-selected', String(isSelected));
     }
-    const text = `已选 ${selected.size} 种`;
+    const text = `共 ${meds.length} 种 · 已选 ${selected.size} 种`;
     const selSpan = selectAllBtn.querySelector('span');
     if (selSpan) selSpan.textContent = selected.size === meds.length ? '取消全选' : '全选';
     counterLabel.textContent = text;
   }
 
   async function setRulesForSelected(enabled: boolean): Promise<void> {
-    if (signal?.aborted) return;
+    if (!root.isConnected) return;
     if (selected.size === 0) {
       toast('请先选择药品');
       return;
@@ -412,9 +430,10 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
       toast('选中的这些药还没设过提醒时间');
       return;
     }
-    await commitBatchRuleUpdatesForRoute(updates, signal!, () => {
+    const activeSignal = signal && !signal.aborted ? signal : new AbortController().signal;
+    await commitBatchRuleUpdatesForRoute(updates, activeSignal, () => {
       toast(`已${enabled ? '启用' : '禁用'} ${updates.length} 条提醒`);
-      return renderMedListPage(root, signal);
+      return renderMedListPage(root);
     }, {
       updateRules: async (ups) => {
         for (const u of ups) {
@@ -432,7 +451,7 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
   }
 
   async function deleteSelected(): Promise<void> {
-    if (signal?.aborted) return;
+    if (!root.isConnected) return;
     if (selected.size === 0) {
       toast('请先选择药品');
       return;
@@ -445,9 +464,9 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
     try {
       for (const medId of selected) await softDeleteMed(medId);
       await rescheduleMedicationReminders().catch(() => undefined);
-      if (signal?.aborted) return;
+      if (!root.isConnected) return;
       toast(`已删除 ${count} 种药品`);
-      await renderMedListPage(root, signal);
+      await renderMedListPage(root);
     } catch {
       toast('删除失败，请稍后重试');
     } finally {
@@ -456,7 +475,7 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
   }
 
   async function setSlotForSelected(slot: Slot, enabled: boolean): Promise<void> {
-    if (signal?.aborted) return;
+    if (!root.isConnected) return;
     if (selected.size === 0) {
       toast('请先选择药品');
       return;
@@ -472,9 +491,10 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
       toast(`所选药品没有「${SLOT_LABEL[slot]}」提醒`);
       return;
     }
-    await commitBatchRuleUpdatesForRoute(updates, signal!, () => {
+    const activeSignal = signal && !signal.aborted ? signal : new AbortController().signal;
+    await commitBatchRuleUpdatesForRoute(updates, activeSignal, () => {
       toast(`已${enabled ? '启用' : '禁用'} ${updates.length} 条「${SLOT_LABEL[slot]}」提醒`);
-      return renderMedListPage(root, signal);
+      return renderMedListPage(root);
     }, {
       updateRules: async (ups) => {
         for (const u of ups) {

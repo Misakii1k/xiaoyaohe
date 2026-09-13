@@ -15,6 +15,7 @@ describe('medication list and batch-management contracts', () => {
     expect(page).toContain("'aria-selected'");
     expect(page).toContain('softDeleteMed');
     expect(page).toContain('deleteSelected');
+    expect(page).toContain('medication-batch-thumb');
   });
 
   it('uses the app-shell action dock and a focus-managed bottom sheet for batch commands', () => {
@@ -28,6 +29,7 @@ describe('medication list and batch-management contracts', () => {
     expect(styles).toContain('overflow-wrap: anywhere');
     expect(styles).toContain('appearance: none');
     expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(styles).toContain('.medication-batch-thumb');
     expect(styles).not.toContain('position: fixed');
   });
 });

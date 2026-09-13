@@ -43,7 +43,7 @@ export function validateMedicationForm(input: MedicationValidationInput): Medica
     return {
       valid: false,
       errorMessage: '请填写有效的周期天数',
-      targetStep: 3,
+      targetStep: 2,
       targetField: 'cycle',
     };
   }
@@ -52,7 +52,7 @@ export function validateMedicationForm(input: MedicationValidationInput): Medica
     return {
       valid: false,
       errorMessage: '请选择本周期首个服药日',
-      targetStep: 3,
+      targetStep: 2,
       targetField: 'cycleStartDate',
     };
   }

@@ -39,7 +39,7 @@ import {
   type MedicationInventory,
   type LocalDate,
 } from '../db/schema';
-import { el, renderPage, toast, confirmDialog, icon, field } from '../ui/components';
+import { el, renderPage, toast, confirmDialog, icon, field, type IconName } from '../ui/components';
 import { navigate } from '../router';
 import {
   identifyByBlob,
@@ -139,7 +139,19 @@ export async function renderMedEditPage(
   const timeInputs = new Map<Slot, HTMLInputElement>();
 
   const content = el('div', { class: 'page medication-edit-page' });
-  const form = el('div', { class: 'card' });
+  const form = el('div', { class: 'med-wizard-form' });
+
+  function createSectionCard(title: string, iconName?: IconName, subtitle?: string): HTMLElement {
+    const card = el('div', { class: 'med-section-card' });
+    const header = el('div', { class: 'med-section-header' });
+    if (iconName) header.append(icon(iconName));
+    header.append(el('span', { text: title }));
+    card.append(header);
+    if (subtitle) {
+      card.append(el('div', { class: 'med-section-sub', text: subtitle }));
+    }
+    return card;
+  }
 
   const nameInput = el('input', { type: 'text', value: med.name, placeholder: '例如：阿司匹林肠溶片' });
   const dosageInput = el('input', { type: 'text', value: med.dosageText, placeholder: '例如：100mg/片' });
@@ -150,12 +162,12 @@ export async function renderMedEditPage(
     step: '0.01',
     inputMode: 'decimal',
     value: med.doseQuantity != null ? String(med.doseQuantity) : '',
-    placeholder: '例如：1.5',
+    placeholder: '例如：1',
   } as any) as HTMLInputElement;
   const doseUnitInput = el('input', {
     type: 'text',
     value: med.doseUnit || '',
-    placeholder: '片 / 粒 / 袋 / mL',
+    placeholder: '例如：片',
   }) as HTMLInputElement;
   const notesInput = el('textarea', { value: med.notes || '', placeholder: '医嘱、注意事项等' });
 
@@ -171,7 +183,6 @@ export async function renderMedEditPage(
   const scheduleWrap = el('div', { class: 'meal-slot-list' });
   const dayChips = el('div', { class: 'chips' });
   // 提醒按时间段聚合：每天每个时段只发一条整体提醒，时间与方式在设置页统一管理。
-  // 这里仅保留时段选择与精确时间，用于临床展示、记录与库存归因。
   const reminderHint = el('div', { class: 'muted helper-line period-reminder-hint', html: '' });
   function refreshReminderHint(): void {
     const slots = SLOTS.filter((s) => selectedSlots.has(s));
@@ -215,13 +226,35 @@ export async function renderMedEditPage(
     rows: 2,
   } as any) as HTMLTextAreaElement;
 
-  const step1 = el('div', { class: 'med-wizard-step-content med-step-1' });
-  step1.append(buildBoxPhotoBlock());
-  step1.append(buildAiPhotoBlock());
-  step1.append(buildNluBlock());
-  step1.append(field('药名', nameInput));
-  step1.append(field('规格', dosageInput));
+  // 快捷常用单位胶囊
+  let updateQuickUnitChips = () => {};
 
+  // ================= 步骤 1：基本信息 =================
+  const step1 = el('div', { class: 'med-wizard-step-content med-step-1' });
+
+  // 1.1 药盒照片卡
+  const photoCard = createSectionCard('药盒照片', 'camera', '拍照或上传清晰正面图，找药核对一目了然');
+  photoCard.append(buildBoxPhotoBlock());
+  step1.append(photoCard);
+
+  // 1.2 智能辅助录入卡
+  const smartCard = createSectionCard('智能快速填表', 'sparkles', '支持拍照识图或直接描述一句话，AI 自动填表');
+  smartCard.classList.add('med-smart-fill-card');
+  const smartGrid = el('div', { class: 'smart-fill-grid' });
+  const ocrBlock = buildAiPhotoBlock();
+  ocrBlock.classList.add('smart-fill-ocr-wrap');
+  const nluBlock = buildNluBlock();
+  smartGrid.append(ocrBlock, el('div', { class: 'smart-fill-divider', text: '或文字描述' }), nluBlock);
+  smartCard.append(smartGrid);
+  step1.append(smartCard);
+
+  // 1.3 药品基本档案卡
+  const profileCard = createSectionCard('基本档案', 'pill', '药品的通用名称与包装规格');
+  profileCard.append(field('药名 *', nameInput));
+  profileCard.append(field('规格', dosageInput));
+  step1.append(profileCard);
+
+  // ================= 步骤 2：用药计划 =================
   for (const s of SLOTS) {
     const chip = el('button', {
       class: 'chip' + (selectedSlots.has(s) ? ' on' : ''),
@@ -246,18 +279,57 @@ export async function renderMedEditPage(
   }
 
   const step2 = el('div', { class: 'med-wizard-step-content med-step-2' });
-  step2.append(field('原医嘱用量', amountInput));
-  const structuredDose = el('div', { class: 'dose-structure-grid' });
-  structuredDose.append(field('每次剂量数值', doseQuantityInput));
-  structuredDose.append(field('剂量单位', doseUnitInput));
-  step2.append(structuredDose);
-  const doseReview = el('div', { class: 'dose-review' });
-  step2.append(doseReview);
-  step2.append(field('服药时段（可多选）', slotChips));
-  step2.append(scheduleWrap);
-  step2.append(reminderHint);
-  renderScheduleControls();
 
+  // 2.1 每次服用剂量卡（合二为一，提供数值+单位与快捷胶囊）
+  const doseCard = createSectionCard('服用剂量', 'pill', '每次服用的具体数值与计量单位');
+  const doseInputRow = el('div', { class: 'dose-input-row' });
+  doseInputRow.append(field('每次剂量数值 *', doseQuantityInput));
+  doseInputRow.append(field('剂量单位 *', doseUnitInput));
+  doseCard.append(doseInputRow);
+
+  const quickUnits = ['片', '粒', '袋', 'mL', '支', '丸', 'mg'];
+  const quickUnitRow = el('div', { class: 'quick-unit-row' });
+  quickUnitRow.append(el('span', { class: 'quick-unit-label', text: '常用单位：' }));
+  const quickChips: HTMLElement[] = [];
+  for (const u of quickUnits) {
+    const chip = el('button', {
+      type: 'button',
+      class: 'quick-unit-chip' + (doseUnitInput.value.trim() === u ? ' is-active' : ''),
+      text: u,
+    });
+    chip.onclick = () => {
+      doseUnitInput.value = u;
+      updateQuickUnitChips();
+      syncDoseFromInputs();
+    };
+    quickChips.push(chip);
+    quickUnitRow.append(chip);
+  }
+  updateQuickUnitChips = () => {
+    quickChips.forEach((c) => {
+      c.classList.toggle('is-active', c.textContent === doseUnitInput.value.trim());
+    });
+  };
+  doseUnitInput.addEventListener('input', updateQuickUnitChips);
+  doseCard.append(quickUnitRow);
+
+  function syncDoseFromInputs(): void {
+    const q = doseQuantityInput.value.trim();
+    const u = doseUnitInput.value.trim();
+    if (q && u) {
+      amountInput.value = `${q}${u}`;
+    }
+    refreshDaysLeft();
+    renderDoseReview();
+  }
+  doseQuantityInput.addEventListener('input', syncDoseFromInputs);
+  doseUnitInput.addEventListener('input', syncDoseFromInputs);
+
+  const doseReview = el('div', { class: 'dose-review' });
+  doseCard.append(doseReview);
+  step2.append(doseCard);
+
+  // 2.2 服药计划卡
   for (let d = 0; d < 7; d++) {
     const chip = el('button', {
       class: 'chip sm' + (selectedDays.has(d) ? ' on' : ''),
@@ -274,14 +346,21 @@ export async function renderMedEditPage(
     };
     dayChips.append(chip);
   }
-  step2.append(field('服药星期（不选 = 每天）', dayChips));
 
-  // 周期用药配置（吃 N 天停 M 天）
+  const scheduleCard = createSectionCard('服药计划', 'clock', '设定每天的服药时段、餐前餐后与提醒时间');
+  scheduleCard.append(field('服药时段（可多选）', slotChips));
+  scheduleCard.append(scheduleWrap);
+  scheduleCard.append(reminderHint);
+  scheduleCard.append(field('服药星期（不选 = 每天）', dayChips));
+  renderScheduleControls();
+  step2.append(scheduleCard);
+
+  // 2.3 周期用药配置（移至第二步用药计划）
   const existingCycleRule = existingRules.find((r) => r.cycle);
   const existingCycle = existingCycleRule?.cycle;
   let cycleEnabled = !!existingCycle;
-  const cycleCard = el('div', { class: 'sub-card cycle-editor' });
-  cycleCard.append(el('div', { class: 'section-title', html: '周期用药' }));
+  const cycleCard = createSectionCard('周期用药规则', 'calendar', '如吃 N 天停 M 天（避孕药、化疗药等特殊服药周期）');
+  cycleCard.classList.add('cycle-editor');
   const cycleToggleRow = el('label', { class: 'cycle-toggle-row' });
   const cycleCheckbox = el('input', { type: 'checkbox' } as any) as HTMLInputElement;
   cycleCheckbox.checked = cycleEnabled;
@@ -318,23 +397,54 @@ export async function renderMedEditPage(
     cycleEnabled = cycleCheckbox.checked;
     setCycleInputsVisibility();
   };
+  step2.append(cycleCard);
 
-  const inventoryCard = el('div', { class: 'sub-card inventory-editor' });
-  inventoryCard.append(el('div', { class: 'section-title', html: '剩余药量' }));
-  inventoryCard.append(buildInventoryAiBlock());
-  inventoryCard.append(field('当前剩余', remainingInput));
-  inventoryCard.append(field('按什么数（片/粒/袋）', unitInput));
-  inventoryCard.append(field('一盒 / 一瓶有多少', packageQtyInput));
-  inventoryCard.append(field('剩多少时提醒买药', lowThresholdInput));
-  inventoryCard.append(daysLeftHint);
-  inventoryCard.append(field('来源说明', inventorySourceInput));
-
+  // ================= 步骤 3：库存与备注 =================
   const step3 = el('div', { class: 'med-wizard-step-content med-step-3' });
-  step3.append(inventoryCard);
-  step3.append(field('过期日期（可选）', expiryDatePicker.root));
-  step3.append(cycleCard);
-  step3.append(field('备注', notesInput));
-  step3.append(el('div', { class: 'muted', text: '各时段具体时间与通知方式可在“时段提醒设置”中统一调整。' }));
+
+  // 3.1 药品库存卡
+  const stockCard = createSectionCard('药品库存', 'box', '记录当前余量与补药预警');
+  stockCard.classList.add('inventory-editor');
+  stockCard.append(buildInventoryAiBlock());
+
+  const stockGrid1 = el('div', { class: 'inventory-fields-grid' });
+  stockGrid1.append(field('当前剩余', remainingInput));
+  stockGrid1.append(field('库存单位', unitInput));
+  stockCard.append(stockGrid1);
+
+  const stockGrid2 = el('div', { class: 'inventory-fields-grid' });
+  stockGrid2.append(field('一盒 / 一瓶有多少', packageQtyInput));
+  stockGrid2.append(field('剩多少时提醒买药', lowThresholdInput));
+  stockCard.append(stockGrid2);
+
+  stockCard.append(daysLeftHint);
+  stockCard.append(field('过期日期（可选）', expiryDatePicker.root));
+  stockCard.append(field('来源说明', inventorySourceInput));
+  step3.append(stockCard);
+
+  // 3.2 就医与服药备注卡
+  const notesCard = createSectionCard('医嘱与备注', 'info', '记录医生特别叮嘱与用药注意事项');
+  notesCard.append(notesInput);
+  step3.append(notesCard);
+
+  // 3.3 编辑模式下的删除操作（置于第三步底部危险区，避免在吸底 Dock 误触）
+  if (editing) {
+    const dangerZone = el('div', { class: 'med-danger-zone' });
+    const delBtn = createButton({ label: '删除这种药品', variant: 'danger', icon: 'trash' });
+    delBtn.onclick = async () => {
+      if (await confirmDialog('确定删除这种药及其提醒吗？', '删除', true)) {
+        if (!isActive()) return;
+        await softDeleteMed(med.id);
+        await recomputeReminderPeriodReviewState().catch(() => undefined);
+        await rescheduleMedicationReminders().catch(() => undefined);
+        if (!isActive()) return;
+        toast('已删除');
+        navigate('/meds');
+      }
+    };
+    dangerZone.append(delBtn);
+    step3.append(dangerZone);
+  }
 
   form.append(step1, step2, step3);
 
@@ -547,6 +657,21 @@ export async function renderMedEditPage(
         (doseQuantity == null ? doseQuantityInput : doseUnitInput).focus();
         return false;
       }
+      if (cycleEnabled) {
+        const cycle = readCycle();
+        if (!cycle) {
+          toast('请填写有效的周期天数');
+          triggerStepShake(2);
+          activeDaysInput.focus();
+          return false;
+        }
+        if (!isLocalDate(cycleStartInput.value)) {
+          toast('请选择本周期首个服药日');
+          triggerStepShake(2);
+          cycleStartInput.focus();
+          return false;
+        }
+      }
       return true;
     }
     return true;
@@ -585,24 +710,6 @@ export async function renderMedEditPage(
 
   const actionDock = createActionDock([prevBtn, nextBtn, saveBtn]);
   actionDock.classList.add('medication-editor-dock');
-
-  if (editing) {
-    const delBtn = createButton({ label: '删除', variant: 'danger', icon: 'trash' });
-    delBtn.onclick = async () => {
-      if (await confirmDialog('确定删除这种药及其提醒吗？', '删除', true)) {
-        if (!isActive()) return;
-        await softDeleteMed(med.id);
-        await recomputeReminderPeriodReviewState().catch(() => undefined);
-        await rescheduleMedicationReminders().catch(() => undefined);
-        if (!isActive()) return;
-        toast('已删除');
-        navigate('/meds');
-      }
-    };
-    actionDock.append(delBtn);
-  }
-
-  actionDock.append(createButton({ label: '返回', variant: 'text', icon: 'arrow-left', onClick: () => navigate('/meds') }));
 
   function goToStep(s: 1 | 2 | 3, direction?: 'next' | 'prev'): void {
     const dir = direction ?? (s > currentStep ? 'next' : 'prev');
@@ -645,6 +752,10 @@ export async function renderMedEditPage(
       saveSpan.textContent = currentStep === 3 && !editing ? '完成保存' : '保存';
     }
     saveBtn.hidden = !editing && currentStep !== 3;
+
+    if (currentStep === 3 && !unitInput.value.trim() && doseUnitInput.value.trim()) {
+      unitInput.value = doseUnitInput.value.trim();
+    }
   }
 
   // 左右滑动手势（Swipe Gestures）
@@ -1048,6 +1159,8 @@ export async function renderMedEditPage(
     if (!nameInput.value.trim()) nameInput.value = med.name;
     if (!dosageInput.value.trim()) dosageInput.value = med.dosageText;
     if (!amountInput.value.trim()) amountInput.value = med.amountPerDose;
+    syncExplicitDoseFromText();
+    updateQuickUnitChips();
     renderDoseReview();
     syncSlotChipVisuals();
     renderScheduleControls();
@@ -1056,7 +1169,11 @@ export async function renderMedEditPage(
   function applyDraftToForm(d: PrescriptionDraft): void {
     if (d.name) nameInput.value = d.name;
     if (d.dosageText) dosageInput.value = d.dosageText;
-    if (d.amountPerDose) amountInput.value = d.amountPerDose;
+    if (d.amountPerDose) {
+      amountInput.value = d.amountPerDose;
+      syncExplicitDoseFromText();
+      updateQuickUnitChips();
+    }
     if (d.notes) notesInput.value = d.notes;
 
     if (d.slots.length > 0) {
@@ -1247,6 +1364,7 @@ export async function renderMedEditPage(
     if (!parsed) return;
     doseQuantityInput.value = String(parsed.quantity);
     doseUnitInput.value = parsed.unit;
+    updateQuickUnitChips();
   }
 }
 

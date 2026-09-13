@@ -2,11 +2,31 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-12
+Updated: 2026-09-13
 Status: active
-Latest version: `1.0.14` (Android `versionCode: 49`)
+Latest version: `1.0.15` (Android `versionCode: 50`)
 
 ## Summary of Accomplished Work
+
+### 49. 药品编辑页面排版重构与「批量管理」无法打开/缩略图排版修复及 1.0.15 发版 (1.0.15, versionCode 50, workspace/claude)
+
+1. **彻底解决「批量管理无法打开」的根因（持久 Tab 信号死锁）**：
+   - 根因：`src/router.ts` 在页面切换时无条件调用 `activeController?.abort()`，导致一级 Tab（`/meds`）被切换离开后其 controller 永久被置为 `aborted: true`；当切回 `/meds` 时虽然命中 DOM 缓存池（TabPool），但由于闭包持有的 signal 已永久 abort，点击「批量管理」时 `enterBatchMode` 首行 `if (signal?.aborted) return;` 导致静默退出无响应；
+   - 修复：在 `src/router.ts` 中实现 `abortTransientController(previousTabKey)`，在离开上一视图时判定：若上一页面为已在 TabPool 中成功渲染的持久 Tab，严禁调用其 abort()，仅重置全局 `activeController = null`；仅在离开瞬态子页面（如 `/meds/new`）时才执行 abort，确保持久 Tab 的订阅与信号生命周期健康；
+   - 在 `src/pages/MedList.ts` 中解除 `enterBatchMode` 对外部路由 signal 的死锁依赖，基于当前挂载状态 `root.isConnected` 进行防重入与挂载检查，退出批量按钮无条件可靠执行 `renderMedListPage(root)`。
+2. **批量管理界面排版重构与增加药品缩略图**：
+   - 在 `enterBatchMode` 中并行拉取 `getMedPhotoUrls(meds.map(m => m.id))`；
+   - 每张批量卡片新增 `.medication-batch-thumb` 缩略图容器，展示 16:10 圆角药盒实拍照片或 3D 拟物药瓶/药丸图（`getOrCreateMed3DImage`）；
+   - 提醒时段标签改用 `display: flex; flex-wrap: wrap; gap: 3px;` 横向自然流式排版，彻底消除纵向堆叠导致单张卡片被异常拉长变形的顽疾；
+   - 优化复选框对齐、整卡点选交互与高辨识度微光选中态，工具栏显示「共 X 种 · 已选 Y 种」。
+3. **药品编辑/新增页面（MedEdit）排版重构与内容分隔加深**：
+   - 采用 `.med-section-card` 模块化卡片体系（药盒外观、智能填表、基本档案、用药计划、库存管理、医嘱备注）；
+   - 输入框增加浅色衬底与外发光微动效，明确内容分隔与视觉层级；
+   - 合并每次剂量输入与常用单位胶囊，将「周期用药」移入第二步，移除错位的时段文案与底栏多余按钮，危险删除区域移至页面底部。
+4. **质量门禁**：
+   - 新增 `tests/tabKeepAlive.test.ts` 专项测试验证切换 Tab 不会误 abort 缓存 Tab 的控制器；
+   - 扩展 `tests/medListUiContracts.test.ts` 验证缩略图契约；
+   - 全量 89 个测试套件 558 项单元测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
 
 ### 48. 全屏覆盖唤醒与响铃引擎全面修复及 1.0.14 发版 (1.0.14, versionCode 49, workspace/claude)
 

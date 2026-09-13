@@ -186,13 +186,13 @@ export function buildBoxPhotoStudio(options: BoxPhotoStudioOptions): BoxPhotoStu
   } as any) as HTMLInputElement;
   file.setAttribute('capture', 'environment');
 
-  const shootBtn = el('button', { class: 'btn tonal box-photo-btn', type: 'button' } as any);
+  const shootBtn = el('button', { class: 'btn sm tonal box-photo-btn', type: 'button' } as any);
   shootBtn.append(icon('camera'));
   shootBtn.append(el('span', { html: '拍照/选图' }));
   shootBtn.onclick = () => file.click();
 
   const restoreBtn = el('button', {
-    class: 'btn tonal box-photo-btn',
+    class: 'btn sm tonal box-photo-btn',
     type: 'button',
     hidden: true,
   } as any) as HTMLButtonElement;
@@ -209,7 +209,7 @@ export function buildBoxPhotoStudio(options: BoxPhotoStudioOptions): BoxPhotoStu
   };
 
   const aiGenBtn = el('button', {
-    class: 'btn outlined box-photo-btn',
+    class: 'btn sm outlined box-photo-btn',
     type: 'button',
   } as any) as HTMLButtonElement;
   aiGenBtn.append(icon('sparkles'));
@@ -226,7 +226,7 @@ export function buildBoxPhotoStudio(options: BoxPhotoStudioOptions): BoxPhotoStu
   };
 
   const cropBtn = el('button', {
-    class: 'btn outlined box-photo-btn',
+    class: 'btn sm outlined box-photo-btn',
     type: 'button',
     hidden: true,
   } as any) as HTMLButtonElement;
