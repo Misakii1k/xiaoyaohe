@@ -20,6 +20,7 @@ import {
 } from '../ai/assistantPrefs';
 import { appendAssistantMessage, clearAssistantMessages, listRecentAssistantMessages, uid } from '../db/local';
 import { createButton } from './primitives/Button';
+import { openBottomSheet, type BottomSheetHandle } from './primitives/BottomSheet';
 import { compressBoxPhoto } from '../features/medPhotos';
 
 type AssistantContentModule = typeof import('./assistantContent');
@@ -222,12 +223,14 @@ export function mountGlobalAssistant(): void {
   log.setAttribute('aria-live', 'polite');
 
   // ---- 对话偏好：模型覆盖 + 推理强度（只影响小助手聊天请求） ----
-  const modelSelect = document.createElement('select');
-  modelSelect.className = 'ai-pref-select';
+  // 用应用内底部弹层代替原生 <select>：原生下拉会拉起系统选择器，
+  // 字体、圆角和深色配色都跟应用对不上，观感割裂。
+  const modelSelect = el('button', { class: 'ai-pref-select', type: 'button' }) as HTMLButtonElement;
   modelSelect.setAttribute('aria-label', '选择对话模型');
-  const effortSelect = document.createElement('select');
-  effortSelect.className = 'ai-pref-select';
+  modelSelect.setAttribute('aria-haspopup', 'dialog');
+  const effortSelect = el('button', { class: 'ai-pref-select', type: 'button' }) as HTMLButtonElement;
   effortSelect.setAttribute('aria-label', '推理强度');
+  effortSelect.setAttribute('aria-haspopup', 'dialog');
   const refreshModelsBtn = el('button', { class: 'ai-pref-refresh', type: 'button' }, [icon('retry')]);
   refreshModelsBtn.setAttribute('aria-label', '刷新模型列表');
   refreshModelsBtn.title = '从服务商拉取最新模型列表';
@@ -244,37 +247,77 @@ export function mountGlobalAssistant(): void {
     return effort === 'low' ? '低' : effort === 'medium' ? '中' : '高';
   }
 
-  function refreshPrefControls(): void {
+  /** 当前可选的模型项：默认模型 + 健康检查拉回的模型 + 手填的覆盖值。 */
+  function modelOptions(): { value: string; label: string }[] {
     const provider = getActiveLlmProvider();
     const prefs = getAssistantPrefs();
-
-    modelSelect.replaceChildren();
-    modelSelect.append(new Option(`默认模型（${provider.model}）`, ''));
-    const healthModels = getLlmHealth(provider.id).models ?? [];
-    for (const model of healthModels) {
-      if (model && model !== provider.model) modelSelect.append(new Option(model, model));
+    const options = [{ value: '', label: `默认模型（${provider.model}）` }];
+    for (const model of getLlmHealth(provider.id).models ?? []) {
+      if (model && model !== provider.model) options.push({ value: model, label: model });
     }
-    modelSelect.value = prefs.modelOverride ?? '';
-    if (modelSelect.selectedIndex === -1) modelSelect.value = '';
-    // 手动填过的覆盖模型不在健康检查列表里时，补一个选项保住当前选择
-    if (prefs.modelOverride && modelSelect.value !== prefs.modelOverride) {
-      modelSelect.append(new Option(prefs.modelOverride, prefs.modelOverride));
-      modelSelect.value = prefs.modelOverride;
+    // 手动填过的覆盖模型不在健康检查列表里时，补一项保住当前选择
+    if (prefs.modelOverride && !options.some((o) => o.value === prefs.modelOverride)) {
+      options.push({ value: prefs.modelOverride, label: prefs.modelOverride });
     }
-
-    effortSelect.replaceChildren();
-    effortSelect.append(new Option('推理：默认', ''));
-    for (const effort of ['low', 'medium', 'high'] as const) {
-      effortSelect.append(new Option(`推理：${effortLabel(effort)}`, effort));
-    }
-    effortSelect.value = prefs.reasoningEffort ?? '';
+    return options;
   }
 
-  modelSelect.onchange = () => {
-    setAssistantModelOverride(modelSelect.value || undefined);
+  function effortOptions(): { value: string; label: string }[] {
+    return [
+      { value: '', label: '推理：默认' },
+      ...(['low', 'medium', 'high'] as const).map((e) => ({ value: e, label: `推理：${effortLabel(e)}` })),
+    ];
+  }
+
+  /** 应用内选项弹层，风格与批量管理等处的底部弹层一致。 */
+  function openPrefPicker(
+    title: string,
+    options: { value: string; label: string }[],
+    current: string,
+    onPick: (value: string) => void,
+  ): void {
+    const heading = el('h2', { class: 'ai-pref-sheet-title', text: title });
+    const list = el('div', { class: 'ai-pref-sheet-options' });
+    let sheet: BottomSheetHandle | undefined;
+    for (const option of options) {
+      const isCurrent = option.value === current;
+      const row = el('button', {
+        class: `ai-pref-sheet-option${isCurrent ? ' is-current' : ''}`,
+        type: 'button',
+      }) as HTMLButtonElement;
+      row.setAttribute('aria-pressed', String(isCurrent));
+      row.append(el('span', { class: 'ai-pref-sheet-option-label', text: option.label }));
+      if (isCurrent) row.append(icon('check'));
+      row.onclick = () => {
+        sheet?.close();
+        onPick(option.value);
+      };
+      list.append(row);
+    }
+    sheet = openBottomSheet({ label: title, content: [heading, list], className: 'ai-pref-sheet' });
+  }
+
+  function refreshPrefControls(): void {
+    const prefs = getAssistantPrefs();
+    const models = modelOptions();
+    // modelOptions() 首项恒为默认模型，故此处必有回落项
+    const model = models.find((o) => o.value === (prefs.modelOverride ?? '')) ?? models[0]!;
+    modelSelect.textContent = model.label;
+    modelSelect.title = model.label;
+    const effort = effortOptions().find((o) => o.value === (prefs.reasoningEffort ?? ''))!;
+    effortSelect.textContent = effort.label;
+    effortSelect.title = effort.label;
+  }
+
+  modelSelect.onclick = () => {
+    openPrefPicker('选择对话模型', modelOptions(), getAssistantPrefs().modelOverride ?? '', (value) => {
+      setAssistantModelOverride(value || undefined);
+    });
   };
-  effortSelect.onchange = () => {
-    setAssistantReasoningEffort((effortSelect.value || undefined) as AssistantReasoningEffort | undefined);
+  effortSelect.onclick = () => {
+    openPrefPicker('推理强度', effortOptions(), getAssistantPrefs().reasoningEffort ?? '', (value) => {
+      setAssistantReasoningEffort((value || undefined) as AssistantReasoningEffort | undefined);
+    });
   };
   refreshModelsBtn.onclick = async () => {
     const provider = getActiveLlmProvider();

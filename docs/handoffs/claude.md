@@ -4,9 +4,16 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-13
 Status: active
-Latest version: `1.0.18` (Android `versionCode: 53`)
+Latest version: `1.0.19` (Android `versionCode: 54`)
 
 ## Summary of Accomplished Work
+
+### 53. 小助手模型/推理选择器改为应用内弹层 (v1.0.19, versionCode 54, workspace/claude)
+
+1. **问题**：`src/ui/AiAssistant.ts` 中的模型覆盖与推理强度使用原生 `<select>`，点击会拉起系统选择器，字体、圆角与深色配色均与应用不一致，观感割裂。
+2. **修复**：两个 `<select>` 改为 `<button class="ai-pref-select">`（`aria-haspopup="dialog"`），点击调用既有 `openBottomSheet()`（`src/ui/primitives/BottomSheet.ts`）打开应用内选项弹层；新增 `modelOptions()` / `effortOptions()` 抽出选项构造，`refreshPrefControls()` 只负责回填按钮文案；选中项以 `is-current` 呈现主色边框 + 文字 + `check` 图标，并带 `aria-pressed`。
+3. **样式**（`src/ui/styles/pages/assistant.css`）：`.ai-pref-select` 重写为按钮态（自绘 CSS 箭头、hover/focus 主色描边）；新增 `.ai-pref-sheet-title` / `.ai-pref-sheet-options` / `.ai-pref-sheet-option`，全部走 `--color-surface` / `--color-text` / `--color-primary` 令牌，深色模式自动适配。
+4. **验证**：`npm run typecheck` 0 报错，89 套件 567 项测试通过；浏览器实测确认面板内已无原生 `<select>`（0 个），弹层 role=dialog、圆角 26px 与应用一致，选择后按钮文案与 `medbox.assistant-prefs.v1` 同步落盘，重开弹层对勾位置正确，浅色/深色两套配色均正常。
 
 ### 52. 药品列表左对齐修复与小助手界面改版 (v1.0.18, versionCode 53, workspace/claude)
 
