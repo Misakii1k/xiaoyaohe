@@ -57,7 +57,7 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   inset-block-end: 0;
   display: flex;
   flex-direction: column;
-  max-block-size: min(76dvh, 640px);
+  max-block-size: min(86dvh, 720px);
   overflow: hidden;
   margin-inline: auto;
   max-inline-size: 560px;
@@ -95,34 +95,62 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 
 .ai-panel-header {
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-2);
   align-items: center;
-  padding: var(--space-4) var(--space-4) var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-2) var(--space-4);
   border-block-end: 1px solid var(--color-border);
 }
 
 .ai-panel-badge {
   display: grid;
   place-items: center;
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: 34px;
+  block-size: 34px;
+  margin-inline-end: var(--space-1);
   border-radius: var(--radius-full);
   background: var(--color-primary-soft);
   color: var(--color-primary);
 }
 
-.ai-panel-badge svg { inline-size: 20px; block-size: 20px; }
+.ai-panel-badge svg { inline-size: 18px; block-size: 18px; }
 .ai-panel-titles { flex: 1 1 auto; min-inline-size: 0; }
-.ai-panel-title { margin: 0; font-size: var(--fs-title3); font-weight: 700; }
-.ai-panel-subtitle { margin: 2px 0 0; color: var(--color-text-muted); font-size: var(--fs-footnote); }
+.ai-panel-title { margin: 0; font-size: var(--fs-headline); font-weight: 700; line-height: 1.2; }
+.ai-panel-subtitle {
+  margin: 1px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* 对话偏好行：模型覆盖 + 推理强度（只影响小助手聊天） */
 .ai-prefs-row {
   display: flex;
   gap: var(--space-2);
   align-items: center;
-  padding: var(--space-2) var(--space-4) 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface-muted);
+  border-block-end: 1px solid var(--color-border);
 }
+.ai-prefs-row[hidden] { display: none; }
+
+.ai-panel-prefs-toggle {
+  display: grid;
+  place-items: center;
+  inline-size: 36px;
+  block-size: 36px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-spring), color var(--duration-fast) ease, background var(--duration-fast) ease;
+}
+.ai-panel-prefs-toggle:hover,
+.ai-panel-prefs-toggle.is-active { color: var(--color-primary); background: var(--color-primary-soft); }
+.ai-panel-prefs-toggle:active { transform: scale(0.92); }
+.ai-panel-prefs-toggle svg { inline-size: 18px; block-size: 18px; }
 
 .ai-pref-select {
   flex: 1 1 auto;
@@ -156,8 +184,8 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 .ai-panel-clear {
   display: grid;
   place-items: center;
-  inline-size: var(--tap);
-  block-size: var(--tap);
+  inline-size: 36px;
+  block-size: 36px;
   border: 0;
   border-radius: var(--radius-full);
   background: var(--color-surface-muted);
@@ -173,8 +201,8 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 .ai-panel-close {
   display: grid;
   place-items: center;
-  inline-size: var(--tap);
-  block-size: var(--tap);
+  inline-size: 36px;
+  block-size: 36px;
   border: 0;
   border-radius: var(--radius-full);
   background: var(--color-surface-muted);
@@ -189,8 +217,8 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 .ai-panel-expand {
   display: grid;
   place-items: center;
-  inline-size: var(--tap);
-  block-size: var(--tap);
+  inline-size: 36px;
+  block-size: 36px;
   border: 0;
   border-radius: var(--radius-full);
   background: var(--color-surface-muted);
@@ -205,12 +233,14 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 .ai-chat-log {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
   flex: 1 1 auto;
-  min-block-size: 180px;
+  min-block-size: 220px;
   overflow-y: auto;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-3) var(--space-3);
   overscroll-behavior: contain;
+  background: color-mix(in srgb, var(--color-surface-muted) 55%, var(--color-surface));
+  scroll-behavior: smooth;
 }
 
 .ai-msg {
@@ -232,10 +262,11 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 .ai-cards {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   inline-size: 100%;
-  max-inline-size: 92%;
-  align-self: flex-start;
+  max-inline-size: 100%;
+  align-self: stretch;
+  margin-block-start: var(--space-1);
 }
 
 .ai-bubble {
@@ -255,28 +286,55 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 }
 
 .ai-msg.is-bot .ai-bubble {
-  align-self: flex-start;
-  margin-inline-start: 0;
-  margin-inline-end: auto;
-  border-end-start-radius: 4px;
-  background: var(--color-surface-muted, #f4f4f7);
+  align-self: stretch;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  margin-inline: 0;
+  padding: 14px 16px 10px;
+  border-radius: var(--radius-lg);
+  border-start-start-radius: 6px;
+  background: var(--color-surface);
   color: var(--color-text);
-  border: 1px solid color-mix(in srgb, var(--color-border) 82%, var(--color-primary-soft));
-  box-shadow: 0 1px 4px rgb(0 0 0 / 6%), 0 1px 2px rgb(0 0 0 / 4%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 4%);
+  white-space: normal;
+}
+
+/* 状态提示（正在思考…）保持小胶囊 */
+.ai-msg.is-status .ai-bubble {
+  inline-size: auto;
+  max-inline-size: 86%;
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
 }
 
 [data-theme="dark"] .ai-msg.is-bot .ai-bubble,
 .theme-dark .ai-msg.is-bot .ai-bubble {
-  background: color-mix(in srgb, var(--color-surface) 88%, #fff 12%);
-  border-color: color-mix(in srgb, var(--color-border) 75%, #fff 15%);
+  background: color-mix(in srgb, var(--color-surface) 92%, #fff 8%);
+  border-color: color-mix(in srgb, var(--color-border) 75%, #fff 10%);
   box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+}
+[data-theme="dark"] .ai-chat-log,
+.theme-dark .ai-chat-log {
+  background: color-mix(in srgb, var(--color-surface) 70%, #000 30%);
 }
 
 .ai-msg.is-user .ai-bubble {
   align-self: flex-end;
   margin-inline-start: auto;
   margin-inline-end: 0;
-  border-end-end-radius: 4px;
+  max-inline-size: 80%;
+  padding: 10px 14px;
+  border-radius: var(--radius-xl);
+  border-end-end-radius: 6px;
+  font-size: var(--fs-body);
+  line-height: 1.5;
   background: var(--color-primary);
   color: #fff;
   border: 1px solid transparent;
@@ -345,7 +403,9 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   align-items: center;
   justify-content: flex-end;
   inline-size: 100%;
-  margin-block-start: var(--space-1);
+  margin-block-start: var(--space-2);
+  padding-block-start: var(--space-2);
+  border-block-start: 1px dashed color-mix(in srgb, var(--color-border) 80%, transparent);
 }
 
 .ai-bubble-copy-btn {
@@ -384,7 +444,8 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   inline-size: 100%;
   min-inline-size: 0;
   font-size: var(--fs-body);
-  line-height: 1.6;
+  line-height: 1.75;
+  letter-spacing: 0.005em;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -595,16 +656,16 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   inline-size: 100%;
   margin-block-start: 0;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--color-surface);
   color: var(--color-text);
-  box-shadow: 0 5px 14px rgb(31 34 48 / 6%);
+  box-shadow: 0 2px 8px rgb(31 34 48 / 5%);
 }
 
 .ai-content-card {
   position: relative;
   overflow: hidden;
-  padding: 14px;
+  padding: 14px 16px;
   border-inline-start-width: 4px;
 }
 .ai-content-card.is-summary { border-inline-start-color: var(--color-primary); }
@@ -686,7 +747,7 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   display: grid;
   margin-block-start: var(--space-3);
   overflow: hidden;
-  border-block: 1px solid var(--color-border);
+  border-block-start: 1px solid var(--color-border);
 }
 .ai-card-item {
   display: grid;
@@ -867,17 +928,26 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 
 .ai-quick {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-2);
-  padding: 0 var(--space-4) var(--space-3);
-  /* 空间不足时由快捷提示区收缩，保住头部与偏好行可见（小屏 320px 关键） */
-  flex: 0 1 auto;
+  padding: var(--space-2) var(--space-4) var(--space-2);
+  /* 单行横向滑动：不再随问题数量往下堆高，把空间留给对话 */
+  flex: 0 0 auto;
   min-block-size: 0;
-  overflow-y: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  border-block-start: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  background: var(--color-surface);
 }
+.ai-quick::-webkit-scrollbar { display: none; }
+.ai-quick[hidden] { display: none; }
 
 .ai-quick-chip {
-  min-block-size: 36px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  min-block-size: 34px;
   padding-inline: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);

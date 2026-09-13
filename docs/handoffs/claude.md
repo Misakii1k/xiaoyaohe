@@ -4,9 +4,29 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-13
 Status: active
-Latest version: `1.0.15` (Android `versionCode: 50`)
+Latest version: `1.0.18` (Android `versionCode: 53`)
 
 ## Summary of Accomplished Work
+
+### 52. 药品列表左对齐修复与小助手界面改版 (v1.0.18, versionCode 53, workspace/claude)
+
+1. **主列表药品名被批量卡片样式带偏居中**：
+   - `src/pages/MedList.ts` 的普通列表卡片为保留无障碍语义复用了 `medication-batch-name` 类，而该类带 `text-align: center` 与两行 `-webkit-line-clamp`，导致主页药品名居中、与下方规格/库存左对齐内容错位；
+   - 在 `src/ui/styles/pages/medications.css` 中以 `.med-item-card .med-item-name.medication-batch-name` 提高特异性覆写为 `text-align: start; display: block; white-space: nowrap` 单行省略，并给 `.med-item-info` 补 `align-items: flex-start`；批量管理页居中排版保持不变。
+2. **小助手界面改版（`src/ui/AiAssistant.ts` + `src/ui/styles/pages/assistant.css`）**：
+   - 头部压缩：新增 `.ai-panel-prefs-toggle` 齿轮按钮，模型选择/推理强度/刷新模型三件套默认 `hidden`，点击齿轮展开（`aria-expanded` 同步）；
+   - 面板高度由 `min(76dvh, 640px)` 提至 `min(86dvh, 720px)`，头部 padding 收紧，对话区实测占面板 60%；
+   - 助手回复由窄气泡改为全宽文档式卡片（`max-width: none`，实测 351/375px），行高 1.6 → 1.75，工具结果卡片同步加宽；
+   - 快捷问题行 `.ai-quick` 改为 `flex-wrap: nowrap; overflow-x: auto` 单行横向滚动并隐藏滚动条，不再多行堆叠挤占对话区；
+   - 「正在思考」提示缩为小标签，深色模式底色层次同步调整。
+3. **质量门禁**：`npm run typecheck` 0 报错，全量 89 套件 567 项测试通过；浏览器实测确认列表左对齐（name/spec/badges 同在 x=97）与助手面板各项指标。
+
+### 51. 修复 Web 增量热更新始终退化为全量安装包 (v1.0.17, versionCode 52, workspace/claude)
+
+1. **根因**：`src/sync/lan/apkTransport.ts` 的 `getAvailableUpdate()` 从 localStorage 还原时丢弃了 `updateType / bundleUrl / bundleSize / bundleSha256 / minNativeVersionCode`，更新面板重新读取后 `isIncremental` 恒为 false，「一键秒级更新」按钮从未出现。云端 `version.json`、`/api/download?asset=bundle`、原生 `downloadAndUnpackBundle/applyWebBundle` 链路均实测正常。
+2. **修复**：`getAvailableUpdate()` 完整还原增量元数据，并按本机底座重新校验 `minNativeVersionCode`（不满足降级 full）；AI 助手的更新工具优先走增量、失败回退全量。
+3. **测试**：`tests/bundleUpdateVerification.test.ts` 新增 2 条 localStorage 往返回归用例；同步各测试 mock 版本；全量测试通过。
+4. **注意**：已安装 1.0.16 的设备升级到 1.0.17 仍是最后一次全量安装；自 1.0.17 起后续版本才真正走秒级热更新。
 
 ### 50. 药品编辑向导与批量管理排版优化及应用更新降级为轻提醒 (workspace/claude)
 

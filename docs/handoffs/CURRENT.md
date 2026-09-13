@@ -2,8 +2,19 @@
 
 Updated: 2026-09-13
 Integration branch: `main`
-Product version: `1.0.16` (versionCode 51)
-Latest integration commit: `release: integrate v1.0.16 from workspace/claude`
+Product version: `1.0.18` (versionCode 53)
+Latest integration commit: `release: integrate v1.0.18 from workspace/claude`
+
+## Med List Alignment Fix & Assistant UI Redesign (v1.0.18, versionCode 53, workspace/claude)
+
+- **药品列表左对齐修复**：主列表卡片复用 `medication-batch-name` 导致药品名居中、与规格/库存错位；以更高特异性覆写为左对齐单行省略，批量管理页居中排版不变。
+- **小助手界面改版**：模型/推理偏好收进齿轮按钮默认收起；面板 `76dvh → 86dvh`；助手回复改全宽文档式卡片（行高 1.75）；快捷问题改单行横向滚动；思考提示缩为小标签。
+- **验证**：typecheck 0 报错，89 套件 567 项测试通过；浏览器实测列表 name/spec/badges 同在 x=97，助手回复宽 351/375px。
+
+## Web Incremental Hot Update Restore Fix (v1.0.17, versionCode 52, workspace/claude)
+
+- **根因与修复**：`getAvailableUpdate()` 从 localStorage 还原时丢弃增量包元数据，导致更新面板永远只显示「下载并安装」；现完整还原 `updateType/bundleUrl/bundleSize/bundleSha256/minNativeVersionCode` 并按本机底座重新校验。
+- **注意**：1.0.16 → 1.0.17 仍为最后一次全量安装，此后版本走秒级热更新。
 
 ## UI Layout & Interaction Refinement & Gentle Update Reminders (workspace/claude)
 
