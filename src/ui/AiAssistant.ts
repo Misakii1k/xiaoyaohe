@@ -201,12 +201,18 @@ export function mountGlobalAssistant(): void {
   const expandBtn = el('button', { class: 'ai-panel-expand', type: 'button' }, [icon('expand')]);
   expandBtn.setAttribute('aria-label', '展开面板');
   expandBtn.title = '点一下铺满全屏，再点一下还原';
+  // 模型/推理偏好默认收起，避免头部堆满控件挤占对话空间；点齿轮展开
+  const prefsToggleBtn = el('button', { class: 'ai-panel-prefs-toggle', type: 'button' }, [icon('gear')]);
+  prefsToggleBtn.setAttribute('aria-label', '对话偏好设置');
+  prefsToggleBtn.setAttribute('aria-expanded', 'false');
+  prefsToggleBtn.title = '选择模型与推理强度';
   const header = el('div', { class: 'ai-panel-header' }, [
     el('span', { class: 'ai-panel-badge' }, [icon('sparkles')]),
     el('div', { class: 'ai-panel-titles' }, [
       el('h2', { class: 'ai-panel-title', text: '小助手' }),
       el('p', { class: 'ai-panel-subtitle', text: '吃药、药品和库存都可以问我' }),
     ]),
+    prefsToggleBtn,
     clearBtn,
     expandBtn,
     closeBtn,
@@ -226,6 +232,13 @@ export function mountGlobalAssistant(): void {
   refreshModelsBtn.setAttribute('aria-label', '刷新模型列表');
   refreshModelsBtn.title = '从服务商拉取最新模型列表';
   const prefsRow = el('div', { class: 'ai-prefs-row' }, [modelSelect, effortSelect, refreshModelsBtn]);
+  prefsRow.hidden = true;
+  prefsToggleBtn.onclick = () => {
+    const open = prefsRow.hidden;
+    prefsRow.hidden = !open;
+    prefsToggleBtn.setAttribute('aria-expanded', String(open));
+    prefsToggleBtn.classList.toggle('is-active', open);
+  };
 
   function effortLabel(effort: AssistantReasoningEffort): string {
     return effort === 'low' ? '低' : effort === 'medium' ? '中' : '高';

@@ -2,8 +2,8 @@
 
 Updated: 2026-09-13
 Integration branch: `main`
-Product version: `1.0.16` (versionCode 51)
-Latest integration commit: `release: integrate v1.0.16 from workspace/claude`
+Product version: `1.0.18` (versionCode 53)
+Latest integration commit: `release: integrate v1.0.18 from workspace/claude`
 
 ## UI Layout & Interaction Refinement & Gentle Update Reminders (workspace/claude)
 
