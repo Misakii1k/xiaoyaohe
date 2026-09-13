@@ -35,19 +35,68 @@ export {
 };
 
 const svgParser = typeof DOMParser !== 'undefined' ? new DOMParser() : null;
+const trackedBlobUrls = new Set<string>();
+
+export function trackMediaBlobUrl(url: string): string {
+  if (typeof url === 'string' && url.startsWith('blob:')) {
+    trackedBlobUrls.add(url);
+  }
+  return url;
+}
+
+export function revokeTrackedMediaBlobUrls(): void {
+  for (const url of trackedBlobUrls) {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      /* ignore */
+    }
+  }
+  trackedBlobUrls.clear();
+}
+
+export function safeRevokeMediaUrl(url: string | null | undefined): void {
+  if (url && typeof url === 'string' && url.startsWith('blob:')) {
+    try {
+      URL.revokeObjectURL(url);
+      trackedBlobUrls.delete(url);
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 export function parseSvg(rawSvg: string): SVGSVGElement {
+  const fallback = () => document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
   if (!svgParser) {
-    const fallback = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    return fallback as SVGSVGElement;
+    return fallback();
   }
-  const doc = svgParser.parseFromString(rawSvg, 'image/svg+xml');
-  const parsed = doc.documentElement;
-  if (!(parsed instanceof SVGSVGElement)) {
-    const fallback = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    return fallback as SVGSVGElement;
+  try {
+    const doc = svgParser.parseFromString(rawSvg, 'image/svg+xml');
+    const parsed = doc.documentElement;
+    if (
+      !(parsed instanceof SVGSVGElement) ||
+      parsed.nodeName.toLowerCase() === 'parsererror' ||
+      doc.querySelector('parsererror')
+    ) {
+      return fallback();
+    }
+    return parsed;
+  } catch {
+    return fallback();
   }
-  return parsed;
+}
+
+export function cleanup3dMedia(container: HTMLElement | null | undefined): void {
+  if (!container) return;
+  const imgs = container.querySelectorAll('img');
+  imgs.forEach((img) => {
+    if (img.src && img.src.startsWith('blob:')) {
+      safeRevokeMediaUrl(img.src);
+    }
+    img.removeAttribute('src');
+    img.remove();
+  });
 }
 
 export function render3dMedia(
@@ -60,20 +109,33 @@ export function render3dMedia(
   container.className = `asset-3d-container ${className}-wrap`;
 
   if (!imageSrc) {
-    container.append(parseSvg(fallbackSvgFn()));
+    try {
+      container.append(parseSvg(fallbackSvgFn()));
+    } catch {
+      // error bounds fallback
+    }
     return container;
   }
 
+  if (imageSrc.startsWith('blob:')) {
+    trackMediaBlobUrl(imageSrc);
+  }
+
   const img = document.createElement('img');
-  img.src = imageSrc;
+  img.loading = 'lazy';
+  img.decoding = 'async';
   img.alt = alt;
   img.className = className;
-  img.decoding = 'async';
   img.onerror = () => {
     img.remove();
-    container.append(parseSvg(fallbackSvgFn()));
+    try {
+      container.append(parseSvg(fallbackSvgFn()));
+    } catch {
+      // error bounds fallback
+    }
   };
 
+  img.src = imageSrc;
   container.append(img);
   return container;
 }

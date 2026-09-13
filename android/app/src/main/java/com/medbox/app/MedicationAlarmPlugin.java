@@ -1,6 +1,8 @@
 package com.medbox.app;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -55,17 +57,71 @@ public final class MedicationAlarmPlugin extends Plugin {
     @PluginMethod
     public void checkFullScreenPermission(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("capability", MedicationAlarmContract.canUseFullScreen(getContext()) ? "granted" : "denied");
+        boolean fullScreen = MedicationAlarmContract.canUseFullScreen(getContext());
+        boolean overlay = MedicationAlarmContract.canDrawOverlays(getContext());
+        result.put("capability", fullScreen ? "granted" : "denied");
+        result.put("overlayCapability", overlay ? "granted" : "denied");
+        result.put("canDrawOverlays", overlay);
         call.resolve(result);
     }
 
     @PluginMethod
     public void openFullScreenSettings(PluginCall call) {
+        boolean opened = false;
         if (Build.VERSION.SDK_INT >= 34) {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
-                .setData(Uri.parse("package:" + getContext().getPackageName()))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(intent);
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
+                    .setData(Uri.parse("package:" + getContext().getPackageName()))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+                opened = true;
+            } catch (Throwable ignored) {}
+        }
+        if (!opened) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+                opened = true;
+            } catch (Throwable ignored) {}
+        }
+        if (!opened) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.parse("package:" + getContext().getPackageName()))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            } catch (Throwable ignored) {}
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void checkOverlayPermission(PluginCall call) {
+        JSObject result = new JSObject();
+        boolean overlay = MedicationAlarmContract.canDrawOverlays(getContext());
+        result.put("capability", overlay ? "granted" : "denied");
+        result.put("granted", overlay);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void openOverlaySettings(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                    .setData(Uri.parse("package:" + getContext().getPackageName()))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            } catch (Throwable ignored) {
+                try {
+                    Intent fallback = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(Uri.parse("package:" + getContext().getPackageName()))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getContext().startActivity(fallback);
+                } catch (Throwable ignored2) {}
+            }
         }
         call.resolve();
     }
@@ -159,5 +215,28 @@ public final class MedicationAlarmPlugin extends Plugin {
         } catch (Throwable t) {
             call.reject("无法打开系统无障碍设置", "ACCESSIBILITY_ERROR");
         }
+    }
+
+    @PluginMethod
+    public void getRingtonePreference(PluginCall call) {
+        SharedPreferences prefs = getContext().getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE);
+        String ringtone = prefs.getString("alarm_ringtone", "morning_energy");
+        JSObject result = new JSObject();
+        result.put("ringtone", ringtone != null ? ringtone : "morning_energy");
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void setRingtonePreference(PluginCall call) {
+        String ringtone = call.getString("ringtone", "morning_energy");
+        if (ringtone == null || (!ringtone.equals("morning_energy") && !ringtone.equals("system"))) {
+            ringtone = "morning_energy";
+        }
+        SharedPreferences prefs = getContext().getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE);
+        prefs.edit().putString("alarm_ringtone", ringtone).apply();
+        JSObject result = new JSObject();
+        result.put("ringtone", ringtone);
+        result.put("success", true);
+        call.resolve(result);
     }
 }

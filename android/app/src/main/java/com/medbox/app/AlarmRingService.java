@@ -61,7 +61,17 @@ public final class AlarmRingService extends Service {
                             | Intent.FLAG_ACTIVITY_CLEAR_TOP
                             | Intent.FLAG_ACTIVITY_NO_USER_ACTION
                     );
-                startActivity(open);
+                if (Build.VERSION.SDK_INT >= 34) {
+                    android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+                    try {
+                        options.setPendingIntentBackgroundActivityStartMode(
+                            android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                        );
+                    } catch (Throwable ignored) {}
+                    startActivity(open, options.toBundle());
+                } else {
+                    startActivity(open);
+                }
             } catch (Throwable ignored) {
                 // 所有路径均被拦截：通知已发出，heads-up + 铃声振动仍然生效。
             }

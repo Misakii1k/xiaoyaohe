@@ -5,6 +5,7 @@ import {
   listScheduleRevisions,
   setOccurrenceAction,
   setOccurrenceActions,
+  getDatabaseRevision,
 } from '../db/local';
 import {
   formatMealRels,
@@ -56,7 +57,10 @@ const WEEKDAY_CN = ['周日', '周一', '周二', '周三', '周四', '周五', 
 
 let activeSlotFilter: 'all' | 'morning' | 'noon' | 'evening' = 'all';
 
-export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): Promise<void> {
+const todayPageCleanupByRoot = new WeakMap<HTMLElement, () => void>();
+
+export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): Promise<void | (() => void)> {
+  todayPageCleanupByRoot.get(root)?.();
   const now = new Date();
   const today = toLocalDate(now);
   const { start, end } = localDayBounds(today);
@@ -213,9 +217,42 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
     content.append(emptyCard);
   }
 
-  if (!signal?.aborted) {
-    renderPage({ root, title: '今天', activeTab: 'today', content });
+  let lastRevision = getDatabaseRevision();
+  let lastDate = today;
+  const onActivated = async () => {
+    const currentToday = toLocalDate(new Date());
+    const currentRev = getDatabaseRevision();
+    if (currentRev <= lastRevision && currentToday === lastDate) return;
+    lastRevision = currentRev;
+    lastDate = currentToday;
+    const scrollEl = root.querySelector<HTMLElement>('.app-main');
+    const savedScroll = scrollEl?.scrollTop ?? 0;
+    await renderTodayPage(root, signal);
+    const newScrollEl = root.querySelector<HTMLElement>('.app-main');
+    if (newScrollEl && savedScroll > 0) newScrollEl.scrollTop = savedScroll;
+  };
+  root.addEventListener('tab:activated', onActivated);
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    root.removeEventListener('tab:activated', onActivated);
+    signal?.removeEventListener('abort', cleanup);
+    if (todayPageCleanupByRoot.get(root) === cleanup) {
+      todayPageCleanupByRoot.delete(root);
+    }
+  };
+  todayPageCleanupByRoot.set(root, cleanup);
+  signal?.addEventListener('abort', cleanup, { once: true });
+
+  if (signal?.aborted) {
+    cleanup();
+    return cleanup;
   }
+
+  renderPage({ root, title: '今天', activeTab: 'today', content });
+  return cleanup;
 }
 
 function createLegendRow(

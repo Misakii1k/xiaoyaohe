@@ -19,6 +19,9 @@ export const LOCAL_APP_VERSION_CODE: number = typeof __APP_VERSION_CODE__ !== 'u
 /** APK 分发端口（与 ApkDistributionPlugin.java 保持一致）。 */
 export const APK_DISTRIBUTION_PORT = 38473;
 
+/** 支持 Web 增量热更新的最低原生 APK versionCode（从 v1.0.9 / code 44 首次引入）。 */
+export const DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE = 44;
+
 /**
  * 云端更新通道的部署源。换自定义域名时只改这一处。
  * 版本元数据 `version.json` 与私有仓库代理 `/api/releases`、`/api/download` 都在它下面。
@@ -128,6 +131,8 @@ interface ApkDistributionPlugin {
   applyWebBundle?(options: { basePath: string }): Promise<{ success: boolean; basePath: string }>;
   resetWebBundle?(): Promise<{ success: boolean }>;
   getActiveWebBundle?(): Promise<{ basePath: string; isDefault: boolean }>;
+  getCacheSize?(): Promise<{ bytes: number; formatted: string }>;
+  clearAppCache?(): Promise<{ success: boolean; freedBytes: number; formatted: string }>;
   addListener?(
     eventName: string,
     listenerFunc: (data: any) => void,
@@ -253,11 +258,25 @@ export async function notifyIfUpdateAvailable(): Promise<void> {
   try {
     const last = Number(localStorage.getItem(LAST_UPDATE_NOTIFY_KEY) ?? '0');
     if (Date.now() - last < NOTIFY_DEBOUNCE_MS) return;
+
+    // 前台静默体验：若当前处于前台活跃状态，不通过系统推送打扰用户，
+    // 仅分发事件更新界面轻红点/徽标；避免前台操作时突然弹出通知横幅。
+    // 注意：此处不写入防抖时间戳，否则用户切到后台后在防抖窗口内将收不到任何轻提醒。
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      dispatchUpdateChanged();
+      return;
+    }
+
     await showNotification(`发现新版本 v${update.version}`, {
       body: '点击进入「应用更新」下载并安装。',
       tag: 'medbox-app-update',
       key: `update-${update.versionCode}`,
-      data: { deepLink: '/settings?action=app-update' },
+      silent: true,
+      data: {
+        deepLink: '/settings?action=app-update',
+        mode: 'light',
+        channel: 'update',
+      },
     });
     localStorage.setItem(LAST_UPDATE_NOTIFY_KEY, String(Date.now()));
   } catch {
@@ -491,6 +510,55 @@ export async function getActiveWebBundle(): Promise<{ basePath: string; isDefaul
   }
 }
 
+export interface AppCacheInfo {
+  bytes: number;
+  formatted: string;
+}
+
+export interface AppCacheClearResult {
+  success: boolean;
+  freedBytes: number;
+  formatted: string;
+}
+
+/**
+ * 获取当前手机端缓存与临时文件占用大小。
+ * 网页端或插件不可用时返回 0 B。
+ */
+export async function getAppCacheSize(): Promise<AppCacheInfo> {
+  if (!isApkDistributionAvailable() || typeof plugin.getCacheSize !== 'function') {
+    return { bytes: 0, formatted: '0 B' };
+  }
+  try {
+    const res = await plugin.getCacheSize();
+    return {
+      bytes: res?.bytes ?? 0,
+      formatted: res?.formatted ?? '0 B',
+    };
+  } catch {
+    return { bytes: 0, formatted: '0 B' };
+  }
+}
+
+/**
+ * 清理手机端缓存与临时文件（旧安装包、临时压缩包、旧增量包与 WebView 缓存）。
+ */
+export async function clearAppCache(): Promise<AppCacheClearResult> {
+  if (!isApkDistributionAvailable() || typeof plugin.clearAppCache !== 'function') {
+    return { success: true, freedBytes: 0, formatted: '0 B' };
+  }
+  try {
+    const res = await plugin.clearAppCache();
+    return {
+      success: res?.success ?? true,
+      freedBytes: res?.freedBytes ?? 0,
+      formatted: res?.formatted ?? '0 B',
+    };
+  } catch {
+    throw new Error('清理缓存失败，请稍后重试');
+  }
+}
+
 /**
  * 简单的 semver 比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 相等。
  * 仅支持数字段（"0.9.1" → [0,9,1]），不支持预发布标签。
@@ -663,7 +731,9 @@ export async function checkFastCloudVersion(): Promise<AvailableUpdate | null> {
     const bundleSha256 = typeof json.bundleSha256 === 'string' && SHA256_RE.test(json.bundleSha256.toLowerCase())
       ? json.bundleSha256.toLowerCase()
       : undefined;
-    const minNativeCode = typeof json.minNativeVersionCode === 'number' ? json.minNativeVersionCode : estimatedCode;
+    const minNativeCode = typeof json.minNativeVersionCode === 'number'
+      ? json.minNativeVersionCode
+      : DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE;
     const canIncremental = Boolean(
       bundleUrl
       && LOCAL_APP_VERSION_CODE > 0
@@ -704,7 +774,7 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
   interface GhRelease {
     tag_name?: string;
     body?: string;
-    assets?: Array<{ name?: string; browser_download_url?: string; size?: number }>;
+    assets?: Array<{ name?: string; browser_download_url?: string; size?: number; digest?: string }>;
   }
 
   // 仓库是私有的：直连 api.github.com 与三个公开镜像一律 404（实测 2026-09-09），
@@ -764,9 +834,24 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
   const bundleAsset = assets.find((a) => a.name?.endsWith('.zip') && (a.name.includes('bundle') || a.name.includes('web')));
   const bundleUrl = bundleAsset?.browser_download_url ? resolveDownloadUrl(bundleAsset.browser_download_url) : null;
 
+  const rawBundleDigest = typeof bundleAsset?.digest === 'string' ? bundleAsset.digest : undefined;
+  const bundleSha256 = rawBundleDigest && rawBundleDigest.startsWith('sha256:')
+    ? rawBundleDigest.slice(7).toLowerCase()
+    : undefined;
+
+  const rawApkDigest = typeof apkAsset?.digest === 'string' ? apkAsset.digest : undefined;
+  const apkSha256 = rawApkDigest && rawApkDigest.startsWith('sha256:')
+    ? rawApkDigest.slice(7).toLowerCase()
+    : undefined;
+
   const diff = compareVersion(remoteVersion, LOCAL_APP_VERSION);
   const estimatedCode = diff > 0 ? LOCAL_APP_VERSION_CODE + diff : LOCAL_APP_VERSION_CODE;
-  const canIncremental = Boolean(bundleUrl && LOCAL_APP_VERSION_CODE > 0 && LOCAL_APP_VERSION_CODE >= estimatedCode);
+  const minNativeCode = DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE;
+  const canIncremental = Boolean(
+    bundleUrl
+    && LOCAL_APP_VERSION_CODE > 0
+    && LOCAL_APP_VERSION_CODE >= minNativeCode,
+  );
 
   return {
     version: remoteVersion,
@@ -776,8 +861,10 @@ export async function checkGithubRelease(): Promise<AvailableUpdate | null> {
     downloadUrl,
     bundleUrl: bundleUrl ?? undefined,
     bundleSize: typeof bundleAsset?.size === 'number' && bundleAsset.size > 0 ? bundleAsset.size : undefined,
-    minNativeVersionCode: estimatedCode,
+    bundleSha256,
+    minNativeVersionCode: minNativeCode,
     fileSize: typeof apkAsset.size === 'number' && apkAsset.size > 0 ? apkAsset.size : undefined,
+    sha256: apkSha256,
     releaseNotes: typeof releaseData.body === 'string' ? releaseData.body.trim() : undefined,
     discoveredAt: Date.now(),
   };
@@ -800,10 +887,20 @@ export async function checkOnlineRelease(): Promise<AvailableUpdate | null> {
     return fastCloud;
   }
 
-  // 否则等待两者完成，择优更高版本
+  // 否则等待两者完成，择优更高版本并互补权威资产哈希
   const [cloud, gh] = await Promise.all([cloudPromise, ghPromise]);
   if (cloud && gh) {
-    return compareVersion(cloud.version, gh.version) >= 0 ? cloud : gh;
+    if (compareVersion(cloud.version, gh.version) === 0) {
+      return {
+        ...cloud,
+        bundleSha256: gh.bundleSha256 ?? cloud.bundleSha256,
+        bundleSize: gh.bundleSize ?? cloud.bundleSize,
+        sha256: gh.sha256 ?? cloud.sha256,
+        fileSize: gh.fileSize ?? cloud.fileSize,
+        updateType: (cloud.updateType === 'incremental' || gh.updateType === 'incremental') ? 'incremental' : 'full',
+      };
+    }
+    return compareVersion(cloud.version, gh.version) > 0 ? cloud : gh;
   }
   return cloud || gh || null;
 }

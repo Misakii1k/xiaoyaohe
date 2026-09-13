@@ -153,6 +153,12 @@ export const tools: ToolDefinition[] = [
             page.renderMedInventoryPage(root, context.signal)),
       },
       {
+        path: '/meds/:id',
+        handler: (params, root, context) =>
+          runLazyRoute(context.signal, () => import('../pages/MedEdit'), (page) =>
+            page.renderMedEditPage(root, params.id ?? null, context.signal)),
+      },
+      {
         path: '/meds/:id/edit',
         handler: (params, root, context) =>
           runLazyRoute(context.signal, () => import('../pages/MedEdit'), (page) =>

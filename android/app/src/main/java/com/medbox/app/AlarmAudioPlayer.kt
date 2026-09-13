@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.Build
@@ -22,25 +23,35 @@ object AlarmAudioPlayer {
 
     private const val TAG = "AlarmAudioPlayer"
 
+    private var mediaPlayer: MediaPlayer? = null
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var active = false
+    private var currentPlayingPref: String? = null
 
     val isAlerting: Boolean
         @Synchronized get() = active
 
     /**
      * 启动铃声与振动。
-     * 若此前已有正在播放的音频实例，强制先执行 stop() 清理，再分配启动。
+     * 若此前已有相同音频在播放，直接保持播放；若需要切换或重新播放则释放旧实例再启动。
      */
     @JvmStatic
     @Synchronized
     fun start(context: Context) {
-        stop()
-
         val appContext = context.applicationContext
+        val prefs = appContext.getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE)
+        val ringtonePref = prefs.getString("alarm_ringtone", "morning_energy") ?: "morning_energy"
+
+        // 防重入：若当前已在播放相同铃声，保持播放，避免界面拉起时声音卡顿打断
+        if (active && currentPlayingPref == ringtonePref && (mediaPlayer != null || ringtone != null)) {
+            Log.d(TAG, "AlarmAudioPlayer is already actively playing: $ringtonePref")
+            return
+        }
+
+        stop()
 
         // 申请临时音频焦点：让背景正在播放的短剧、音乐、播客等暂时暂停
         try {
@@ -70,27 +81,98 @@ object AlarmAudioPlayer {
             Log.w(TAG, "Failed to request audio focus", t)
         }
 
+        // 确保闹钟通道音量不为 0（防用户此前将闹钟音量滑到最左侧导致无法听见）
         try {
-            var alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            if (alertUri == null) {
-                alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            val am = audioManager
+            if (am != null) {
+                val currentVol = am.getStreamVolume(AudioManager.STREAM_ALARM)
+                val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                if (currentVol == 0 && maxVol > 0) {
+                    val safeVol = Math.max(1, (maxVol * 0.6f).toInt())
+                    am.setStreamVolume(AudioManager.STREAM_ALARM, safeVol, 0)
+                    Log.i(TAG, "Alarm volume was 0, adjusted to safe level: $safeVol/$maxVol")
+                }
             }
-            val r = RingtoneManager.getRingtone(appContext, alertUri)
-            if (r != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    r.audioAttributes = AudioAttributes.Builder()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to inspect or adjust alarm stream volume", t)
+        }
+
+        var playedCustom = false
+        if (ringtonePref == "morning_energy") {
+            try {
+                val resId = appContext.resources.getIdentifier("morning_energy", "raw", appContext.packageName)
+                val targetResId = if (resId != 0) resId else R.raw.morning_energy
+                if (targetResId != 0) {
+                    val attributes = AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
+
+                    val afd = appContext.resources.openRawResourceFd(targetResId)
+                    if (afd != null) {
+                        val mp = MediaPlayer().apply {
+                            setAudioAttributes(attributes)
+                            setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                            isLooping = true
+                            prepare()
+                            start()
+                        }
+                        afd.close()
+                        mediaPlayer = mp
+                        playedCustom = true
+                        currentPlayingPref = ringtonePref
+                    }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    r.isLooping = true
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to start custom morning_energy via openRawResourceFd, trying fallback", t)
+                try {
+                    val mp = MediaPlayer.create(appContext, R.raw.morning_energy)
+                    if (mp != null) {
+                        @Suppress("DEPRECATION")
+                        mp.setAudioStreamType(AudioManager.STREAM_ALARM)
+                        mp.isLooping = true
+                        mp.start()
+                        mediaPlayer = mp
+                        playedCustom = true
+                        currentPlayingPref = ringtonePref
+                    }
+                } catch (t2: Throwable) {
+                    Log.e(TAG, "Failed to start custom morning_energy MediaPlayer fallback", t2)
                 }
-                r.play()
-                ringtone = r
             }
-        } catch (t: Throwable) {
-            Log.e(TAG, "Failed to start ringtone", t)
+        }
+
+        if (!playedCustom) {
+            try {
+                var alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                if (alertUri == null) {
+                    alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                }
+                if (alertUri == null) {
+                    alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                }
+                val r = if (alertUri != null) RingtoneManager.getRingtone(appContext, alertUri) else null
+                if (r != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        r.audioAttributes = AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        r.isLooping = true
+                    }
+                    try {
+                        @Suppress("DEPRECATION")
+                        r.streamType = AudioManager.STREAM_ALARM
+                    } catch (ignored: Throwable) {}
+                    r.play()
+                    ringtone = r
+                    currentPlayingPref = "system"
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to start ringtone", t)
+            }
         }
 
         try {
@@ -120,6 +202,13 @@ object AlarmAudioPlayer {
     @Synchronized
     fun stop() {
         try {
+            mediaPlayer?.stop()
+            mediaPlayer?.release()
+        } catch (ignored: Throwable) {
+        }
+        mediaPlayer = null
+
+        try {
             ringtone?.stop()
         } catch (ignored: Throwable) {
         }
@@ -145,6 +234,7 @@ object AlarmAudioPlayer {
         audioManager = null
 
         active = false
+        currentPlayingPref = null
     }
 
     /**

@@ -1,9 +1,90 @@
 # Current Integration State
 
-Updated: 2026-09-11
+Updated: 2026-09-13
 Integration branch: `main`
-Product version: `1.0.9`
-Latest integration commit: `merge: integrate workspace consolidation and LAN APK transport features`
+Product version: `1.0.16` (versionCode 51, in progress on `workspace/claude`; `main` still at `1.0.15`)
+Latest integration commit: `release: v1.0.15 - 修复批量管理打开异常与重构药品卡片排版`
+
+## UI Layout & Interaction Refinement & Gentle Update Reminders (workspace/claude)
+
+- **时段标签竖排断行修复**：在 `src/ui/styles/legacy.css` 与 `src/ui/styles/pages/medication-editor.css` 中为 `.slot-tag` 及 `.meal-slot-head .slot-tag` 补充 `white-space: nowrap; flex-shrink: 0; min-width: max-content;`，彻底消除中文字符（早/上、中/午、晚/上）在弹性布局受挤压时的竖向断字；
+- **智能快速填表空间分配重塑**：消除 `.smart-fill-ocr-wrap .btn` 继承 `flex-basis: 220px` 造成的高度异常膨胀，恢复为约 44px 标准单行功能按钮；自然语言输入文本框扩大至 4 行（`min-height: 96px`），为文字描述留足输入与核对视野；
+- **编辑药品顶部向导极简进度条重构**：将 `.med-wizard-steps` 重构为极简进度条风格（居中显示「步骤 2/3 · 用药计划」并配合三段式细长进度指示条），彻底消除移动端小屏（360px~412px）下的文字折行，高度更紧凑；
+- **批量管理卡片居中垂直流与纯紫色边框高亮**：移除卡片内 44px 左侧空白复选框列，卡片内部采用居中垂直流排版（缩略图居中置顶、名称剂量居中、时段胶囊居中），100% 充满双列网格空间；卡片选中态改为纯紫色高亮边框（无对勾图标、无底色填充），隐藏复选框保留完整无障碍读屏语义；
+- **应用更新提醒降级为纯轻提醒**：
+  - 原生 Android 提醒通道剥离强提醒：创建独立轻量通知渠道 `app_update_channel`（优先级设为低 `importance: 2`，无响铃、无振动、不弹出顶层全屏横幅强打扰），且移除「已服用/跳过」用药操作按钮；
+  - Web 端提醒通道对齐轻提醒规范：更新提醒取消强制常驻（`requireInteraction: false`），开启静默参数（`silent: true`），清空用药动作按钮；
+  - 前台运行免打扰：应用在前台使用（`document.visibilityState === 'visible'`）时，抑制系统级外发通知，仅通过事件刷新界面徽标；
+  - 底栏「我的」导航项加入优雅的小红点提示（`.tabbar-update-dot`），发现新版本时安静提示，不强加感知；
+- **质量门禁**：全量 89 个测试套件 564 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
+
+## Medication Edit Redesign, Batch Management Fix & Card Layout (v1.0.15, versionCode 50, workspace/claude)
+
+- **彻底解决「批量管理无法打开」的根因（持久 Tab 信号死锁）**：
+  - 在 `src/router.ts` 中引入 `abortTransientController(previousTabKey)`，切出视图时若上一页面为已在 TabPool 中成功渲染的持久 Tab（`prevEntry?.rendered && prevEntry.controller === activeController`），严禁 abort 它的控制器，仅在离开瞬态子页面时执行 abort；
+  - `src/pages/MedList.ts` 解除 `enterBatchMode` 对外部路由 signal 的死锁依赖，基于 `root.isConnected` 进行生命周期与挂载防护，「退出批量」无条件安全返回普通列表。
+- **批量管理界面排版升级与药品缩略图**：
+  - 并行获取药品实拍照（`getMedPhotoUrls`），每张批量卡片头部新增 `.medication-batch-thumb` 缩略图容器，展示 16:10 药盒照片或 3D 拟物药瓶/药丸图（`getOrCreateMed3DImage`）；
+  - 提醒时段改用 `display: flex; flex-wrap: wrap; gap: 3px;` 横向自然流式排版，彻底解决纵向单列堆叠拉长卡片的问题；
+  - 加深复选框边框、整卡点选、主色微光选中态，工具栏显示「共 X 种 · 已选 Y 种」。
+- **药品编辑/新增页面（MedEdit）排版重构**：
+  - 采用 `.med-section-card` 模块化卡片体系与浅色衬底输入框，强化表单内容分隔；
+  - 合并每次剂量输入与常用单位胶囊，周期用药移入第二步服药规则，危险删除区移至页面底部。
+- **质量门禁**：
+  - 全量 89 个测试套件 558 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
+
+## Full-Screen Coverage & Alarm Ringtone Engine Fix (v1.0.14, versionCode 49, workspace/claude)
+
+- **产品正式版本发布 (v1.0.14, versionCode 49)**：
+  - 提醒响铃声音恢复正常：彻底修复了专属提醒音乐《晨间活力》在部分机型上调用底层音频引擎时因参数异常导致静音的缺陷；响铃前新增系统闹钟通道音量检查，若被用户置为 0 会自动调节至安全提示音量，确保即使手机处于静音或振动模式下也能如系统闹钟般清晰响铃；
+  - 到点全屏覆盖与屏幕唤醒：在底层提醒契约中解除对全屏权限状态的硬拦截，始终绑定系统最高优先级全屏意图（`setFullScreenIntent`），并加入屏幕点亮唤醒锁（WakeLock）；通过前台服务与后台启动豁免参数进行多重拉起保活，确保到点时无论是锁屏灭屏还是亮屏使用其他应用均能直接弹出全屏界面；
+  - 权限状态双向独立引导：在设置页提醒设置中重构权限展示逻辑，拆分全屏提醒与悬浮窗（在其他应用上层显示）的独立检测，提供一键跳转系统设置引导；
+  - 质量门禁：全量 89 个测试套件 557 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
+
+## Web Incremental Hot Update Fix & Dual Update Mode (v1.0.13, versionCode 48, workspace/claude)
+
+- **产品正式版本发布 (v1.0.13, versionCode 48)**：
+  - Web 增量热更新判断修复：修复了版本检查中对增量更新判定条件的逻辑缺陷（原逻辑因目标版本号大于本地而导致增量更新永远被误判为不可用），正确将最低原生 APK versionCode 底座门槛定为 44（v1.0.9 起引入），让合规底座设备优先走秒级轻量热更新；
+  - 杜绝跨平台校验和漂移：重构 `bundle-web.mjs` 为纯 JS 标准打包实现，消除操作系统之间生成 zip 附件的 SHA256 哈希不一致；新增 Cloudflare Pages 动态边缘函数（`functions/version.json.ts`），直接从 GitHub Releases 提取权威资产哈希与大小，彻底杜绝校验和漂移引发的更新中断；
+  - 双更新模式自主选择与故障容错：在更新界面中默认提供“一键秒级更新”，同时保留“下载完整包”选项供用户自由选择；下载轻量包发生网络或校验异常时，自动弹窗告知并无缝切换至完整包下载通道；
+  - 质量门禁：全量测试套件 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
+
+- **产品正式版本发布 (v1.0.12, versionCode 47)**：
+  - 全屏提醒前台直显：新增悬浮窗（在其他应用上层显示）与小米等品牌后台弹出界面能力，开启后用药时间到达时直接拉起全屏提醒界面，不再停留为顶部常驻通知条；
+  - 响铃通道与双重声音彻底剥离：通知渠道改造为完全静音通知（`setSound(null, null)`），仅保留顶部通知栏状态；提醒声音由原生 `AlarmAudioPlayer` 单独播放并统一切换至 `STREAM_ALARM` 闹钟音频通道，解决通知音与专属音乐混杂双重发声问题；
+  - 闹钟音量键随心调节：全屏提醒界面绑定 `volumeControlStream = STREAM_ALARM`，响铃时按手机侧边音量键可直接调节闹钟大小；
+  - 权限设置与引导完善：设置页新增全屏显示权限一键跳转开关，针对小米、华为、OPPO、vivo 等机型补充后台弹出界面与悬浮窗指引；
+  - 质量门禁：全量 89 个测试套件 557 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
+
+## Architecture Modularization, Tab Keep-Alive & Storage/Keep-Alive Enhancements (v1.0.11, versionCode 46, workspace/claude)
+
+- **产品正式版本发布 (v1.0.11, versionCode 46)**：
+  - 界面流畅度提升：底栏一级页面常驻缓存池与滚动位置记忆，子页面 AbortSignal 自动取消，WeakMap 引用安全防重，杜绝频繁白屏重新加载；
+  - 手机存储与缓存清理：设置页新增应用存储占用分析与一键清理临时缓存；
+  - 主流手机后台保活指引：新增小米（澎湃/MIUI）、华为（鸿蒙/EMUI）、OPPO（ColorOS）、vivo（OriginOS）的自启动与后台运行指引及快捷跳转；
+  - 巨石代码深度模块化：`Settings.ts` (2,715行 -> `src/pages/settings/`), `local.ts` (1,968行 -> `src/db/repositories/`), `assistantTools.ts` (1,776行 -> `src/ai/tools/`), `MedEdit.ts` (1,579行 -> `src/pages/medEdit/`)，100% 保持向后兼容；
+  - 质量门禁：全量 89 个测试套件 557 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
+
+## Tab Keep-Alive View Caching & Incremental Data Update Architecture 2026-09-12 (workspace/claude)
+
+- **底栏一级页面常驻缓存与滚动位置记忆 (`src/app/tabPool.ts`, `src/router.ts`, `src/db/databaseEvents.ts`)**：
+  - **一级页面常驻缓存池**：将四个主要底栏页面（今日清单 `/today`、药品列表 `/meds`、用药历史 `/history`、设置 `/settings`）切换机制改造为基于 DOM 节点保活的视图池（Tab Pool）。切换标签时不再销毁和重建整个页面，而是通过隐藏与显示保留容器节点，避免页面反复重建与白屏闪烁；
+  - **独立子页面隔离容器与首跳防御**：进入新增药品、药品详情、扫码分类、库存盘点等子页面时，将当前主页面隐藏并挂载子页面；支持以子页面为首屏直接启动，进入一级页面时彻底清理瞬态节点与取消信号；返回上一级时销毁子页面并立刻恢复主页面原有状态；
+  - **子页面 AbortSignal 取消链路闭环**：切回底栏页面时主动中止正在运行的子页面异步任务（如摄像头扫码、AI 推理或网络请求），杜绝后台隐蔽资源消耗与内存泄漏；
+  - **滚动位置精准恢复与重复点击平滑回顶**：离开页面前自动记录主滚动区域的滚动条位置，重新进入时自动还原；底栏按钮注入同路由点击拦截，真实点击已处于激活态的标签页时，平滑回到顶部并触发页面激活事件；
+  - **基于版本号与跨日期的增量更新机制**：新增数据库变更通知系统（覆盖单药、批量药品新增、库存扣减/撤回、时段设置与照片更新）与生命周期事件（`tab:activated` / `tab:deactivated`）。今日清单、药品列表与历史记录在重新切回时，仅在检测到底层数据变更或跨过午夜日期变更时才增量刷新必要内容，无变更时保持原有展示不变；
+  - **WeakMap 引用生命周期安全防重**：今日清单、药品列表与历史记录引入 WeakMap 实例清理机制，页面内切换时段筛选或多次打卡刷新时自动解绑前序事件监听器，彻底杜绝监听器倍增与并发重渲引发的内存与性能隐患；
+  - **退出设置页自动停止试听**：设置页面在切出或离开时，通过 `tab:deactivated` 自动停止正在播放的铃声试听；
+  - **质量门禁**：新增 `tests/tabKeepAlive.test.ts` 专项深度测试（共 13 项验证），全量 89 个测试套件 550 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
+
+## Medication Alarm Ringtone Customization & Switchable Preference 2026-09-11 (workspace/claude)
+
+- **用药提醒默认铃声定制与自由切换落地 (`src/features/alarmRingtone.ts`, `Settings.ts`, `AlarmAudioPlayer.kt`)**：
+  - **专属音频资源导入**：将用户指定的音频规范导入至 Android 原生 raw 资源 (`android/app/src/main/res/raw/morning_energy.mp3`) 与 Web 静态资产 (`public/audio/morning_energy.mp3`)；
+  - **默认铃声切换为专属音乐**：Android `AlarmAudioPlayer.kt` 优先使用 `MediaPlayer` 循环播放《晨间活力》（`AudioAttributes.USAGE_ALARM` 通道并管理临时音频焦点）；
+  - **支持系统铃声回退与自由选择**：设置面板常驻渲染「用药提醒铃声」选择卡片，提供「晨间活力（专属推荐）」与「系统默认闹钟」，用户可自由切换并即时同步到原生 SharedPreferences 与 localStorage；
+  - **支持在线试听**：设置页提供试听按钮，一键试听旋律或停止播放，退出页面自动清理；
+  - **质量门禁**：新增 `tests/alarmRingtone.test.ts`，全量 86 个测试套件 529 项测试 100% 通过，`npm run typecheck` 0 报错，Gradle 编译与 APK 构建畅通无阻。
 
 ## Web Bundle Incremental Hot-Update Release 2026-09-11 (v1.0.9, versionCode 44, workspace/claude)
 

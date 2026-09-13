@@ -15,8 +15,10 @@ export interface NativeMedicationAlarmAction {
 interface NativeAlarmPlugin {
   reconcile(options: { notifications: NativeAlarmNotification[] }): Promise<{ scheduled: number }>;
   cancel(options: { tag: string }): Promise<void>;
-  checkFullScreenPermission(): Promise<{ capability: FullScreenAlarmCapability }>;
+  checkFullScreenPermission(): Promise<{ capability: FullScreenAlarmCapability; overlayCapability?: FullScreenAlarmCapability; canDrawOverlays?: boolean }>;
   openFullScreenSettings(): Promise<void>;
+  checkOverlayPermission?(): Promise<{ capability: FullScreenAlarmCapability; granted: boolean }>;
+  openOverlaySettings?(): Promise<void>;
   getPendingActions(): Promise<{ actions: NativeMedicationAlarmAction[] }>;
   /** 非破坏性确认：只移除已处理成功的 action（防丢），未确认项保留待下次重放 */
   acknowledgeActions(options: { ids: string[] }): Promise<void>;
@@ -24,6 +26,8 @@ interface NativeAlarmPlugin {
   fireNow(options: { mode?: string; title?: string; body?: string; scanVerify?: boolean; scanToken?: string }): Promise<void>;
   isAccessibilityServiceEnabled(): Promise<{ enabled: boolean }>;
   openAccessibilitySettings(): Promise<void>;
+  getRingtonePreference(): Promise<{ ringtone: string }>;
+  setRingtonePreference(options: { ringtone: string }): Promise<{ ringtone: string; success: boolean }>;
 }
 
 interface NativeAlarmNotification {
@@ -149,3 +153,41 @@ export async function openAccessibilityGuardSettings(): Promise<void> {
     // 忽略异常
   }
 }
+
+export async function getNativeAlarmRingtone(): Promise<string | null> {
+  if (!nativeMedicationAlarmAvailable()) return null;
+  try {
+    const res = await plugin.getRingtonePreference();
+    return res?.ringtone ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setNativeAlarmRingtone(ringtone: string): Promise<boolean> {
+  if (!nativeMedicationAlarmAvailable()) return false;
+  try {
+    const res = await plugin.setRingtonePreference({ ringtone });
+    return res?.success ?? false;
+  } catch {
+    return false;
+  }
+}
+
+export async function checkOverlayCapability(): Promise<FullScreenAlarmCapability> {
+  if (!nativeMedicationAlarmAvailable()) return 'unavailable';
+  try {
+    const result = await plugin.checkOverlayPermission?.();
+    return result?.capability ?? 'unavailable';
+  } catch {
+    return 'unavailable';
+  }
+}
+
+export async function openOverlaySettings(): Promise<void> {
+  if (!nativeMedicationAlarmAvailable()) return;
+  try {
+    await plugin.openOverlaySettings?.();
+  } catch {}
+}
+

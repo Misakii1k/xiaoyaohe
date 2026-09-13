@@ -27,6 +27,7 @@ const REGISTRY_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 const ACTION_TYPE_ID = 'medication-reminder-actions-v1';
 const STRONG_CHANNEL_ID = 'medication_strong_v2';
 const ALARM_CHANNEL_ID = 'medication_alarm_v1';
+const UPDATE_CHANNEL_ID = 'app_update_channel';
 
 interface TruncationInfo {
   truncated: number;
@@ -420,20 +421,32 @@ private async scheduleInChunksSafe(
     };
     // 组载荷（V2）用 data.mode，旧单药载荷用 data.reminderMode，两者都识别
     const reminderMode = notification.data?.mode ?? notification.data?.reminderMode;
+    const isUpdate =
+      notification.tag === 'medbox-app-update' ||
+      notification.data?.channel === 'update' ||
+      reminderMode === 'light';
+    const isAlarm =
+      reminderMode === 'fullscreen-short' || reminderMode === 'fullscreen-persistent';
+    const channelId = isAlarm
+      ? ALARM_CHANNEL_ID
+      : isUpdate
+        ? UPDATE_CHANNEL_ID
+        : STRONG_CHANNEL_ID;
+
     const native: LocalNotificationSchema = {
       id,
       title: notification.title,
       body: notification.body,
       largeBody: notification.body,
       autoCancel: true,
-      actionTypeId: ACTION_TYPE_ID,
-      channelId:
-        reminderMode === 'fullscreen-short' || reminderMode === 'fullscreen-persistent'
-          ? ALARM_CHANNEL_ID
-          : STRONG_CHANNEL_ID,
+      channelId,
       extra: { __medboxReminder: envelope },
-      silent: notification.silent ?? false,
+      silent: isUpdate ? true : (notification.silent ?? false),
     };
+    // 仅服药提醒才挂载「已服用 / 跳过」操作按钮，避免出现在应用更新等轻提醒上
+    if (!isUpdate) {
+      native.actionTypeId = ACTION_TYPE_ID;
+    }
     if (at != null) {
       const local = new Date(at);
       native.schedule = {
@@ -469,15 +482,24 @@ private async scheduleInChunksSafe(
         lightColor: '#17745B',
       }),
         this.plugin.createChannel({
-        id: ALARM_CHANNEL_ID,
-        name: '用药全屏提醒',
-        description: '需要立即处理的全屏用药提醒',
-        importance: 5,
-        visibility: 1,
-        vibration: true,
-        lights: true,
-        lightColor: '#17745B',
-      }),
+          id: ALARM_CHANNEL_ID,
+          name: '用药全屏提醒',
+          description: '需要立即处理的全屏用药提醒',
+          importance: 5,
+          visibility: 1,
+          vibration: true,
+          lights: true,
+          lightColor: '#17745B',
+        }),
+        this.plugin.createChannel({
+          id: UPDATE_CHANNEL_ID,
+          name: '应用更新与系统消息',
+          description: '软件版本更新与系统轻量通知，静默不打扰',
+          importance: 2,
+          visibility: 1,
+          vibration: false,
+          lights: false,
+        }),
         this.plugin.registerActionTypes({
         types: [{
           id: ACTION_TYPE_ID,

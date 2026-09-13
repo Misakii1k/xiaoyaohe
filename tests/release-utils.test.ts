@@ -140,6 +140,69 @@ describe('release version validation', () => {
         androidVersionCode: 44,
       }),
     ).toEqual({ version: '1.0.9', versionCode: 44 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '1.0.10',
+        lockVersion: '1.0.10',
+        androidVersionName: '1.0.10',
+        androidVersionCode: 45,
+      }),
+    ).toEqual({ version: '1.0.10', versionCode: 45 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '1.0.11',
+        lockVersion: '1.0.11',
+        androidVersionName: '1.0.11',
+        androidVersionCode: 46,
+      }),
+    ).toEqual({ version: '1.0.11', versionCode: 46 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '1.0.12',
+        lockVersion: '1.0.12',
+        androidVersionName: '1.0.12',
+        androidVersionCode: 47,
+      }),
+    ).toEqual({ version: '1.0.12', versionCode: 47 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '1.0.13',
+        lockVersion: '1.0.13',
+        androidVersionName: '1.0.13',
+        androidVersionCode: 48,
+      }),
+    ).toEqual({ version: '1.0.13', versionCode: 48 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '1.0.14',
+        lockVersion: '1.0.14',
+        androidVersionName: '1.0.14',
+        androidVersionCode: 49,
+      }),
+    ).toEqual({ version: '1.0.14', versionCode: 49 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '1.0.15',
+        lockVersion: '1.0.15',
+        androidVersionName: '1.0.15',
+        androidVersionCode: 50,
+      }),
+    ).toEqual({ version: '1.0.15', versionCode: 50 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '1.0.16',
+        lockVersion: '1.0.16',
+        androidVersionName: '1.0.16',
+        androidVersionCode: 51,
+      }),
+    ).toEqual({ version: '1.0.16', versionCode: 51 });
   });
 
   it('requires plain-language notes for the current release version', () => {
@@ -354,7 +417,7 @@ describe('Android-only distribution contract', () => {
 
     expect(packageJson).toMatchObject({
       name: 'xiaoyaohe',
-      version: '1.0.9',
+      version: '1.0.16',
       description: expect.stringContaining('Android App'),
       dependencies: { qrcode: expect.any(String) },
       devDependencies: { '@types/qrcode': expect.any(String) },

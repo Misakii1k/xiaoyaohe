@@ -86,6 +86,11 @@
 .medication-draft-card > .ui-accordion { margin-block-start: var(--space-2); }
 .medication-field .ui-picker { inline-size: 100%; }
 .meal-slot-head .ui-picker-trigger { min-block-size: 40px; }
+.meal-slot-head .slot-tag {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  min-width: max-content;
+}
 
 /* 药盒照片：编辑页顶部的大预览区，点预览弹出重拍 / 重新裁切 */
 .box-photo-block { display: grid; gap: var(--space-2); }
@@ -190,8 +195,19 @@
 
 .box-photo-placeholder svg { inline-size: 28px; block-size: 28px; }
 .box-photo-placeholder[hidden] { display: none; }
-.box-photo-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.box-photo-btn { justify-self: start; }
+.box-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  margin-top: var(--space-1);
+}
+.box-photo-actions .btn {
+  flex: 1 1 auto;
+  min-inline-size: 96px;
+  justify-content: center;
+}
 
 .box-photo-crop-overlay .bottom-sheet {
   inline-size: min(100%, 720px);
@@ -524,95 +540,89 @@
   border-color: var(--color-border);
 }
 
-/* 药品向导模式步骤指示条 */
+/* 药品向导模式极简步骤指示条 */
 .med-wizard-steps {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  padding: 10px 14px;
+  padding: 10px 16px;
   margin-block-end: var(--space-3);
   box-shadow: var(--shadow-sm);
   position: relative;
 }
 
-.med-wizard-step-item {
+.med-wizard-header {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  background: none;
-  border: none;
-  padding: 6px 8px;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  color: var(--color-text-muted);
-  font-family: inherit;
-  transition: all 0.2s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.med-wizard-step-num {
-  inline-size: 26px;
-  block-size: 26px;
-  border-radius: var(--radius-full);
-  display: grid;
-  place-items: center;
-  font-size: 13px;
+  font-size: var(--fs-subheadline);
   font-weight: 700;
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-  border: 1.5px solid var(--color-border);
-  font-variant-numeric: tabular-nums;
-  transition: all 0.2s ease;
-}
-
-.med-wizard-step-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: start;
-}
-
-.med-wizard-step-title {
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--color-text);
   line-height: 1.2;
 }
 
-.med-wizard-step-item.is-current {
+.med-wizard-step-badge {
   color: var(--color-primary);
+  font-size: var(--fs-caption);
+  font-weight: 800;
+  background: var(--color-primary-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
 }
 
-.med-wizard-step-item.is-current .med-wizard-step-num {
-  background: var(--color-primary);
-  color: #ffffff;
-  border-color: var(--color-primary);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+.med-wizard-step-dot {
+  color: var(--color-text-muted);
+  font-weight: 600;
 }
 
-.med-wizard-step-item.is-done {
+.med-wizard-step-title {
+  font-size: var(--fs-subheadline);
+  font-weight: 700;
   color: var(--color-text);
 }
 
-.med-wizard-step-item.is-done .med-wizard-step-num {
-  background: var(--tint-green-bg);
-  color: var(--color-success);
-  border-color: var(--color-success);
+.med-wizard-progress-track {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  inline-size: 100%;
 }
 
-.med-wizard-step-divider {
-  flex: 1 1 8px;
-  block-size: 2px;
-  background: var(--color-border);
-  margin-inline: 4px;
-  border-radius: 1px;
+.med-wizard-step-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  outline: none;
 }
 
-.med-wizard-step-divider.is-done {
+.med-wizard-step-segment {
+  inline-size: 100%;
+  block-size: 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.med-wizard-step-item.is-done .med-wizard-step-segment {
   background: var(--color-primary);
+  border-color: var(--color-primary);
+  opacity: 0.6;
+}
+
+.med-wizard-step-item.is-current .med-wizard-step-segment {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+  opacity: 1;
 }
 
 .med-wizard-step-content[hidden] {
@@ -688,3 +698,245 @@
   background: var(--color-surface);
   border-color: var(--color-border);
 }
+
+/* 模块化卡片架构 (Sectioned Cards) */
+.med-wizard-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.med-section-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.med-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.med-section-header svg {
+  inline-size: 18px;
+  block-size: 18px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.med-section-sub {
+  font-size: var(--fs-footnote);
+  color: var(--color-text-muted);
+  margin-top: -6px;
+  margin-bottom: 4px;
+}
+
+/* 增强表单内字段的边界与底衬对比度 */
+.med-section-card .field {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.med-section-card .field label {
+  font-size: var(--fs-subheadline);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.med-section-card input[type='text'],
+.med-section-card input[type='number'],
+.med-section-card textarea {
+  inline-size: 100%;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  padding: 10px 12px;
+  font-size: var(--fs-body);
+  transition: all 0.2s ease;
+}
+
+.med-section-card input[type='text']:focus,
+.med-section-card input[type='number']:focus,
+.med-section-card textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+/* 剂量输入组合与快捷单位胶囊 */
+.dose-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.quick-unit-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -2px;
+}
+
+.quick-unit-label {
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+}
+
+.quick-unit-chip {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.quick-unit-chip:hover,
+.quick-unit-chip.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* 智能快捷录入卡片 */
+.med-smart-fill-card {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.04) 0%, rgba(168, 85, 247, 0.04) 100%), var(--color-surface);
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+.smart-fill-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.smart-fill-ocr-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.smart-fill-ocr-wrap .btn {
+  inline-size: 100%;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-block-size: var(--tap);
+}
+
+.smart-fill-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+}
+
+.smart-fill-divider::before,
+.smart-fill-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+/* 库存双列网格 */
+.inventory-fields-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (max-width: 360px) {
+  .inventory-fields-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 时段卡片内行项样式规范 */
+.med-section-card .meal-slot-row {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  box-shadow: none;
+  padding: 12px;
+  margin-top: 6px;
+}
+
+/* 周期用药内行 */
+.cycle-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-subheadline);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.cycle-toggle-row input[type='checkbox'] {
+  inline-size: 18px;
+  block-size: 18px;
+  accent-color: var(--color-primary);
+}
+
+.cycle-inputs-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--color-border);
+}
+
+.cycle-inputs-wrap > :last-child {
+  grid-column: 1 / -1;
+}
+
+/* 页面底部危险区域（删除药品） */
+.med-danger-zone {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--space-6) var(--space-2);
+}
+
+.med-danger-zone .ui-button {
+  font-size: var(--fs-subheadline);
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+
+.med-danger-zone .ui-button:hover {
+  opacity: 1;
+}
+
+[data-theme='dark'] .med-section-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+[data-theme='dark'] .med-section-card input[type='text'],
+[data-theme='dark'] .med-section-card input[type='number'],
+[data-theme='dark'] .med-section-card textarea {
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+

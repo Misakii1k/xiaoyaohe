@@ -8,11 +8,18 @@ import {
   deleteRule,
   recomputeReminderPeriodReviewState,
 } from '../db/local';
-import { getMedPhotoUrl, getMedPhotoRecord, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
+import { getMedPhotoUrl, prepareBoxPhoto, saveMedPhoto } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
-import { generateMedPackshot } from '../features/aiImageStudio';
-import { getEffectiveImageGenConfig } from '../ai/llmConfig';
 import { uid } from '../db/local';
+import { validateMedicationForm } from './medEdit/formValidation';
+import {
+  readNumber,
+  readPositiveNumber,
+  evaluateDoseReview,
+  calculateDailyConsumption,
+  calculateEstimatedDaysLeft,
+} from './medEdit/dosageHelper';
+import { buildBoxPhotoStudio, type BoxPhotoStudioController } from './medEdit/photoStudioHelper';
 import {
   SLOTS,
   SLOT_LABEL,
@@ -32,7 +39,7 @@ import {
   type MedicationInventory,
   type LocalDate,
 } from '../db/schema';
-import { el, renderPage, toast, confirmDialog, icon, field } from '../ui/components';
+import { el, renderPage, toast, confirmDialog, icon, field, type IconName } from '../ui/components';
 import { navigate } from '../router';
 import {
   identifyByBlob,
@@ -44,7 +51,7 @@ import { parsePrescription, ParsePrescriptionError, type PrescriptionDraft } fro
 import { aHash } from '../features/phash';
 import { takePendingPrefill, takePendingInventoryPrefill } from '../ai/pendingPrefill';
 import { normalizeGtin, type ProductKey } from '../features/gs1';
-import { estimateDailyConsumption, estimateDaysLeft, suggestStructuredDose } from '../features/inventory';
+import { suggestStructuredDose } from '../features/inventory';
 import { parseExplicitDose } from '../domain/medicationDraft';
 import {
   getMedicationExpiryLocalDate,
@@ -54,20 +61,18 @@ import {
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { createActionDock } from '../ui/primitives/ActionDock';
 import { createButton } from '../ui/primitives/Button';
-import { openBottomSheet } from '../ui/primitives/BottomSheet';
 import { createDateControl, createTimeControl } from '../ui/primitives/Pickers';
-import { openBoxPhotoCropSheet } from '../ui/BoxPhotoCropSheet';
 
 export async function renderMedEditPage(
   root: HTMLElement,
-  medId: string | null,
+  medId: string | null = null,
   signal?: AbortSignal,
 ): Promise<() => void> {
   const cleanups: Array<() => void> = [];
   const cleanup = () => cleanups.splice(0).forEach((dispose) => dispose());
   const isActive = () => !signal?.aborted;
   signal?.addEventListener('abort', cleanup, { once: true });
-  const editing = medId !== null;
+  const editing = Boolean(medId);
   const existing = editing ? await getMed(medId!) : undefined;
   if (signal?.aborted) return cleanup;
   if (editing && !existing) {
@@ -101,8 +106,8 @@ export async function renderMedEditPage(
 
   let pendingPhoto: Blob | null = null;
   let originalPhoto: Blob | null = null;
-  let existingPhotoBlob: Blob | null = null;
   let photoKind: 'original' | 'ai_packshot' = 'original';
+  let photoStudio: BoxPhotoStudioController | null = null;
 
   if (!editing) {
     const pf = takePendingPrefill();
@@ -134,7 +139,19 @@ export async function renderMedEditPage(
   const timeInputs = new Map<Slot, HTMLInputElement>();
 
   const content = el('div', { class: 'page medication-edit-page' });
-  const form = el('div', { class: 'card' });
+  const form = el('div', { class: 'med-wizard-form' });
+
+  function createSectionCard(title: string, iconName?: IconName, subtitle?: string): HTMLElement {
+    const card = el('div', { class: 'med-section-card' });
+    const header = el('div', { class: 'med-section-header' });
+    if (iconName) header.append(icon(iconName));
+    header.append(el('span', { text: title }));
+    card.append(header);
+    if (subtitle) {
+      card.append(el('div', { class: 'med-section-sub', text: subtitle }));
+    }
+    return card;
+  }
 
   const nameInput = el('input', { type: 'text', value: med.name, placeholder: '例如：阿司匹林肠溶片' });
   const dosageInput = el('input', { type: 'text', value: med.dosageText, placeholder: '例如：100mg/片' });
@@ -145,12 +162,12 @@ export async function renderMedEditPage(
     step: '0.01',
     inputMode: 'decimal',
     value: med.doseQuantity != null ? String(med.doseQuantity) : '',
-    placeholder: '例如：1.5',
+    placeholder: '例如：1',
   } as any) as HTMLInputElement;
   const doseUnitInput = el('input', {
     type: 'text',
     value: med.doseUnit || '',
-    placeholder: '片 / 粒 / 袋 / mL',
+    placeholder: '例如：片',
   }) as HTMLInputElement;
   const notesInput = el('textarea', { value: med.notes || '', placeholder: '医嘱、注意事项等' });
 
@@ -166,7 +183,6 @@ export async function renderMedEditPage(
   const scheduleWrap = el('div', { class: 'meal-slot-list' });
   const dayChips = el('div', { class: 'chips' });
   // 提醒按时间段聚合：每天每个时段只发一条整体提醒，时间与方式在设置页统一管理。
-  // 这里仅保留时段选择与精确时间，用于临床展示、记录与库存归因。
   const reminderHint = el('div', { class: 'muted helper-line period-reminder-hint', html: '' });
   function refreshReminderHint(): void {
     const slots = SLOTS.filter((s) => selectedSlots.has(s));
@@ -210,13 +226,35 @@ export async function renderMedEditPage(
     rows: 2,
   } as any) as HTMLTextAreaElement;
 
-  const step1 = el('div', { class: 'med-wizard-step-content med-step-1' });
-  step1.append(buildBoxPhotoBlock());
-  step1.append(buildAiPhotoBlock());
-  step1.append(buildNluBlock());
-  step1.append(field('药名', nameInput));
-  step1.append(field('规格', dosageInput));
+  // 快捷常用单位胶囊
+  let updateQuickUnitChips = () => {};
 
+  // ================= 步骤 1：基本信息 =================
+  const step1 = el('div', { class: 'med-wizard-step-content med-step-1' });
+
+  // 1.1 药盒照片卡
+  const photoCard = createSectionCard('药盒照片', 'camera', '拍照或上传清晰正面图，找药核对一目了然');
+  photoCard.append(buildBoxPhotoBlock());
+  step1.append(photoCard);
+
+  // 1.2 智能辅助录入卡
+  const smartCard = createSectionCard('智能快速填表', 'sparkles', '支持拍照识图或直接描述一句话，AI 自动填表');
+  smartCard.classList.add('med-smart-fill-card');
+  const smartGrid = el('div', { class: 'smart-fill-grid' });
+  const ocrBlock = buildAiPhotoBlock();
+  ocrBlock.classList.add('smart-fill-ocr-wrap');
+  const nluBlock = buildNluBlock();
+  smartGrid.append(ocrBlock, el('div', { class: 'smart-fill-divider', text: '或文字描述' }), nluBlock);
+  smartCard.append(smartGrid);
+  step1.append(smartCard);
+
+  // 1.3 药品基本档案卡
+  const profileCard = createSectionCard('基本档案', 'pill', '药品的通用名称与包装规格');
+  profileCard.append(field('药名 *', nameInput));
+  profileCard.append(field('规格', dosageInput));
+  step1.append(profileCard);
+
+  // ================= 步骤 2：用药计划 =================
   for (const s of SLOTS) {
     const chip = el('button', {
       class: 'chip' + (selectedSlots.has(s) ? ' on' : ''),
@@ -241,18 +279,57 @@ export async function renderMedEditPage(
   }
 
   const step2 = el('div', { class: 'med-wizard-step-content med-step-2' });
-  step2.append(field('原医嘱用量', amountInput));
-  const structuredDose = el('div', { class: 'dose-structure-grid' });
-  structuredDose.append(field('每次剂量数值', doseQuantityInput));
-  structuredDose.append(field('剂量单位', doseUnitInput));
-  step2.append(structuredDose);
-  const doseReview = el('div', { class: 'dose-review' });
-  step2.append(doseReview);
-  step2.append(field('服药时段（可多选）', slotChips));
-  step2.append(scheduleWrap);
-  step2.append(reminderHint);
-  renderScheduleControls();
 
+  // 2.1 每次服用剂量卡（合二为一，提供数值+单位与快捷胶囊）
+  const doseCard = createSectionCard('服用剂量', 'pill', '每次服用的具体数值与计量单位');
+  const doseInputRow = el('div', { class: 'dose-input-row' });
+  doseInputRow.append(field('每次剂量数值 *', doseQuantityInput));
+  doseInputRow.append(field('剂量单位 *', doseUnitInput));
+  doseCard.append(doseInputRow);
+
+  const quickUnits = ['片', '粒', '袋', 'mL', '支', '丸', 'mg'];
+  const quickUnitRow = el('div', { class: 'quick-unit-row' });
+  quickUnitRow.append(el('span', { class: 'quick-unit-label', text: '常用单位：' }));
+  const quickChips: HTMLElement[] = [];
+  for (const u of quickUnits) {
+    const chip = el('button', {
+      type: 'button',
+      class: 'quick-unit-chip' + (doseUnitInput.value.trim() === u ? ' is-active' : ''),
+      text: u,
+    });
+    chip.onclick = () => {
+      doseUnitInput.value = u;
+      updateQuickUnitChips();
+      syncDoseFromInputs();
+    };
+    quickChips.push(chip);
+    quickUnitRow.append(chip);
+  }
+  updateQuickUnitChips = () => {
+    quickChips.forEach((c) => {
+      c.classList.toggle('is-active', c.textContent === doseUnitInput.value.trim());
+    });
+  };
+  doseUnitInput.addEventListener('input', updateQuickUnitChips);
+  doseCard.append(quickUnitRow);
+
+  function syncDoseFromInputs(): void {
+    const q = doseQuantityInput.value.trim();
+    const u = doseUnitInput.value.trim();
+    if (q && u) {
+      amountInput.value = `${q}${u}`;
+    }
+    refreshDaysLeft();
+    renderDoseReview();
+  }
+  doseQuantityInput.addEventListener('input', syncDoseFromInputs);
+  doseUnitInput.addEventListener('input', syncDoseFromInputs);
+
+  const doseReview = el('div', { class: 'dose-review' });
+  doseCard.append(doseReview);
+  step2.append(doseCard);
+
+  // 2.2 服药计划卡
   for (let d = 0; d < 7; d++) {
     const chip = el('button', {
       class: 'chip sm' + (selectedDays.has(d) ? ' on' : ''),
@@ -269,14 +346,21 @@ export async function renderMedEditPage(
     };
     dayChips.append(chip);
   }
-  step2.append(field('服药星期（不选 = 每天）', dayChips));
 
-  // 周期用药配置（吃 N 天停 M 天）
+  const scheduleCard = createSectionCard('服药计划', 'clock', '设定每天的服药时段、餐前餐后与提醒时间');
+  scheduleCard.append(field('服药时段（可多选）', slotChips));
+  scheduleCard.append(scheduleWrap);
+  scheduleCard.append(reminderHint);
+  scheduleCard.append(field('服药星期（不选 = 每天）', dayChips));
+  renderScheduleControls();
+  step2.append(scheduleCard);
+
+  // 2.3 周期用药配置（移至第二步用药计划）
   const existingCycleRule = existingRules.find((r) => r.cycle);
   const existingCycle = existingCycleRule?.cycle;
   let cycleEnabled = !!existingCycle;
-  const cycleCard = el('div', { class: 'sub-card cycle-editor' });
-  cycleCard.append(el('div', { class: 'section-title', html: '周期用药' }));
+  const cycleCard = createSectionCard('周期用药规则', 'calendar', '如吃 N 天停 M 天（避孕药、化疗药等特殊服药周期）');
+  cycleCard.classList.add('cycle-editor');
   const cycleToggleRow = el('label', { class: 'cycle-toggle-row' });
   const cycleCheckbox = el('input', { type: 'checkbox' } as any) as HTMLInputElement;
   cycleCheckbox.checked = cycleEnabled;
@@ -313,23 +397,54 @@ export async function renderMedEditPage(
     cycleEnabled = cycleCheckbox.checked;
     setCycleInputsVisibility();
   };
+  step2.append(cycleCard);
 
-  const inventoryCard = el('div', { class: 'sub-card inventory-editor' });
-  inventoryCard.append(el('div', { class: 'section-title', html: '剩余药量' }));
-  inventoryCard.append(buildInventoryAiBlock());
-  inventoryCard.append(field('当前剩余', remainingInput));
-  inventoryCard.append(field('按什么数（片/粒/袋）', unitInput));
-  inventoryCard.append(field('一盒 / 一瓶有多少', packageQtyInput));
-  inventoryCard.append(field('剩多少时提醒买药', lowThresholdInput));
-  inventoryCard.append(daysLeftHint);
-  inventoryCard.append(field('来源说明', inventorySourceInput));
-
+  // ================= 步骤 3：库存与备注 =================
   const step3 = el('div', { class: 'med-wizard-step-content med-step-3' });
-  step3.append(inventoryCard);
-  step3.append(field('过期日期（可选）', expiryDatePicker.root));
-  step3.append(cycleCard);
-  step3.append(field('备注', notesInput));
-  step3.append(el('div', { class: 'muted', text: '各时段具体时间与通知方式可在“时段提醒设置”中统一调整。' }));
+
+  // 3.1 药品库存卡
+  const stockCard = createSectionCard('药品库存', 'box', '记录当前余量与补药预警');
+  stockCard.classList.add('inventory-editor');
+  stockCard.append(buildInventoryAiBlock());
+
+  const stockGrid1 = el('div', { class: 'inventory-fields-grid' });
+  stockGrid1.append(field('当前剩余', remainingInput));
+  stockGrid1.append(field('库存单位', unitInput));
+  stockCard.append(stockGrid1);
+
+  const stockGrid2 = el('div', { class: 'inventory-fields-grid' });
+  stockGrid2.append(field('一盒 / 一瓶有多少', packageQtyInput));
+  stockGrid2.append(field('剩多少时提醒买药', lowThresholdInput));
+  stockCard.append(stockGrid2);
+
+  stockCard.append(daysLeftHint);
+  stockCard.append(field('过期日期（可选）', expiryDatePicker.root));
+  stockCard.append(field('来源说明', inventorySourceInput));
+  step3.append(stockCard);
+
+  // 3.2 就医与服药备注卡
+  const notesCard = createSectionCard('医嘱与备注', 'info', '记录医生特别叮嘱与用药注意事项');
+  notesCard.append(notesInput);
+  step3.append(notesCard);
+
+  // 3.3 编辑模式下的删除操作（置于第三步底部危险区，避免在吸底 Dock 误触）
+  if (editing) {
+    const dangerZone = el('div', { class: 'med-danger-zone' });
+    const delBtn = createButton({ label: '删除这种药品', variant: 'danger', icon: 'trash' });
+    delBtn.onclick = async () => {
+      if (await confirmDialog('确定删除这种药及其提醒吗？', '删除', true)) {
+        if (!isActive()) return;
+        await softDeleteMed(med.id);
+        await recomputeReminderPeriodReviewState().catch(() => undefined);
+        await rescheduleMedicationReminders().catch(() => undefined);
+        if (!isActive()) return;
+        toast('已删除');
+        navigate('/meds');
+      }
+    };
+    dangerZone.append(delBtn);
+    step3.append(dangerZone);
+  }
 
   form.append(step1, step2, step3);
 
@@ -342,25 +457,25 @@ export async function renderMedEditPage(
     { num: 3 as const, title: '库存备注' },
   ];
 
-  const stepBtns: HTMLElement[] = [];
-  const stepDividers: HTMLElement[] = [];
+  const stepHeader = el('div', { class: 'med-wizard-header' });
+  const stepBadge = el('span', { class: 'med-wizard-step-badge', text: '步骤 1/3' });
+  const stepDot = el('span', { class: 'med-wizard-step-dot', text: '·' });
+  const stepTitle = el('span', { class: 'med-wizard-step-title', text: stepsConfig[0]!.title });
+  stepHeader.append(stepBadge, stepDot, stepTitle);
 
-  stepsConfig.forEach((step, idx) => {
-    if (idx > 0) {
-      const divider = el('div', { class: 'med-wizard-step-divider' });
-      stepDividers.push(divider);
-      stepIndicator.append(divider);
-    }
+  const progressBar = el('div', { class: 'med-wizard-progress-track' });
+  const stepBtns: HTMLElement[] = [];
+
+  stepsConfig.forEach((step) => {
     const btn = el('button', {
       class: `med-wizard-step-item${step.num === 1 ? ' is-current' : ''}`,
       type: 'button',
       role: 'tab',
       'aria-selected': String(step.num === 1),
+      'aria-label': `第 ${step.num} 步：${step.title}`,
     });
-    const numEl = el('span', { class: 'med-wizard-step-num', text: String(step.num) });
-    const infoEl = el('div', { class: 'med-wizard-step-info' });
-    infoEl.append(el('span', { class: 'med-wizard-step-title', text: step.title }));
-    btn.append(numEl, infoEl);
+    const segment = el('span', { class: 'med-wizard-step-segment' });
+    btn.append(segment);
 
     btn.onclick = () => {
       if (editing) {
@@ -379,8 +494,10 @@ export async function renderMedEditPage(
     };
 
     stepBtns.push(btn);
-    stepIndicator.append(btn);
+    progressBar.append(btn);
   });
+
+  stepIndicator.append(stepHeader, progressBar);
 
   content.append(stepIndicator, form);
 
@@ -404,23 +521,35 @@ export async function renderMedEditPage(
   saveBtn.onclick = async () => {
     if (!isActive() || saveBtn.hasAttribute('disabled')) return;
     const name = nameInput.value.trim();
-    if (!name) {
-      goToStep(1);
-      toast('请填写药名');
-      nameInput.focus();
+    const cycle = readCycle();
+    const cycleStartDate = cycleEnabled && isLocalDate(cycleStartInput.value)
+      ? cycleStartInput.value
+      : undefined;
+    const doseQuantity = readPositiveNumber(doseQuantityInput.value);
+    const doseUnit = doseUnitInput.value.trim();
+
+    const formValidation = validateMedicationForm({
+      name,
+      dosageText: dosageInput.value,
+      amountPerDose: amountInput.value,
+      doseQuantity,
+      doseUnit,
+      cycleEnabled,
+      cycle,
+      cycleStartDate: cycleEnabled ? cycleStartDate : undefined,
+    });
+    if (!formValidation.valid) {
+      if (formValidation.targetStep) goToStep(formValidation.targetStep);
+      if (formValidation.errorMessage) toast(formValidation.errorMessage);
+      if (formValidation.targetField === 'name') nameInput.focus();
+      else if (formValidation.targetField === 'dose') (doseQuantity == null ? doseQuantityInput : doseUnitInput).focus();
+      else if (formValidation.targetField === 'cycle') activeDaysInput.focus();
+      else if (formValidation.targetField === 'cycleStartDate') cycleStartInput.focus();
       return;
     }
     med.name = name;
     med.dosageText = dosageInput.value.trim();
     med.amountPerDose = amountInput.value.trim();
-    const doseQuantity = readPositiveNumber(doseQuantityInput.value);
-    const doseUnit = doseUnitInput.value.trim();
-    if ((doseQuantity == null) !== !doseUnit) {
-      goToStep(2);
-      toast('请同时填写每次剂量数值和单位');
-      (doseQuantity == null ? doseQuantityInput : doseUnitInput).focus();
-      return;
-    }
     if (doseQuantity != null && doseUnit) {
       med.doseQuantity = doseQuantity;
       med.doseUnit = doseUnit;
@@ -442,29 +571,11 @@ export async function renderMedEditPage(
     med.notes = notesInput.value.trim();
     applyExpiryDate();
     // 回写 dailyConsumption（基于当前已选择的时段 + 用量推算）
-    const daily = estimateDailyConsumption(med, buildRulesPreview());
+    const daily = calculateDailyConsumption(med, buildRulesPreview());
     if (med.inventory && daily > 0) {
       med.inventory.dailyConsumption = daily;
     } else if (med.inventory) {
       delete med.inventory.dailyConsumption;
-    }
-
-    // 相互作用检查：合并新药名 + 现有药品名（排除自身）
-    const cycle = readCycle();
-    if (cycleEnabled && !cycle) {
-      goToStep(3);
-      toast('请填写有效的周期天数');
-      activeDaysInput.focus();
-      return;
-    }
-    const cycleStartDate = cycleEnabled && isLocalDate(cycleStartInput.value)
-      ? cycleStartInput.value
-      : undefined;
-    if (cycleEnabled && !cycleStartDate) {
-      goToStep(3);
-      toast('请选择本周期首个服药日');
-      cycleStartInput.focus();
-      return;
     }
 
     saveBtn.setAttribute('disabled', 'true');
@@ -490,11 +601,14 @@ export async function renderMedEditPage(
 
       // 照片失败不能把整条药品保存打成「闪退」：先落药档，再尽力存图
       let photoFailed = false;
-      if (pendingPhoto) {
+      const photoToSave = photoStudio ? photoStudio.getPendingPhoto() : pendingPhoto;
+      const kindToSave = photoStudio ? photoStudio.getPhotoKind() : photoKind;
+      const origToSave = photoStudio ? photoStudio.getOriginalPhoto() : originalPhoto;
+      if (photoToSave) {
         try {
-          await saveMedPhoto(med.id, pendingPhoto, {
-            kind: photoKind,
-            originalBlob: originalPhoto || undefined,
+          await saveMedPhoto(med.id, photoToSave, {
+            kind: kindToSave,
+            originalBlob: origToSave || undefined,
           });
         } catch (error) {
           photoFailed = true;
@@ -545,6 +659,21 @@ export async function renderMedEditPage(
         (doseQuantity == null ? doseQuantityInput : doseUnitInput).focus();
         return false;
       }
+      if (cycleEnabled) {
+        const cycle = readCycle();
+        if (!cycle) {
+          toast('请填写有效的周期天数');
+          triggerStepShake(2);
+          activeDaysInput.focus();
+          return false;
+        }
+        if (!isLocalDate(cycleStartInput.value)) {
+          toast('请选择本周期首个服药日');
+          triggerStepShake(2);
+          cycleStartInput.focus();
+          return false;
+        }
+      }
       return true;
     }
     return true;
@@ -584,24 +713,6 @@ export async function renderMedEditPage(
   const actionDock = createActionDock([prevBtn, nextBtn, saveBtn]);
   actionDock.classList.add('medication-editor-dock');
 
-  if (editing) {
-    const delBtn = createButton({ label: '删除', variant: 'danger', icon: 'trash' });
-    delBtn.onclick = async () => {
-      if (await confirmDialog('确定删除这种药及其提醒吗？', '删除', true)) {
-        if (!isActive()) return;
-        await softDeleteMed(med.id);
-        await recomputeReminderPeriodReviewState().catch(() => undefined);
-        await rescheduleMedicationReminders().catch(() => undefined);
-        if (!isActive()) return;
-        toast('已删除');
-        navigate('/meds');
-      }
-    };
-    actionDock.append(delBtn);
-  }
-
-  actionDock.append(createButton({ label: '返回', variant: 'text', icon: 'arrow-left', onClick: () => navigate('/meds') }));
-
   function goToStep(s: 1 | 2 | 3, direction?: 'next' | 'prev'): void {
     const dir = direction ?? (s > currentStep ? 'next' : 'prev');
     currentStep = s;
@@ -621,19 +732,14 @@ export async function renderMedEditPage(
       }
     });
 
+    stepBadge.textContent = `步骤 ${currentStep}/3`;
+    stepTitle.textContent = stepsConfig[currentStep - 1]?.title ?? '';
+
     stepBtns.forEach((btn, idx) => {
       const num = (idx + 1) as 1 | 2 | 3;
       btn.classList.toggle('is-current', num === currentStep);
       btn.classList.toggle('is-done', num < currentStep);
       btn.setAttribute('aria-selected', String(num === currentStep));
-      const numEl = btn.querySelector('.med-wizard-step-num');
-      if (numEl) {
-        numEl.textContent = num < currentStep ? '✓' : String(num);
-      }
-    });
-
-    stepDividers.forEach((div, idx) => {
-      div.classList.toggle('is-done', idx + 1 < currentStep);
     });
 
     prevBtn.hidden = currentStep === 1;
@@ -643,6 +749,10 @@ export async function renderMedEditPage(
       saveSpan.textContent = currentStep === 3 && !editing ? '完成保存' : '保存';
     }
     saveBtn.hidden = !editing && currentStep !== 3;
+
+    if (currentStep === 3 && !unitInput.value.trim() && doseUnitInput.value.trim()) {
+      unitInput.value = doseUnitInput.value.trim();
+    }
   }
 
   // 左右滑动手势（Swipe Gestures）
@@ -707,6 +817,8 @@ export async function renderMedEditPage(
       const heroImg = el('img', {
         src: getOrCreateMed3DImage(med.id, med.name, med.amountPerDose || med.dosageText),
         alt: med.name,
+        loading: 'lazy',
+        decoding: 'async',
       });
       void getMedPhotoUrl(med.id).then((u) => { if (u) heroImg.src = u; });
       heroThumb.append(heroImg);
@@ -727,7 +839,7 @@ export async function renderMedEditPage(
 
       const stockRow = el('div', { class: 'med-detail-metric-row' });
       const remaining = med.inventory?.remaining ?? 18;
-      const daysLeft = estimateDaysLeft(med, existingRules) ?? 18;
+      const daysLeft = calculateEstimatedDaysLeft(med, existingRules) ?? 18;
       stockRow.append(
         createMetricItem('剩余数量', `${remaining}片`),
         createMetricItem('每日用量', `${med.amountPerDose || med.dosageText || '1片'}`),
@@ -832,387 +944,21 @@ export async function renderMedEditPage(
   return cleanup;
 
   function buildBoxPhotoBlock(): HTMLElement {
-    const wrap = el('div', { class: 'box-photo-block' });
-    const preview = el('button', {
-      class: 'box-photo-preview is-empty',
-      type: 'button',
-      'aria-label': '药盒照片',
-    } as any) as HTMLButtonElement;
-    const img = el('img', { alt: '药盒照片', hidden: true } as any) as HTMLImageElement;
-    const placeholder = el('div', { class: 'box-photo-placeholder' });
-    placeholder.append(icon('camera'));
-    placeholder.append(el('span', { html: '拍一张药盒正面，之后找药看图就行' }));
-
-    const statusBadge = el('div', { class: 'box-photo-ai-badge', hidden: true });
-    preview.append(img, placeholder, statusBadge);
-
-    /** 当前预览 URL（本地创建的才需要 revoke，库里缓存的留给 medPhotos 管） */
-    let localPreviewUrl: string | null = null;
-    let hasPhoto = Boolean(pendingPhoto) || false;
-    let cropBusy = false;
-    let silentGenAbort: AbortController | null = null;
-    let isSilentGenBusy = false;
-
-    const showPhoto = (url: string, options: { local?: boolean; isPackshot?: boolean } = {}) => {
-      if (localPreviewUrl) {
-        URL.revokeObjectURL(localPreviewUrl);
-        localPreviewUrl = null;
-      }
-      if (options.local) localPreviewUrl = url;
-      img.src = url;
-      img.hidden = false;
-      if (options.isPackshot) {
-        img.classList.remove('packshot-fade-in');
-        void img.offsetWidth;
-        img.classList.add('packshot-fade-in');
-      }
-      preview.classList.remove('is-empty');
-      preview.setAttribute('aria-label', '查看药盒照片操作');
-      placeholder.hidden = true;
-      hasPhoto = true;
-      updatePhotoStatusBadges();
-    };
-
-    cleanups.push(() => {
-      if (localPreviewUrl) {
-        URL.revokeObjectURL(localPreviewUrl);
-        localPreviewUrl = null;
-      }
-      silentGenAbort?.abort();
+    photoStudio = buildBoxPhotoStudio({
+      med,
+      editing,
+      initialPhoto: pendingPhoto,
+      isActive,
+      cleanups,
+      signal,
+      getMedName: () => nameInput.value,
+      getDosageText: () => dosageInput.value,
+      onPhotoChanged: (blob, kind) => {
+        pendingPhoto = blob;
+        photoKind = kind;
+      },
     });
-
-    function updatePhotoStatusBadges(): void {
-      shootBtn.querySelector('span')!.textContent = hasPhoto ? '重拍药盒' : '拍照/选图';
-      if (photoKind === 'ai_packshot') {
-        statusBadge.hidden = false;
-        statusBadge.className = 'box-photo-ai-badge is-done';
-        statusBadge.textContent = '✨ AI 展台大图';
-        restoreBtn.hidden = !originalPhoto;
-        cropBtn.hidden = false;
-        aiGenBtn.querySelector('span')!.textContent = '重新生成大图';
-      } else if (hasPhoto) {
-        if (originalPhoto && photoKind === 'original') {
-          statusBadge.hidden = false;
-          statusBadge.className = 'box-photo-ai-badge is-original';
-          statusBadge.textContent = '原拍摄照';
-        } else {
-          statusBadge.hidden = true;
-        }
-        restoreBtn.hidden = true;
-        cropBtn.hidden = false;
-        aiGenBtn.querySelector('span')!.textContent = 'AI 生成大图';
-      } else {
-        statusBadge.hidden = true;
-        restoreBtn.hidden = true;
-        cropBtn.hidden = true;
-        aiGenBtn.querySelector('span')!.textContent = 'AI 生成大图';
-      }
-    }
-
-    // 编辑已有药或带预填照片时，异步载入当前照片与原图
-    if (pendingPhoto) {
-      void (async () => {
-        try {
-          const prepared = await prepareBoxPhoto(pendingPhoto!);
-          if (!isActive()) return;
-          pendingPhoto = prepared;
-          originalPhoto = prepared;
-          existingPhotoBlob = prepared;
-          showPhoto(URL.createObjectURL(prepared), { local: true });
-        } catch {
-          if (isActive() && pendingPhoto) showPhoto(URL.createObjectURL(pendingPhoto), { local: true });
-        }
-      })();
-    } else if (editing) {
-      void getMedPhotoRecord(med.id).then((record) => {
-        if (record && isActive() && !pendingPhoto) {
-          photoKind = record.kind || 'original';
-          originalPhoto = record.originalBlob || (photoKind === 'original' ? record.blob : null);
-          existingPhotoBlob = record.blob;
-          showPhoto(URL.createObjectURL(record.blob), { local: true });
-          updatePhotoStatusBadges();
-        }
-      });
-    }
-
-    /** 取当前已有药盒照片（原拍摄图、待存图或库中已有照片） */
-    async function getAvailablePhotoBlob(): Promise<Blob | null> {
-      if (originalPhoto) return originalPhoto;
-      if (pendingPhoto) return pendingPhoto;
-      if (existingPhotoBlob) return existingPhotoBlob;
-      if (editing) {
-        const record = await getMedPhotoRecord(med.id);
-        if (record) {
-          existingPhotoBlob = record.blob;
-          if (!originalPhoto) {
-            originalPhoto = record.originalBlob || (record.kind === 'ai_packshot' ? null : record.blob);
-          }
-          return record.originalBlob || record.blob;
-        }
-      }
-      return null;
-    }
-
-    const file = el('input', {
-      type: 'file',
-      accept: 'image/*',
-      style: 'display:none',
-    } as any) as HTMLInputElement;
-    file.setAttribute('capture', 'environment');
-
-    const shootBtn = el('button', { class: 'btn tonal box-photo-btn', type: 'button' } as any);
-    shootBtn.append(icon('camera'));
-    shootBtn.append(el('span', { html: '拍照/选图' }));
-    shootBtn.onclick = () => file.click();
-
-    const restoreBtn = el('button', {
-      class: 'btn tonal box-photo-btn',
-      type: 'button',
-      hidden: true,
-    } as any) as HTMLButtonElement;
-    restoreBtn.append(icon('undo'));
-    restoreBtn.append(el('span', { html: '恢复原图' }));
-    restoreBtn.onclick = () => {
-      if (originalPhoto) {
-        pendingPhoto = originalPhoto;
-        existingPhotoBlob = originalPhoto;
-        photoKind = 'original';
-        showPhoto(URL.createObjectURL(originalPhoto), { local: true });
-        toast('已恢复为原拍摄照片');
-      }
-    };
-
-    const aiGenBtn = el('button', {
-      class: 'btn outlined box-photo-btn',
-      type: 'button',
-    } as any) as HTMLButtonElement;
-    aiGenBtn.append(icon('sparkles'));
-    aiGenBtn.append(el('span', { html: 'AI 生成大图' }));
-    aiGenBtn.onclick = async () => {
-      const photoSource = await getAvailablePhotoBlob();
-      const medName = nameInput.value.trim();
-      if (!photoSource && !medName) {
-        toast('请先输入药品名称，或拍一张药盒照片');
-        file.click();
-        return;
-      }
-      void triggerSilentPackshot(photoSource);
-    };
-
-    const cropBtn = el('button', {
-      class: 'btn outlined box-photo-btn',
-      type: 'button',
-      hidden: true,
-    } as any) as HTMLButtonElement;
-    cropBtn.append(icon('scan'));
-    cropBtn.append(el('span', { html: '重新裁切' }));
-    cropBtn.onclick = () => void cropExistingPhoto();
-
-    async function cropExistingPhoto(): Promise<void> {
-      if (cropBusy || !isActive()) return;
-      cropBusy = true;
-      setButtonBusy(cropBtn, '正在打开…');
-      try {
-        const source = await getAvailablePhotoBlob();
-        if (!isActive()) return;
-        if (!source) {
-          toast('先拍一张药盒照片');
-          return;
-        }
-        const cropped = await openBoxPhotoCropSheet(source, { signal });
-        if (!cropped || !isActive()) return;
-        await usePhoto(cropped);
-        originalPhoto = cropped;
-        existingPhotoBlob = cropped;
-        photoKind = 'original';
-        updatePhotoStatusBadges();
-        toast('已更新裁切照片');
-        const imgCfg = getEffectiveImageGenConfig();
-        if (imgCfg.isConfigured) {
-          void triggerSilentPackshot(cropped);
-        }
-      } catch (error) {
-        if (!isActive()) return;
-        console.error('crop box photo failed', error);
-        toast('裁切失败，请重试');
-      } finally {
-        cropBusy = false;
-        if (isActive()) resetIconButton(cropBtn, 'scan', '重新裁切');
-      }
-    }
-
-    async function triggerSilentPackshot(sourceBlob: Blob | null): Promise<void> {
-      if (isSilentGenBusy) {
-        silentGenAbort?.abort();
-      }
-      const abort = new AbortController();
-      silentGenAbort = abort;
-      isSilentGenBusy = true;
-      statusBadge.hidden = false;
-      statusBadge.className = 'box-photo-ai-badge is-loading';
-      statusBadge.textContent = '✨ AI 药盒生成中…';
-
-      try {
-        const packshot = await generateMedPackshot({
-          photoBlob: sourceBlob || undefined,
-          name: nameInput.value.trim(),
-          dosageText: dosageInput.value.trim(),
-          signal: abort.signal,
-          onProgress: (step) => {
-            if (!isActive() || abort.signal.aborted) return;
-            statusBadge.textContent = `✨ ${step}`;
-          },
-        });
-        if (!isActive() || abort.signal.aborted) return;
-        pendingPhoto = packshot;
-        photoKind = 'ai_packshot';
-        if (sourceBlob) originalPhoto = sourceBlob;
-        existingPhotoBlob = packshot;
-        showPhoto(URL.createObjectURL(packshot), { local: true, isPackshot: true });
-        toast('已生成药盒大图，保存后生效');
-      } catch (error) {
-        if (abort.signal.aborted || !isActive()) return;
-        console.error('silent packshot gen failed', error);
-        statusBadge.className = 'box-photo-ai-badge is-error';
-        statusBadge.textContent = '⚠️ 生成未完成 (已保留原图)';
-        updatePhotoStatusBadges();
-        const msg = error instanceof Error ? error.message : String(error);
-        toast(`药盒生图未完成：${msg}`);
-      } finally {
-        isSilentGenBusy = false;
-      }
-    }
-
-    /** 点照片：没图直接拍；有图弹出「重拍 / 恢复原图 / 重新生成 / 裁切」 */
-    function openPhotoActions(): void {
-      if (!hasPhoto) {
-        file.click();
-        return;
-      }
-      const buttons: HTMLElement[] = [];
-
-      if (originalPhoto && photoKind === 'ai_packshot') {
-        const restore = createButton({
-          label: '恢复为原始拍摄照片',
-          variant: 'secondary',
-          icon: 'undo',
-          onClick: () => {
-            sheet.close();
-            pendingPhoto = originalPhoto;
-            existingPhotoBlob = originalPhoto;
-            photoKind = 'original';
-            showPhoto(URL.createObjectURL(originalPhoto!), { local: true });
-            toast('已恢复为原拍摄照片');
-          },
-        });
-        buttons.push(restore);
-      }
-
-      const regen = createButton({
-        label: '重新增强药盒照片',
-        icon: 'sparkles',
-        onClick: async () => {
-          sheet.close();
-          const photoSource = await getAvailablePhotoBlob();
-          if (!photoSource) {
-            toast('没有可用的原始照片');
-            return;
-          }
-          void triggerSilentPackshot(photoSource);
-        },
-      });
-      buttons.push(regen);
-
-      const retake = createButton({
-        label: '重拍/换一张',
-        variant: 'secondary',
-        icon: 'camera',
-        onClick: () => {
-          sheet.close();
-          file.click();
-        },
-      });
-      buttons.push(retake);
-
-      const recrop = createButton({
-        label: '重新裁切原图',
-        variant: 'secondary',
-        icon: 'scan',
-        onClick: () => {
-          sheet.close();
-          void cropExistingPhoto();
-        },
-      });
-      buttons.push(recrop);
-
-      const cancel = createButton({
-        label: '取消',
-        variant: 'text',
-        onClick: () => sheet.close(),
-      });
-      buttons.push(cancel);
-
-      const title = el('div', { class: 'big', html: '药盒照片与展台大图' });
-      const hint = el('div', {
-        class: 'muted',
-        html: photoKind === 'ai_packshot'
-          ? '当前呈现为纯白底 AI 商业展台大图。可以随时恢复为原始拍摄照片，或再次生成。'
-          : '当前呈现为原拍摄照片。可以点击生成 AI 展台大图，或重新拍照/裁切。',
-      });
-      const actions = el('div', { class: 'box-photo-sheet-actions' }, buttons);
-      const sheet = openBottomSheet({
-        label: '药盒照片操作',
-        content: [title, hint, actions],
-        initialFocus: buttons[0] || cancel,
-      });
-    }
-
-    file.onchange = async () => {
-      const f = file.files?.[0];
-      file.value = '';
-      if (!f || !isActive()) return;
-      shootBtn.setAttribute('disabled', 'true');
-      try {
-        await usePhoto(f, true);
-        originalPhoto = pendingPhoto;
-        existingPhotoBlob = pendingPhoto;
-        photoKind = 'original';
-        updatePhotoStatusBadges();
-
-        // 拍照/选图成功后，若生图服务已配置，后台静默排队生成展台大图（省去强制裁切打断）
-        const imgCfg = getEffectiveImageGenConfig();
-        if (imgCfg.isConfigured && pendingPhoto) {
-          void triggerSilentPackshot(pendingPhoto);
-        }
-      } catch (error) {
-        if (!isActive()) return;
-        console.error('prepare photo failed', error);
-        toast('照片处理失败，请重拍或用整张图');
-      } finally {
-        if (isActive()) shootBtn.removeAttribute('disabled');
-      }
-    };
-
-    async function usePhoto(source: Blob, addIdentityHash = false): Promise<void> {
-      const prepared = await prepareBoxPhoto(source);
-      if (!isActive()) return;
-      pendingPhoto = prepared;
-      showPhoto(URL.createObjectURL(prepared), { local: true });
-      if (!addIdentityHash) return;
-      try {
-        const h = await aHash(prepared);
-        if (h && isActive() && !med.identity.photoHashes.includes(h)) med.identity.photoHashes.push(h);
-      } catch {
-        /* hash 失败不影响保存照片 */
-      }
-    }
-
-    preview.onclick = () => openPhotoActions();
-
-    const btnRow = el('div', { class: 'box-photo-actions' });
-    btnRow.append(shootBtn, restoreBtn, aiGenBtn, cropBtn);
-    wrap.append(preview, btnRow, file);
-    return wrap;
+    return photoStudio.element;
   }
 
   function buildAiPhotoBlock(): HTMLElement {
@@ -1253,6 +999,7 @@ export async function renderMedEditPage(
         } catch {
           pendingPhoto = f;
         }
+        photoStudio?.setPendingPhoto(pendingPhoto, 'original', f);
         toast(`认出来了，是「${r.name}」。看一眼吃药时段和剩余药量对不对`);
       } catch (e) {
         if (!isActive()) return;
@@ -1278,7 +1025,7 @@ export async function renderMedEditPage(
       id: inputId,
       class: 'nlu-input',
       placeholder: '例：阿司匹林肠溶片 100mg，早餐前和晚餐后各一片，工作日服用',
-      rows: 2,
+      rows: 4,
     } as any) as HTMLTextAreaElement;
     wrap.append(input);
 
@@ -1409,6 +1156,8 @@ export async function renderMedEditPage(
     if (!nameInput.value.trim()) nameInput.value = med.name;
     if (!dosageInput.value.trim()) dosageInput.value = med.dosageText;
     if (!amountInput.value.trim()) amountInput.value = med.amountPerDose;
+    syncExplicitDoseFromText();
+    updateQuickUnitChips();
     renderDoseReview();
     syncSlotChipVisuals();
     renderScheduleControls();
@@ -1417,7 +1166,11 @@ export async function renderMedEditPage(
   function applyDraftToForm(d: PrescriptionDraft): void {
     if (d.name) nameInput.value = d.name;
     if (d.dosageText) dosageInput.value = d.dosageText;
-    if (d.amountPerDose) amountInput.value = d.amountPerDose;
+    if (d.amountPerDose) {
+      amountInput.value = d.amountPerDose;
+      syncExplicitDoseFromText();
+      updateQuickUnitChips();
+    }
     if (d.notes) notesInput.value = d.notes;
 
     if (d.slots.length > 0) {
@@ -1562,7 +1315,7 @@ export async function renderMedEditPage(
       daysOfWeek: [...selectedDays].sort(),
       inventory: { remaining, unit },
     };
-    const days = estimateDaysLeft(previewMed, buildRulesPreview());
+    const days = calculateEstimatedDaysLeft(previewMed, buildRulesPreview());
     if (days == null || days < 0) {
       daysLeftHint.textContent = '';
       daysLeftHint.style.display = 'none';
@@ -1590,15 +1343,15 @@ export async function renderMedEditPage(
       }
       return;
     }
-    const suggestion = suggestStructuredDose(
+    const review = evaluateDoseReview(
       amountInput.value,
+      readPositiveNumber(doseQuantityInput.value),
+      doseUnitInput.value,
       unitInput?.value || med.inventory?.unit,
     );
     const message = el('div', {
-      class: 'banner warn',
-      text: suggestion
-        ? `猜您每次吃 ${suggestion.quantity}${suggestion.unit}，对不对请核实一下；没确认前不会自动扣剩余药量。`
-        : '写清楚每次吃多少（比如 1 片），剩余药量才能自动帮您扣；不清楚就照药盒或医嘱抄。',
+      class: `banner ${review.tone}`,
+      text: review.message,
     });
     doseReview.append(message);
   }
@@ -1608,6 +1361,7 @@ export async function renderMedEditPage(
     if (!parsed) return;
     doseQuantityInput.value = String(parsed.quantity);
     doseUnitInput.value = parsed.unit;
+    updateQuickUnitChips();
   }
 }
 
@@ -1687,15 +1441,6 @@ async function syncRules(
   }
 }
 
-function readNumber(value: string): number | undefined {
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 0 && value.trim() !== '' ? n : undefined;
-}
-
-function readPositiveNumber(value: string): number | undefined {
-  const valueAsNumber = readNumber(value);
-  return valueAsNumber != null && valueAsNumber > 0 ? valueAsNumber : undefined;
-}
 
 function setButtonBusy(btn: HTMLButtonElement, text: string): void {
   btn.setAttribute('disabled', 'true');

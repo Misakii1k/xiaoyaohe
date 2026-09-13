@@ -11,6 +11,7 @@ import android.content.pm.SigningInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.webkit.MimeTypeMap;
+import android.webkit.WebView;
 
 import androidx.core.content.FileProvider;
 
@@ -71,7 +72,7 @@ public final class ApkDistributionPlugin extends Plugin {
     private static final byte[] MAGIC = new byte[]{'M', 'B', 'A', 'P', 'K', '0', '0', '1'};
 
     private final Object serverLock = new Object();
-    private final ExecutorService ioExecutor =
+    private static final ExecutorService ioExecutor =
             Executors.newCachedThreadPool(new NamedThreadFactory("medbox-apk-io"));
     private ServerSocket activeServer;
     private File servingApk;
@@ -618,6 +619,288 @@ public final class ApkDistributionPlugin extends Plugin {
         } catch (Exception error) {
             call.reject("Failed to get active bundle: " + error.getMessage(), "GET_FAILED");
         }
+    }
+
+    /**
+     * 获取当前临时文件、WebView 缓存与非活跃旧增量包占用的总字节数。
+     */
+    @PluginMethod
+    public void getCacheSize(PluginCall call) {
+        ioExecutor.execute(() -> {
+            try {
+                Context context = getContext();
+                long bytes = calculateAppCacheBytes(context);
+                JSObject ret = new JSObject();
+                ret.put("bytes", bytes);
+                ret.put("formatted", formatBytes(bytes));
+                call.resolve(ret);
+            } catch (Exception error) {
+                call.reject("Failed to calculate cache size: " + error.getMessage(), "GET_CACHE_FAILED");
+            }
+        });
+    }
+
+    /**
+     * 手动清理临时文件、非活跃旧增量包并清空 WebView 缓存。
+     */
+    @PluginMethod
+    public void clearAppCache(PluginCall call) {
+        ioExecutor.execute(() -> {
+            try {
+                Context context = getContext();
+                WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+                long freed = clearAppCacheInternal(context, webView);
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("freedBytes", freed);
+                ret.put("formatted", formatBytes(freed));
+                call.resolve(ret);
+            } catch (Exception error) {
+                call.reject("Failed to clear cache: " + error.getMessage(), "CLEAR_CACHE_FAILED");
+            }
+        });
+    }
+
+    public static long getDirSize(File fileOrDir) {
+        if (fileOrDir == null || !fileOrDir.exists()) return 0;
+        if (fileOrDir.isFile()) return fileOrDir.length();
+        long total = 0;
+        File[] children = fileOrDir.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                total += getDirSize(child);
+            }
+        }
+        return total;
+    }
+
+    public static String formatBytes(long bytes) {
+        if (bytes <= 0) return "0 B";
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) {
+            double kb = (double) bytes / 1024.0;
+            return String.format(java.util.Locale.US, "%.1f KB", kb);
+        }
+        if (bytes < 1024L * 1024 * 1024) {
+            double mb = (double) bytes / (1024.0 * 1024.0);
+            return String.format(java.util.Locale.US, "%.1f MB", mb);
+        }
+        double gb = (double) bytes / (1024.0 * 1024.0 * 1024.0);
+        return String.format(java.util.Locale.US, "%.2f GB", gb);
+    }
+
+    /**
+     * 清理 filesDir/bundles/ 下未激活的历史版本增量包解压目录。
+     * 只保留当前生效的 bundle，避免多版本累积占用。
+     */
+    public static long cleanupInactiveBundles(Context context) {
+        if (context == null) return 0;
+        long freed = 0;
+        try {
+            File bundlesDir = new File(context.getFilesDir(), "bundles");
+            if (!bundlesDir.exists() || !bundlesDir.isDirectory()) return 0;
+            SharedPreferences prefs = context.getSharedPreferences(
+                com.getcapacitor.plugin.WebView.WEBVIEW_PREFS_NAME,
+                Activity.MODE_PRIVATE
+            );
+            String activePath = prefs.getString(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH, "");
+            File activeDir = (activePath != null && !activePath.isEmpty()) ? new File(activePath) : null;
+            String canonicalActive = activeDir != null && activeDir.exists() ? activeDir.getCanonicalPath() : "";
+
+            File[] versions = bundlesDir.listFiles();
+            if (versions != null) {
+                for (File v : versions) {
+                    if (v.isDirectory()) {
+                        String canon = v.getCanonicalPath();
+                        if (canonicalActive.isEmpty() || !canon.equals(canonicalActive)) {
+                            freed += getDirSize(v);
+                            deleteRecursively(v);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return freed;
+    }
+
+    public static long calculateAppCacheBytes(Context context) {
+        if (context == null) return 0;
+        long total = 0;
+        try {
+            File cacheDir = context.getCacheDir();
+            if (cacheDir != null && cacheDir.exists()) {
+                total += getDirSize(cacheDir);
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                File codeCacheDir = context.getCodeCacheDir();
+                if (codeCacheDir != null && codeCacheDir.exists()) {
+                    total += getDirSize(codeCacheDir);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            // 仅统计 webview 内部以 cache 命名的缓存目录，绝不触碰 localStorage / IndexedDB / cookies
+            File dataDir = new File(context.getApplicationInfo().dataDir);
+            File appWebview = new File(dataDir, "app_webview");
+            if (appWebview.exists() && appWebview.isDirectory()) {
+                File defaultDir = new File(appWebview, "Default");
+                File targetDir = defaultDir.exists() ? defaultDir : appWebview;
+                File[] files = targetDir.listFiles();
+                if (files != null) {
+                    for (File f : files) {
+                        String name = f.getName().toLowerCase();
+                        if (name.contains("cache")) {
+                            total += getDirSize(f);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            // 统计非活跃的历史 bundles 目录
+            File bundlesDir = new File(context.getFilesDir(), "bundles");
+            if (bundlesDir.exists() && bundlesDir.isDirectory()) {
+                SharedPreferences prefs = context.getSharedPreferences(
+                    com.getcapacitor.plugin.WebView.WEBVIEW_PREFS_NAME,
+                    Activity.MODE_PRIVATE
+                );
+                String activePath = prefs.getString(com.getcapacitor.plugin.WebView.CAP_SERVER_PATH, "");
+                File activeDir = (activePath != null && !activePath.isEmpty()) ? new File(activePath) : null;
+                String canonicalActive = activeDir != null && activeDir.exists() ? activeDir.getCanonicalPath() : "";
+
+                File[] versions = bundlesDir.listFiles();
+                if (versions != null) {
+                    for (File v : versions) {
+                        if (v.isDirectory()) {
+                            String canon = v.getCanonicalPath();
+                            if (canonicalActive.isEmpty() || !canon.equals(canonicalActive)) {
+                                total += getDirSize(v);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return total;
+    }
+
+    public static long clearAppCacheInternal(Context context, WebView webView) {
+        if (context == null) return 0;
+        long freed = 0;
+
+        // 1. 清理 cacheDir 下的文件
+        try {
+            File cacheDir = context.getCacheDir();
+            if (cacheDir != null && cacheDir.exists()) {
+                File[] files = cacheDir.listFiles();
+                if (files != null) {
+                    for (File f : files) {
+                        long sz = getDirSize(f);
+                        deleteRecursively(f);
+                        freed += sz;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // 2. 清理 codeCacheDir 下的文件
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                File codeCacheDir = context.getCodeCacheDir();
+                if (codeCacheDir != null && codeCacheDir.exists()) {
+                    File[] files = codeCacheDir.listFiles();
+                    if (files != null) {
+                        for (File f : files) {
+                            long sz = getDirSize(f);
+                            deleteRecursively(f);
+                            freed += sz;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // 3. 清理非活跃的旧版本 bundles
+        freed += cleanupInactiveBundles(context);
+
+        // 4. 清理 webview 的 HTTP Cache / Code Cache 目录
+        try {
+            File dataDir = new File(context.getApplicationInfo().dataDir);
+            File appWebview = new File(dataDir, "app_webview");
+            if (appWebview.exists() && appWebview.isDirectory()) {
+                File defaultDir = new File(appWebview, "Default");
+                File targetDir = defaultDir.exists() ? defaultDir : appWebview;
+                File[] files = targetDir.listFiles();
+                if (files != null) {
+                    for (File f : files) {
+                        String name = f.getName().toLowerCase();
+                        if (name.contains("cache")) {
+                            long sz = getDirSize(f);
+                            deleteRecursively(f);
+                            freed += sz;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // 5. 调用 WebView 原生 clearCache(true)
+        if (webView != null) {
+            try {
+                webView.post(() -> {
+                    try {
+                        webView.clearCache(true);
+                    } catch (Exception ignored) {}
+                });
+            } catch (Exception ignored) {}
+        }
+
+        return freed;
+    }
+
+    /**
+     * 启动时后台静默执行的自动瘦身逻辑：
+     * 1. 清理非活跃历史增量包解压目录；
+     * 2. 清理 cacheDir 下遗留的历史 APK 安装包和临时 zip 文件；
+     * 3. 检查总体缓存占用，如果超过 60MB，自动执行收缩整理。
+     */
+    public static void autoPruneStorageOnStartup(Context context, WebView webView) {
+        if (context == null) return;
+        ioExecutor.execute(() -> {
+            try {
+                // 1. 清理非活跃历史增量包解压目录
+                cleanupInactiveBundles(context);
+
+                // 2. 清理 cacheDir 下的历史 APK 安装包和临时 zip 文件
+                File cacheDir = context.getCacheDir();
+                if (cacheDir != null && cacheDir.exists()) {
+                    File[] files = cacheDir.listFiles();
+                    if (files != null) {
+                        for (File f : files) {
+                            String name = f.getName().toLowerCase();
+                            if (name.endsWith(".apk") || (name.startsWith("bundle-temp-") && name.endsWith(".zip"))) {
+                                deleteRecursively(f);
+                            }
+                        }
+                    }
+                }
+
+                // 3. 检查总体缓存占用，如果超过 60MB，自动执行收缩整理
+                long currentCacheBytes = calculateAppCacheBytes(context);
+                long threshold = 60L * 1024 * 1024;
+                if (currentCacheBytes > threshold) {
+                    clearAppCacheInternal(context, webView);
+                }
+            } catch (Throwable ignored) {
+                // 启动自动清理异常绝不影响应用主流程
+            }
+        });
     }
 
     private static String computeFileSha256(File file) throws IOException {

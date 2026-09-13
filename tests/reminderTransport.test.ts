@@ -61,6 +61,8 @@ function fakePlugin(permission: 'granted' | 'denied' = 'granted') {
     requestPermissions: vi.fn(async () => ({ display: permission })),
     checkExactNotificationSetting: vi.fn(async () => ({ exact_alarm: 'denied' })),
     changeExactNotificationSetting: vi.fn(async () => ({ exact_alarm: 'granted' })),
+    createChannel: vi.fn(async () => undefined),
+    registerActionTypes: vi.fn(async () => undefined),
     addListener: vi.fn(async (_event: string, listener: (action: ActionPerformed) => void) => {
       actionListener = listener;
       return { remove: vi.fn(async () => undefined) };
@@ -224,5 +226,45 @@ describe('AndroidReminderTransport', () => {
     expect(result.scheduled).toBe(1);
     expect(fake.pending).toHaveLength(1);
     expect(fake.pending[0].title).toBe('Dose');
+  });
+
+  it('routes app update notifications to low-priority channel without action buttons', async () => {
+    const fake = fakePlugin();
+    const transport = new AndroidReminderTransport(fake.plugin, new MemoryStore(), () => now);
+
+    const shown = await transport.show({
+      title: '发现新版本 v1.0.16',
+      body: '点击进入「应用更新」下载并安装。',
+      tag: 'medbox-app-update',
+      key: 'update-45',
+      data: { deepLink: '/settings?action=app-update', mode: 'light', channel: 'update' },
+    });
+
+    expect(shown).toBe(true);
+    expect(fake.schedule).toHaveBeenCalledTimes(1);
+    const scheduledNotification = (fake.schedule.mock.calls[0][0] as ScheduleOptions).notifications[0];
+    expect(scheduledNotification.channelId).toBe('app_update_channel');
+    expect(scheduledNotification.silent).toBe(true);
+    expect(scheduledNotification.actionTypeId).toBeUndefined();
+  });
+
+  it('routes standard medication reminders to strong channel with action buttons', async () => {
+    const fake = fakePlugin();
+    const transport = new AndroidReminderTransport(fake.plugin, new MemoryStore(), () => now);
+
+    const shown = await transport.show({
+      title: '该服药了',
+      body: '阿莫西林 1 片',
+      tag: 'occurrence:standard',
+      key: 'dose',
+      data: { occurrenceId: 'occurrence:standard' },
+    });
+
+    expect(shown).toBe(true);
+    expect(fake.schedule).toHaveBeenCalledTimes(1);
+    const scheduledNotification = (fake.schedule.mock.calls[0][0] as ScheduleOptions).notifications[0];
+    expect(scheduledNotification.channelId).toBe('medication_strong_v2');
+    expect(scheduledNotification.silent).toBe(false);
+    expect(scheduledNotification.actionTypeId).toBe('medication-reminder-actions-v1');
   });
 });

@@ -1,10 +1,28 @@
-// 申请电池优化白名单：保活的前置条件，让系统不杀后台 WebView。
+// 申请电池优化白名单与各大厂商保活：让系统不杀后台 WebView 与 JS 定时器。
 import { Capacitor } from '@capacitor/core';
+
+export type OemBrand = 'xiaomi' | 'huawei' | 'oppo' | 'vivo' | 'generic';
+
+export interface DeviceKeepAliveInfo {
+  manufacturer: string;
+  brand: string;
+  model: string;
+  sdkInt: number;
+  matchedOem: OemBrand;
+}
+
+export interface OemOpenResult {
+  success: boolean;
+  brand: string;
+  openedAction: string;
+}
 
 interface PowerSettingsPlugin {
   isIgnoringBatteryOptimizations(): Promise<{ ignoring: boolean }>;
   requestIgnoreBatteryOptimizations(): Promise<{ ignoring: boolean }>;
   openAppSettings(): Promise<void>;
+  getDeviceInfo(): Promise<DeviceKeepAliveInfo>;
+  openOemKeepAliveSettings(options?: { brand?: string }): Promise<OemOpenResult>;
 }
 
 let plugin: PowerSettingsPlugin | null = null;
@@ -49,5 +67,44 @@ export async function openAppSettings(): Promise<void> {
     await p.openAppSettings();
   } catch {
     /* ignore */
+  }
+}
+
+/** 获取当前设备型号、制造商与匹配到的主流安卓 OEM 厂商。 */
+export async function getDeviceKeepAliveInfo(): Promise<DeviceKeepAliveInfo> {
+  const p = getPlugin();
+  if (!p) {
+    return {
+      manufacturer: '',
+      brand: '',
+      model: '',
+      sdkInt: 0,
+      matchedOem: 'generic',
+    };
+  }
+  try {
+    return await p.getDeviceInfo();
+  } catch {
+    return {
+      manufacturer: '',
+      brand: '',
+      model: '',
+      sdkInt: 0,
+      matchedOem: 'generic',
+    };
+  }
+}
+
+/** 直接打开目标厂商的自启动或后台保活管理界面（失败时自动兜底打开应用系统设置）。 */
+export async function openOemKeepAliveSettings(brand?: OemBrand): Promise<OemOpenResult> {
+  const p = getPlugin();
+  if (!p) {
+    return { success: false, brand: brand || 'generic', openedAction: 'unsupported_platform' };
+  }
+  try {
+    return await p.openOemKeepAliveSettings(brand ? { brand } : undefined);
+  } catch {
+    await openAppSettings();
+    return { success: false, brand: brand || 'generic', openedAction: 'fallback_exception' };
   }
 }

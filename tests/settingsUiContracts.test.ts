@@ -6,7 +6,7 @@ const root = resolve(import.meta.dirname, '..');
 
 describe('settings information architecture contracts', () => {
   it('separates provider configuration from revocable AI data-send consent', () => {
-    const source = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const source = readFileSync(join(root, 'src/pages/settings/panels/LlmConfigPanel.ts'), 'utf8');
 
     expect(source).toContain('function renderAiConsentPanel()');
     expect(source).toContain("title: 'AI 外发授权'");
@@ -18,7 +18,8 @@ describe('settings information architecture contracts', () => {
   });
 
   it('uses local Lucide icons and compact, non-glass setting groups', () => {
-    const source = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const source = readFileSync(join(root, 'src/pages/settings/index.ts'), 'utf8') +
+      readFileSync(join(root, 'src/pages/settings/types.ts'), 'utf8');
     const styles = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8').replaceAll('\r\n', '\n');
 
     expect(source).toContain("class: 'page page-light settings-page'");
@@ -34,10 +35,11 @@ describe('settings information architecture contracts', () => {
   });
 
   it('uses App-only local-network family sync with plain-language guidance', () => {
-    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const settings = readFileSync(join(root, 'src/pages/settings/index.ts'), 'utf8') +
+      readFileSync(join(root, 'src/pages/settings/panels/ReminderPanel.ts'), 'utf8');
     const lanPanel = readFileSync(join(root, 'src/sync/lan/settingsPanel.ts'), 'utf8');
 
-    expect(settings).toContain("import { renderLanSyncSettingsPanel } from '../sync/lan/settingsPanel';");
+    expect(settings).toContain("import { renderLanSyncSettingsPanel } from '../../sync/lan/settingsPanel';");
     expect(settings).toContain('const lanSyncPanel = renderLanSyncSettingsPanel(signal);');
     expect(settings).toContain('lanSyncPanel.cleanup();');
     expect(lanPanel).toContain("text: '家庭同步'");
@@ -65,7 +67,7 @@ describe('settings information architecture contracts', () => {
   // 浏览器里。此时统一说成「安全存储」等于对网页端用户说假话，所以改为要求
   // 按平台分别给出如实说明。
   it('keeps non-AI settings available when secret storage initialization fails', () => {
-    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const settings = readFileSync(join(root, 'src/pages/settings/index.ts'), 'utf8');
 
     expect(settings).toContain('Promise.allSettled([');
     expect(settings).toContain("result.status === 'rejected'");
@@ -74,7 +76,7 @@ describe('settings information architecture contracts', () => {
   });
 
   it('renders and refreshes the active AI provider from its stable id', () => {
-    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const settings = readFileSync(join(root, 'src/pages/settings/panels/LlmConfigPanel.ts'), 'utf8');
 
     expect(settings).toContain('provider.id === set.activeId');
     expect(settings).toContain("if (provider.id !== set.activeId)");
@@ -102,7 +104,7 @@ describe('settings information architecture contracts', () => {
   });
 
   it('tells the truth about where API keys live on each platform', () => {
-    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const settings = readFileSync(join(root, 'src/pages/settings/panels/LlmConfigPanel.ts'), 'utf8');
     const secretStore = readFileSync(join(root, 'src/ai/secretStore.ts'), 'utf8');
 
     // 原生端：系统安全存储
@@ -123,7 +125,7 @@ describe('settings information architecture contracts', () => {
   });
 
   it('does not leak unparsed HTML tags or raw machine format codes into user-facing settings UI', () => {
-    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const settings = readFileSync(join(root, 'src/pages/settings/panels/ReminderPanel.ts'), 'utf8');
     const lanPanel = readFileSync(join(root, 'src/sync/lan/settingsPanel.ts'), 'utf8');
 
     // No raw HTML tags embedded in string literals passed to el(...)
@@ -143,7 +145,7 @@ describe('settings information architecture contracts', () => {
   });
 
   it('keeps the bind-scan confirm actions inside the sheet viewport after recognition', () => {
-    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const settings = readFileSync(join(root, 'src/pages/settings/panels/ReminderPanel.ts'), 'utf8');
 
     // 识别成功即收起相机预览并暂停相机，结果与「确认绑定」直接落入可视区
     expect(settings).toContain('scannerHost.hidden = true;');
@@ -155,7 +157,7 @@ describe('settings information architecture contracts', () => {
   });
 
   it('keeps scan-verify binding card and action buttons visible regardless of toggle state and platform', () => {
-    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const settings = readFileSync(join(root, 'src/pages/settings/panels/ReminderPanel.ts'), 'utf8');
     const styles = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8');
 
     // 绑定卡片与自适应按钮网格常驻
@@ -175,7 +177,7 @@ describe('settings information architecture contracts', () => {
   });
 
   it('provides structured background keep-alive protection and OEM guides without unparsed HTML', () => {
-    const settings = readFileSync(join(root, 'src/pages/Settings.ts'), 'utf8');
+    const settings = readFileSync(join(root, 'src/pages/settings/panels/KeepAlivePanel.ts'), 'utf8');
     const styles = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8');
 
     expect(settings).toContain("title: '后台保活与防杀'");
@@ -194,4 +196,3 @@ describe('settings information architecture contracts', () => {
     expect(styles).toContain('.keepalive-oem-step');
   });
 });
-

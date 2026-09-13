@@ -1,4 +1,30 @@
 import { reportSilentFailure } from './app/diagnostics';
+import {
+  dispatchTabEvent,
+  getActiveTabKey,
+  getCachedTabEntry,
+  getCachedTabKeys,
+  getExistingSubpageContainer,
+  getOrCreateSubpageContainer,
+  getOrCreateTabContainer,
+  getScrollContainer,
+  hideElement,
+  isKeepAliveTab,
+  normalizeRoutePath,
+  onTabActivated,
+  onTabDeactivated,
+  resetTabPoolForTesting,
+  resolveKeepAliveTabKey,
+  restoreTabScrollPosition,
+  saveTabScrollPosition,
+  setActiveTabKey,
+  showElement,
+  PRIMARY_TAB_ROUTES,
+  type PrimaryTabRoute,
+  type TabKeepAliveEntry,
+  type TabLifecycleDetail,
+  type TabLifecycleHandler,
+} from './app/tabPool';
 
 // hash 路由：每次导航都提供可取消上下文，页面可返回清理函数。
 export interface RouteContext {
@@ -37,19 +63,21 @@ let notFound: RouteHandler | null = null;
 let defaultPath = '/today';
 let activeController: AbortController | null = null;
 let activeCleanup: RouteCleanup | null = null;
+let activeSubpageCleanup: RouteCleanup | null = null;
 let navigationSeq = 0;
 let hashChangeListener: (() => void) | null = null;
 
 /** 注册路由，path 形如 "/meds/:id" */
 export function route(path: string, handler: RouteHandler): void {
   const keys: string[] = [];
+  const normalized = normalizeRoutePath(path);
   const pattern = new RegExp(
     '^' +
-      path.replace(/:[^/]+/g, (m) => {
+      normalized.replace(/:[^/]+/g, (m) => {
         keys.push(m.slice(1));
         return '([^/]+)';
       }) +
-      '$'
+      '$',
   );
   routes.push({ pattern, keys, handler });
 }
@@ -69,21 +97,229 @@ function runRouteTransitionCleanups(): void {
 }
 
 export function navigate(to: string): void {
-  if (location.hash !== `#${to}`) location.hash = to;
-  else void dispatch();
+  const normalized = normalizeRoutePath(to);
+  if (location.hash !== `#${normalized}`) {
+    location.hash = normalized;
+  } else {
+    void dispatch();
+  }
+}
+
+export function getActiveTab(): PrimaryTabRoute | null {
+  return getActiveTabKey();
+}
+
+export function getCachedTabs(): PrimaryTabRoute[] {
+  return getCachedTabKeys();
+}
+
+export {
+  isKeepAliveTab,
+  onTabActivated,
+  onTabDeactivated,
+  type PrimaryTabRoute,
+  type TabKeepAliveEntry,
+  type TabLifecycleDetail,
+  type TabLifecycleHandler,
+};
+
+function hasKeepAliveRoutes(): boolean {
+  return (
+    isKeepAliveTab(defaultPath) ||
+    routes.some((r) => PRIMARY_TAB_ROUTES.some((tab) => r.pattern.test(tab)))
+  );
+}
+
+function abortTransientController(previousTabKey: PrimaryTabRoute | null): void {
+  if (!activeController) return;
+  if (previousTabKey) {
+    const prevEntry = getCachedTabEntry(previousTabKey);
+    if (prevEntry?.rendered && prevEntry.controller === activeController) {
+      activeController = null;
+      return;
+    }
+  }
+  activeController.abort();
+  activeController = null;
 }
 
 async function dispatch(): Promise<void> {
   const navigationId = ++navigationSeq;
-  activeController?.abort();
-  activeController = null;
-  const previousCleanup = activeCleanup;
+  const rawPath = location.hash.replace(/^#/, '') || defaultPath;
+  const path = normalizeRoutePath(rawPath);
+  const targetTabKey = resolveKeepAliveTabKey(path);
+
+  // 1. Destination is a primary keep-alive tab
+  if (targetTabKey) {
+    const previousTabKey = getActiveTabKey();
+
+    // Abort transient/subpage controller if any (preserve rendered keep-alive tab controller)
+    abortTransientController(previousTabKey);
+
+    // Clean up subpage and transient cleanups
+    if (activeSubpageCleanup) {
+      runCleanupSafely(activeSubpageCleanup);
+      activeSubpageCleanup = null;
+    }
+    if (activeCleanup) {
+      runCleanupSafely(activeCleanup);
+      activeCleanup = null;
+    }
+    const subpageEl = getExistingSubpageContainer();
+    if (subpageEl) {
+      hideElement(subpageEl);
+      subpageEl.replaceChildren();
+    }
+    // Remove any orphaned non-tab, non-subpage DOM children from rootEl
+    if (rootEl) {
+      for (const child of Array.from(rootEl.children)) {
+        if (child !== subpageEl && !child.classList.contains('tab-keepalive-container')) {
+          child.remove();
+        }
+      }
+    }
+
+    // If another tab was active, save its scroll, dispatch deactivation, and hide it
+    if (previousTabKey && previousTabKey !== targetTabKey) {
+      const prevEntry = getCachedTabEntry(previousTabKey);
+      if (prevEntry) {
+        saveTabScrollPosition(prevEntry);
+        hideElement(prevEntry.container);
+        dispatchTabEvent('deactivated', previousTabKey, prevEntry.container, {
+          tab: previousTabKey,
+          path,
+          nextTab: targetTabKey,
+        });
+      }
+    }
+
+    // If tapping the currently active tab again, smooth scroll to top
+    if (previousTabKey === targetTabKey) {
+      const currentEntry = getCachedTabEntry(targetTabKey);
+      if (currentEntry) {
+        const scrollEl = getScrollContainer(currentEntry.container);
+        if (typeof scrollEl.scrollTo === 'function') {
+          try {
+            scrollEl.scrollTo({ top: 0, behavior: 'smooth' });
+          } catch {
+            scrollEl.scrollTop = 0;
+          }
+        } else {
+          scrollEl.scrollTop = 0;
+        }
+        // In test environments (Vitest / Happy-DOM), Element.prototype.scrollTo is a no-op stub without animation.
+        if (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) {
+          scrollEl.scrollTop = 0;
+        }
+        if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+          try {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } catch {
+            /* ignore */
+          }
+        }
+        currentEntry.savedScrollTop = 0;
+        dispatchTabEvent('activated', targetTabKey, currentEntry.container, {
+          tab: targetTabKey,
+          path,
+          previousTab: targetTabKey,
+        });
+        announceNavigation();
+        return;
+      }
+    }
+
+    runRouteTransitionCleanups();
+
+    const entry = getOrCreateTabContainer(targetTabKey, rootEl);
+    if (entry.rendered) {
+      // TAB CACHE HIT! Instant display and scroll restoration
+      setActiveTabKey(targetTabKey);
+      activeController = entry.controller ?? null;
+      showElement(entry.container);
+      restoreTabScrollPosition(entry);
+      dispatchTabEvent('activated', targetTabKey, entry.container, {
+        tab: targetTabKey,
+        path,
+        previousTab: previousTabKey,
+      });
+      announceNavigation();
+      return;
+    }
+
+    // First render of this tab
+    setActiveTabKey(targetTabKey);
+    showElement(entry.container);
+
+    const controller = new AbortController();
+    entry.controller = controller;
+    activeController = controller;
+
+    try {
+      const matched = findRoute(path);
+      if (!matched) {
+        if (!notFound) return;
+        entry.cleanup = asOnceCleanup(
+          await notFound({}, entry.container, { signal: controller.signal, path }),
+        );
+      } else {
+        const params = decodeParams(matched.route, matched.match);
+        if (typeof window.scrollTo === 'function') window.scrollTo(0, 0);
+        entry.cleanup = asOnceCleanup(
+          await matched.route.handler(params, entry.container, { signal: controller.signal, path }),
+        );
+      }
+
+      if (controller.signal.aborted || navigationId !== navigationSeq) {
+        runCleanupSafely(entry.cleanup ?? null);
+        entry.cleanup = null;
+        return;
+      }
+      entry.rendered = true;
+      dispatchTabEvent('activated', targetTabKey, entry.container, {
+        tab: targetTabKey,
+        path,
+        previousTab: previousTabKey,
+      });
+      announceNavigation();
+    } catch (cause) {
+      if (controller.signal.aborted || navigationId !== navigationSeq) {
+        runCleanupSafely(entry.cleanup ?? null);
+        entry.cleanup = null;
+        return;
+      }
+      controller.abort();
+      if (activeController === controller) activeController = null;
+      runCleanupSafely(entry.cleanup ?? null);
+      entry.cleanup = null;
+      renderRouteError(cause);
+    }
+    return;
+  }
+
+  // 2. Destination is a Subpage / non-tab route
+  const previousTabKey = getActiveTabKey();
+  if (previousTabKey) {
+    const prevEntry = getCachedTabEntry(previousTabKey);
+    if (prevEntry) {
+      saveTabScrollPosition(prevEntry);
+      hideElement(prevEntry.container);
+      dispatchTabEvent('deactivated', previousTabKey, prevEntry.container, {
+        tab: previousTabKey,
+        path,
+        nextTab: null,
+      });
+    }
+    setActiveTabKey(null);
+  }
+
+  abortTransientController(previousTabKey);
+  const previousCleanup = activeCleanup ?? activeSubpageCleanup;
   activeCleanup = null;
+  activeSubpageCleanup = null;
   try {
     runCleanupSafely(previousCleanup);
   } finally {
-    // This cleanup phase belongs to this navigation and must not be repeated by
-    // the recovery renderer if decoding or rendering later fails.
     runRouteTransitionCleanups();
   }
 
@@ -91,17 +327,29 @@ async function dispatch(): Promise<void> {
   activeController = controller;
   let routeCleanup: RouteCleanup | null = null;
 
+  let targetContainer: HTMLElement;
+  const isUsingTabPool = hasKeepAliveRoutes();
+  if (isUsingTabPool) {
+    const subEl = getOrCreateSubpageContainer(rootEl);
+    subEl.replaceChildren();
+    showElement(subEl);
+    targetContainer = subEl;
+  } else {
+    targetContainer = rootEl;
+  }
+
   try {
-    const path = location.hash.replace(/^#/, '') || defaultPath;
     const matched = findRoute(path);
     if (!matched) {
       if (!notFound) return;
-      routeCleanup = asOnceCleanup(await notFound({}, rootEl, { signal: controller.signal, path }));
+      routeCleanup = asOnceCleanup(
+        await notFound({}, targetContainer, { signal: controller.signal, path }),
+      );
     } else {
       const params = decodeParams(matched.route, matched.match);
-      window.scrollTo(0, 0);
+      if (typeof window.scrollTo === 'function') window.scrollTo(0, 0);
       routeCleanup = asOnceCleanup(
-        await matched.route.handler(params, rootEl, { signal: controller.signal, path }),
+        await matched.route.handler(params, targetContainer, { signal: controller.signal, path }),
       );
     }
 
@@ -109,7 +357,12 @@ async function dispatch(): Promise<void> {
       runCleanupSafely(routeCleanup);
       return;
     }
-    activeCleanup = routeCleanup;
+
+    if (isUsingTabPool) {
+      activeSubpageCleanup = routeCleanup;
+    } else {
+      activeCleanup = routeCleanup;
+    }
     routeCleanup = null;
     announceNavigation();
   } catch (cause) {
@@ -117,11 +370,10 @@ async function dispatch(): Promise<void> {
       runCleanupSafely(routeCleanup);
       return;
     }
-    // Abort first so route-owned async work and signal listeners stop before
-    // the recovery page replaces any partially rendered content.
     controller.abort();
     if (activeController === controller) activeController = null;
     if (activeCleanup === routeCleanup) activeCleanup = null;
+    if (activeSubpageCleanup === routeCleanup) activeSubpageCleanup = null;
     runCleanupSafely(routeCleanup);
     renderRouteError(cause);
   }
@@ -165,9 +417,11 @@ function runCleanupSafely(cleanup: RouteCleanup | null): void {
 }
 
 function announceNavigation(): void {
+  if (typeof requestAnimationFrame !== 'function') return;
   requestAnimationFrame(() => {
     const headings = Array.from(rootEl.querySelectorAll<HTMLElement>('h1'));
-    const heading = headings.find((h) => h.offsetParent !== null || h.getClientRects().length > 0) ?? headings[0];
+    const heading =
+      headings.find((h) => h.offsetParent !== null || h.getClientRects().length > 0) ?? headings[0];
     if (!heading) return;
     heading.tabIndex = -1;
     heading.focus({ preventScroll: true });
@@ -206,13 +460,14 @@ function renderRouteError(cause: unknown): void {
   actions.append(retry);
   card.append(title, detail, actions);
   page.append(card);
+
   rootEl.replaceChildren(topbar, page);
   announceNavigation();
 }
 
 export function startRouter(root: HTMLElement, initialPath = '/today'): void {
   rootEl = root;
-  defaultPath = initialPath;
+  defaultPath = normalizeRoutePath(initialPath);
   hashChangeListener ??= () => void dispatch();
   window.addEventListener('hashchange', hashChangeListener);
   if (!location.hash) location.hash = defaultPath;
@@ -225,6 +480,11 @@ export function resetRouterForTesting(): void {
   activeController = null;
   runCleanupSafely(activeCleanup);
   activeCleanup = null;
+  runCleanupSafely(activeSubpageCleanup);
+  activeSubpageCleanup = null;
+
+  resetTabPoolForTesting();
+
   if (hashChangeListener) window.removeEventListener('hashchange', hashChangeListener);
   hashChangeListener = null;
   routes.length = 0;

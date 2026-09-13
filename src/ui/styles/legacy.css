@@ -799,6 +799,7 @@ textarea {
 .slot-tag {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   height: 30px;
   padding: 0 12px;
@@ -807,6 +808,9 @@ textarea {
   font-size: var(--fs-footnote);
   line-height: 1;
   letter-spacing: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: max-content;
   border: 0.5px solid rgba(255, 255, 255, 0.45);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -1011,6 +1015,7 @@ textarea {
 }
 
 .tabbar a .ic {
+  position: relative;
   display: inline-flex;
   width: 28px;
   height: 28px;
@@ -2032,7 +2037,7 @@ textarea {
   line-height: 1.5;
   letter-spacing: 0;
   resize: vertical;
-  min-height: 64px;
+  min-height: 96px;
   transition: border-color 280ms var(--ease-out),
     box-shadow 280ms var(--ease-out);
   box-sizing: border-box;
