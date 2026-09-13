@@ -178,13 +178,32 @@ export function getAvailableUpdate(): AvailableUpdate | null {
     if ((source === 'github' || source === 'cloud') && !parsed.downloadUrl) {
       return null;
     }
+    // 增量热更新元数据必须一并还原，否则界面永远识别不到「秒级更新」通道而退化为全量安装包
+    const bundleUrl = typeof parsed.bundleUrl === 'string' && parsed.bundleUrl ? parsed.bundleUrl : undefined;
+    const bundleSha256 = typeof parsed.bundleSha256 === 'string' && SHA256_RE.test(parsed.bundleSha256)
+      ? parsed.bundleSha256
+      : undefined;
+    const minNativeVersionCode = typeof parsed.minNativeVersionCode === 'number'
+      ? parsed.minNativeVersionCode
+      : undefined;
+    const canIncremental = Boolean(
+      bundleUrl
+      && LOCAL_APP_VERSION_CODE > 0
+      && LOCAL_APP_VERSION_CODE >= (minNativeVersionCode ?? DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE),
+    );
+    const updateType: UpdateType = parsed.updateType === 'incremental' && canIncremental ? 'incremental' : 'full';
     return {
       version: parsed.version,
       versionCode: parsed.versionCode,
       source,
+      updateType,
       peerHost: parsed.peerHost,
       peerPort: parsed.peerPort,
       downloadUrl: parsed.downloadUrl,
+      bundleUrl,
+      bundleSize: typeof parsed.bundleSize === 'number' && parsed.bundleSize > 0 ? parsed.bundleSize : undefined,
+      bundleSha256,
+      minNativeVersionCode,
       releaseNotes: parsed.releaseNotes,
       fileSize: parsed.fileSize,
       sha256: typeof parsed.sha256 === 'string' && SHA256_RE.test(parsed.sha256) ? parsed.sha256 : undefined,

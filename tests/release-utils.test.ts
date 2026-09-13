@@ -203,6 +203,15 @@ describe('release version validation', () => {
         androidVersionCode: 51,
       }),
     ).toEqual({ version: '1.0.16', versionCode: 51 });
+
+    expect(
+      validateReleaseVersions({
+        packageVersion: '1.0.17',
+        lockVersion: '1.0.17',
+        androidVersionName: '1.0.17',
+        androidVersionCode: 52,
+      }),
+    ).toEqual({ version: '1.0.17', versionCode: 52 });
   });
 
   it('requires plain-language notes for the current release version', () => {
@@ -417,7 +426,7 @@ describe('Android-only distribution contract', () => {
 
     expect(packageJson).toMatchObject({
       name: 'xiaoyaohe',
-      version: '1.0.16',
+      version: '1.0.17',
       description: expect.stringContaining('Android App'),
       dependencies: { qrcode: expect.any(String) },
       devDependencies: { '@types/qrcode': expect.any(String) },
