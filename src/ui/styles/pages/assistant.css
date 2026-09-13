@@ -156,13 +156,98 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   flex: 1 1 auto;
   min-inline-size: 0;
   block-size: 34px;
-  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: var(--color-surface-muted);
+  background: var(--color-surface);
   color: var(--color-text);
   font-size: var(--fs-footnote);
+  font-family: inherit;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease, background var(--duration-fast) ease;
+}
+
+.ai-pref-select::after {
+  content: '';
+  margin-inline-start: auto;
+  flex: 0 0 auto;
+  inline-size: 6px;
+  block-size: 6px;
+  border-right: 1.5px solid var(--color-text-muted);
+  border-bottom: 1.5px solid var(--color-text-muted);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.ai-pref-select:hover,
+.ai-pref-select:focus-visible {
+  border-color: var(--color-primary);
+}
+
+.ai-pref-select:active {
+  background: var(--color-surface-muted);
+}
+
+/* 应用内偏好选择弹层 */
+.ai-pref-sheet-title {
+  margin: 0;
+  font-size: var(--fs-title3);
+  font-weight: 700;
+}
+
+.ai-pref-sheet-options {
+  display: grid;
+  gap: var(--space-1);
+  margin-block-start: var(--space-3);
+}
+
+.ai-pref-sheet-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  min-block-size: var(--tap);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--fs-subheadline);
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease;
+}
+
+.ai-pref-sheet-option-label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-pref-sheet-option svg {
+  flex: 0 0 auto;
+  inline-size: 18px;
+  block-size: 18px;
+  color: var(--color-primary);
+}
+
+.ai-pref-sheet-option:active {
+  background: var(--color-surface-muted);
+}
+
+.ai-pref-sheet-option.is-current {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .ai-pref-refresh {

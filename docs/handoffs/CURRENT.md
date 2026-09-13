@@ -2,8 +2,14 @@
 
 Updated: 2026-09-13
 Integration branch: `main`
-Product version: `1.0.18` (versionCode 53)
-Latest integration commit: `release: integrate v1.0.18 from workspace/claude`
+Product version: `1.0.19` (versionCode 54)
+Latest integration commit: `release: integrate v1.0.19 from workspace/claude`
+
+## Assistant Preference Picker Restyle (v1.0.19, versionCode 54, workspace/claude)
+
+- **问题与修复**：小助手的模型/推理强度用原生 `<select>`，点击拉起系统选择器，风格与应用割裂；改为按钮 + 既有 `openBottomSheet()` 应用内弹层，选中项以主色边框与对勾标示。
+- **样式**：`.ai-pref-select` 重写为按钮态（自绘箭头），新增 `.ai-pref-sheet-*` 一组样式，全走设计令牌，深色模式自动适配。
+- **验证**：typecheck 0 报错，89 套件 567 项通过；浏览器实测面板内原生 `<select>` 归零，选择后偏好正确落盘，浅色/深色均正常。
 
 ## Med List Alignment Fix & Assistant UI Redesign (v1.0.18, versionCode 53, workspace/claude)
 

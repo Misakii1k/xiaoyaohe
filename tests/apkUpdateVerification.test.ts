@@ -126,16 +126,16 @@ describe('局域网 APK 更新的安装前校验', () => {
       nativePlugin.download.mockResolvedValue({ bytes: 2048, destPath: 'medbox-update-probe.apk' });
       nativePlugin.verifyApk.mockResolvedValue({
         packageName: 'com.medbox.app',
-        versionCode: 54,
-        versionName: '1.0.19',
+        versionCode: 55,
+        versionName: '1.0.20',
       });
       nativePlugin.deleteApk.mockResolvedValue({ deleted: true });
 
       const update = await scanLanForUpdates();
 
       expect(update).not.toBeNull();
-      expect(update?.version).toBe('1.0.19');
-      expect(update?.versionCode).toBe(54);
+      expect(update?.version).toBe('1.0.20');
+      expect(update?.versionCode).toBe(55);
       expect(update?.peerHost).toBe('192.168.1.120');
       expect(update?.peerPort).toBe(38473);
 
@@ -146,7 +146,7 @@ describe('局域网 APK 更新的安装前校验', () => {
       const saved = localStorage.getItem('medbox.lan-sync.available-update.v1');
       expect(saved).not.toBeNull();
       const parsed = JSON.parse(saved!);
-      expect(parsed.versionCode).toBe(54);
+      expect(parsed.versionCode).toBe(55);
     });
 
     it('当探测到的版本不高于本机版本时，删除 probe 且返回 null', async () => {
@@ -253,12 +253,12 @@ describe('局域网 APK 更新的安装前校验', () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          tag_name: 'v1.0.19',
+          tag_name: 'v1.0.20',
           assets: [
             {
-              name: 'xiaoyaohe-1.0.19-android-release.apk',
+              name: 'xiaoyaohe-1.0.20-android-release.apk',
               size: 18000000,
-              browser_download_url: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.19/xiaoyaohe-1.0.19-android-release.apk',
+              browser_download_url: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.20/xiaoyaohe-1.0.20-android-release.apk',
             },
           ],
         }),
@@ -269,7 +269,7 @@ describe('局域网 APK 更新的安装前校验', () => {
       try {
         const best = await checkForAppUpdates();
         expect(best).not.toBeNull();
-        expect(best?.version).toBe('1.0.19');
+        expect(best?.version).toBe('1.0.20');
         expect(best?.source).toBe('github');
       } finally {
         globalThis.fetch = originalFetch;
@@ -281,10 +281,10 @@ describe('局域网 APK 更新的安装前校验', () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          version: '1.0.19',
-          versionCode: 54,
+          version: '1.0.20',
+          versionCode: 55,
           releaseDate: '2026-09-08',
-          downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.19/xiaoyaohe-1.0.19-android-release.apk',
+          downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.20/xiaoyaohe-1.0.20-android-release.apk',
           fileSize: 19123456,
           releaseNotes: '云端极速通道更新测试',
         }),
@@ -293,8 +293,8 @@ describe('局域网 APK 更新的安装前校验', () => {
       try {
         const update = await checkFastCloudVersion();
         expect(update).not.toBeNull();
-        expect(update?.version).toBe('1.0.19');
-        expect(update?.versionCode).toBe(54);
+        expect(update?.version).toBe('1.0.20');
+        expect(update?.versionCode).toBe(55);
         expect(update?.source).toBe('cloud');
         expect(update?.fileSize).toBe(19123456);
         expect(update?.releaseNotes).toBe('云端极速通道更新测试');
@@ -355,9 +355,9 @@ describe('局域网 APK 更新的安装前校验', () => {
           return {
             ok: true,
             json: async () => ({
-              version: '1.0.19',
-              versionCode: 54,
-              downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.19/app.apk',
+              version: '1.0.20',
+              versionCode: 55,
+              downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.0.20/app.apk',
             }),
           };
         }
@@ -374,7 +374,7 @@ describe('局域网 APK 更新的安装前校验', () => {
           timeoutLanMs: 200,
         });
         expect(result).not.toBeNull();
-        expect(result?.version).toBe('1.0.19');
+        expect(result?.version).toBe('1.0.20');
         expect(result?.source).toBe('cloud');
         // 验证第一步提示为检查云端
         expect(statuses).toContain('正在检查云端最新版本...');
@@ -468,9 +468,9 @@ describe('云端更新通道的下载地址与完整性校验', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        version: '1.0.19',
-        versionCode: 54,
-        downloadUrl: '/api/download?tag=v1.0.19',
+        version: '1.0.20',
+        versionCode: 55,
+        downloadUrl: '/api/download?tag=v1.0.20',
         fileSize: 32095374,
         sha256: 'a'.repeat(64),
       }),
@@ -478,7 +478,7 @@ describe('云端更新通道的下载地址与完整性校验', () => {
 
     try {
       const found = await checkFastCloudVersion();
-      expect(found?.downloadUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.19');
+      expect(found?.downloadUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.20');
       expect(found?.fileSize).toBe(32095374);
       expect(found?.sha256).toBe('a'.repeat(64));
       expect(String((globalThis.fetch as any).mock.calls[0][0])).toBe('https://xiaoyaohe.pages.dev/version.json');
@@ -495,12 +495,12 @@ describe('云端更新通道的下载地址与完整性校验', () => {
       return {
         ok: true,
         json: async () => ({
-          tag_name: 'v1.0.19',
+          tag_name: 'v1.0.20',
           body: 'notes',
           assets: [{
-            name: 'xiaoyaohe-1.0.19-android-release.apk',
+            name: 'xiaoyaohe-1.0.20-android-release.apk',
             size: 32095374,
-            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.19',
+            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.20',
           }],
         }),
       };
@@ -509,7 +509,7 @@ describe('云端更新通道的下载地址与完整性校验', () => {
     try {
       const found = await checkGithubRelease();
       expect(requested).toEqual(['https://xiaoyaohe.pages.dev/api/releases']);
-      expect(found?.downloadUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.19');
+      expect(found?.downloadUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.0.20');
       expect(found?.fileSize).toBe(32095374);
     } finally {
       globalThis.fetch = originalFetch;
@@ -523,10 +523,10 @@ describe('云端更新通道的下载地址与完整性校验', () => {
       localStorage.clear();
 
       saveAvailableUpdate({
-        version: '1.0.19',
-        versionCode: 54,
+        version: '1.0.20',
+        versionCode: 55,
         source: 'cloud',
-        downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.19',
+        downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.20',
         discoveredAt: Date.now(),
       });
 
@@ -556,10 +556,10 @@ describe('云端更新通道的下载地址与完整性校验', () => {
       localStorage.clear();
 
       saveAvailableUpdate({
-        version: '1.0.19',
-        versionCode: 54,
+        version: '1.0.20',
+        versionCode: 55,
         source: 'cloud',
-        downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.19',
+        downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.20',
         discoveredAt: Date.now(),
       });
 
@@ -579,10 +579,10 @@ describe('云端更新通道的下载地址与完整性校验', () => {
       localStorage.clear();
 
       saveAvailableUpdate({
-        version: '1.0.19',
-        versionCode: 54,
+        version: '1.0.20',
+        versionCode: 55,
         source: 'cloud',
-        downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.19',
+        downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.0.20',
         discoveredAt: Date.now(),
       });
 
@@ -595,7 +595,7 @@ describe('云端更新通道的下载地址与完整性校验', () => {
 
       expect(showNotificationMock).toHaveBeenCalledTimes(1);
       const [title, options] = showNotificationMock.mock.calls[0];
-      expect(title).toBe('发现新版本 v1.0.19');
+      expect(title).toBe('发现新版本 v1.0.20');
       expect(options).toMatchObject({
         tag: 'medbox-app-update',
         silent: true,
