@@ -2,8 +2,8 @@
 
 Updated: 2026-09-13
 Integration branch: `main`
-Product version: `1.0.16` (versionCode 51, in progress on `workspace/claude`; `main` still at `1.0.15`)
-Latest integration commit: `release: v1.0.15 - 修复批量管理打开异常与重构药品卡片排版`
+Product version: `1.0.16` (versionCode 51)
+Latest integration commit: `release: integrate v1.0.16 from workspace/claude`
 
 ## UI Layout & Interaction Refinement & Gentle Update Reminders (workspace/claude)
 
