@@ -1,1 +1,8 @@
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.apk binary
+*.zip binary
+*.jks binary
 design/**/*.png filter=lfs diff=lfs merge=lfs -text

@@ -86,6 +86,11 @@
 .medication-draft-card > .ui-accordion { margin-block-start: var(--space-2); }
 .medication-field .ui-picker { inline-size: 100%; }
 .meal-slot-head .ui-picker-trigger { min-block-size: 40px; }
+.meal-slot-head .slot-tag {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  min-width: max-content;
+}
 
 /* 药盒照片：编辑页顶部的大预览区，点预览弹出重拍 / 重新裁切 */
 .box-photo-block { display: grid; gap: var(--space-2); }
@@ -535,95 +540,89 @@
   border-color: var(--color-border);
 }
 
-/* 药品向导模式步骤指示条 */
+/* 药品向导模式极简步骤指示条 */
 .med-wizard-steps {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  padding: 10px 14px;
+  padding: 10px 16px;
   margin-block-end: var(--space-3);
   box-shadow: var(--shadow-sm);
   position: relative;
 }
 
-.med-wizard-step-item {
+.med-wizard-header {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  background: none;
-  border: none;
-  padding: 6px 8px;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  color: var(--color-text-muted);
-  font-family: inherit;
-  transition: all 0.2s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.med-wizard-step-num {
-  inline-size: 26px;
-  block-size: 26px;
-  border-radius: var(--radius-full);
-  display: grid;
-  place-items: center;
-  font-size: 13px;
+  font-size: var(--fs-subheadline);
   font-weight: 700;
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-  border: 1.5px solid var(--color-border);
-  font-variant-numeric: tabular-nums;
-  transition: all 0.2s ease;
-}
-
-.med-wizard-step-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: start;
-}
-
-.med-wizard-step-title {
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--color-text);
   line-height: 1.2;
 }
 
-.med-wizard-step-item.is-current {
+.med-wizard-step-badge {
   color: var(--color-primary);
+  font-size: var(--fs-caption);
+  font-weight: 800;
+  background: var(--color-primary-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
 }
 
-.med-wizard-step-item.is-current .med-wizard-step-num {
-  background: var(--color-primary);
-  color: #ffffff;
-  border-color: var(--color-primary);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+.med-wizard-step-dot {
+  color: var(--color-text-muted);
+  font-weight: 600;
 }
 
-.med-wizard-step-item.is-done {
+.med-wizard-step-title {
+  font-size: var(--fs-subheadline);
+  font-weight: 700;
   color: var(--color-text);
 }
 
-.med-wizard-step-item.is-done .med-wizard-step-num {
-  background: var(--tint-green-bg);
-  color: var(--color-success);
-  border-color: var(--color-success);
+.med-wizard-progress-track {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  inline-size: 100%;
 }
 
-.med-wizard-step-divider {
-  flex: 1 1 8px;
-  block-size: 2px;
-  background: var(--color-border);
-  margin-inline: 4px;
-  border-radius: 1px;
+.med-wizard-step-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  outline: none;
 }
 
-.med-wizard-step-divider.is-done {
+.med-wizard-step-segment {
+  inline-size: 100%;
+  block-size: 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.med-wizard-step-item.is-done .med-wizard-step-segment {
   background: var(--color-primary);
+  border-color: var(--color-primary);
+  opacity: 0.6;
+}
+
+.med-wizard-step-item.is-current .med-wizard-step-segment {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+  opacity: 1;
 }
 
 .med-wizard-step-content[hidden] {
@@ -838,6 +837,8 @@
 .smart-fill-ocr-wrap .btn {
   inline-size: 100%;
   justify-content: center;
+  flex: 0 0 auto;
+  min-block-size: var(--tap);
 }
 
 .smart-fill-divider {

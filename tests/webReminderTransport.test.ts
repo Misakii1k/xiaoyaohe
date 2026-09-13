@@ -104,6 +104,26 @@ describe('WebReminderTransport', () => {
     });
   });
 
+  it('shows light update notification with silent=true, requireInteraction=false and no action buttons', async () => {
+    const fake = fakeHost();
+    const transport = new WebReminderTransport(fake.host);
+
+    const sent = await transport.show({
+      title: '发现新版本 v1.0.16',
+      body: '点击进入「应用更新」下载并安装。',
+      tag: 'medbox-app-update',
+      key: 'update-45',
+      data: { deepLink: '/settings?action=app-update', mode: 'light', channel: 'update' },
+    });
+
+    expect(sent).toBe(true);
+    expect(fake.shown).toHaveLength(1);
+    expect(fake.shown[0].title).toBe('发现新版本 v1.0.16');
+    expect(fake.shown[0].options.silent).toBe(true);
+    expect(fake.shown[0].options.requireInteraction).toBe(false);
+    expect(fake.shown[0].options.actions).toEqual([]);
+  });
+
   it('refuses to show anything before notification permission is granted', async () => {
     const fake = fakeHost({ permission: 'default' });
     const transport = new WebReminderTransport(fake.host);

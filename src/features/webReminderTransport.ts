@@ -314,6 +314,12 @@ async function requestPeriodicSync(registration: ServiceWorkerRegistration): Pro
 
 function toOptions(notification: ReminderNotification): WebNotificationOptions {
   const key = notification.key ?? 'dose';
+  const reminderMode = notification.data?.mode ?? notification.data?.reminderMode;
+  const isUpdate =
+    notification.tag === 'medbox-app-update' ||
+    notification.data?.channel === 'update' ||
+    reminderMode === 'light';
+
   return {
     body: notification.body,
     // tag 格式与 public/sw.js 的 showItem 保持一致，否则两边关不掉同一条通知。
@@ -321,13 +327,16 @@ function toOptions(notification: ReminderNotification): WebNotificationOptions {
     icon: ICON,
     badge: ICON,
     data: { ...(notification.data ?? {}), tag: notification.tag, key },
-    silent: notification.silent ?? false,
+    silent: isUpdate ? true : (notification.silent ?? false),
     // 吃药提醒不该自己消失；桌面端会一直挂着直到用户处理，移动端浏览器会忽略此项。
-    requireInteraction: true,
-    actions: [
-      { action: 'taken', title: '已服用' },
-      { action: 'skip', title: '跳过' },
-    ],
+    // 更新轻提醒不长久常驻，允许自动隐藏
+    requireInteraction: isUpdate ? false : true,
+    actions: isUpdate
+      ? []
+      : [
+          { action: 'taken', title: '已服用' },
+          { action: 'skip', title: '跳过' },
+        ],
   };
 }
 

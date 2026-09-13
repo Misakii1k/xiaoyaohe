@@ -2,8 +2,21 @@
 
 Updated: 2026-09-13
 Integration branch: `main`
-Product version: `1.0.15`
+Product version: `1.0.16` (versionCode 51, in progress on `workspace/claude`; `main` still at `1.0.15`)
 Latest integration commit: `release: v1.0.15 - 修复批量管理打开异常与重构药品卡片排版`
+
+## UI Layout & Interaction Refinement & Gentle Update Reminders (workspace/claude)
+
+- **时段标签竖排断行修复**：在 `src/ui/styles/legacy.css` 与 `src/ui/styles/pages/medication-editor.css` 中为 `.slot-tag` 及 `.meal-slot-head .slot-tag` 补充 `white-space: nowrap; flex-shrink: 0; min-width: max-content;`，彻底消除中文字符（早/上、中/午、晚/上）在弹性布局受挤压时的竖向断字；
+- **智能快速填表空间分配重塑**：消除 `.smart-fill-ocr-wrap .btn` 继承 `flex-basis: 220px` 造成的高度异常膨胀，恢复为约 44px 标准单行功能按钮；自然语言输入文本框扩大至 4 行（`min-height: 96px`），为文字描述留足输入与核对视野；
+- **编辑药品顶部向导极简进度条重构**：将 `.med-wizard-steps` 重构为极简进度条风格（居中显示「步骤 2/3 · 用药计划」并配合三段式细长进度指示条），彻底消除移动端小屏（360px~412px）下的文字折行，高度更紧凑；
+- **批量管理卡片居中垂直流与纯紫色边框高亮**：移除卡片内 44px 左侧空白复选框列，卡片内部采用居中垂直流排版（缩略图居中置顶、名称剂量居中、时段胶囊居中），100% 充满双列网格空间；卡片选中态改为纯紫色高亮边框（无对勾图标、无底色填充），隐藏复选框保留完整无障碍读屏语义；
+- **应用更新提醒降级为纯轻提醒**：
+  - 原生 Android 提醒通道剥离强提醒：创建独立轻量通知渠道 `app_update_channel`（优先级设为低 `importance: 2`，无响铃、无振动、不弹出顶层全屏横幅强打扰），且移除「已服用/跳过」用药操作按钮；
+  - Web 端提醒通道对齐轻提醒规范：更新提醒取消强制常驻（`requireInteraction: false`），开启静默参数（`silent: true`），清空用药动作按钮；
+  - 前台运行免打扰：应用在前台使用（`document.visibilityState === 'visible'`）时，抑制系统级外发通知，仅通过事件刷新界面徽标；
+  - 底栏「我的」导航项加入优雅的小红点提示（`.tabbar-update-dot`），发现新版本时安静提示，不强加感知；
+- **质量门禁**：全量 89 个测试套件 564 项测试 100% 通过，`npm run typecheck` 零报错，`npm run build:web` 正常完成。
 
 ## Medication Edit Redesign, Batch Management Fix & Card Layout (v1.0.15, versionCode 50, workspace/claude)
 

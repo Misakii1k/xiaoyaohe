@@ -258,11 +258,25 @@ export async function notifyIfUpdateAvailable(): Promise<void> {
   try {
     const last = Number(localStorage.getItem(LAST_UPDATE_NOTIFY_KEY) ?? '0');
     if (Date.now() - last < NOTIFY_DEBOUNCE_MS) return;
+
+    // 前台静默体验：若当前处于前台活跃状态，不通过系统推送打扰用户，
+    // 仅分发事件更新界面轻红点/徽标；避免前台操作时突然弹出通知横幅。
+    // 注意：此处不写入防抖时间戳，否则用户切到后台后在防抖窗口内将收不到任何轻提醒。
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      dispatchUpdateChanged();
+      return;
+    }
+
     await showNotification(`发现新版本 v${update.version}`, {
       body: '点击进入「应用更新」下载并安装。',
       tag: 'medbox-app-update',
       key: `update-${update.versionCode}`,
-      data: { deepLink: '/settings?action=app-update' },
+      silent: true,
+      data: {
+        deepLink: '/settings?action=app-update',
+        mode: 'light',
+        channel: 'update',
+      },
     });
     localStorage.setItem(LAST_UPDATE_NOTIFY_KEY, String(Date.now()));
   } catch {

@@ -457,25 +457,25 @@ export async function renderMedEditPage(
     { num: 3 as const, title: '库存备注' },
   ];
 
-  const stepBtns: HTMLElement[] = [];
-  const stepDividers: HTMLElement[] = [];
+  const stepHeader = el('div', { class: 'med-wizard-header' });
+  const stepBadge = el('span', { class: 'med-wizard-step-badge', text: '步骤 1/3' });
+  const stepDot = el('span', { class: 'med-wizard-step-dot', text: '·' });
+  const stepTitle = el('span', { class: 'med-wizard-step-title', text: stepsConfig[0]!.title });
+  stepHeader.append(stepBadge, stepDot, stepTitle);
 
-  stepsConfig.forEach((step, idx) => {
-    if (idx > 0) {
-      const divider = el('div', { class: 'med-wizard-step-divider' });
-      stepDividers.push(divider);
-      stepIndicator.append(divider);
-    }
+  const progressBar = el('div', { class: 'med-wizard-progress-track' });
+  const stepBtns: HTMLElement[] = [];
+
+  stepsConfig.forEach((step) => {
     const btn = el('button', {
       class: `med-wizard-step-item${step.num === 1 ? ' is-current' : ''}`,
       type: 'button',
       role: 'tab',
       'aria-selected': String(step.num === 1),
+      'aria-label': `第 ${step.num} 步：${step.title}`,
     });
-    const numEl = el('span', { class: 'med-wizard-step-num', text: String(step.num) });
-    const infoEl = el('div', { class: 'med-wizard-step-info' });
-    infoEl.append(el('span', { class: 'med-wizard-step-title', text: step.title }));
-    btn.append(numEl, infoEl);
+    const segment = el('span', { class: 'med-wizard-step-segment' });
+    btn.append(segment);
 
     btn.onclick = () => {
       if (editing) {
@@ -494,8 +494,10 @@ export async function renderMedEditPage(
     };
 
     stepBtns.push(btn);
-    stepIndicator.append(btn);
+    progressBar.append(btn);
   });
+
+  stepIndicator.append(stepHeader, progressBar);
 
   content.append(stepIndicator, form);
 
@@ -730,19 +732,14 @@ export async function renderMedEditPage(
       }
     });
 
+    stepBadge.textContent = `步骤 ${currentStep}/3`;
+    stepTitle.textContent = stepsConfig[currentStep - 1]?.title ?? '';
+
     stepBtns.forEach((btn, idx) => {
       const num = (idx + 1) as 1 | 2 | 3;
       btn.classList.toggle('is-current', num === currentStep);
       btn.classList.toggle('is-done', num < currentStep);
       btn.setAttribute('aria-selected', String(num === currentStep));
-      const numEl = btn.querySelector('.med-wizard-step-num');
-      if (numEl) {
-        numEl.textContent = num < currentStep ? '✓' : String(num);
-      }
-    });
-
-    stepDividers.forEach((div, idx) => {
-      div.classList.toggle('is-done', idx + 1 < currentStep);
     });
 
     prevBtn.hidden = currentStep === 1;
@@ -1028,7 +1025,7 @@ export async function renderMedEditPage(
       id: inputId,
       class: 'nlu-input',
       placeholder: '例：阿司匹林肠溶片 100mg，早餐前和晚餐后各一片，工作日服用',
-      rows: 2,
+      rows: 4,
     } as any) as HTMLTextAreaElement;
     wrap.append(input);
 

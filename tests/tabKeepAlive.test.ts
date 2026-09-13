@@ -543,6 +543,26 @@ describe('Tab Keep-Alive / View Caching Architecture', () => {
     expect(activatedCount).toBe(2);
   });
 
+  it('displays a subtle dot on settings tab when an update is available and responds to update events', () => {
+    localStorage.removeItem('medbox.lan-sync.available-update.v1');
+    const bar = tabbar('today');
+    const settingsLink = bar.querySelector<HTMLAnchorElement>('a[href="#/settings"]')!;
+    expect(settingsLink).not.toBeNull();
+    const dot = settingsLink.querySelector<HTMLElement>('.tabbar-update-dot');
+    expect(dot).not.toBeNull();
+    expect(dot?.style.display).toBe('none');
+
+    // Simulate update found
+    localStorage.setItem('medbox.lan-sync.available-update.v1', JSON.stringify({ version: '1.0.16' }));
+    window.dispatchEvent(new CustomEvent('medbox:app-update-changed'));
+    expect(dot?.style.display).toBe('');
+
+    // Simulate update cleared
+    localStorage.removeItem('medbox.lan-sync.available-update.v1');
+    window.dispatchEvent(new CustomEvent('medbox:app-update-changed'));
+    expect(dot?.style.display).toBe('none');
+  });
+
   it('increments database revision on createMedicationBatch and notifies listeners', async () => {
     const revBefore = getDatabaseRevision();
     let notifiedScope = '';

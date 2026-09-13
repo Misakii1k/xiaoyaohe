@@ -8,6 +8,26 @@ Latest version: `1.0.15` (Android `versionCode: 50`)
 
 ## Summary of Accomplished Work
 
+### 50. 药品编辑向导与批量管理排版优化及应用更新降级为轻提醒 (workspace/claude)
+
+1. **时段标签竖排断行修复**：
+   - 修复 `legacy.css` 与 `medication-editor.css` 中 `.slot-tag` 和 `.meal-slot-head .slot-tag` 因缺失 `white-space: nowrap` 与 `flex-shrink: 0` 导致在小屏弹性容器中汉字被压缩竖排折行的问题，保持水平单行胶囊徽章。
+2. **智能快速填表空间分配重塑**：
+   - 消除 `.smart-fill-ocr-wrap .btn` 继承 `flex-basis: 220px` 造成的高度异常膨胀，设置 `flex: 0 0 auto; min-block-size: var(--tap);` 恢复为 ~44px 标准单行功能按钮；
+   - 自然语言输入文本域由 `rows: 2` 调整为 `rows: 4`，`min-height: 96px`，扩充长句描述空间。
+3. **编辑药品顶部向导极简进度条重构**：
+   - 将 `.med-wizard-steps` 重构为极简进度条模式：居中显示「步骤 2/3 · 用药计划」大字标题，下方配备三段式平滑进度指示条，彻底根治 360px~412px 手机屏幕下的文字折行与垂直空间浪费。
+4. **批量管理卡片居中垂直流与纯紫色边框高亮**：
+   - 移除卡片内 44px 左侧空白复选框列，卡片内部采用居中垂直流排版（缩略图居中、药名与剂量居中、时段胶囊居中），100% 充满双列网格空间；
+   - 选中态去除对勾与底色填充，改为纯紫色高亮边框（`box-shadow: 0 0 0 2px var(--color-primary)`），保留隐藏复选框的无障碍语义。
+5. **应用更新提醒降级为纯轻提醒**：
+   - 原生 Android 提醒通道：在 `src/features/reminderTransport.ts` 中新增 `app_update_channel` 轻量通知渠道（`importance: 2`，无响铃、无振动、不弹出全屏横幅强打扰），在 `toNativeNotification` 中判定更新类通知（`tag === 'medbox-app-update'` 或 `mode === 'light'`）走该渠道并剥离「已服用/跳过」服药按钮；
+   - Web 端提醒通道：在 `src/features/webReminderTransport.ts` 中调整更新通知参数，关闭 `requireInteraction`（允许自动收起），设置 `silent: true` 并不附加服药动作；
+   - 前台静默免打扰：在 `src/sync/lan/apkTransport.ts` 中增设前台可见性守卫（`document.visibilityState === 'visible'`），前台活跃时抑制系统通知推送，仅通过 `medbox:app-update-changed` 事件静默更新界面徽标；
+   - 底栏「我的」导航加入轻量小红点指示（`.tabbar-update-dot`），平缓提醒新版本，不强加感知。
+6. **质量门禁**：
+   - 补充 `tests/reminderTransport.test.ts`、`tests/webReminderTransport.test.ts`、`tests/apkUpdateVerification.test.ts` 与 `tests/tabKeepAlive.test.ts` 专项测试；全量 89 个测试套件 564 项测试 100% 通过，`npm run typecheck` 0 报错，`npm run build:web` 正常完成。
+
 ### 49. 药品编辑页面排版重构与「批量管理」无法打开/缩略图排版修复及 1.0.15 发版 (1.0.15, versionCode 50, workspace/claude)
 
 1. **彻底解决「批量管理无法打开」的根因（持久 Tab 信号死锁）**：

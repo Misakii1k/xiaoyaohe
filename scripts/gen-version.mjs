@@ -70,7 +70,7 @@ export function readBundleManifest(rootDir, version) {
 function readReleaseNotes(rootDir, version) {
   const doc = join(rootDir, 'docs', 'releases', `${version}.md`);
   if (!existsSync(doc)) return `小药盒 v${version} 发布`;
-  const notes = readFileSync(doc, 'utf8').trim();
+  const notes = readFileSync(doc, 'utf8').replace(/^﻿/, '').trim();
   return notes.length > 500 ? `${notes.slice(0, 480)}...` : notes;
 }
 

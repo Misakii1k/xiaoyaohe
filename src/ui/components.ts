@@ -679,6 +679,15 @@ export function banner(
 export function tabbar(active: string): HTMLElement {
   const bar = el('nav', { class: 'tabbar' });
   bar.setAttribute('aria-label', '主导航');
+  let hasUpdate = false;
+  try {
+    hasUpdate =
+      typeof localStorage !== 'undefined' &&
+      Boolean(localStorage.getItem('medbox.lan-sync.available-update.v1'));
+  } catch {
+    /* ignore */
+  }
+
   for (const item of primaryNavigation) {
     const isActive = active === item.id;
     const a = el('a', {
@@ -688,6 +697,25 @@ export function tabbar(active: string): HTMLElement {
     if (isActive) a.setAttribute('aria-current', 'page');
     const ic = el('span', { class: 'ic' });
     ic.append(icon(item.icon));
+    if (item.id === 'settings') {
+      const dot = el('span', {
+        class: 'tabbar-update-dot',
+        style: hasUpdate ? '' : 'display: none;',
+        'aria-label': '有新版本更新',
+      });
+      ic.append(dot);
+      if (typeof window !== 'undefined') {
+        const onUpdateChange = () => {
+          try {
+            const nowHas = Boolean(localStorage.getItem('medbox.lan-sync.available-update.v1'));
+            dot.style.display = nowHas ? '' : 'none';
+          } catch {
+            /* ignore */
+          }
+        };
+        window.addEventListener('medbox:app-update-changed', onUpdateChange);
+      }
+    }
     a.append(ic);
     a.append(el('span', { html: item.label }));
     a.addEventListener('click', (e) => {

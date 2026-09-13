@@ -261,6 +261,7 @@
 }
 
 .tabbar.app-navigation a .ic {
+  position: relative;
   display: grid;
   place-items: center;
   inline-size: 24px;
@@ -269,6 +270,18 @@
   background: transparent;
   box-shadow: none;
   transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.15s ease;
+}
+
+.tabbar-update-dot {
+  position: absolute;
+  top: -1px;
+  right: -2px;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: var(--radius-full, 9999px);
+  background-color: var(--color-primary, #17745B);
+  box-shadow: 0 0 0 1.5px var(--color-surface, #fff);
+  pointer-events: none;
 }
 
 .tabbar.app-navigation a .ic svg {
