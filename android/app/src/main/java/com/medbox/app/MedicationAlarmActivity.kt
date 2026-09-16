@@ -76,6 +76,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -122,6 +123,19 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.shapes.Capsule
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.ui.input.pointer.PointerEventPass
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
@@ -156,8 +170,9 @@ class MedicationAlarmActivity : ComponentActivity() {
     // Compose 可观察载荷：onNewIntent 更新后界面自动重建
     private var payloadState = mutableStateOf<JSONObject?>(null)
 
-    /** 扫码解锁与处理状态，Activity 级别可观察，供 onUserLeaveHint / onStop 判定 */
+    /** 扫码解锁与滑动解锁状态，Activity 级别可观察 */
     private val scanUnlockedState = mutableStateOf(false)
+    private val slideUnlockedState = mutableStateOf(false)
     private val autoResolvedState = mutableStateOf(false)
 
     /** 闹钟会话计数：onNewIntent 换载荷时 +1，驱动解锁态/取景器/倒计时全部复位 */
@@ -217,13 +232,8 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     private fun isLocked(): Boolean {
         if (isFinishing || isDestroyed || autoResolvedState.value || scanUnlockedState.value) return false
-        val current = payloadState.value
-        if (current != null && MedicationAlarmContract.requiresScanVerification(current)) return true
-        val list = getActivePayloadsSnapshot()
-        for (p in list) {
-            if (MedicationAlarmContract.requiresScanVerification(p)) return true
-        }
-        return false
+        val current = payloadState.value ?: return false
+        return MedicationAlarmContract.requiresScanVerification(current)
     }
 
     /** 沉浸粘性全屏模式：隐藏底部导航手势栏与状态栏，滑动屏幕边缘仅唤出半透明指示条，不触发 Home 退出手势 */
@@ -426,6 +436,7 @@ class MedicationAlarmActivity : ComponentActivity() {
             // 仅当切换到完全不同的新闹钟时，才重置解锁态与会话计数；同提醒拉回时保持当前进度
             if (!sameAlarm) {
                 scanUnlockedState.value = false
+                slideUnlockedState.value = false
                 autoResolvedState.value = false
                 scanSession.value += 1
             }
@@ -459,9 +470,10 @@ class MedicationAlarmActivity : ComponentActivity() {
         val autoResolved = autoResolvedState
         val showEmergencyDialog = remember { mutableStateOf(false) }
 
-        // 会话切换：复位解锁/取景/反馈/应急对话框
+        // 会话切换：复位解锁/滑动解锁/取景/反馈/应急对话框
         LaunchedEffect(scanSession.value) {
             scanUnlockedState.value = false
+            slideUnlockedState.value = false
             showScanner.value = false
             scannerEmergencyMode.value = false
             scanFeedback.value = null
@@ -473,7 +485,7 @@ class MedicationAlarmActivity : ComponentActivity() {
         LaunchedEffect(showScanner.value) {
             if (showScanner.value) {
                 pauseVibration()
-            } else if (!autoResolved.value && !scanUnlocked.value) {
+            } else if (!autoResolved.value && !scanUnlocked.value && !slideUnlockedState.value) {
                 resumeVibration()
             }
         }
@@ -485,7 +497,8 @@ class MedicationAlarmActivity : ComponentActivity() {
         // 1. 取景器开启时：返回仅收起取景器；
         // 2. 扫码锁定态：严禁退出，提示必须扫码并短震警告；
         // 3. 扫码已自动记录：返回仅关闭页面，绝不能再叠加贪睡动作；
-        // 4. 非锁定态：返回手势自动转为「10分钟后提醒（贪睡）」，杜绝随手划掉漏服。
+        // 4. 未滑动解锁态：防误触拦截，提示「请向右滑动解锁」并短震警告；
+        // 5. 滑动解锁后操作态：返回手势自动转为「10分钟后提醒（贪睡）」，杜绝随手划掉漏服。
         BackHandler(enabled = true) {
             if (showEmergencyDialog.value) {
                 showEmergencyDialog.value = false
@@ -500,6 +513,11 @@ class MedicationAlarmActivity : ComponentActivity() {
             } else if (locked) {
                 val isCustom = expectedTokens.any { it.isNotEmpty() && !it.startsWith(TOKEN_PREFIX) }
                 val msg = if (isCustom) "强制提醒：请扫描已绑定的药盒或物品条码解除" else "强制提醒：请扫描专属解锁二维码解除"
+                scanFeedback.value = msg
+                triggerHapticWarning()
+                Toast.makeText(this@MedicationAlarmActivity, msg, Toast.LENGTH_SHORT).show()
+            } else if (!slideUnlockedState.value) {
+                val msg = "请向右滑动解锁"
                 scanFeedback.value = msg
                 triggerHapticWarning()
                 Toast.makeText(this@MedicationAlarmActivity, msg, Toast.LENGTH_SHORT).show()
@@ -523,31 +541,14 @@ class MedicationAlarmActivity : ComponentActivity() {
             finishAllAlarms(this@MedicationAlarmActivity)
         }
 
-        // 自动关闭倒计时：strong 且未要求扫码时不自动关；进入取景器暂停计数
-        val autoCloseSeconds: Int? = when {
-            requireScan -> null
-            mode == "strong" -> null
-            mode == "fullscreen-persistent" -> 60
-            else -> 10
-        }
-        val secondsLeft = remember(scanSession.value, autoCloseSeconds) {
-            mutableIntStateOf(autoCloseSeconds ?: -1)
-        }
-        LaunchedEffect(scanSession.value) {
-            if (autoCloseSeconds == null) return@LaunchedEffect
-            var left = autoCloseSeconds
-            while (true) {
-                if (showScanner.value) {
-                    delay(200)
-                    continue
-                }
-                delay(1_000)
-                left -= 1
-                secondsLeft.value = left
-                if (left <= 0) {
-                    finishAllAlarms(this@MedicationAlarmActivity)
-                    return@LaunchedEffect
-                }
+        // 全屏持续提醒：未解锁前持续响铃；若达到 10 分钟无人滑动解锁，自动延后 10 分钟提醒退出，防止耗尽电量
+        val MAX_RING_TIMEOUT_SECONDS = 600
+        LaunchedEffect(scanSession.value, slideUnlockedState.value, locked) {
+            if (locked || slideUnlockedState.value) return@LaunchedEffect
+            delay(MAX_RING_TIMEOUT_SECONDS * 1_000L)
+            if (!slideUnlockedState.value && !autoResolvedState.value && !isFinishing) {
+                Toast.makeText(this@MedicationAlarmActivity, "提醒超时，已自动延后 10 分钟提醒", Toast.LENGTH_SHORT).show()
+                act(MedicationAlarmContract.ACTION_SNOOZE)
             }
         }
 
@@ -585,9 +586,15 @@ class MedicationAlarmActivity : ComponentActivity() {
                         backdrop = backdrop,
                         groupPayload = isGroup,
                         locked = locked,
+                        slideUnlocked = slideUnlockedState.value,
+                        onSlideUnlock = {
+                            slideUnlockedState.value = true
+                            silenceAlert()
+                            triggerHapticBypass()
+                        },
                         resolved = autoResolved.value,
                         scanFeedback = scanFeedback.value,
-                        secondsLeft = if (autoCloseSeconds != null) secondsLeft.value else -1,
+                        secondsLeft = -1,
                         onStartScan = {
                             scanFeedback.value = null
                             scannerEmergencyMode.value = false
@@ -618,13 +625,13 @@ class MedicationAlarmActivity : ComponentActivity() {
 
                     Spacer(Modifier.height(20.dp))
                     if (isGroup && data != null) {
-                        GroupBody(data, backdrop, locked)
+                        GroupBody(data, backdrop, locked = true, canAct = false)
                     } else {
                         LegacyBody(payload, data)
                     }
                 } else {
                     if (isGroup && data != null) {
-                        GroupBody(data, backdrop, locked)
+                        GroupBody(data, backdrop, locked = false, canAct = slideUnlockedState.value)
                     } else {
                         LegacyBody(payload, data)
                     }
@@ -636,9 +643,15 @@ class MedicationAlarmActivity : ComponentActivity() {
                         backdrop = backdrop,
                         groupPayload = isGroup,
                         locked = locked,
+                        slideUnlocked = slideUnlockedState.value,
+                        onSlideUnlock = {
+                            slideUnlockedState.value = true
+                            silenceAlert()
+                            triggerHapticBypass()
+                        },
                         resolved = autoResolved.value,
                         scanFeedback = scanFeedback.value,
-                        secondsLeft = if (autoCloseSeconds != null) secondsLeft.value else -1,
+                        secondsLeft = -1,
                         onStartScan = {
                             scanFeedback.value = null
                             scannerEmergencyMode.value = false
@@ -801,7 +814,7 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     /** 组载荷（V2）：头部时段+时间，中部每药一行，操作在底部统一。 */
     @Composable
-    private fun GroupBody(data: JSONObject, backdrop: Backdrop, locked: Boolean) {
+    private fun GroupBody(data: JSONObject, backdrop: Backdrop, locked: Boolean, canAct: Boolean = !locked) {
         GlassText(
             MedicationAlarmContract.buildGroupTitle(data),
             30.sp, FontWeight.Bold, Ink,
@@ -818,14 +831,14 @@ class MedicationAlarmActivity : ComponentActivity() {
         val count = occurrences?.length() ?: 0
         for (index in 0 until count) {
             occurrences?.optJSONObject(index)?.let { occurrence ->
-                MedicationRow(occurrence, backdrop, locked)
+                MedicationRow(occurrence, backdrop, locked, canAct)
                 Spacer(Modifier.height(10.dp))
             }
         }
     }
 
     @Composable
-    private fun MedicationRow(occurrence: JSONObject, backdrop: Backdrop, locked: Boolean) {
+    private fun MedicationRow(occurrence: JSONObject, backdrop: Backdrop, locked: Boolean, canAct: Boolean = !locked) {
         val name = occurrence.optString("medName")
         val dose = occurrence.optString("dose")
         val occurrenceId = occurrence.optString("occurrenceId")
@@ -845,7 +858,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                     GlassText(dose, 14.sp, FontWeight.Normal, InkSoft)
                 }
             }
-            if (!locked && occurrenceId.isNotEmpty()) {
+            if (canAct && occurrenceId.isNotEmpty()) {
                 Spacer(Modifier.width(10.dp))
                 PillAction(label = "已服", fg = GreenDeep, backdrop = backdrop) {
                     queueOccurrence(MedicationAlarmContract.ACTION_TAKEN, occurrenceId)
@@ -854,16 +867,16 @@ class MedicationAlarmActivity : ComponentActivity() {
                 PillAction(label = "跳过", fg = Red, backdrop = backdrop) {
                     queueOccurrence(MedicationAlarmContract.ACTION_SKIP, occurrenceId)
                 }
-            } else if (locked) {
+            } else if (!canAct) {
                 Spacer(Modifier.width(10.dp))
-                LockBadge()
+                LockBadge(label = if (locked) "待扫码" else "待解锁")
             }
         }
     }
 
-    /** 锁定态行内徽标：提示该行需扫码后才能操作 */
+    /** 锁定态行内徽标：提示该行需扫码或滑动解锁后才能操作 */
     @Composable
-    private fun LockBadge() {
+    private fun LockBadge(label: String = "待解锁") {
         Box(
             Modifier
                 .clip(Capsule())
@@ -871,7 +884,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             BasicText(
-                "待解锁",
+                label,
                 style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = GreenDeep),
             )
         }
@@ -909,6 +922,130 @@ class MedicationAlarmActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 向右滑动解锁组件（Slide to Unlock）。
+     * 优雅的微毛玻璃质感轨道 + 阻尼拖拽手柄 + 弹簧释放回弹动效。
+     * 滑动超过 70% 判定解锁成功，触发 onUnlock 回调并伴随触觉反馈。
+     */
+    @Composable
+    private fun SlideToUnlockBar(
+        onUnlock: () -> Unit,
+        modifier: Modifier = Modifier,
+    ) {
+        val coroutineScope = rememberCoroutineScope()
+        val dragOffset = remember { Animatable(0f) }
+        val density = LocalDensity.current
+        var unlockedTriggered by remember { mutableStateOf(false) }
+
+        // 呼吸微动效用于提示文字
+        val hintTransition = rememberInfiniteTransition(label = "slideHint")
+        val hintAlpha by hintTransition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 0.95f,
+            animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Reverse),
+            label = "hintAlpha"
+        )
+
+        BoxWithConstraints(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .background(Color.White.copy(alpha = 0.85f))
+                .border(1.dp, Green.copy(alpha = 0.20f), RoundedCornerShape(32.dp)),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            val totalWidthPx = with(density) { maxWidth.toPx() }
+            val handleSizePx = with(density) { 52.dp.toPx() }
+            val paddingPx = with(density) { 6.dp.toPx() }
+            val maxDragDistance = (totalWidthPx - handleSizePx - paddingPx * 2).coerceAtLeast(1f)
+            val dragFraction = (dragOffset.value / maxDragDistance).coerceIn(0f, 1f)
+
+            // 背景文字：随着向右拖拽逐渐淡出
+            val textAlpha = (1f - dragFraction * 1.6f).coerceIn(0f, 1f) * hintAlpha
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 60.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                BasicText(
+                    text = "向右滑动解锁 ❯❯❯",
+                    style = TextStyle(
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = GreenDeep.copy(alpha = textAlpha),
+                        textAlign = TextAlign.Center
+                    )
+                )
+            }
+
+            // 滑动手柄
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset((paddingPx + dragOffset.value).roundToInt(), 0) }
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Green, GreenBright)
+                        )
+                    )
+                    .pointerInput(maxDragDistance) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { },
+                            onDragEnd = {
+                                coroutineScope.launch {
+                                    if (dragOffset.value >= maxDragDistance * 0.70f) {
+                                        dragOffset.animateTo(maxDragDistance, tween(120, easing = FastOutSlowInEasing))
+                                        if (!unlockedTriggered) {
+                                            unlockedTriggered = true
+                                            onUnlock()
+                                        }
+                                    } else {
+                                        dragOffset.animateTo(0f, spring(dampingRatio = 0.75f, stiffness = 400f))
+                                    }
+                                }
+                            },
+                            onDragCancel = {
+                                coroutineScope.launch {
+                                    dragOffset.animateTo(0f, spring(dampingRatio = 0.75f, stiffness = 400f))
+                                }
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                coroutineScope.launch {
+                                    val next = (dragOffset.value + dragAmount).coerceIn(0f, maxDragDistance)
+                                    dragOffset.snapTo(next)
+                                    if (next >= maxDragDistance * 0.98f && !unlockedTriggered) {
+                                        unlockedTriggered = true
+                                        onUnlock()
+                                    }
+                                }
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.size(18.dp)) {
+                    val strokeW = 2.6.dp.toPx()
+                    val w = size.width
+                    val h = size.height
+                    val path = Path().apply {
+                        moveTo(w * 0.35f, h * 0.22f)
+                        lineTo(w * 0.65f, h * 0.50f)
+                        lineTo(w * 0.35f, h * 0.78f)
+                    }
+                    drawPath(
+                        path = path,
+                        color = Color.White,
+                        style = Stroke(width = strokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    )
+                }
+            }
+        }
+    }
+
     // ------------------------------ 底部操作区 ------------------------------
 
     @Composable
@@ -918,6 +1055,8 @@ class MedicationAlarmActivity : ComponentActivity() {
         backdrop: Backdrop,
         groupPayload: Boolean,
         locked: Boolean,
+        slideUnlocked: Boolean = true,
+        onSlideUnlock: () -> Unit = {},
         resolved: Boolean = false,
         scanFeedback: String? = null,
         secondsLeft: Int,
@@ -960,6 +1099,25 @@ class MedicationAlarmActivity : ComponentActivity() {
 
         if (locked) {
             ScanLockedCard(expectedTokens, scanFeedback, onStartScan, onEmergencyTriggered)
+            return
+        }
+
+        if (!slideUnlocked) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                SlideToUnlockBar(
+                    onUnlock = onSlideUnlock
+                )
+                if (!scanFeedback.isNullOrEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    BasicText(
+                        scanFeedback,
+                        style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Red, textAlign = TextAlign.Center),
+                    )
+                }
+            }
             return
         }
 

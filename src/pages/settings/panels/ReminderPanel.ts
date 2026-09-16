@@ -333,7 +333,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       const strongTest = el('button', { class: 'btn tonal', html: '测试锁屏强提醒' });
       strongTest.onclick = async () => {
         try {
-          await fireNativeMedicationAlarmNow('strong');
+          await fireNativeMedicationAlarmNow('strong', { forceScanVerify: false });
           toast('已触发强提醒（如未弹出全屏页，请看通知栏/锁屏）');
         } catch {
           toast('触发失败');
@@ -342,7 +342,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       const fullTest = el('button', { class: 'btn tonal', html: '测试全屏提醒' });
       fullTest.onclick = async () => {
         try {
-          await fireNativeMedicationAlarmNow('fullscreen-short');
+          await fireNativeMedicationAlarmNow('strong', { forceScanVerify: false });
           toast('已触发全屏提醒');
         } catch {
           toast('触发失败，请先允许全屏权限');
@@ -560,7 +560,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       return;
     }
     try {
-      await fireNativeMedicationAlarmNow('fullscreen-short');
+      await fireNativeMedicationAlarmNow('strong', { forceScanVerify: true });
       toast('已触发全屏提醒，请体验扫码解锁');
     } catch {
       toast('触发失败，请先允许全屏权限');

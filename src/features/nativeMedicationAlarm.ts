@@ -118,12 +118,14 @@ export async function snoozeNativeMedicationAlarm(action: NativeMedicationAlarmA
   await plugin.snooze({ tag: action.tag, data: action.data, minutes: 10 });
 }
 
-/** Immediate strong / full-screen alarm for settings self-test. */
 export async function fireNativeMedicationAlarmNow(
-  mode: 'strong' | 'fullscreen-short' | 'fullscreen-persistent' = 'fullscreen-short',
+  mode: 'strong' | 'fullscreen-short' | 'fullscreen-persistent' = 'strong',
+  options?: { forceScanVerify?: boolean },
 ): Promise<void> {
   if (!nativeMedicationAlarmAvailable()) return;
-  const scanVerify = isAlarmScanVerifyEnabled();
+  const scanVerify = options?.forceScanVerify !== undefined
+    ? options.forceScanVerify
+    : isAlarmScanVerifyEnabled();
   const scanToken = scanVerify
     ? getAlarmScanExpectedToken()
     : undefined;

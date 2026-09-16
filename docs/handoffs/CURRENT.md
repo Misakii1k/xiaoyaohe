@@ -1,9 +1,18 @@
 # Current Integration State
 
-Updated: 2026-09-13
+Updated: 2026-09-16
 Integration branch: `main`
-Product version: `1.0.19` (versionCode 54)
-Latest integration commit: `release: integrate v1.0.19 from workspace/claude`
+Product version: `1.0.20` (versionCode 55)
+Latest integration commit: `release: v1.0.20 - 全屏提醒支持滑动解锁与按需扫码验证`
+
+## Full-Screen Alarm Slide to Unlock & Optional Scan Verification (v1.0.20, versionCode 55, workspace/claude)
+
+- **核心需求与修复**：
+  - 修复全屏提醒误触发默认扫码解锁问题，改回按需开启；仅在「设置 - 系统通知」开启扫码解锁时要求扫描药品条形码；
+  - 未开启扫码解锁时，全屏提醒持续响铃并在底部提供「向右滑动解锁」滑块；滑动到位后解除锁定并停止响铃，平滑展示「已服用」和「稍后提醒」操作区，防止误触直接关闭；
+  - 未滑动解锁前，按系统返回手势触发震动并提示请向右滑动解锁，持续响铃至 10 分钟无人解锁安全超时自动转为稍后提醒；
+  - 设置面板中「测试全屏提醒」传入非扫码提醒测试，「试验扫码解锁」保持强制扫码验证测试。
+- **质量门禁**：全量 89 个测试套件 567 项测试 100% 通过，`npm run typecheck` 零报错，Android 原生编译顺利完成。
 
 ## Assistant Preference Picker Restyle (v1.0.19, versionCode 54, workspace/claude)
 

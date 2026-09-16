@@ -2,11 +2,27 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-13
+Updated: 2026-09-16
 Status: active
-Latest version: `1.0.19` (Android `versionCode: 54`)
+Latest version: `1.0.20` (Android `versionCode: 55`)
 
 ## Summary of Accomplished Work
+
+### 54. 全屏提醒支持滑动解锁与按需扫码验证 (v1.0.20, versionCode 55, workspace/claude)
+
+1. **问题**：之前版本中全屏提醒误触发了默认扫码解锁，即只要弹出全屏闹钟就强制要求扫码，导致未勾选扫码解锁的用户无法正常便捷操作。
+2. **修复**：
+   - `android/app/src/main/java/com/medbox/app/MedicationAlarmActivity.kt`：
+     - 重构锁定状态判定逻辑：仅在闹钟有效载荷明确携带 `requiresScanVerification == true` 时才进入扫码解锁状态，杜绝历史状态残留；
+     - 增加向右滑动解锁组件 `SlideToUnlockBar`（64dp 浅色毛玻璃轨道、呼吸感提示文本、52dp 渐变手柄、70% 判定、弹簧回弹）；
+     - 未开启扫码解锁时，进入滑动解锁待机态：持续响铃与全屏覆盖，底部提供滑块，滑动到位后解除锁定并停止响铃，展开「已服用」和「稍后提醒」按钮，避免误触关闭；
+     - 拦截返回键手势：未滑动解锁前按返回键触发短震并 Toast 提示「请向右滑动解锁」，防止意外退出；
+     - 10 分钟无人解锁安全兜底：自动触发 `ACTION_SNOOZE`。
+   - `src/features/nativeMedicationAlarm.ts` 与 `src/pages/settings/panels/ReminderPanel.ts`：
+     - `fireNativeMedicationAlarmNow` 支持 `forceScanVerify`；
+     - 设置面板中「测试全屏提醒」传入 `{ forceScanVerify: false }` 测试滑动解锁与持续响铃，「试验扫码解锁」传入 `{ forceScanVerify: true }` 测试扫码流程。
+3. **验证与门禁**：
+   - 89 套件 567 项 Vitest 测试 100% 通过；`npm run typecheck` 0 错误；Android 原生编译 `assembleDebug` / `assembleRelease` 通过；发布说明通过 `oil-tone` 检查。
 
 ### 53. 小助手模型/推理选择器改为应用内弹层 (v1.0.19, versionCode 54, workspace/claude)
 
