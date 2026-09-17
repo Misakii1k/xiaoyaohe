@@ -8,6 +8,16 @@ Latest version: `1.0.22` (Android `versionCode: 57`)
 
 ## Summary of Accomplished Work
 
+### 57. 全屏提醒滑动解锁滑块固定至屏幕底部 (workspace/claude)
+
+1. **问题与诉求**：用户要求把全屏提醒中的滑动解锁滑块移动到底部。此前 `SlideToUnlockBar` 渲染在可滚动内容列内、紧随提醒正文之后，内容较短时滑块悬在屏幕中部，不符合拇指底部操作习惯。
+2. **修复**（`android/app/src/main/java/com/medbox/app/MedicationAlarmActivity.kt`，纯原生 UI 布局改动）：
+   - 将滑块从滚动内容列抽出，改为外层 `Box` 底部对齐的固定区域（`align(Alignment.BottomCenter)` + `navigationBarsPadding`），不随内容滚动、始终贴底；
+   - 底部区域附竖向渐变衬底（透明 → `Background` 实色），滚动内容穿过下方时自然淡出，不遮挡装饰层底部柔光；
+   - 解锁前滚动内容列预留 96dp 底部空间，防止末尾内容被固定滑块遮挡；滑动解锁后滑块消失，「已服用 / 10 分钟后提醒 / 跳过本次」按钮回流至内容流原位；
+   - `FooterActions` 移除 `slideUnlocked` / `onSlideUnlock` 参数与内嵌滑块分支，两处调用点同步精简；扫码反馈文案随滑块一并迁移至底部固定区域。
+3. **验证与门禁**：`./gradlew.bat compileDebugKotlin` 与 `assembleDebug` BUILD SUCCESSFUL；`npm run typecheck` 0 错误；未触碰 TS 源码与测试用例（`tests/alarmSlideUnlock.test.ts` 为偏好存储测试，不受影响）。真机视觉与滑动手感待用户验证。
+
 ### 56. 提醒排版修复、滑动解锁生效加固与按增量落实度提供更新通道 (v1.0.22, versionCode 57, workspace/claude)
 
 1. **问题与诉求**：

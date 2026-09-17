@@ -603,12 +603,6 @@ class MedicationAlarmActivity : ComponentActivity() {
                         backdrop = backdrop,
                         groupPayload = isGroup,
                         locked = locked,
-                        slideUnlocked = slideUnlockedState.value,
-                        onSlideUnlock = {
-                            slideUnlockedState.value = true
-                            silenceAlert()
-                            triggerHapticBypass()
-                        },
                         resolved = autoResolved.value,
                         scanFeedback = scanFeedback.value,
                         secondsLeft = -1,
@@ -653,51 +647,85 @@ class MedicationAlarmActivity : ComponentActivity() {
                         LegacyBody(payload, data)
                     }
 
-                    Spacer(Modifier.height(24.dp))
-                    FooterActions(
-                        payload = payload,
-                        expectedTokens = expectedTokens,
-                        backdrop = backdrop,
-                        groupPayload = isGroup,
-                        locked = locked,
-                        slideUnlocked = slideUnlockedState.value,
-                        onSlideUnlock = {
+                    if (slideUnlockedState.value) {
+                        Spacer(Modifier.height(24.dp))
+                        FooterActions(
+                            payload = payload,
+                            expectedTokens = expectedTokens,
+                            backdrop = backdrop,
+                            groupPayload = isGroup,
+                            locked = locked,
+                            resolved = autoResolved.value,
+                            scanFeedback = scanFeedback.value,
+                            secondsLeft = -1,
+                            onStartScan = {
+                                scanFeedback.value = null
+                                scannerEmergencyMode.value = false
+                                showScanner.value = true
+                                if (!cameraPermissionGranted.value &&
+                                    ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
+                                    != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    requestCameraPermissionSafely()
+                                }
+                            },
+                            onEmergencyTriggered = {
+                                scanFeedback.value = null
+                                vibrateUnlock()
+                                scannerEmergencyMode.value = true
+                                showScanner.value = true
+                                if (!cameraPermissionGranted.value &&
+                                    ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
+                                    != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    requestCameraPermissionSafely()
+                                }
+                            },
+                            onDismissAll = {
+                                finishAllAlarms(this@MedicationAlarmActivity)
+                            },
+                        )
+                    } else {
+                        // 解锁滑块固定在屏幕底部，滚动内容预留底部空间防止被遮挡
+                        Spacer(Modifier.height(96.dp))
+                    }
+                }
+                Spacer(Modifier.height(28.dp))
+            }
+
+            // 未滑动解锁：滑块固定在屏幕底部，不随内容滚动，贴近拇指操作热区
+            if (!locked && !autoResolved.value && !slideUnlockedState.value) {
+                Column(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                0.30f to Background.copy(alpha = 0.80f),
+                                1f to Background,
+                            )
+                        )
+                        .navigationBarsPadding()
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 24.dp, bottom = 16.dp)
+                ) {
+                    SlideToUnlockBar(
+                        onUnlock = {
                             slideUnlockedState.value = true
                             silenceAlert()
                             triggerHapticBypass()
-                        },
-                        resolved = autoResolved.value,
-                        scanFeedback = scanFeedback.value,
-                        secondsLeft = -1,
-                        onStartScan = {
-                            scanFeedback.value = null
-                            scannerEmergencyMode.value = false
-                            showScanner.value = true
-                            if (!cameraPermissionGranted.value &&
-                                ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
-                                != PackageManager.PERMISSION_GRANTED
-                            ) {
-                                requestCameraPermissionSafely()
-                            }
-                        },
-                        onEmergencyTriggered = {
-                            scanFeedback.value = null
-                            vibrateUnlock()
-                            scannerEmergencyMode.value = true
-                            showScanner.value = true
-                            if (!cameraPermissionGranted.value &&
-                                ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
-                                != PackageManager.PERMISSION_GRANTED
-                            ) {
-                                requestCameraPermissionSafely()
-                            }
-                        },
-                        onDismissAll = {
-                            finishAllAlarms(this@MedicationAlarmActivity)
-                        },
+                        }
                     )
+                    if (!scanFeedback.value.isNullOrEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        BasicText(
+                            scanFeedback.value.orEmpty(),
+                            style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Red, textAlign = TextAlign.Center),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
-                Spacer(Modifier.height(28.dp))
             }
 
             if (showScanner.value) {
@@ -1072,8 +1100,6 @@ class MedicationAlarmActivity : ComponentActivity() {
         backdrop: Backdrop,
         groupPayload: Boolean,
         locked: Boolean,
-        slideUnlocked: Boolean = true,
-        onSlideUnlock: () -> Unit = {},
         resolved: Boolean = false,
         scanFeedback: String? = null,
         secondsLeft: Int,
@@ -1116,25 +1142,6 @@ class MedicationAlarmActivity : ComponentActivity() {
 
         if (locked) {
             ScanLockedCard(expectedTokens, scanFeedback, onStartScan, onEmergencyTriggered)
-            return
-        }
-
-        if (!slideUnlocked) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                SlideToUnlockBar(
-                    onUnlock = onSlideUnlock
-                )
-                if (!scanFeedback.isNullOrEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    BasicText(
-                        scanFeedback,
-                        style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Red, textAlign = TextAlign.Center),
-                    )
-                }
-            }
             return
         }
 
