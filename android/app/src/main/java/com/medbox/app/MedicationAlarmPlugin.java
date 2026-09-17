@@ -146,11 +146,13 @@ public final class MedicationAlarmPlugin extends Plugin {
             payload.put("key", "test");
             payload.put("mode", mode);
             payload.put("slideUnlock", slideUnlock);
+            payload.put("testAlarm", true);
             JSONObject data = new JSONObject();
             data.put("reminderMode", mode);
             data.put("medicationName", "测试药");
             data.put("medicationDose", "1 片");
             data.put("slideUnlock", slideUnlock);
+            data.put("testAlarm", true);
             if (scanVerify && scanToken != null && !scanToken.isEmpty()) {
                 data.put("scanVerify", true);
                 data.put("scanToken", scanToken);

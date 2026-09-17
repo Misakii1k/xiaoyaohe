@@ -64,6 +64,7 @@ import {
 import { panel, setChip } from '../components/panelPrimitives';
 import type { PanelChip } from '../types';
 import { openKeepAliveGuideModal, openKeepAlivePromptSheet } from './KeepAlivePanel';
+import { LOCAL_APP_VERSION_CODE } from '../../../sync/lan/apkTransport';
 
 /** ---------------- 通知面板 ---------------- */
 export function reminderPanelChip(): PanelChip {
@@ -491,26 +492,46 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
   slideRow.append(slideCopy, slideToggle);
   body.append(slideRow);
 
-  // 滑动解锁快捷测试与说明小卡片
-  const slideCard = el('div', {
-    class: 'settings-scan-card mt-2',
-    style: 'display: flex; align-items: center; justify-content: space-between; gap: 12px;',
-  });
+  // 滑动解锁快捷测试与说明卡片（标准垂直流布局，彻底杜绝小屏横向挤压单字折行）
+  const slideCard = el('div', { class: 'settings-scan-card mt-2' });
+  const slideCardHeader = el('div', { class: 'settings-scan-card-header' });
+  slideCardHeader.append(
+    el('span', {
+      class: `chip-pill ${slideUnlockEnabled ? 'chip-primary' : ''}`,
+      text: slideUnlockEnabled ? '防误触保护中' : '直接出按钮模式',
+    }),
+    el('strong', { text: slideUnlockEnabled ? '滑动解锁体验' : '极速点击模式' }),
+  );
+
   const slideCardDesc = el('div', {
     class: 'settings-scan-card-desc',
-    style: 'margin: 0; flex: 1;',
     text: slideUnlockEnabled
-      ? '未开启扫码解锁时，全屏提醒将展示滑动解锁轨道，向右滑动手柄即可解除锁定并停止响铃。'
-      : '当前已允许直接点击操作；若常把手机放在口袋或容易误触，建议开启滑动解锁。',
+      ? '未开启扫码验证时，全屏提醒将展示「向右滑动解锁」轨道，滑动后才显示服药操作按钮，杜绝口袋与拿取时的误触。'
+      : '全屏提醒将直接展示「已服用 / 10分钟后提醒 / 跳过」大按钮；如常将手机放在口袋中，建议开启滑动解锁。',
   });
+
+  const needsApkUpgrade = isNativeAlarm && LOCAL_APP_VERSION_CODE > 0 && LOCAL_APP_VERSION_CODE < 56;
+  if (needsApkUpgrade) {
+    const upgradeNotice = el('div', {
+      class: 'settings-scan-card-desc mt-1',
+      style: 'color: #b45309; background: rgba(245, 158, 11, 0.1); padding: 8px 12px; border-radius: 8px; font-size: 12px; line-height: 1.5;',
+      text: '提示：滑动解锁属于系统底层全屏组件。您当前通过增量更新获取了最新界面，但仍需在「软件更新」中安装一次完整 APK 安装包方可在全屏闹钟中生效。',
+    });
+    slideCard.append(upgradeNotice);
+  }
+
+  const slideCardGrid = el('div', { class: 'settings-scan-grid' });
   const testSlideBtn = el('button', {
     class: 'btn tonal',
-    style: 'flex-shrink: 0; padding: 6px 14px; font-size: 13px;',
     text: '测试滑动解锁',
   });
   testSlideBtn.onclick = async () => {
     if (!isNativeAlarm) {
       toast('全屏闹钟滑动解锁需在 Android App 中体验');
+      return;
+    }
+    if (needsApkUpgrade) {
+      toast('当前底层安装包版本未包含滑动解锁，请前往「软件更新」安装完整 APK');
       return;
     }
     try {
@@ -520,7 +541,8 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       toast('触发失败，请先允许全屏权限');
     }
   };
-  slideCard.append(slideCardDesc, testSlideBtn);
+  slideCardGrid.append(testSlideBtn);
+  slideCard.append(slideCardHeader, slideCardDesc, slideCardGrid);
   body.append(slideCard);
 
   // ── 扫码解除强制提醒（全屏响铃仅 Android 原生生效，配置与绑定全局常驻）──

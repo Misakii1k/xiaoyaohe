@@ -4,9 +4,22 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-17
 Status: active
-Latest version: `1.0.21` (Android `versionCode: 56`)
+Latest version: `1.0.22` (Android `versionCode: 57`)
 
 ## Summary of Accomplished Work
+
+### 56. 提醒排版修复、滑动解锁生效加固与按增量落实度提供更新通道 (v1.0.22, versionCode 57, workspace/claude)
+
+1. **问题与诉求**：
+   - 用户反馈：设置面板提醒卡片出现单字竖排错乱；真机触发提醒依然直接出按钮、没有滑动解锁。
+   - 用户明确要求：更新分为增量更新和全量更新。若更新的内容通过增量更新无法落实，必须使用全量更新，则在更新时只提供全量更新的按钮，反之则两个按钮都提供。
+2. **根因定位与修复**：
+   - **排版崩溃**：`ReminderPanel.ts` 中 `slideCard` 在横向 flexbox 中强塞 40+ 字符导致窄屏被挤压成单字竖排；彻底重构为标准的 `settings-scan-card` 垂直流布局，文字通栏自适应，彻底消除排版错乱；
+   - **滑动解锁生效加固**：在 `MedicationAlarmPlugin` 中为测试提醒注入 `testAlarm` 标记，在 `MedicationAlarmActivity.kt` 中修复 `sameAlarm` 判定，使得多次测试与不同批次提醒每次均能彻底复位未解锁状态与会话；
+   - **增量/全量精准分流**：将 `MIN_NATIVE_BUNDLE_VERSION_CODE` 提升至 56。在 `AppUpdatePanel.ts` 中重构更新按钮体系：若更新内容无法通过增量更新落实（`updateType === 'full'`），更新界面只提供「下载并安装」全量按钮；反之（`updateType === 'incremental'`）则同时提供「一键秒级更新」与「下载完整包」双按钮，点击直达下载安装；
+   - **底座版本引导提示**：在滑动解锁设置卡片中增加底层 APK 版本判断，当仅增量更新未安装底座时明确提示需安装完整 APK。
+3. **验证与测试**：
+   - 新增 `tests/appUpdateButtons.test.ts` 单测覆盖全量与增量按钮呈现策略；全量 92 套件 574 项测试全部通过；`npm run typecheck` 0 错误；`tone_lint.py` 文风审计通过。
 
 ### 55. 全屏提醒滑动解锁独立配置与测试 (v1.0.21, versionCode 56, workspace/claude)
 

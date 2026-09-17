@@ -439,14 +439,17 @@ class MedicationAlarmActivity : ComponentActivity() {
             val currentPayload = payloadState.value
             val currentId = currentPayload?.optInt("id", -1)
             val newId = newPayload.optInt("id", -1)
-            val sameAlarm = currentId != null && currentId != -1 && currentId == newId
+            val currentAt = currentPayload?.optLong("at", 0L) ?: 0L
+            val newAt = newPayload.optLong("at", 0L)
+            val isTest = newPayload.optBoolean("testAlarm", false) || newPayload.optString("tag").startsWith("medbox-test")
+            val sameAlarm = !isTest && currentId != null && currentId != -1 && currentId == newId && currentAt == newAt
 
             payloadState.value = newPayload
             enableImmersiveMode()
             startAlert()
             updateAccessibilityGuard()
 
-            // 仅当切换到完全不同的新闹钟时，才重置解锁态与会话计数；同提醒拉回时保持当前进度
+            // 仅当同闹钟未完成时系统意外拉回前台才保持进度；测试提醒或新闹钟一律重置解锁态
             if (!sameAlarm) {
                 scanUnlockedState.value = false
                 slideUnlockedState.value = !isSlideUnlockConfigured(newPayload)

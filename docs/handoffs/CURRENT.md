@@ -2,17 +2,17 @@
 
 Updated: 2026-09-17
 Integration branch: `main`
-Product version: `1.0.21` (versionCode 56)
-Latest integration commit: `release: v1.0.21 - 全屏提醒支持滑动解锁独立配置与测试`
+Product version: `1.0.22` (versionCode 57)
+Latest integration commit: `release: v1.0.22 - 修复提醒排版与滑动解锁逻辑，按增量落实度提供更新通道`
 
-## Full-Screen Alarm Slide Unlock Configuration & Test (v1.0.21, versionCode 56, workspace/claude)
+## Full-Screen Alarm Slide Unlock Fix & Dual-Channel Update Policy (v1.0.22, versionCode 57, workspace/claude)
 
 - **核心需求与修复**：
-  - 新增滑动解锁独立配置开关：在「设置 - 系统通知」中引入「全屏提醒滑动解锁」设置卡片与开关，支持持久化用户偏好（默认开启）；
-  - 增设即时测试入口：提供「测试滑动解锁」按钮，方便用户随时体验向右滑动手感与解除响铃流程；
-  - 打通原生全屏联动：`MedicationAlarmPlugin` 与 `MedicationAlarmActivity` 联动 `slideUnlock` 载荷；用户关闭滑动解锁时直出操作按钮，开启时呈现 `SlideToUnlockBar` 滑块；
-  - 扫码关闭状态说明联动：更新扫码关闭状态文案，与滑动解锁配置状态精准呼应。
-- **质量门禁**：全量 90 个测试套件 570 项测试 100% 通过，`npm run typecheck` 零报错。
+  - **排版崩溃修复**：彻底重构「全屏提醒滑动解锁」设置卡片为标准垂直流布局，消除窄屏下文字单字垂直挤压错乱；
+  - **滑动解锁生效加固**：修复 `MedicationAlarmActivity` 中多次触发测试提醒时因相同 ID 导致的状态未复位问题；
+  - **更新通道精准分流**：根据增量更新能否落实进行按钮展示控制：当更新内容无法通过增量更新落实（底座版本过低或原生特性依赖）时，界面仅提供全量更新按钮；反之（增量可落实）则同时提供「一键秒级更新」与「下载完整包」双按钮；
+  - **底座版本门槛提升**：将原生底座最低门槛 `MIN_NATIVE_BUNDLE_VERSION_CODE` 提升至 56，彻底防止旧底座走纯增量更新导致全屏滑动解锁未生效。
+- **质量门禁**：全量 92 个测试套件全部通过，TypeScript 0 错误通过，文风经 `tone_lint.py` 严格校验通过。
 
 ## Full-Screen Alarm Slide to Unlock & Optional Scan Verification (v1.0.20, versionCode 55, workspace/claude)
 
