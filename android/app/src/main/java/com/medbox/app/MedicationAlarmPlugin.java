@@ -195,6 +195,8 @@ public final class MedicationAlarmPlugin extends Plugin {
             JSONObject payload = MedicationAlarmContract.buildSnoozePayload(
                 data, tag, System.currentTimeMillis() + Math.max(1, minutes) * 60_000L
             );
+            // 贪睡成为该组唯一下次响铃：先取消同组剩余递进闹钟，避免双轨重复弹出
+            if (!tag.isEmpty()) MedicationAlarmContract.cancelTag(getContext(), tag);
             MedicationAlarmContract.schedule(getContext(), payload);
             call.resolve();
         } catch (JSONException error) {

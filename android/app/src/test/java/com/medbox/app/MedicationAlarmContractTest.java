@@ -49,6 +49,51 @@ public class MedicationAlarmContractTest {
         assertFalse(MedicationAlarmContract.isGroupPayload(new JSONObject()));
     }
 
+    /** 遗留单药载荷：任何确认/跳过都意味着该药提醒完结，剩余递进闹钟应立即取消 */
+    @Test
+    public void legacySinglePayloadAlwaysCompletesWholeReminder() throws Exception {
+        JSONObject legacy = new JSONObject()
+            .put("tag", "occurrence:rule-a:2026-07-13")
+            .put("data", new JSONObject().put("medicationName", "测试药"));
+        assertTrue(MedicationAlarmContract.wholeReminderCompleted(MedicationAlarmContract.ACTION_TAKEN, legacy));
+        assertTrue(MedicationAlarmContract.wholeReminderCompleted(MedicationAlarmContract.ACTION_SKIP, legacy));
+    }
+
+    /** 组载荷的组级动作（全部已服用/全部跳过，含扫码自动已服用）：整组完结 */
+    @Test
+    public void groupAllActionsCompleteWholeReminder() throws Exception {
+        JSONObject group = new JSONObject().put("tag", "reminder-group:2026-07-13:morning")
+            .put("data", groupData());
+        assertTrue(MedicationAlarmContract.wholeReminderCompleted(MedicationAlarmContract.ACTION_ALL_TAKEN, group));
+        assertTrue(MedicationAlarmContract.wholeReminderCompleted(MedicationAlarmContract.ACTION_ALL_SKIPPED, group));
+    }
+
+    /** 多成员组的行级确认（只服了其中一种药）：保留剩余递进闹钟继续提醒其他药 */
+    @Test
+    public void rowLevelActionKeepsRepeatsForMultiMemberGroup() throws Exception {
+        JSONObject group = new JSONObject().put("tag", "reminder-group:2026-07-13:morning")
+            .put("data", groupData());
+        assertFalse(MedicationAlarmContract.wholeReminderCompleted(MedicationAlarmContract.ACTION_TAKEN, group));
+        assertFalse(MedicationAlarmContract.wholeReminderCompleted(MedicationAlarmContract.ACTION_SKIP, group));
+    }
+
+    /** 单成员组的行级确认：该 occurrence 完成即整组完结，取消剩余递进闹钟 */
+    @Test
+    public void rowLevelActionCompletesSingleMemberGroup() throws Exception {
+        JSONObject single = new JSONObject().put("occurrenceId", "occurrence:rule-a:2026-07-13")
+            .put("legacyLogId", "rule-a_20260713")
+            .put("medId", "med-a")
+            .put("medName", "二甲双胍")
+            .put("dose", "1片");
+        JSONObject data = new JSONObject()
+            .put("kind", "reminder-group")
+            .put("groupId", "reminder-group:2026-07-13:morning")
+            .put("occurrences", new JSONArray().put(single));
+        JSONObject group = new JSONObject().put("tag", "reminder-group:2026-07-13:morning").put("data", data);
+        assertTrue(MedicationAlarmContract.wholeReminderCompleted(MedicationAlarmContract.ACTION_TAKEN, group));
+        assertTrue(MedicationAlarmContract.wholeReminderCompleted(MedicationAlarmContract.ACTION_SKIP, group));
+    }
+
     @Test
     public void slotLabelMapsAllFourSlots() {
         assertEquals("早上", MedicationAlarmContract.slotLabel("morning"));

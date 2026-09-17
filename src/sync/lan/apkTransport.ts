@@ -19,8 +19,8 @@ export const LOCAL_APP_VERSION_CODE: number = typeof __APP_VERSION_CODE__ !== 'u
 /** APK 分发端口（与 ApkDistributionPlugin.java 保持一致）。 */
 export const APK_DISTRIBUTION_PORT = 38473;
 
-/** 支持 Web 增量热更新的最低原生 APK versionCode（从全屏提醒滑动解锁起要求底座 >= 56）。 */
-export const DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE = 56;
+/** 支持 Web 增量热更新的最低原生 APK versionCode（从提醒重复弹出根治与居底滑块起要求底座 >= 58）。 */
+export const DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE = 58;
 
 /**
  * 云端更新通道的部署源。换自定义域名时只改这一处。

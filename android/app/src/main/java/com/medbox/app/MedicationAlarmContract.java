@@ -341,7 +341,11 @@ final class MedicationAlarmContract {
         AlarmAudioPlayer.stop();
         int id = payload.getInt("id");
         context.getSystemService(NotificationManager.class).cancel(id);
+        String tag = payload.optString("tag");
         if (ACTION_SNOOZE.equals(action)) {
+            // 贪睡 = 本组下一次响铃统一推迟到 10 分钟后：
+            // 先清掉剩余递进闹钟（repeat-2/3/...），避免「延后后仍按原节奏重复弹出」双轨响铃
+            if (!tag.isEmpty()) cancelTag(context, tag);
             payload.put("at", System.currentTimeMillis() + 10 * 60_000L);
             payload.put("key", "snooze-" + System.currentTimeMillis());
             schedule(context, payload);
@@ -357,7 +361,27 @@ final class MedicationAlarmContract {
         } else {
             actionId = "skip";
         }
+        // 确认/跳过后立即取消同组剩余递进提醒：否则在 WebView 回前台重放对账之前，
+        // AlarmManager 仍会按原节奏（默认每 10 分钟 × 3 次）再次弹出全屏提醒。
+        if (!tag.isEmpty() && wholeReminderCompleted(action, payload)) {
+            cancelTag(context, tag);
+        }
         queueAction(context, actionId, payload);
+    }
+
+    /**
+     * 该动作是否意味着整个提醒组已完结（剩余递进闹钟应立即取消）：
+     * - 非组载荷（遗留单药）：任何确认/跳过即整组完结；
+     * - 组载荷：「全部已服用 / 全部跳过」完结（含扫码自动已服用路径）；
+     * - 组载荷行级确认（全屏页单行按钮）：仅单成员组完结，多成员组保留递进提醒其他药。
+     */
+    static boolean wholeReminderCompleted(String action, JSONObject payload) {
+        if (payload == null) return false;
+        if (!isGroupPayload(payload)) return true;
+        if (ACTION_ALL_TAKEN.equals(action) || ACTION_ALL_SKIPPED.equals(action)) return true;
+        JSONObject data = payload.optJSONObject("data");
+        JSONArray occurrences = data == null ? null : data.optJSONArray("occurrences");
+        return occurrences == null || occurrences.length() <= 1;
     }
 
     static void queueAction(Context context, String actionId, JSONObject payload) {
@@ -485,6 +509,11 @@ final class MedicationAlarmContract {
             data.put("occurrenceId", occurrenceId);
             itemPayload.put("data", data);
             queueAction(context, actionId, itemPayload);
+            // 单成员组行级确认即整组完结：立即取消剩余递进闹钟；多成员组保留提醒其他药
+            String tag = payload.optString("tag");
+            if (!tag.isEmpty() && wholeReminderCompleted(action, payload)) {
+                cancelTag(context, tag);
+            }
         } catch (JSONException ignored) {}
     }
 

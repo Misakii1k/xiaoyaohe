@@ -4,9 +4,23 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-17
 Status: active
-Latest version: `1.0.22` (Android `versionCode: 57`)
+Latest version: `1.1.0` (Android `versionCode: 58`)
 
 ## Summary of Accomplished Work
+
+### 58. 确认/扫码后提醒重复弹出根治 (workspace/claude)
+
+1. **问题**：用户反馈全屏提醒中确认服药（已服用/全部已服用）或扫码验证成功后，提醒仍会再次弹出。
+2. **根因（两条叠加）**：
+   - **递进重复闹钟未随确认取消**：每个时段组最多排 4 个原生闹钟（dose + repeat-2/3/4，默认每 10 分钟 × 3 次）。`MedicationAlarmContract.handleAction` 确认时只停铃、取消当前通知并入队动作，**未取消同组剩余 repeat 闹钟**；只有 WebView 回前台触发重放+对账（`replayPendingMedicationReminderActions` → `rescheduleMedicationReminders` → `reconcile`）才会清掉。锁屏/后台确认后不打开应用的典型场景下，AlarmManager 按原节奏再次弹出全屏提醒。
+   - **IDS 残留过点补发**：已触发闹钟的 `payload_<id>` 与 id 留在 SharedPreferences IDS 集合（仅 reconcile/cancelTag 会清理）；`MedicationAlarmBootReceiver` 在 BOOT / TIME_CHANGED / TIMEZONE_CHANGED（含运营商自动对时）时调用 `restoreScheduled`，对 `at <= now` 的条目执行「过点补发一次」，把已确认的提醒再弹一次。
+   - 附带：贪睡分支（「10 分钟后提醒」）不清剩余 repeat，形成贪睡+递进双轨重复响铃。
+3. **修复**（`MedicationAlarmContract.java` / `MedicationAlarmPlugin.java`，纯原生逻辑）：
+   - 新增纯函数 `wholeReminderCompleted(action, payload)` 判定动作是否完结整组：非组载荷（遗留单药）任何确认/跳过即完结；组载荷「全部已服用 / 全部跳过」（含扫码自动已服用 `dispatchScanAutoTaken`）即完结；**单成员组**行级确认即完结；多成员组行级确认保留递进闹钟继续提醒其他药；
+   - `handleAction`：贪睡先 `cancelTag` 再排贪睡闹钟（贪睡成为该组唯一下次响铃）；确认/跳过完结整组时立即 `cancelTag` 取消剩余闹钟并顺带清理 IDS/payload 残留（同步根治过点补发路径）；
+   - `queueOccurrenceAction`（全屏页单行按钮）：单成员组确认即取消整组剩余闹钟；
+   - `MedicationAlarmPlugin.snooze`（TS 侧重放贪睡路径）：排贪睡前先清同组闹钟，与原生路径一致。
+4. **验证与门禁**：新增 4 项 `wholeReminderCompleted` 契约测试；`testReleaseUnitTest` 26 项全绿；`npm run typecheck` 0 错误；全量 vitest 91 套件 572 项通过。顺手修复存量失败 `AppConfigurationTest`（v1.0.1 时代硬编码版本断言 1.0.1/36 与当前 1.0.22/57 不符，改为仅断言包名，版本一致性由 TS 侧 versionManifest 门禁覆盖）。真机待验证：锁屏/后台确认或扫码后，10/20/30 分钟不再重复弹出全屏提醒；多药组服完一种药后其余药的递进提醒仍正常。
 
 ### 57. 全屏提醒滑动解锁滑块固定至屏幕底部 (workspace/claude)
 

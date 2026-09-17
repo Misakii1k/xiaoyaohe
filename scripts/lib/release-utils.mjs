@@ -68,14 +68,15 @@ export const VERSION_CODE_BY_VERSION = Object.freeze({
   '1.0.20': 55,
   '1.0.21': 56,
   '1.0.22': 57,
+  '1.1.0': 58,
 });
 
 /**
  * 首次引入 Android 原生增量包解压与基座动态切换（ApkDistributionPlugin.downloadAndUnpackBundle）
  * 的最低原生 APK versionCode。低版本底座无法运行 Web Bundle，需全量更新 APK。
- * 从全屏提醒滑动解锁（v1.0.21+ / code 56）起要求底座 >= 56，否则增量更新无法落实底层能力。
+ * 从提醒重复弹出根治与居底滑块（v1.1.0+ / code 58）起要求底座 >= 58，否则增量更新无法落实底层原生闹钟修复。
  */
-export const MIN_NATIVE_BUNDLE_VERSION_CODE = 56;
+export const MIN_NATIVE_BUNDLE_VERSION_CODE = 58;
 
 /**
  * 在 vite.config.ts 中由构建期注入到 WebView：把 package.json 的 version

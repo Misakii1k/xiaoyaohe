@@ -2,8 +2,17 @@
 
 Updated: 2026-09-17
 Integration branch: `main`
-Product version: `1.0.22` (versionCode 57)
-Latest integration commit: `release: v1.0.22 - 修复提醒排版与滑动解锁逻辑，按增量落实度提供更新通道`
+Product version: `1.1.0` (versionCode 58)
+Latest integration commit: `release: v1.1.0 - 修复提醒重复弹出，优化滑动解锁位置`
+
+## Medication Alarm Repeat Suppression & Bottom Slide Unlock (v1.1.0, versionCode 58, workspace/claude)
+
+- **核心需求与修复**：
+  - **全屏提醒滑动解锁滑块居底**：将滑动解锁条固定渲染在全屏提醒容器底部（脱离纵向滚动内容区），彻底解决内容较短时滑块悬在屏幕中部的问题，符合单手拇指操作习惯；
+  - **服药确认后提醒重复弹出根治**：彻底解决确认服药或扫码验证后闹钟仍会重复弹出的问题。在原生层（`MedicationAlarmContract.java` 与 `MedicationAlarmPlugin.java`）判定当单药或整组服药完成（含扫码自动服药）时，立即取消同组剩余递进闹钟并清除 SharedPreferences 中的残留标识，杜绝后续多轨响铃及系统重启/时区变更时的过点补发；
+  - **稍后提醒机制优化**：在触发稍后提醒（贪睡）时，优先清空同组递进闹钟，使稍后提醒成为唯一下次响铃，避免多轨闹钟互相竞争；
+  - **原生底座门槛提升**：将最低原生 APK versionCode 提升至 58，确保旧版本用户必须通过完整 APK 安装更新以获得底层原生闹钟修复。
+- **质量门禁**：全量测试套件 100% 通过，`tone_lint.py` 严格校验通过，`check-release-endpoints.mjs` 4/4 通过。
 
 ## Full-Screen Alarm Slide Unlock Fix & Dual-Channel Update Policy (v1.0.22, versionCode 57, workspace/claude)
 
