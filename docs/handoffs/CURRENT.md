@@ -1,9 +1,18 @@
 # Current Integration State
 
-Updated: 2026-09-16
+Updated: 2026-09-17
 Integration branch: `main`
-Product version: `1.0.20` (versionCode 55)
-Latest integration commit: `release: v1.0.20 - 全屏提醒支持滑动解锁与按需扫码验证`
+Product version: `1.0.21` (versionCode 56)
+Latest integration commit: `release: v1.0.21 - 全屏提醒支持滑动解锁独立配置与测试`
+
+## Full-Screen Alarm Slide Unlock Configuration & Test (v1.0.21, versionCode 56, workspace/claude)
+
+- **核心需求与修复**：
+  - 新增滑动解锁独立配置开关：在「设置 - 系统通知」中引入「全屏提醒滑动解锁」设置卡片与开关，支持持久化用户偏好（默认开启）；
+  - 增设即时测试入口：提供「测试滑动解锁」按钮，方便用户随时体验向右滑动手感与解除响铃流程；
+  - 打通原生全屏联动：`MedicationAlarmPlugin` 与 `MedicationAlarmActivity` 联动 `slideUnlock` 载荷；用户关闭滑动解锁时直出操作按钮，开启时呈现 `SlideToUnlockBar` 滑块；
+  - 扫码关闭状态说明联动：更新扫码关闭状态文案，与滑动解锁配置状态精准呼应。
+- **质量门禁**：全量 90 个测试套件 570 项测试 100% 通过，`npm run typecheck` 零报错。
 
 ## Full-Screen Alarm Slide to Unlock & Optional Scan Verification (v1.0.20, versionCode 55, workspace/claude)
 

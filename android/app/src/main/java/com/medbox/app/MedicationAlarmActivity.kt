@@ -361,6 +361,18 @@ class MedicationAlarmActivity : ComponentActivity() {
         AlarmAudioPlayer.stop()
     }
 
+    /**
+     * 判断当前闹钟载荷是否配置了滑动解锁防误触。
+     * 默认 true；若前端设置中明确关闭（slideUnlock == false），则不强制滑动解锁，直接展示操作按钮。
+     */
+    private fun isSlideUnlockConfigured(payload: JSONObject?): Boolean {
+        if (payload == null) return true
+        if (payload.has("slideUnlock")) return payload.optBoolean("slideUnlock", true)
+        val data = payload.optJSONObject("data")
+        if (data != null && data.has("slideUnlock")) return data.optBoolean("slideUnlock", true)
+        return true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         volumeControlStream = AudioManager.STREAM_ALARM
@@ -396,6 +408,7 @@ class MedicationAlarmActivity : ComponentActivity() {
         try {
             val p = MedicationAlarmContract.payloadFrom(intent)
             payloadState.value = p
+            slideUnlockedState.value = !isSlideUnlockConfigured(p)
             recordActivePayload(p)
         } catch (error: Throwable) {
             Log.e("MedicationAlarm", "Failed to parse alarm payload", error)
@@ -436,7 +449,7 @@ class MedicationAlarmActivity : ComponentActivity() {
             // 仅当切换到完全不同的新闹钟时，才重置解锁态与会话计数；同提醒拉回时保持当前进度
             if (!sameAlarm) {
                 scanUnlockedState.value = false
-                slideUnlockedState.value = false
+                slideUnlockedState.value = !isSlideUnlockConfigured(newPayload)
                 autoResolvedState.value = false
                 scanSession.value += 1
             }
@@ -450,6 +463,7 @@ class MedicationAlarmActivity : ComponentActivity() {
     @Composable
     private fun AlarmRoot(payload: JSONObject) {
         val requireScan = isLocked()
+        val slideConfigured = isSlideUnlockConfigured(payload)
         val expectedTokens = remember(payload, scanSession.value) {
             val list = getActivePayloadsSnapshot()
             if (list.isNotEmpty()) {
@@ -473,7 +487,7 @@ class MedicationAlarmActivity : ComponentActivity() {
         // 会话切换：复位解锁/滑动解锁/取景/反馈/应急对话框
         LaunchedEffect(scanSession.value) {
             scanUnlockedState.value = false
-            slideUnlockedState.value = false
+            slideUnlockedState.value = !slideConfigured
             showScanner.value = false
             scannerEmergencyMode.value = false
             scanFeedback.value = null

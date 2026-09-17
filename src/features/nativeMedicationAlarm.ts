@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { getAlarmScanExpectedToken, isAlarmScanVerifyEnabled } from './alarmScanVerify';
+import { isAlarmSlideUnlockEnabled } from './alarmSlideUnlock';
 import type { ScheduledReminderNotification } from './reminderTransport';
 
 export type FullScreenAlarmCapability = 'granted' | 'denied' | 'unavailable';
@@ -23,7 +24,7 @@ interface NativeAlarmPlugin {
   /** 非破坏性确认：只移除已处理成功的 action（防丢），未确认项保留待下次重放 */
   acknowledgeActions(options: { ids: string[] }): Promise<void>;
   snooze(options: { tag: string; data: Record<string, unknown>; minutes: number }): Promise<void>;
-  fireNow(options: { mode?: string; title?: string; body?: string; scanVerify?: boolean; scanToken?: string }): Promise<void>;
+  fireNow(options: { mode?: string; title?: string; body?: string; scanVerify?: boolean; scanToken?: string; slideUnlock?: boolean }): Promise<void>;
   isAccessibilityServiceEnabled(): Promise<{ enabled: boolean }>;
   openAccessibilitySettings(): Promise<void>;
   getRingtonePreference(): Promise<{ ringtone: string }>;
@@ -43,6 +44,8 @@ interface NativeAlarmNotification {
   scanVerify?: boolean;
   /** 解锁码完整内容（含前缀），闹钟页相机扫描结果与之比对 */
   scanToken?: string;
+  /** 全屏提醒是否启用滑动解锁防误触（默认 true） */
+  slideUnlock?: boolean;
 }
 
 const plugin = registerPlugin<NativeAlarmPlugin>('MedicationAlarm');
@@ -58,6 +61,7 @@ export async function reconcileNativeMedicationAlarms(
   if (!nativeMedicationAlarmAvailable()) return 0;
   const scanVerify = isAlarmScanVerifyEnabled();
   const scanToken = scanVerify ? getAlarmScanExpectedToken() : undefined;
+  const slideUnlock = isAlarmSlideUnlockEnabled();
   const native = notifications.flatMap((notification): NativeAlarmNotification[] => {
     // Android 用药提醒统一走原生 AlarmManager + 通知通道，避免与 LocalNotifications 双轨漏响。
     // 组载荷（V2）用 data.mode，旧单药载荷用 data.reminderMode，两者都识别。
@@ -67,11 +71,13 @@ export async function reconcileNativeMedicationAlarms(
         ? rawMode
         : 'strong';
     const key = notification.key ?? 'dose';
-    // scan 标记同时放顶层与 data：顶层供当次调度，data 副本保证贪睡重建
-    // （buildSnoozePayload 只透传 data）后的闹钟仍要求扫码。
-    const withScanData = scanVerify && scanToken
-      ? { ...(notification.data ?? {}), scanVerify: true, scanToken }
-      : (notification.data ?? {});
+    // scan 与 slideUnlock 标记同时放顶层与 data：顶层供当次调度，data 副本保证贪睡重建
+    // （buildSnoozePayload 只透传 data）后的闹钟保持一致的解锁策略。
+    const withScanData = {
+      ...(notification.data ?? {}),
+      slideUnlock,
+      ...(scanVerify && scanToken ? { scanVerify: true, scanToken } : {}),
+    };
     return [{
       id: notificationIdFor(notification.tag, key),
       at: notification.at,
@@ -80,6 +86,7 @@ export async function reconcileNativeMedicationAlarms(
       tag: notification.tag,
       key,
       mode,
+      slideUnlock,
       data: withScanData,
       ...(scanVerify && scanToken ? { scanVerify, scanToken } : {}),
     }];
@@ -120,7 +127,7 @@ export async function snoozeNativeMedicationAlarm(action: NativeMedicationAlarmA
 
 export async function fireNativeMedicationAlarmNow(
   mode: 'strong' | 'fullscreen-short' | 'fullscreen-persistent' = 'strong',
-  options?: { forceScanVerify?: boolean },
+  options?: { forceScanVerify?: boolean; slideUnlock?: boolean },
 ): Promise<void> {
   if (!nativeMedicationAlarmAvailable()) return;
   const scanVerify = options?.forceScanVerify !== undefined
@@ -129,10 +136,14 @@ export async function fireNativeMedicationAlarmNow(
   const scanToken = scanVerify
     ? getAlarmScanExpectedToken()
     : undefined;
+  const slideUnlock = options?.slideUnlock !== undefined
+    ? options.slideUnlock
+    : isAlarmSlideUnlockEnabled();
   await plugin.fireNow({
     mode,
     title: '测试强提醒',
     body: '应自动弹出全屏服药页；被系统拦截时以高优先级通知兜底（锁屏可见）',
+    slideUnlock,
     ...(scanVerify && scanToken ? { scanVerify, scanToken } : {}),
   });
 }

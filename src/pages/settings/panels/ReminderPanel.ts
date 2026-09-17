@@ -38,6 +38,10 @@ import {
   hasAlarmScanToken,
   rotateAlarmScanToken,
 } from '../../../features/alarmScanVerify';
+import {
+  isAlarmSlideUnlockEnabled,
+  setAlarmSlideUnlockEnabled,
+} from '../../../features/alarmSlideUnlock';
 import { startScan, scanCodeFromImage, type Scanner } from '../../../features/scanner';
 import {
   checkAccessibilityGuardEnabled,
@@ -443,8 +447,83 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
   // ── 用药提醒铃声设置（专属音乐 vs 系统默认）──
   body.append(renderAlarmRingtoneCard(rerender));
 
-  // ── 扫码解除强制提醒（全屏响铃仅 Android 原生生效，配置与绑定全局常驻）──
+  // ── 全屏提醒滑动解锁（防误触设置）──
   const isNativeAlarm = isNativeReminderPlatform() && nativeMedicationAlarmAvailable();
+  const slideUnlockEnabled = isAlarmSlideUnlockEnabled();
+  const slideRow = el('label', { class: 'settings-toggle-row mt-3' });
+  const slideCopy = el('div', { class: 'settings-toggle-copy' });
+
+  const slideTitleRow = el('div', {
+    class: 'settings-toggle-title',
+    style: 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap;',
+  });
+  slideTitleRow.append(el('span', { text: '全屏提醒滑动解锁' }));
+  if (!isNativeAlarm) {
+    slideTitleRow.append(
+      el('span', {
+        class: 'chip-pill',
+        style: 'font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: rgba(0, 0, 0, 0.06); color: var(--color-text-muted);',
+        text: '仅 Android App 生效',
+      }),
+    );
+  }
+
+  const slideDescText = slideUnlockEnabled
+    ? '已开启 · 全屏提醒到点需向右滑动解锁，防止在口袋中误触关闭'
+    : '已关闭 · 全屏提醒到点直接显示操作按钮，可一键点击完成';
+
+  slideCopy.append(
+    slideTitleRow,
+    el('div', { class: 'settings-toggle-desc', text: slideDescText }),
+  );
+  const slideToggle = el('input', {
+    type: 'checkbox',
+    role: 'switch',
+    'aria-label': '全屏提醒滑动解锁',
+  });
+  slideToggle.checked = slideUnlockEnabled;
+  slideToggle.onchange = async () => {
+    setAlarmSlideUnlockEnabled(slideToggle.checked);
+    toast(slideToggle.checked ? '已开启全屏滑动解锁防误触' : '已关闭滑动解锁，到点直接显示按钮');
+    await rescheduleMedicationReminders().catch(() => {});
+    rerender();
+  };
+  slideRow.append(slideCopy, slideToggle);
+  body.append(slideRow);
+
+  // 滑动解锁快捷测试与说明小卡片
+  const slideCard = el('div', {
+    class: 'settings-scan-card mt-2',
+    style: 'display: flex; align-items: center; justify-content: space-between; gap: 12px;',
+  });
+  const slideCardDesc = el('div', {
+    class: 'settings-scan-card-desc',
+    style: 'margin: 0; flex: 1;',
+    text: slideUnlockEnabled
+      ? '未开启扫码解锁时，全屏提醒将展示滑动解锁轨道，向右滑动手柄即可解除锁定并停止响铃。'
+      : '当前已允许直接点击操作；若常把手机放在口袋或容易误触，建议开启滑动解锁。',
+  });
+  const testSlideBtn = el('button', {
+    class: 'btn tonal',
+    style: 'flex-shrink: 0; padding: 6px 14px; font-size: 13px;',
+    text: '测试滑动解锁',
+  });
+  testSlideBtn.onclick = async () => {
+    if (!isNativeAlarm) {
+      toast('全屏闹钟滑动解锁需在 Android App 中体验');
+      return;
+    }
+    try {
+      await fireNativeMedicationAlarmNow('strong', { forceScanVerify: false, slideUnlock: true });
+      toast('已触发全屏提醒，请体验向右滑动解锁');
+    } catch {
+      toast('触发失败，请先允许全屏权限');
+    }
+  };
+  slideCard.append(slideCardDesc, testSlideBtn);
+  body.append(slideCard);
+
+  // ── 扫码解除强制提醒（全屏响铃仅 Android 原生生效，配置与绑定全局常驻）──
   const scanPref = getAlarmScanVerifyPreference();
   const scanRow = el('label', { class: 'settings-toggle-row mt-3' });
   const scanCopy = el('div', { class: 'settings-toggle-copy' });
@@ -471,7 +550,9 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
         : '已开启 · 全屏提醒必须扫描专属二维码后才能操作')
     : (isCustom
         ? `已关闭 · 当前备用：${formatCustomScanCodeSummary(scanPref.customLabel, scanPref.token)}`
-        : '已关闭 · 提醒到点可直接点击完成或贪睡');
+        : (slideUnlockEnabled
+            ? '已关闭扫码 · 全屏提醒将通过向右滑动解锁防误触'
+            : '已关闭 · 提醒到点可直接点击完成或贪睡'));
 
   scanCopy.append(
     titleRow,

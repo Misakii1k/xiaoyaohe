@@ -2,11 +2,22 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-16
+Updated: 2026-09-17
 Status: active
-Latest version: `1.0.20` (Android `versionCode: 55`)
+Latest version: `1.0.21` (Android `versionCode: 56`)
 
 ## Summary of Accomplished Work
+
+### 55. 全屏提醒滑动解锁独立配置与测试 (v1.0.21, versionCode 56, workspace/claude)
+
+1. **问题**：用户反馈全屏提醒未提供滑动解锁的配置功能；设置页缺少开关与测试入口，且关闭扫码后的描述未对齐滑动解锁。
+2. **修复**：
+   - `src/features/alarmSlideUnlock.ts`：新增偏好管理模块，默认启用滑动解锁防误触；
+   - `src/pages/settings/panels/ReminderPanel.ts`：新增「全屏提醒滑动解锁」设置卡片与开关，提供「测试滑动解锁」按钮，并精准联动扫码关闭状态文案；
+   - `src/features/nativeMedicationAlarm.ts`：调度与测试载荷自动注入 `slideUnlock` 偏好；
+   - `android/app/src/main/java/com/medbox/app/MedicationAlarmPlugin.java` 与 `MedicationAlarmActivity.kt`：原生全屏提醒根据 `slideUnlock` 载荷动态判定；关闭时直接展示操作按钮，开启时呈现 `SlideToUnlockBar` 向右滑动解锁。
+3. **验证与门禁**：
+   - 新增 `tests/alarmSlideUnlock.test.ts`；90 套件 570 项测试 100% 通过；`npm run typecheck` 0 错误。
 
 ### 54. 全屏提醒支持滑动解锁与按需扫码验证 (v1.0.20, versionCode 55, workspace/claude)
 
