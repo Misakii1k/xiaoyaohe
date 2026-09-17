@@ -28,10 +28,23 @@ export function renderAppearancePanel(): HTMLElement {
     chip: appearancePanelChip(),
     defaultOpen: false,
     renderBody: (body) => {
-      body.append(el('div', {
-        class: 'settings-hint mb-3',
-        text: '选择小药盒的配色。跟随系统会随手机的深色模式自动切换。',
-      }));
+      // 1. 配色方案微卡片
+      const themeCard = el('div', { class: 'settings-subcard' });
+      const themeHeader = el('div', { class: 'settings-subcard-header' });
+      const themeTitleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
+        el('span', { class: 'settings-subcard-title', text: '配色方案' }),
+      ]);
+      const themeBadge = el('span', {
+        class: 'chip-pill chip-primary',
+        text: THEME_PREFERENCE_LABEL[getThemePreference()],
+      });
+      themeHeader.append(themeTitleWrap, themeBadge);
+
+      const themeDesc = el('div', {
+        class: 'settings-subcard-desc',
+        text: '选择小药盒的主题风格。选择“跟随系统”将自动配合手机深色模式昼夜自适应。',
+      });
+
       const control = createSegmentedControl<ThemePreference>(
         '配色方案',
         [
@@ -42,23 +55,36 @@ export function renderAppearancePanel(): HTMLElement {
         getThemePreference(),
         (value) => {
           setThemePreference(value);
+          themeBadge.textContent = THEME_PREFERENCE_LABEL[value];
           const host = body.closest('.panel');
           if (host) setChip(host as HTMLElement, appearancePanelChip());
           toast(`已切换为${THEME_PREFERENCE_LABEL[value]}`);
         },
       );
-      body.append(control);
+      themeCard.append(themeHeader, themeDesc, control);
 
+      // 2. 界面动效与材质微卡片
       const liquidEnabled = getLiquidGlassPreference() === 'on';
-      const liquidRow = el('label', { class: 'settings-toggle-row mt-3' });
+      const glassCard = el('div', { class: 'settings-subcard' });
+      const glassHeader = el('div', { class: 'settings-subcard-header' });
+      const glassTitleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
+        el('span', { class: 'settings-subcard-title', text: '界面动效与材质' }),
+      ]);
+      const glassBadge = el('span', {
+        class: `chip-pill ${liquidEnabled ? 'chip-primary' : ''}`,
+        text: liquidEnabled ? '高光质感' : '省电模式',
+      });
+      glassHeader.append(glassTitleWrap, glassBadge);
+
+      const liquidRow = el('label', { class: 'settings-toggle-row' });
       const liquidCopy = el('div', { class: 'settings-toggle-copy' });
       liquidCopy.append(
         el('div', { class: 'settings-toggle-title', text: '液态玻璃效果' }),
         el('div', {
           class: 'settings-toggle-desc',
           text: liquidEnabled
-            ? '底栏与弹层带折射高光的玻璃质感，更耗一点电'
-            : '已关闭：使用普通毛玻璃材质，更省电',
+            ? '底栏与弹层带折射高光的玻璃质感，更具通透立体感'
+            : '已关闭：使用普通毛玻璃材质，功耗更低更省电',
         }),
       );
       const liquidToggle = el('input', {
@@ -70,17 +96,21 @@ export function renderAppearancePanel(): HTMLElement {
       liquidToggle.onchange = () => {
         const next: LiquidGlassPreference = liquidToggle.checked ? 'on' : 'off';
         setLiquidGlassPreference(next);
-        toast(liquidToggle.checked ? '液态玻璃已开启' : '液态玻璃已关闭');
-        // 描述随状态变化
+        const on = liquidToggle.checked;
+        glassBadge.className = `chip-pill ${on ? 'chip-primary' : ''}`;
+        glassBadge.textContent = on ? '高光质感' : '省电模式';
+        toast(on ? '液态玻璃已开启' : '液态玻璃已关闭');
         const desc = liquidCopy.querySelector<HTMLElement>('.settings-toggle-desc');
         if (desc) {
-          desc.textContent = liquidToggle.checked
-            ? '底栏与弹层带折射高光的玻璃质感，更耗一点电'
-            : '已关闭：使用普通毛玻璃材质，更省电';
+          desc.textContent = on
+            ? '底栏与弹层带折射高光的玻璃质感，更具通透立体感'
+            : '已关闭：使用普通毛玻璃材质，功耗更低更省电';
         }
       };
       liquidRow.append(liquidCopy, liquidToggle);
-      body.append(liquidRow);
+      glassCard.append(glassHeader, liquidRow);
+
+      body.append(themeCard, glassCard);
     },
   });
 }

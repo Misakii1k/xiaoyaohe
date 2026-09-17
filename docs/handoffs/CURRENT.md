@@ -2,8 +2,24 @@
 
 Updated: 2026-09-17
 Integration branch: `main`
-Product version: `1.1.0` (versionCode 58)
-Latest integration commit: `release: v1.1.0 - 修复提醒重复弹出，优化滑动解锁位置`
+Product version: `1.1.1` (versionCode 59)
+Latest integration commit: `release: v1.1.1 - 设置页微卡片化视觉分割与层级结构优化`
+
+## Settings Visual Hierarchy & Subcard Modularization (v1.1.1, versionCode 59, workspace/claude)
+
+- **核心需求与重构**：
+  - **设置子板块微卡片独立岛化 (`.settings-subcard`)**：在折叠面板展开后的浅灰底色（`var(--color-surface-muted, #f8fafc)`）上，各个业务子功能均封装为独立的纯白微卡片（`var(--color-surface, #ffffff)`），搭配 `14px` 圆角、细腻边框与轻微投影，彻底告别“设置内容灰蒙蒙挤在一起”的视觉混杂感；
+  - **内置卡片标题与胶囊状态徽章**：每个微卡片顶部配备加粗标题（13.5px）与胶囊徽章（如「已开启」、「多模型调度」、「隐私保护」等），子板块功能边界与当前状态一目了然；
+  - **展开面板标题底部分割线**：面板展开时（`.panel.open > .panel-head`），标题栏底部自动展示清晰细致的分割线（`border-bottom: 1px solid var(--color-border)`），将常驻白色标题与下方浅灰卡片区域明确分隔；
+  - **业务面板全面微卡片化**：
+    - `ReminderPanel`：拆分为「基础提醒与权限」、「提醒通道与全屏测试」、「系统权限建议」、「滑动解锁防手抖」、「扫码解除强制提醒」5 大独立微卡片；
+    - `AppearancePanel`：拆分为「配色方案」与「界面动效与材质」2 个微卡片；
+    - `BackupPanel`：将原本孤立散落的统计文字与导入/导出操作收纳为「数据归档与备份」微卡片；
+    - `LlmConfigPanel`：拆分为「AI 服务商管理」（列表+故障转移切换）、「网页端密钥存储方式」（网页端专用）以及「已授权的服务商列表」微卡片；
+    - `imageGenSettingsPanel`：开关行与接口配置表单整合进「药盒照片增强配置」微卡片；
+    - `lanSyncSettingsPanel`：多设备覆盖、自动同步、静默处理三大开关卡片升级为纯白微卡片，与设备列表、额外同步卡片保持一致；
+    - `DiagnosticsPanel`：脱敏日志框与操作按钮内聚进「后台失败日志摘要」微卡片。
+- **质量门禁**：全量 91 个测试套件 572 项测试 100% PASS，`npm run typecheck` 0 错误，`tone_lint.py` 严格校验通过。
 
 ## Medication Alarm Repeat Suppression & Bottom Slide Unlock (v1.1.0, versionCode 58, workspace/claude)
 

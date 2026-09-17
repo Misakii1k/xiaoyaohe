@@ -33,8 +33,20 @@ export function renderDiagnosticsPanel(
     iconTone: 'cyan',
     chip: diagnosticsChip(),
     renderBody: (body) => {
+      const card = el('div', { class: 'settings-subcard' });
+      const head = el('div', { class: 'settings-subcard-header' });
+      const titleWrap = el('div', { class: 'settings-subcard-title-wrap' });
+      titleWrap.append(el('div', { class: 'settings-subcard-title', text: '后台失败日志摘要' }));
+      const badge = el('span', {
+        class: 'settings-subcard-badge',
+        style: 'background: rgba(6, 182, 212, 0.12); color: #0891b2;',
+        text: '安全脱敏',
+      });
+      head.append(titleWrap, badge);
+      card.append(head);
+
       const description = el('div', {
-        class: 'muted',
+        class: 'muted settings-subcard-desc',
         text: '仅保留最近 50 条脱敏后的后台失败摘要，不包含密钥、令牌或完整药品正文。',
       });
       const output = el('pre', { class: 'diagnostics-log', tabIndex: 0 });
@@ -42,6 +54,8 @@ export function renderDiagnosticsPanel(
       const clearButton = el('button', { class: 'btn text', type: 'button', text: '清空' });
       const actions = el('div', { class: 'btn-row diagnostics-actions' });
       actions.append(copyButton, clearButton);
+
+      card.append(description, output, actions);
 
       refreshContent = () => {
         const entries = listDiagnosticLogs();
@@ -66,7 +80,7 @@ export function renderDiagnosticsPanel(
         setChip(p, diagnosticsChip());
         ops.notify('诊断记录已清空');
       };
-      body.append(description, output, actions);
+      body.append(card);
     },
   });
   refreshContent();

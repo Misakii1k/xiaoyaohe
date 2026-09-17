@@ -4,9 +4,23 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-17
 Status: active
-Latest version: `1.1.0` (Android `versionCode: 58`)
+Latest version: `1.1.1` (Android `versionCode: 59`)
 
 ## Summary of Accomplished Work
+
+### 59. 设置页微卡片化视觉分割与层级结构优化 (v1.1.1, versionCode 59, workspace/claude)
+
+1. **需求与背景**：用户反馈设置页（「我的」及展开的各个面板）中缺少分割线，导致各个板块混在一起、层级模糊。
+2. **架构与视觉重构**：
+   - **独立微卡片规范 (`.settings-subcard`)**：在折叠面板展开后的浅灰底色（`var(--color-surface-muted, #f8fafc)`）上，各个业务子功能均封装为独立的纯白微卡片（`var(--color-surface, #ffffff)`），搭配 `14px` 圆角、细腻细边框与柔和微投影，彻底告别“设置内容灰蒙蒙挤在一起”的视觉混杂感；
+   - **内置标题栏与状态胶囊徽章**：微卡片内置 13.5px 加粗标题与状态指示胶囊，使各子板块边界清晰明了；
+   - **展开面板标题底部分割线**：面板展开时（`.panel.open > .panel-head`），标题栏底部自动展示一条细腻分割线（`border-bottom: 1px solid var(--color-border)`），将常驻白色标题栏与下方浅灰卡片内容区明确区隔；
+   - **全业务面板改造**：覆盖 `ReminderPanel`（5 大子板块）、`AppearancePanel`（2 大子板块）、`BackupPanel`（数据归档微卡片）、`LlmConfigPanel`（服务商调度与密钥存储微卡片）、`imageGenSettingsPanel`、`lanSyncSettingsPanel`（开关卡片升级）、`DiagnosticsPanel`（脱敏日志卡片）。
+3. **验证与门禁**：
+   - `npm run typecheck` 0 错误；
+   - `tests/settingsUiContracts.test.ts`、`tests/settingsDiagnostics.test.ts`、`tests/imageGenSettings.test.ts` 等设置单测全部 PASS；
+   - 全量 91 套件 572 项测试 100% 通过；
+   - `tone_lint.py` 严格校验通过。
 
 ### 58. 确认/扫码后提醒重复弹出根治 (workspace/claude)
 

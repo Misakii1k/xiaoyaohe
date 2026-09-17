@@ -63,6 +63,10 @@
 [data-theme='dark'] .settings-page .panel-head:hover,
 [data-theme='dark'] .settings-page .panel-head:active { background: var(--color-surface-muted); }
 
+.settings-page .panel.open > .panel-head {
+  border-bottom: 1px solid var(--color-border);
+}
+
 .settings-page .panel-lead {
   display: flex;
   align-items: center;
@@ -228,6 +232,15 @@
 .ai-consent-row strong { display: block; overflow-wrap: anywhere; color: var(--color-text); font-size: var(--fs-footnote); }
 .ai-consent-row .btn { flex: 0 0 auto; }
 
+.settings-subcard .ai-consent-controls {
+  margin-block-start: var(--space-2);
+  padding-block-start: 0;
+  border-block-start: none;
+}
+.settings-subcard .ai-consent-row:last-child {
+  border-block-end: none;
+}
+
 .settings-page .banner { box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 
 /* 折叠面板内表单项的间距 token 化，避免硬编码 inline style */
@@ -273,33 +286,79 @@
   justify-content: center;
 }
 
-/* 扫码解除强制提醒：绑定卡片与自适应操作网格 */
-.settings-scan-card {
-  padding: var(--space-3);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+/* 统一设置微卡片规范 (Subcard)：在浅灰底色面板上形成自然独立的白色微卡片岛 */
+.settings-subcard,
+.settings-scan-card,
+.settings-ringtone-card {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 14px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
+[data-theme='dark'] .settings-subcard,
+[data-theme='dark'] .settings-scan-card,
+[data-theme='dark'] .settings-ringtone-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.settings-subcard-header,
 .settings-scan-card-header {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  justify-content: space-between;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-block-end: var(--space-1);
+  margin-block-end: 0;
 }
 
+.settings-subcard-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-subcard-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.4;
+}
+
+.settings-subcard-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.settings-subcard-desc,
 .settings-scan-card-desc {
   color: var(--color-text-muted);
   font-size: var(--fs-footnote);
-  line-height: 1.5;
+  line-height: 1.55;
+  margin: 0;
 }
 
 .settings-scan-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
-  margin-block-start: var(--space-2);
+  margin-block-start: var(--space-1);
 }
 
 .settings-scan-grid .btn {
@@ -316,12 +375,6 @@
 }
 
 /* 提醒铃声设置与试听样式 */
-.settings-ringtone-card {
-  padding: var(--space-3);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
-}
 
 .settings-ringtone-list {
   display: flex;
@@ -659,15 +712,21 @@
   align-items: flex-start;
   gap: var(--space-3);
   margin: var(--space-2) 0;
-  padding: var(--space-3);
+  padding: 12px 14px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-muted);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--color-surface, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   cursor: pointer;
   transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease, transform var(--duration-fast) var(--ease-spring);
 }
+[data-theme='dark'] .lan-sync-toggle-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
 .lan-sync-toggle-card:hover {
-  background: color-mix(in srgb, var(--color-surface-muted) 85%, var(--color-primary-soft));
+  background: color-mix(in srgb, var(--color-surface) 85%, var(--color-primary-soft));
   border-color: color-mix(in srgb, var(--color-border) 70%, var(--color-primary));
 }
 .lan-sync-toggle-card:active {
@@ -699,11 +758,17 @@
 }
 
 fieldset.lan-sync-extras {
-  margin: var(--space-3) 0;
-  padding: var(--space-3);
+  margin: var(--space-2) 0;
+  padding: 12px 14px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-muted);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--color-surface, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+[data-theme='dark'] fieldset.lan-sync-extras {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 fieldset.lan-sync-extras legend {
   padding: 0 var(--space-2);
@@ -747,7 +812,17 @@ fieldset.lan-sync-extras legend {
 }
 
 .lan-sync-peers {
-  margin: var(--space-3) 0 var(--space-2);
+  margin: var(--space-2) 0;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--color-surface, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+[data-theme='dark'] .lan-sync-peers {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 .lan-sync-peers-title {
   font-size: var(--fs-caption);
@@ -1303,13 +1378,16 @@ body.lan-sync-panel-active .ai-launcher {
 
 .settings-group-card > .panel-body,
 .settings-group-card .panel.open .panel-body {
-  padding: var(--space-3) var(--space-4) var(--space-4);
-  background: var(--color-surface-muted);
+  padding: 12px;
+  background: var(--color-surface-muted, #f8fafc);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 [data-theme='dark'] .settings-group-card > .panel-body,
 [data-theme='dark'] .settings-group-card .panel.open .panel-body {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 /* 关于小药盒卡片内容 */
@@ -1999,15 +2077,17 @@ body.lan-sync-panel-active .ai-launcher {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 14px;
-  background: var(--color-surface-subtle, rgba(0, 0, 0, 0.03));
-  border-radius: var(--radius-md, 12px);
-  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+  padding: 14px 16px;
+  background: var(--color-surface, #ffffff);
+  border-radius: var(--radius-lg, 14px);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 [data-theme='dark'] .settings-cache-summary-card {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .settings-cache-label {
