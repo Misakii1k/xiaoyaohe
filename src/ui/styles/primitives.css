@@ -677,9 +677,11 @@ input[type='datetime-local']:not(.ui-picker-native) {
   opacity: 0.55;
 }
 
+/* 计数徽标落在主色胶囊上：叠加层与文字统一走 --color-on-primary，
+   浅色为白、暗色为深墨绿，两种主题下都达标（浅 4.91 / 暗 5.05）。 */
 .ui-filter-chip.is-active .chip-count {
-  background: rgba(255, 255, 255, 0.25);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--color-on-primary) 12%, transparent);
+  color: var(--color-on-primary);
 }
 
 /* Alert Box */

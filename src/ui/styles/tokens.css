@@ -14,7 +14,8 @@
   --color-surface-glass: rgba(255, 255, 255, 0.88);
   --color-surface-muted: #edf1ef;
   --color-text: #202e2b;
-  --color-text-muted: #67736e;
+  /* 次要文字：需同时压住白卡、冰白底与浅灰底（5.15 / 4.83 / 4.52） */
+  --color-text-muted: #64706b;
   --color-border: #e1e8e4;
   --color-border-glass: #e1e8e4;
 

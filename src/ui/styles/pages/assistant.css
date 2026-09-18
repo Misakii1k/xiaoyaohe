@@ -446,10 +446,12 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   font-weight: 500;
 }
 
+/* 附件胶囊落在主色气泡上：叠加层与文字统一走 --color-on-primary，
+   浅色为白、暗色为深墨绿，两种主题下都达标（浅 4.91 / 暗 5.05）。 */
 .ai-msg.is-user .ai-bubble-file {
-  background: rgb(255 255 255 / 22%);
-  color: #fff;
-  border: 1px solid rgb(255 255 255 / 30%);
+  background: color-mix(in srgb, var(--color-on-primary) 12%, transparent);
+  color: var(--color-on-primary);
+  border: 1px solid color-mix(in srgb, var(--color-on-primary) 24%, transparent);
 }
 
 .ai-msg.is-bot .ai-bubble-file {
@@ -1033,7 +1035,7 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 .ai-quick-chip {
   flex: 0 0 auto;
   white-space: nowrap;
-  min-block-size: 34px;
+  min-block-size: var(--tap);
   padding-inline: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);

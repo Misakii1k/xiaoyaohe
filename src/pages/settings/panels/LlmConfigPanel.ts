@@ -101,7 +101,7 @@ export function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) =
   titleWrap.append(el('div', { class: 'settings-subcard-title', text: 'AI 服务商管理' }));
   const countBadge = el('span', {
     class: 'settings-subcard-badge',
-    style: 'background: rgba(99, 102, 241, 0.12); color: #6366f1;',
+    style: 'background: var(--tone-info-bg, #eaeafb); color: var(--tone-info-fg, #4348a8);',
     text: '智能容灾调度',
   });
   cardHead.append(titleWrap, countBadge);

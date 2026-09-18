@@ -98,7 +98,7 @@
 /* 全套五彩色系 */
 .settings-page .panel-icon.panel-icon-amber { background: #fffbeb; color: #f59e0b; }
 .settings-page .panel-icon.panel-icon-emerald { background: #ecfdf5; color: #10b981; }
-.settings-page .panel-icon.panel-icon-violet { background: #f5f3ff; color: #8b5cf6; }
+.settings-page .panel-icon.panel-icon-violet { background: #f5f3ff; color: #7c3aed; }
 .settings-page .panel-icon.panel-icon-orange { background: #fff7ed; color: #f97316; }
 .settings-page .panel-icon.panel-icon-sky { background: #ecfeff; color: #0284c7; }
 .settings-page .panel-icon.panel-icon-teal { background: #f0fdfa; color: #0d9488; }
@@ -159,7 +159,7 @@
 
 .settings-page .panel-chip.tone-info {
   background: #eef0ff;
-  color: #6366f1;
+  color: var(--tone-info-fg, #4348a8);
   border-color: #e0e7ff;
 }
 
@@ -1703,7 +1703,7 @@ body.lan-sync-panel-active .ai-launcher {
 
 .settings-about-tile.tone-amber .settings-about-tile-icon { background: #fffbeb; color: #f59e0b; }
 .settings-about-tile.tone-emerald .settings-about-tile-icon { background: #ecfdf5; color: #10b981; }
-.settings-about-tile.tone-violet .settings-about-tile-icon { background: #f5f3ff; color: #8b5cf6; }
+.settings-about-tile.tone-violet .settings-about-tile-icon { background: #f5f3ff; color: #7c3aed; }
 .settings-about-tile.tone-blue .settings-about-tile-icon { background: #eff6ff; color: #2563eb; }
 
 [data-theme='dark'] .settings-about-tile.tone-amber .settings-about-tile-icon { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }

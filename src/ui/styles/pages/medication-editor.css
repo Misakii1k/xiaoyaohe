@@ -27,7 +27,7 @@
 .medication-slot-buttons button.is-selected, .medication-duplicate-notice button.is-selected { border-color: var(--color-primary); background: var(--color-primary-soft); color: var(--color-primary); font-weight: 600; }
 .medication-slot-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
 .medication-duplicate-notice { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--tone-warn-border); background: var(--tone-warn-bg); color: var(--tone-warn-fg); border-radius: var(--radius-md); font-size: var(--fs-footnote); }
-.medication-duplicate-notice button { min-block-size: 32px; padding-inline: var(--space-2); }
+.medication-duplicate-notice button { min-block-size: var(--tap); padding-inline: var(--space-2); }
 .medication-detail-grid { margin-block-end: var(--space-3); }
 .medication-cycle-fields { display: grid; gap: var(--space-2); }
 .medication-cycle-row { display: grid; gap: var(--space-2); padding-block: var(--space-2); border-block-start: 1px solid var(--color-border); }

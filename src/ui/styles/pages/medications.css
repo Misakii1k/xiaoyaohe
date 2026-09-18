@@ -656,7 +656,7 @@
 .medication-batch-dock .ui-button {
   flex: 1 1 0;
   min-inline-size: 0;
-  min-block-size: 34px;
+  min-block-size: var(--tap);
   padding: 4px 6px;
   font-size: 13px;
   font-weight: 600;
