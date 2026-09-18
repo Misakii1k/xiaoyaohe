@@ -5,6 +5,7 @@ export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'text';
 
 export interface ButtonOptions {
   label: string;
+  ariaLabel?: string;
   variant?: ButtonVariant;
   icon?: AppIconName;
   type?: 'button' | 'submit' | 'reset';
@@ -17,6 +18,7 @@ export function createButton(options: ButtonOptions): HTMLButtonElement {
   button.type = options.type ?? 'button';
   button.className = `ui-button ui-button-${options.variant ?? 'primary'}`;
   button.disabled = options.disabled ?? false;
+  if (options.ariaLabel) button.setAttribute('aria-label', options.ariaLabel);
   if (options.icon) button.append(Icon(options.icon));
   const label = document.createElement('span');
   label.textContent = options.label;

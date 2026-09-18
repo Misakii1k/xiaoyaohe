@@ -138,10 +138,10 @@
 }
 
 .inventory-filter-pill.active {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  background: var(--color-primary, #236a55);
   color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  border-color: var(--color-primary, #236a55);
+  box-shadow: 0 2px 8px rgba(35, 106, 85, 0.25);
 }
 
 /* 药品库存卡片列表 */

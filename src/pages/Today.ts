@@ -220,10 +220,9 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
         } else {
           toast(`已记录 ${nextItem.med.name} 服用，可随时撤销`);
         }
-        void renderTodayPage(root, signal);
+        await renderTodayPage(root, signal);
       } catch {
         toast('记录失败');
-      } finally {
         takeBtn.disabled = false;
       }
     };
@@ -233,53 +232,78 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
     focusSection.append(doseCard);
     content.append(focusSection);
   } else if (total > 0 && pending === 0) {
-    // 全部已服完清爽完成态
-    const takenItems = activeItems.filter((i) => i.log?.status === 'taken');
-    const lastTakenItem = takenItems[takenItems.length - 1];
+    const handledItems = activeItems.filter((i) => i.log?.status === 'taken' || i.log?.status === 'skipped');
+    const lastHandledItem = handledItems[handledItems.length - 1];
+    const allTaken = taken === total;
+    const allSkipped = skipped === total;
 
     const focusSection = el('section', { class: 'today-focus-section' });
     const timeLabel = el('div', { class: 'time-label' });
     timeLabel.append(
       document.createTextNode('今日安排 '),
-      el('span', { class: 'tag', text: '已全部完成' })
+      el('span', {
+        class: 'tag',
+        text: allTaken ? '已全部完成' : allSkipped ? '已全部跳过' : '已全部处理',
+      })
     );
     focusSection.append(timeLabel);
 
     const doseCard = el('article', { class: 'dose today-focus-card today-focus-done' });
     const doseInfo = el('div', { class: 'dose-info' });
     const doseImage = el('div', { class: 'dose-image done-check' });
-    doseImage.append(icon('check'));
+    doseImage.append(icon(allSkipped ? 'info' : 'check'));
 
     const doseMeta = el('div', { class: 'dose-meta' });
     doseMeta.append(
-      el('h3', { text: '今日用药已全部完成' }),
-      el('p', { text: '照顾好自己，从每一件小事开始。' })
+      el('h3', {
+        text: allTaken
+          ? '今日用药已全部完成'
+          : allSkipped
+            ? '今日用药已全部跳过'
+            : '今日安排已全部处理',
+      }),
+      el('p', {
+        text: allTaken
+          ? '照顾好自己，从每一件小事开始。'
+          : allSkipped
+            ? '今日用药已跳过，可随时按需恢复。'
+            : `已完成 ${taken} 项，跳过 ${skipped} 项。`,
+      })
     );
     doseInfo.append(doseImage, doseMeta);
 
     const doseBottom = el('div', { class: 'dose-bottom' });
-    doseBottom.append(el('small', { id: 'doseStatus', text: '今日计划已达成，状态随时可撤销' }));
+    doseBottom.append(
+      el('small', {
+        id: 'doseStatus',
+        text: allSkipped
+          ? '如需服药，可撤销跳过记录'
+          : '今日计划已达成，状态随时可撤销',
+      })
+    );
 
-    if (lastTakenItem && lastTakenItem.occurrence) {
+    if (lastHandledItem && lastHandledItem.occurrence) {
+      const isLastSkipped = lastHandledItem.log?.status === 'skipped';
       const undoBtn = el('button', {
         class: 'secondary today-secondary-btn',
         type: 'button',
-        text: `撤销最近记录 (${lastTakenItem.med.name})`,
+        text: isLastSkipped
+          ? `撤销跳过 (${lastHandledItem.med.name})`
+          : `撤销最近记录 (${lastHandledItem.med.name})`,
       });
       undoBtn.onclick = async () => {
-        if (!lastTakenItem.occurrence) return;
+        if (!lastHandledItem.occurrence) return;
         undoBtn.disabled = true;
         try {
-          await setOccurrenceAction(lastTakenItem.occurrence, undefined);
-          if (lastTakenItem.occurrence) {
-            closeNotificationsByTag(lastTakenItem.occurrence.id);
-            closeNotificationsByTag(lastTakenItem.occurrence.legacyLogId);
+          await setOccurrenceAction(lastHandledItem.occurrence, undefined);
+          if (lastHandledItem.occurrence) {
+            closeNotificationsByTag(lastHandledItem.occurrence.id);
+            closeNotificationsByTag(lastHandledItem.occurrence.legacyLogId);
           }
-          toast(`已撤销 ${lastTakenItem.med.name} 服药记录`);
-          void renderTodayPage(root, signal);
+          toast(`已撤销 ${lastHandledItem.med.name} 记录`);
+          await renderTodayPage(root, signal);
         } catch {
           toast('撤销失败');
-        } finally {
           undoBtn.disabled = false;
         }
       };
@@ -474,13 +498,35 @@ function renderSlotGroup(
   for (const item of group.items) {
     const card = el('div', { class: 'today-card-item today-medication-row' });
 
-    // 缩略图
+    // 缩略图（三级降级管线：实拍照/AI白底大图 -> 3D 拟物图 -> B 方案色块药盒矢量占位）
     const thumb = el('div', { class: 'today-card-thumb' });
-    const img = el('img', {
-      src: photoUrls.get(item.med.id) || getOrCreateMed3DImage(item.med.id, item.med.name, item.med.amountPerDose || item.med.dosageText),
-      alt: item.med.name,
-    });
-    thumb.append(img);
+    const photoUrl = photoUrls.get(item.med.id);
+    if (photoUrl) {
+      const img = el('img', {
+        src: photoUrl,
+        alt: item.med.name,
+        loading: 'lazy',
+      }) as HTMLImageElement;
+      img.onerror = () => {
+        thumb.replaceChildren(parseSvg(renderBPackageSvg(item.med)));
+      };
+      thumb.append(img);
+    } else {
+      const threeD = getOrCreateMed3DImage(item.med.id, item.med.name, item.med.amountPerDose || item.med.dosageText);
+      if (threeD && !threeD.startsWith('data:image/svg+xml')) {
+        const img = el('img', {
+          src: threeD,
+          alt: item.med.name,
+          loading: 'lazy',
+        }) as HTMLImageElement;
+        img.onerror = () => {
+          thumb.replaceChildren(parseSvg(renderBPackageSvg(item.med)));
+        };
+        thumb.append(img);
+      } else {
+        thumb.replaceChildren(parseSvg(renderBPackageSvg(item.med)));
+      }
+    }
 
     // 信息
     const info = el('div', { class: 'today-card-info' });

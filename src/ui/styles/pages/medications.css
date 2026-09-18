@@ -275,6 +275,13 @@
   text-overflow: ellipsis;
   line-height: 1.35;
 }
+.med-item-card .med-item-name {
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
 .med-item-spec {
   font-size: 11px;
   color: var(--color-text-muted);
@@ -389,9 +396,42 @@
   border-color: var(--color-border);
 }
 
+[data-theme='dark'] .feature {
+  border-color: rgba(72, 168, 140, 0.25);
+}
+
 @media (max-width: 420px) {
   .med-stat-grid {
     gap: var(--space-2);
+  }
+}
+
+@media (max-width: 360px) {
+  .feature {
+    grid-template-columns: 1fr 115px;
+    padding-left: 14px;
+    min-height: 144px;
+  }
+  .feature-art {
+    width: 120px;
+    height: 130px;
+  }
+  .feature-text h3 {
+    font-size: 15px;
+  }
+  .medicine-grid,
+  .med-card-list {
+    gap: 12px 8px;
+  }
+  .medicine-art,
+  .med-item-thumb {
+    height: 104px;
+  }
+  .med-item-card {
+    padding: 8px;
+  }
+  .med-item-name {
+    font-size: 12px;
   }
 }
 
@@ -466,22 +506,21 @@
 
 .medication-batch-checkbox-wrap {
   position: absolute;
-  inline-size: 0;
-  block-size: 0;
-  opacity: 0;
-  pointer-events: none;
-  overflow: hidden;
+  inset: 0;
+  cursor: pointer;
+  z-index: 1;
   margin: 0;
   padding: 0;
 }
 
 .medication-batch-checkbox {
   position: absolute;
-  inline-size: 0;
-  block-size: 0;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
   opacity: 0;
-  pointer-events: none;
   margin: 0;
+  cursor: pointer;
   appearance: none;
 }
 
@@ -510,9 +549,12 @@
   margin: 0 auto;
 }
 
-.medication-batch-thumb img {
+.medication-batch-thumb img,
+.medication-batch-thumb svg {
   inline-size: 100%;
   block-size: 100%;
+  max-inline-size: 100%;
+  max-block-size: 100%;
   object-fit: cover;
   transition: transform 0.2s ease;
 }
@@ -531,7 +573,7 @@
   gap: 2px;
 }
 
-.medication-batch-name {
+.medication-batch-page .medication-batch-name {
   font-size: 13px;
   font-weight: 700;
   color: var(--color-text);

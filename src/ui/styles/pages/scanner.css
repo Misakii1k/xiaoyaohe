@@ -107,8 +107,8 @@
 }
 
 .scan-hero-card.blue {
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  box-shadow: 0 10px 24px -4px rgba(79, 70, 229, 0.35);
+  background: var(--color-primary, #236a55);
+  box-shadow: 0 6px 20px -4px rgba(35, 106, 85, 0.35);
 }
 
 .scan-hero-card.green {

@@ -29,7 +29,7 @@ import { navigate } from '../router';
 import { isLowStock } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
-import { getMedBottle3dSvg, parseSvg } from '../ui/assets3d';
+import { parseSvg } from '../ui/assets3d';
 import { matchPinyinOrText } from '../utils/pinyin';
 import { openBottomSheet } from '../ui/primitives/BottomSheet';
 import { createActionDock } from '../ui/primitives/ActionDock';
@@ -460,15 +460,33 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
 
     // 缩略图
     const thumb = el('div', { class: 'medication-batch-thumb' });
-    const img = el('img', {
-      src: photoUrls.get(m.id) || getOrCreateMed3DImage(m.id, m.name, m.amountPerDose || m.dosageText),
-      alt: m.name || '药品',
-      loading: 'lazy',
-    });
-    img.onerror = () => {
-      img.src = getMedBottle3dSvg();
-    };
-    thumb.append(img);
+    const photoUrl = photoUrls.get(m.id);
+    if (photoUrl) {
+      const img = el('img', {
+        src: photoUrl,
+        alt: m.name || '药品',
+        loading: 'lazy',
+      }) as HTMLImageElement;
+      img.onerror = () => {
+        thumb.replaceChildren(parseSvg(renderBPackageSvg(m)));
+      };
+      thumb.append(img);
+    } else {
+      const threeDImg = getOrCreateMed3DImage(m.id, m.name, m.amountPerDose || m.dosageText);
+      if (threeDImg && !threeDImg.startsWith('data:image/svg+xml')) {
+        const img = el('img', {
+          src: threeDImg,
+          alt: m.name || '药品',
+          loading: 'lazy',
+        }) as HTMLImageElement;
+        img.onerror = () => {
+          thumb.replaceChildren(parseSvg(renderBPackageSvg(m)));
+        };
+        thumb.append(img);
+      } else {
+        thumb.replaceChildren(parseSvg(renderBPackageSvg(m)));
+      }
+    }
     body.append(thumb);
 
     const titleWrap = el('div', { class: 'medication-batch-copy' });
@@ -503,7 +521,7 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
   dock.classList.add('medication-batch-dock');
   const enableButton = createButton({ label: '启用', variant: 'secondary', onClick: () => void setRulesForSelected(true) });
   const disableButton = createButton({ label: '禁用', variant: 'secondary', onClick: () => void setRulesForSelected(false) });
-  const slotButton = createButton({ label: '改时段', variant: 'secondary', icon: 'clock', onClick: openSlotMenu });
+  const slotButton = createButton({ label: '改时段', ariaLabel: '修改时段', variant: 'secondary', icon: 'clock', onClick: openSlotMenu });
   const deleteButton = createButton({ label: '删除', variant: 'danger', icon: 'trash', onClick: () => void deleteSelected() });
   dock.append(enableButton, disableButton, slotButton, deleteButton);
 

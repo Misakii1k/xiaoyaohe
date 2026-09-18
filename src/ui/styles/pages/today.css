@@ -255,13 +255,17 @@
 }
 
 .dose-meta h3 {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--color-text);
   margin: 0;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .dose-meta p {
@@ -289,7 +293,7 @@
 
 .primary.today-primary-btn {
   min-inline-size: 96px;
-  min-block-size: 40px;
+  min-block-size: var(--tap, 44px);
   background: var(--color-primary);
   color: #ffffff;
   border-radius: var(--radius-md, 10px);
@@ -312,7 +316,7 @@
 
 .secondary.today-secondary-btn {
   min-inline-size: 96px;
-  min-block-size: 40px;
+  min-block-size: var(--tap, 44px);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md, 10px);
   font-size: var(--fs-subheadline, 13px);
@@ -507,9 +511,12 @@
   flex-shrink: 0;
 }
 
-.today-card-thumb img {
+.today-card-thumb img,
+.today-card-thumb svg {
   inline-size: 100%;
   block-size: 100%;
+  max-inline-size: 100%;
+  max-block-size: 100%;
   object-fit: cover;
 }
 
@@ -634,6 +641,12 @@
   line-height: 1.5;
 }
 
+.today-empty-card .btn,
+.today-empty-card button {
+  flex: 0 0 auto;
+  min-block-size: var(--tap, 44px);
+}
+
 /* 契约兼容样式 */
 .today-summary-progress {
   inline-size: 112px;
@@ -654,6 +667,41 @@
   .today-progress-ring-wrap {
     inline-size: 96px;
     block-size: 96px;
+  }
+}
+
+@media (max-width: 360px) {
+  .week {
+    gap: 3px;
+  }
+  .day {
+    padding: 6px 0 8px;
+    font-size: 10px;
+    border-radius: 10px;
+  }
+  .day b {
+    font-size: 12.5px;
+  }
+  .today-summary,
+  .today-summary.summary,
+  .today-progress-card {
+    padding: 14px 14px;
+    gap: 10px;
+  }
+  .summary-left .large {
+    font-size: 36px;
+  }
+  .dose.today-focus-card {
+    padding: 14px;
+  }
+  .dose-image {
+    inline-size: 54px;
+    block-size: 54px;
+  }
+  .primary.today-primary-btn,
+  .secondary.today-secondary-btn {
+    padding: 0 12px;
+    font-size: 12px;
   }
 }
 
