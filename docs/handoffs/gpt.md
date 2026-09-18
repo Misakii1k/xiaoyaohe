@@ -55,6 +55,8 @@ Latest implementation: Plan B UI visual upgrade & focus dose workflow
 | `fac0df1` | `docs(handoff): 记录收尾验收结果、遗留项与本机环境注意事项` | 2 (+86/−2) |
 | `edfeb55` | `docs(handoff): 补充各分支谱系位置与集成前置信息` | 1 (+7) |
 | `cf2517a` | `test(e2e): 新增三视口横向溢出与触控高度守卫用例` | 1 (+104) |
+| `e389d2f` | `docs(handoff): 补充新增视口守卫用例与后两个提交记录` | 1 (+4) |
+| `c911f39` | `fix(e2e): 修正 fullscreen 用例以适配保活页签架构，并移除死代码` | 2 (+23/−10) |
 
 起点备份 Tag：`pre-plan-b` = `7083792`。
 
@@ -84,7 +86,7 @@ Latest implementation: Plan B UI visual upgrade & focus dose workflow
 | `npm test` | 91 文件 / 572 项 100% PASS |
 | `npm run build:web` | 618 modules 通过 |
 | `e2e/inventory-workflows` + `e2e/medication-batch` | **12/12 PASS** |
-| 全量 e2e | 44 passed / 8 failed（8 条全为历史遗留 P6，非本次引入） |
+| 全量 e2e | **100 passed / 0 failed**（含新增 48 条视口守卫；历史遗留的 8 条 fullscreen 失败已修复） |
 | 320×700 / 390×844 / 430×932 横向溢出 | 6 组场景全 0，无中文竖排折行 |
 | `e2e/viewport-overflow.spec.ts`（新增守卫） | **48/48 PASS**（3 视口 × 4 项 × 4 project） |
 | 暗色 27 处填充面对比度实测 | 全部 ≥4.5；`.day.current` 底色恢复 `rgb(72,168,140)` |
@@ -100,10 +102,10 @@ Latest implementation: Plan B UI visual upgrade & focus dose workflow
 | `.ui-filter-chip.is-active .chip-count` | 亮 3.69 / 暗 2.17 | 同上 |
 | `.scan-hero-card.green` | 白字压 `#10b981` = 2.54，亮暗同值 | 字面硬编码不随主题变化 |
 | 设置页靛蓝/紫装饰色 | `.panel-chip.tone-info` `#6366f1`、`.panel-icon-violet` `#8b5cf6` | 不在 B 方案核心四屏内 |
-| `.ai-msg.is-user .ai-markdown a` | **死代码，永不匹配** | `AiAssistant.ts:723` user 消息走纯文本 `span`，只有 bot 走 `renderAssistantMarkdown`；可直接删除 |
+| ~~`.ai-msg.is-user .ai-markdown a`~~ | ~~死代码，永不匹配~~ | ✅ **已移除**（`c911f39`） |
 | 5 类次级控件 <44px | `.today-filter-pill` 35px、`.today-batch-take-btn` 32px、`.today-radio-btn` 28×28、`.topbar-pill` 34px | 历史遗留，放大到 44px 会改变卡片密度与顶栏高度 |
 | 浅色 `--color-text-muted` 在浅灰底 `#edf1ef` 上 4.33 | 单一令牌无法适配所有浅色底 | 若需全覆盖建议 `#64706b`（浅灰底 4.53） |
-| `e2e/fullscreen.spec.ts` 2 条 | 与 keep-alive 架构不符（`.app-shell` 期望 1 实得 2） | 建议单独修 e2e 断言 |
+| ~~`e2e/fullscreen.spec.ts` 2 条~~ | ~~与 keep-alive 架构不符~~ | ✅ **已修复**（`c911f39`）：断言改为「可见的 `.app-shell` 只有 1 个」而非放宽为允许多个；`page.evaluate` 改为取可见元素，避免命中被保活隐藏的页签 |
 
 ### 环境注意（本仓库在本机沙箱下）
 
