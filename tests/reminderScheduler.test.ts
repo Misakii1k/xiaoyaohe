@@ -104,36 +104,42 @@ describe('native reminder scheduler', () => {
   });
 
   it('批量读取多个到点提醒组的状态并保持筛选与写回语义', async () => {
-    mocks.native = false;
-    const today = toLocalDate();
-    const groupIds = (['morning', 'noon', 'evening', 'bedtime'] as Slot[]).map(
-      (slot) => `reminder-group:${today}:${slot}`,
-    );
-    // noon 已发过 dose（count=1），evening 已达上限（count=4）
-    mocks.listPushStates.mockResolvedValue([
-      { id: groupIds[1]!, count: 1, lastSentAt: 0 },
-      { id: groupIds[2]!, count: 4, lastSentAt: 0 },
-    ]);
+    vi.useFakeTimers();
+    try {
+      mocks.native = false;
+      const today = toLocalDate();
+      vi.setSystemTime(new Date(`${today}T12:00:00`));
+      const groupIds = (['morning', 'noon', 'evening', 'bedtime'] as Slot[]).map(
+        (slot) => `reminder-group:${today}:${slot}`,
+      );
+      // noon 已发过 dose（count=1），evening 已达上限（count=4）
+      mocks.listPushStates.mockResolvedValue([
+        { id: groupIds[1]!, count: 1, lastSentAt: 0 },
+        { id: groupIds[2]!, count: 4, lastSentAt: 0 },
+      ]);
 
-    await runOnce();
+      await runOnce();
 
-    expect(mocks.listPushStates).toHaveBeenCalledOnce();
-    expect(new Set(mocks.listPushStates.mock.calls[0][0])).toEqual(new Set(groupIds));
-    expect(mocks.getLog).not.toHaveBeenCalled();
-    expect(mocks.getPushState).not.toHaveBeenCalled();
-    // 按组发整体提醒：早上/睡前无历史 → dose；中午 count=1 → repeat-2；晚上已达上限 → 跳过
-    const shown = mocks.show.mock.calls.map(([, options]) => [options.tag, options.key]).sort((a, b) => a[0].localeCompare(b[0]));
-    expect(shown).toEqual([
-      [groupIds[0]!, 'dose'],
-      [groupIds[1]!, 'repeat-2'],
-      [groupIds[3]!, 'dose'],
-    ].sort((a, b) => a[0].localeCompare(b[0])));
-    const written = mocks.putPushState.mock.calls.map(([state]) => ({ id: state.id, count: state.count }))
-      .sort((a, b) => a.id.localeCompare(b.id));
-    expect(written).toEqual([
-      { id: groupIds[0]!, count: 1 },
-      { id: groupIds[1]!, count: 2 },
-      { id: groupIds[3]!, count: 1 },
-    ].sort((a, b) => a.id.localeCompare(b.id)));
+      expect(mocks.listPushStates).toHaveBeenCalledOnce();
+      expect(new Set(mocks.listPushStates.mock.calls[0][0])).toEqual(new Set(groupIds));
+      expect(mocks.getLog).not.toHaveBeenCalled();
+      expect(mocks.getPushState).not.toHaveBeenCalled();
+      // 按组发整体提醒：早上/睡前无历史 → dose；中午 count=1 → repeat-2；晚上已达上限 → 跳过
+      const shown = mocks.show.mock.calls.map(([, options]) => [options.tag, options.key]).sort((a, b) => a[0].localeCompare(b[0]));
+      expect(shown).toEqual([
+        [groupIds[0]!, 'dose'],
+        [groupIds[1]!, 'repeat-2'],
+        [groupIds[3]!, 'dose'],
+      ].sort((a, b) => a[0].localeCompare(b[0])));
+      const written = mocks.putPushState.mock.calls.map(([state]) => ({ id: state.id, count: state.count }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+      expect(written).toEqual([
+        { id: groupIds[0]!, count: 1 },
+        { id: groupIds[1]!, count: 2 },
+        { id: groupIds[3]!, count: 1 },
+      ].sort((a, b) => a.id.localeCompare(b.id)));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

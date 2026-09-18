@@ -1,11 +1,22 @@
 # Current Integration State
 
-Updated: 2026-09-18
+Updated: 2026-09-19
 Integration branch: `main`
-Product version: `1.1.1` (versionCode 59)
-Latest integration commit: `release: v1.1.1 - 设置页微卡片化视觉分割与层级结构优化`
+Product version: `1.1.2` (versionCode 60)
+Latest integration commit: `release: v1.1.2 - 优化对比度、扫码卡片反转与44px触控尺寸`
 
-## Plan B「清爽秩序」收尾与验收 (feature/ui-plan-b，待集成)
+## Release v1.1.2 (versionCode 60, main)
+
+- **集成内容**：
+  - 合并 `feature/ui-plan-b` 到 `main`，包含完整的 Plan B「清爽秩序」视觉重构与焦点用药交互；
+  - 修复 6 项 UI 体验细节：①助手附件胶囊对比度提升（改走 `--color-on-primary`）；②筛选胶囊计数徽标对比度达标；③扫码绿色卡片随主题反转（浅色深绿白字/暗色亮绿深字）；④设置页装饰色换用达标色令牌；⑤5 类交互控件触控高度统一升至 44px（顶栏胶囊、快捷提问、批量操作坞、今日批量打卡、查重通知按钮）；⑥次要文字令牌对比度优化（`#67736e→#64706b`）；
+  - 修复 `tests/reminderScheduler.test.ts` 午夜跨日边界时间确定性，使用 fakeTimers 消除时序脆弱测试；
+  - 版本递增至 1.1.2 / versionCode 60。
+- **质量门禁**：
+  - `npm test`：91 文件 / 572 项 100% PASS；
+  - `npm run typecheck`：0 错误；
+  - `npx playwright test`：100/100 项 PASS；
+  - `tone_lint.py`：PASS。
 
 - **分支状态**：`feature/ui-plan-b`（自 `workspace/claude` 分离，起点备份 Tag `pre-plan-b` = `7083792`）。**尚未合并回 `main`**，待人工确认后集成。
 - **⚠️ 集成前置信息（各分支当前位置）**：

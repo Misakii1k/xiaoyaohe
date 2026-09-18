@@ -2,11 +2,28 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-17
+Updated: 2026-09-19
 Status: active
-Latest version: `1.1.1` (Android `versionCode: 59`)
+Latest version: `1.1.2` (Android `versionCode: 60`)
 
 ## Summary of Accomplished Work
+
+### 60. UI 对比度提升、扫码卡片反转与44px触控尺寸 (v1.1.2, versionCode 60, main)
+
+1. **需求与背景**：合并 Plan B 视觉升级至 `main` 分支，并完成 6 项交互与无障碍细节修复。
+2. **修复内容**：
+   - 助手附件胶囊对比度提升（改走 `--color-on-primary`）；
+   - 筛选胶囊计数徽标对比度达标；
+   - 扫码绿色卡片随主题反转（浅色深绿白字/暗色亮绿深字）；
+   - 设置页装饰色换用达标色令牌；
+   - 5 类交互控件触控高度统一升至 44px（顶栏胶囊、快捷提问、批量操作坞、今日批量打卡、查重通知按钮）；
+   - 次要文字令牌对比度优化（`#67736e→#64706b`）；
+   - 修复 `tests/reminderScheduler.test.ts` 午夜跨日边界时间确定性（`vi.useFakeTimers`）。
+3. **验证与门禁**：
+   - `npm test`：91 文件 / 572 项 100% PASS；
+   - `npm run typecheck`：0 错误；
+   - `npx playwright test`：100/100 项 PASS；
+   - `tone_lint.py`：PASS。
 
 ### 59. 设置页微卡片化视觉分割与层级结构优化 (v1.1.1, versionCode 59, workspace/claude)
 
