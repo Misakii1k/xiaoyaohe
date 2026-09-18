@@ -153,9 +153,16 @@
 }
 
 .topbar-ai-pill {
-  border-color: rgba(99, 102, 241, 0.35);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);
+  border-color: var(--color-border);
+  background: var(--color-surface);
   color: var(--color-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: max-content;
+}
+
+.topbar-ai-pill span {
+  white-space: nowrap;
 }
 
 .topbar-ai-pill svg {
@@ -166,7 +173,7 @@
 
 .topbar-ai-pill:hover,
 .topbar-ai-pill:active {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(168, 85, 247, 0.22) 100%);
+  background: var(--color-primary-soft);
   border-color: var(--color-primary);
 }
 

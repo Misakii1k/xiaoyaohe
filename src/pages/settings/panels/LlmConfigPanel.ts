@@ -27,7 +27,7 @@ export function renderLlmPanel(): SettingsRenderPart {
   const p = panel({
     title: 'AI 服务商',
     iconName: 'robot',
-    iconTone: 'purple',
+    iconTone: 'emerald',
     chip,
     renderBody: (body) => buildLlmBody(body, (h) => setChip(p, healthToChip(h))),
   });

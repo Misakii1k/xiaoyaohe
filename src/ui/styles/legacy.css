@@ -8,20 +8,20 @@
 :root {
   color-scheme: light;
 
-  /* ---- iOS 系统色（统一对齐全站紫罗兰与语义色体系） ---- */
-  --ios-blue: var(--color-primary, #6366f1);
-  --ios-green: var(--color-success, #10b981);
-  --ios-red: var(--color-danger, #ef4444);
-  --ios-orange: var(--color-warning, #f59e0b);
-  --ios-yellow: #facc15;
-  --ios-purple: #8b5cf6;
-  --ios-pink: #ec4899;
-  --ios-indigo: var(--color-primary, #6366f1);
+  /* ---- iOS 系统色（统一对齐全站青绿与语义色体系） ---- */
+  --ios-blue: var(--color-primary, #236a55);
+  --ios-green: var(--color-success, #236a55);
+  --ios-red: var(--color-danger, #c94a4a);
+  --ios-orange: var(--color-warning, #b27a3c);
+  --ios-yellow: #ca8a04;
+  --ios-purple: var(--color-primary, #236a55);
+  --ios-pink: #d05a68;
+  --ios-indigo: var(--color-primary, #236a55);
 
-  /* ---- 品牌色（紫罗兰主色系） ---- */
-  --brand: var(--color-primary, #6366f1);
-  --brand-deep: var(--color-primary-pressed, #4f46e5);
-  --brand-soft: var(--color-primary-soft, #eef0ff);
+  /* ---- 品牌色（青绿主色系） ---- */
+  --brand: var(--color-primary, #236a55);
+  --brand-deep: var(--color-primary-pressed, #175940);
+  --brand-soft: var(--color-primary-soft, #e3ede6);
 
   /* ---- Liquid Glass 材质 token（浅色版：更白、更通透） ---- */
   --glass-thin: rgba(255, 255, 255, 0.72);
@@ -37,7 +37,7 @@
   --shadow-sm: 0 4px 12px rgba(20, 30, 50, 0.05);
   --shadow-md: 0 8px 24px rgba(20, 30, 50, 0.08);
   --shadow-lg: 0 16px 40px rgba(20, 30, 50, 0.10);
-  --shadow-fab: 0 12px 32px rgba(99, 102, 241, 0.30);
+  --shadow-fab: 0 12px 32px rgba(35, 106, 85, 0.28);
 
   /* iOS 26 HIG 推荐 blur 半径：iPhone ≤ 40px */
   --glass-blur: 24px;
@@ -885,7 +885,7 @@ textarea {
   position: absolute;
   inset: 6%;
   border-radius: var(--radius-full);
-  background: radial-gradient(circle at 65% 65%, rgba(99, 102, 241, 0.14) 0%, transparent 65%);
+  background: radial-gradient(circle at 65% 65%, rgba(35, 106, 85, 0.14) 0%, transparent 65%);
   pointer-events: none;
   z-index: 0;
 }
@@ -900,12 +900,12 @@ textarea {
 
 .progress-ring .ring-bg {
   fill: none;
-  stroke: #edf0fc;
+  stroke: var(--color-surface-muted, #edf1ef);
   stroke-width: 8;
 }
 
 [data-theme='dark'] .progress-ring .ring-bg {
-  stroke: rgba(99, 102, 241, 0.2);
+  stroke: rgba(35, 106, 85, 0.2);
 }
 
 .progress-ring .ring-glow {

@@ -57,7 +57,7 @@
   position: absolute;
   inset: -14px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.4) 0%, rgba(59, 130, 246, 0.18) 50%, transparent 72%);
+  background: radial-gradient(circle, rgba(35, 106, 85, 0.32) 0%, rgba(42, 131, 105, 0.16) 50%, transparent 72%);
   filter: blur(14px);
   z-index: 0;
   pointer-events: none;
@@ -77,7 +77,7 @@
   border-radius: 0;
   position: relative;
   z-index: 1;
-  filter: drop-shadow(0 6px 16px rgba(99, 102, 241, 0.32));
+  filter: drop-shadow(0 6px 16px rgba(35, 106, 85, 0.2));
   transition: transform 0.25s ease;
 }
 
@@ -100,7 +100,7 @@
   gap: var(--space-4);
   color: #ffffff;
   cursor: pointer;
-  box-shadow: 0 10px 24px -4px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 10px 24px -4px rgba(35, 106, 85, 0.25);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   border: none;
   text-align: left;
@@ -227,7 +227,8 @@
   flex-shrink: 0;
 }
 
-.scan-quick-icon.purple { background: var(--tint-purple-bg); color: var(--tint-purple-fg); }
+.scan-quick-icon.green,
+.scan-quick-icon.purple { background: var(--tint-green-bg); color: var(--tint-green-fg); }
 .scan-quick-icon.blue { background: var(--tint-blue-bg); color: var(--tint-blue-fg); }
 
 .scan-quick-info {
@@ -276,8 +277,8 @@
   inline-size: 38px;
   block-size: 38px;
   border-radius: var(--radius-md);
-  background: var(--tint-purple-bg);
-  color: var(--tint-purple-fg);
+  background: var(--tint-green-bg);
+  color: var(--tint-green-fg);
   display: grid;
   place-items: center;
   flex-shrink: 0;

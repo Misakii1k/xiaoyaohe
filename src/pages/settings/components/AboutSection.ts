@@ -42,7 +42,7 @@ export function renderAboutSection(): HTMLElement {
   const highlights = el('div', { class: 'settings-about-grid' }, [
     createTile('定时服药', '准时提醒与打卡记录', 'bell', 'amber'),
     createTile('药箱余量', '低余量智能实时预警', 'box', 'emerald'),
-    createTile('纯净本地', '全量数据保存在本地设备', 'shield', 'violet'),
+    createTile('纯净本地', '全量数据保存在本地设备', 'shield', 'teal'),
     createTile('家庭同步', '局域网面对面免流量互传', 'cloud', 'blue'),
   ]);
 

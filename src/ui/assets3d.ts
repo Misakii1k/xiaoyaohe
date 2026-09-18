@@ -140,41 +140,41 @@ export function render3dMedia(
   return container;
 }
 
-/** 1. 紫色 3D 药瓶与药片（药品库 - 全部分品） */
+/** 1. 3D 药瓶与药片（药品库 - 全部分品） */
 export function getMedBottle3dSvg(): string {
   return `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="asset-3d-svg">
       <defs>
         <filter id="mb-glow" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#818cf8" flood-opacity="0.35"/>
+          <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#236a55" flood-opacity="0.35"/>
         </filter>
         <linearGradient id="mb-bottle" x1="20" y1="20" x2="80" y2="90" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#a5b4fc"/>
-          <stop offset="50%" stop-color="#818cf8"/>
-          <stop offset="100%" stop-color="#6366f1"/>
+          <stop offset="0%" stop-color="#34d399"/>
+          <stop offset="50%" stop-color="#2a8369"/>
+          <stop offset="100%" stop-color="#236a55"/>
         </linearGradient>
         <linearGradient id="mb-cap" x1="36" y1="14" x2="64" y2="28" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stop-color="#ffffff"/>
-          <stop offset="100%" stop-color="#e0e7ff"/>
+          <stop offset="100%" stop-color="#e3ede6"/>
         </linearGradient>
         <linearGradient id="mb-pill" x1="55" y1="65" x2="85" y2="85" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#c7d2fe"/>
-          <stop offset="100%" stop-color="#818cf8"/>
+          <stop offset="0%" stop-color="#a7c4b5"/>
+          <stop offset="100%" stop-color="#236a55"/>
         </linearGradient>
       </defs>
-      <ellipse cx="50" cy="88" rx="32" ry="7" fill="#6366f1" opacity="0.18"/>
+      <ellipse cx="50" cy="88" rx="32" ry="7" fill="#236a55" opacity="0.18"/>
       <g filter="url(#mb-glow)">
         <rect x="28" y="28" width="44" height="52" rx="14" fill="url(#mb-bottle)"/>
-        <rect x="36" y="22" width="28" height="9" rx="3" fill="#c7d2fe"/>
+        <rect x="36" y="22" width="28" height="9" rx="3" fill="#a7c4b5"/>
         <rect x="33" y="15" width="34" height="10" rx="4" fill="url(#mb-cap)"/>
         <rect x="36" y="42" width="28" height="26" rx="6" fill="#ffffff" opacity="0.92"/>
-        <rect x="42" y="48" width="16" height="4" rx="2" fill="#818cf8"/>
-        <rect x="44" y="55" width="12" height="3" rx="1.5" fill="#c7d2fe"/>
+        <rect x="42" y="48" width="16" height="4" rx="2" fill="#2a8369"/>
+        <rect x="44" y="55" width="12" height="3" rx="1.5" fill="#a7c4b5"/>
         <path d="M 33 34 Q 31 52 35 72" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
         <circle cx="65" cy="34" r="2.5" fill="#ffffff" opacity="0.6"/>
       </g>
       <ellipse cx="68" cy="76" rx="11" ry="7" fill="url(#mb-pill)" transform="rotate(-15 68 76)"/>
-      <ellipse cx="68" cy="74" rx="10" ry="5.5" fill="#e0e7ff" transform="rotate(-15 68 76)"/>
-      <line x1="62" y1="72" x2="74" y2="76" stroke="#818cf8" stroke-width="1.5" opacity="0.7"/>
+      <ellipse cx="68" cy="74" rx="10" ry="5.5" fill="#e3ede6" transform="rotate(-15 68 76)"/>
+      <line x1="62" y1="72" x2="74" y2="76" stroke="#236a55" stroke-width="1.5" opacity="0.7"/>
     </svg>`;
 }
 
@@ -246,24 +246,24 @@ export function getPillboxMachine3dSvg(): string {
   return `<svg viewBox="0 0 240 120" fill="none" xmlns="http://www.w3.org/2000/svg" class="asset-3d-banner-svg">
       <defs>
         <filter id="pm-glow" x="-10%" y="-10%" width="120%" height="120%">
-          <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#6366f1" flood-opacity="0.25"/>
+          <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#236a55" flood-opacity="0.25"/>
         </filter>
         <linearGradient id="pm-body" x1="40" y1="20" x2="200" y2="100" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#818cf8"/>
-          <stop offset="100%" stop-color="#4f46e5"/>
+          <stop offset="0%" stop-color="#34d399"/>
+          <stop offset="100%" stop-color="#236a55"/>
         </linearGradient>
         <linearGradient id="pm-tray" x1="60" y1="40" x2="180" y2="80" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stop-color="#ffffff"/>
-          <stop offset="100%" stop-color="#e0e7ff"/>
+          <stop offset="100%" stop-color="#e3ede6"/>
         </linearGradient>
       </defs>
-      <ellipse cx="120" cy="108" rx="85" ry="10" fill="#312e81" opacity="0.25"/>
+      <ellipse cx="120" cy="108" rx="85" ry="10" fill="#175940" opacity="0.25"/>
       <g filter="url(#pm-glow)">
         <rect x="40" y="24" width="160" height="80" rx="20" fill="url(#pm-body)"/>
         <rect x="48" y="32" width="144" height="42" rx="12" fill="url(#pm-tray)"/>
-        <line x1="84" y1="32" x2="84" y2="74" stroke="#c7d2fe" stroke-width="2"/>
-        <line x1="120" y1="32" x2="120" y2="74" stroke="#c7d2fe" stroke-width="2"/>
-        <line x1="156" y1="32" x2="156" y2="74" stroke="#c7d2fe" stroke-width="2"/>
+        <line x1="84" y1="32" x2="84" y2="74" stroke="#a7c4b5" stroke-width="2"/>
+        <line x1="120" y1="32" x2="120" y2="74" stroke="#a7c4b5" stroke-width="2"/>
+        <line x1="156" y1="32" x2="156" y2="74" stroke="#a7c4b5" stroke-width="2"/>
         <!-- 药盒内彩色小药丸 -->
         <circle cx="66" cy="53" r="7" fill="#fb7185"/>
         <circle cx="102" cy="53" r="6.5" fill="#38bdf8"/>
@@ -273,7 +273,7 @@ export function getPillboxMachine3dSvg(): string {
         <circle cx="70" cy="88" r="4" fill="#34d399"/>
         <circle cx="85" cy="88" r="4" fill="#60a5fa"/>
         <rect x="130" y="82" width="55" height="12" rx="6" fill="#ffffff" opacity="0.9"/>
-        <rect x="135" y="85" width="20" height="6" rx="3" fill="#6366f1"/>
+        <rect x="135" y="85" width="20" height="6" rx="3" fill="#236a55"/>
       </g>
     </svg>`;
 }
@@ -283,18 +283,18 @@ export function getTakeMedPill3dSvg(): string {
   return `<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" class="asset-3d-floating-pill">
       <defs>
         <filter id="tp-glow" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#818cf8" flood-opacity="0.45"/>
+          <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#236a55" flood-opacity="0.35"/>
         </filter>
         <linearGradient id="tp-cap-left" x1="20" y1="20" x2="60" y2="60" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="#c084fc"/>
-          <stop offset="100%" stop-color="#7c3aed"/>
+          <stop offset="0%" stop-color="#34d399"/>
+          <stop offset="100%" stop-color="#236a55"/>
         </linearGradient>
         <linearGradient id="tp-cap-right" x1="60" y1="60" x2="100" y2="100" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stop-color="#38bdf8"/>
           <stop offset="100%" stop-color="#0284c7"/>
         </linearGradient>
       </defs>
-      <ellipse cx="60" cy="106" rx="36" ry="8" fill="#4338ca" opacity="0.25"/>
+      <ellipse cx="60" cy="106" rx="36" ry="8" fill="#175940" opacity="0.25"/>
       <g filter="url(#tp-glow)" transform="rotate(-30 60 60)">
         <rect x="30" y="38" width="60" height="44" rx="22" fill="url(#tp-cap-right)"/>
         <path d="M 30 60 A 22 22 0 0 1 52 38 L 60 38 L 60 82 L 52 82 A 22 22 0 0 1 30 60 Z" fill="url(#tp-cap-left)"/>
@@ -335,15 +335,15 @@ export function getStatBox3dSvg(): string {
     </svg>`;
 }
 
-/** 9. 3D 统计卡片图标 - 服药率 (紫色日历与星标) */
+/** 9. 3D 统计卡片图标 - 服药率 (青绿日历与打卡标) */
 export function getStatRate3dSvg(): string {
   return `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="stat-3d-icon">
-      <rect x="9" y="10" width="30" height="30" rx="7" fill="#8b5cf6"/>
-      <rect x="9" y="10" width="30" height="9" rx="4" fill="#7c3aed"/>
-      <circle cx="16" cy="8" r="2" fill="#e9d5ff"/>
-      <circle cx="32" cy="8" r="2" fill="#e9d5ff"/>
+      <rect x="9" y="10" width="30" height="30" rx="7" fill="#236a55"/>
+      <rect x="9" y="10" width="30" height="9" rx="4" fill="#175940"/>
+      <circle cx="16" cy="8" r="2" fill="#e3ede6"/>
+      <circle cx="32" cy="8" r="2" fill="#e3ede6"/>
       <circle cx="24" cy="27" r="7" fill="#ffffff" opacity="0.92"/>
-      <path d="M 21.5 27 L 23 28.5 L 26.5 25" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 21.5 27 L 23 28.5 L 26.5 25" stroke="#236a55" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
 }
 

@@ -259,7 +259,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     const quickGrid = el('div', { class: 'scan-quick-grid' });
 
     const sheetQuick = el('div', { class: 'scan-quick-card' });
-    const sheetIcon = el('div', { class: 'scan-quick-icon purple' });
+    const sheetIcon = el('div', { class: 'scan-quick-icon green' });
     sheetIcon.append(icon('camera'));
     const sheetInfo = el('div', { class: 'scan-quick-info' });
     sheetInfo.append(

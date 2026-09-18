@@ -24,7 +24,7 @@ export function renderAppearancePanel(): HTMLElement {
   return panel({
     title: '外观',
     iconName: 'moon',
-    iconTone: 'violet',
+    iconTone: 'sky',
     chip: appearancePanelChip(),
     defaultOpen: false,
     renderBody: (body) => {

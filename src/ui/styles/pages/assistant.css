@@ -783,7 +783,7 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 .ai-content-card.is-warning .ai-card-icon { background: rgb(190 126 35 / 14%); color: #9b5f0c; }
 .ai-content-card.is-medication .ai-card-icon { background: var(--tint-pink-bg); color: var(--tint-pink-fg); }
 .ai-content-card.is-stats .ai-card-icon { background: var(--tint-blue-bg); color: var(--tint-blue-fg); }
-.ai-content-card.is-search .ai-card-icon { background: var(--tint-purple-bg); color: var(--tint-purple-fg); }
+.ai-content-card.is-search .ai-card-icon { background: var(--color-primary-soft); color: var(--color-primary); }
 .ai-content-card.is-notice .ai-card-icon { background: var(--tint-orange-bg); color: var(--tint-orange-fg); }
 .ai-card-eyebrow {
   display: block;

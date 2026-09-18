@@ -489,13 +489,13 @@
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.06);
+  box-shadow: 0 4px 16px rgba(32, 46, 43, 0.04);
   padding: var(--space-4);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .medication-draft-card:hover {
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 8px 24px rgba(35, 106, 85, 0.08);
 }
 
 .medication-field > input,
@@ -529,7 +529,7 @@
   background: var(--color-primary-gradient);
   color: var(--color-on-primary);
   border-color: transparent;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 4px 12px rgba(35, 106, 85, 0.25);
 }
 
 /* 深色主题适配与无障碍动效支持 */
@@ -621,7 +621,7 @@
 .med-wizard-step-item.is-current .med-wizard-step-segment {
   background: var(--color-primary);
   border-color: var(--color-primary);
-  box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 6px rgba(35, 106, 85, 0.4);
   opacity: 1;
 }
 
@@ -819,8 +819,8 @@
 
 /* 智能快捷录入卡片 */
 .med-smart-fill-card {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.04) 0%, rgba(168, 85, 247, 0.04) 100%), var(--color-surface);
-  border-color: rgba(99, 102, 241, 0.25);
+  background: var(--color-surface);
+  border-color: var(--color-border);
 }
 
 .smart-fill-grid {
