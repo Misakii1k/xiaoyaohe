@@ -14,7 +14,7 @@
   --color-surface-glass: rgba(255, 255, 255, 0.88);
   --color-surface-muted: #edf1ef;
   --color-text: #202e2b;
-  --color-text-muted: #74817d;
+  --color-text-muted: #67736e;
   --color-border: #e1e8e4;
   --color-border-glass: #e1e8e4;
 
@@ -22,6 +22,8 @@
   --color-primary-pressed: #175940;
   --color-primary-soft: #e3ede6;
   --color-primary-gradient: linear-gradient(135deg, #236a55 0%, #175940 100%);
+  /* 主色填充面上的文字色：浅色主色足够深，用白字（6.43:1） */
+  --color-on-primary: #ffffff;
   --color-hero-gradient: linear-gradient(135deg, #236a55 0%, #34785c 50%, #4a8c72 100%);
   --color-lilac: #236a55;
   --color-ink-purple: #202e2b;
@@ -172,6 +174,8 @@
   --color-primary-pressed: #368f74;
   --color-primary-soft: #183329;
   --color-primary-gradient: linear-gradient(135deg, #48a88c 0%, #368f74 100%);
+  /* 主色填充面上的文字色：暗色主色偏亮，白字仅 2.89:1，改用深墨绿（6.17:1） */
+  --color-on-primary: #0d1a16;
   --color-hero-gradient: linear-gradient(135deg, #48a88c 0%, #57b594 50%, #74d6a2 100%);
   --color-lilac: #48a88c;
   --color-ink-purple: #c2d8cf;

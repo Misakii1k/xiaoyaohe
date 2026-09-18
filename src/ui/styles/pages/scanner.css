@@ -108,6 +108,7 @@
 
 .scan-hero-card.blue {
   background: var(--color-primary, #236a55);
+  color: var(--color-on-primary);
   box-shadow: 0 6px 20px -4px rgba(35, 106, 85, 0.35);
 }
 

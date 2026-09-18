@@ -370,7 +370,7 @@ function renderModernInventoryCard(
 
   const low = isLowStock(med);
   const daysLeft = estimateDaysLeft(med, rules) ?? (low ? 2 : 12);
-  info.append(el('div', { class: 'inventory-card-days inventory-card-spec', text: `剩余 ${remaining}${unit} · 约 ${daysLeft}天用量` }));
+  info.append(el('div', { class: 'inventory-card-days', text: `剩余 ${remaining}${unit} · 约 ${daysLeft}天用量` }));
 
   // 右侧状态徽章
   const right = el('div', { class: 'inventory-card-right' });

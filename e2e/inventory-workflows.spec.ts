@@ -14,6 +14,6 @@ test.describe('inventory entry workflows', () => {
     await expect(page.locator('.inventory-add-preview-card')).toContainText('当前 12.5片 → 入库后 15片');
     await page.getByRole('button', { name: '确认添加库存' }).click();
 
-    await expect(page.locator('.inventory-card-spec').first()).toContainText('剩余 15片');
+    await expect(page.locator('.inventory-card-days').first()).toContainText('剩余 15片');
   });
 });

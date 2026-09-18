@@ -527,7 +527,7 @@
 
 .medication-slot-buttons button.is-selected {
   background: var(--color-primary-gradient);
-  color: #ffffff;
+  color: var(--color-on-primary);
   border-color: transparent;
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
 }
