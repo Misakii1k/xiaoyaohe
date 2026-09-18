@@ -1,9 +1,25 @@
 # Current Integration State
 
-Updated: 2026-09-17
+Updated: 2026-09-18
 Integration branch: `main`
 Product version: `1.1.1` (versionCode 59)
 Latest integration commit: `release: v1.1.1 - 设置页微卡片化视觉分割与层级结构优化`
+
+## Plan B「清爽秩序」收尾与验收 (feature/ui-plan-b，待集成)
+
+- **分支状态**：`feature/ui-plan-b`（自 `workspace/claude` 分离，起点备份 Tag `pre-plan-b` = `7083792`）。**尚未合并回 `main`**，待人工确认后集成。
+- **提交链**：`9176355`（Plan B 主体）→ `ff3cb71`（移动端视口适配与交互焦点细节）→ `725ea62`（暗色对比度与选中态修复）。
+- **核心内容**：
+  - 视觉令牌体系（冰白 `#f6f8f7` / 青绿 `#236a55` / 柔绿 `#e3ede6` / 石墨 `#202e2b` / 细线 `#e1e8e4`），清除高饱和荧光弥散渐变；
+  - 药品列表页双列卡片网格，药盒包装为第一视觉中心，三级包装回退（实拍 > 3D 拟物 > 矢量纸盒）；
+  - 今日用药页问候语 + Georgia 衬线日期 + 一周节奏条 + 进度环 + 「下一次用药」聚焦大卡片；
+  - 暗色模式：新增 `--color-on-primary` 令牌（浅 `#ffffff` / 暗 `#0d1a16`），27 处填充面文字改令牌；追加 (0,3,0) 规则恢复暗色下「今日」格与激活筛选胶囊的主色填充（此前被同特异性的暗色块刷成深色面，选中态完全不可见）。
+- **质量门禁**：`tsc --noEmit` 0 错误；91 文件 / 572 项测试 100% PASS；`build:web` 618 modules 通过；`e2e/inventory-workflows` + `e2e/medication-batch` 12/12 PASS；320×700 / 390×844 / 430×932 三视口零横向溢出。
+- **红线**：未触碰 IndexedDB schema、提醒调度、原生通知通道、同步协议；未向用户桌面复制任何构建产物；动效降级 `prefers-reduced-motion` 保持 13 处覆盖。
+- **集成前注意**：
+  1. 本轮修改了 `e2e/inventory-workflows.spec.ts` 的过期断言（该用例自 `4beac61` 起已红 7 天，非本次引入）；
+  2. 遗留 8 项（含 `.ai-markdown a` 死代码、5 类次级控件 <44px、`fullscreen.spec.ts` 2 条历史遗留失败），详见 `docs/handoffs/gpt.md`；
+  3. 本机沙箱下 `git commit` 会丢失分支引用文件，提交后需用 `git rev-parse HEAD` 复核（修复方式见 `gpt.md` 环境注意第 1 条）。
 
 ## Settings Visual Hierarchy & Subcard Modularization (v1.1.1, versionCode 59, workspace/claude)
 
