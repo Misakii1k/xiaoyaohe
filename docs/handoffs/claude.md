@@ -4,9 +4,23 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-19
 Status: active
-Latest version: `1.1.2` (Android `versionCode: 60`)
+Latest version: `1.1.3` (Android `versionCode: 61`)
 
 ## Summary of Accomplished Work
+
+### 61. 界面细节排版与全系统一绿色视觉优化 (v1.1.3, versionCode 61, main)
+
+1. **需求与背景**：真机验证后修复药品列表横幅SVG源码泄露、AI助手折行、底部悬浮操作按钮遮挡问题，并将全站残留的紫色视觉元素彻底替换为统一清爽自然的绿色系。
+2. **修复内容**：
+   - 修复药品列表横幅在部分设备上直接打印 SVG 文本源码缺陷，使用 `parseSvg` 动态解析为矢量节点挂载；
+   - 解决小屏手机上今日页与顶栏 AI 助手胶囊文字折行（增加 `white-space: nowrap; min-width: max-content;` 防御）；
+   - 增加药品列表页底部安全内边距至 112px，避免右下角悬浮按钮遮挡列表底部卡片；
+   - 全面清理残留的紫色元素（顶栏 AI 胶囊、服药历史状态按钮、药品编辑智能录入卡片、分药向导阴影、扫码页光晕与快捷图标、设置页各面板图标色调、头像选择态与关于小药盒 Logo/磁贴），彻底换用青绿主色系；
+   - 版本号与构建号单调递增至 1.1.3 / versionCode 61。
+3. **验证与门禁**：
+   - `npm test`：91 文件 / 572 项 100% PASS；
+   - `npm run typecheck`：0 错误；
+   - `tone_lint.py`：PASS。
 
 ### 60. UI 对比度提升、扫码卡片反转与44px触控尺寸 (v1.1.2, versionCode 60, main)
 

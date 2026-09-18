@@ -2,8 +2,21 @@
 
 Updated: 2026-09-19
 Integration branch: `main`
-Product version: `1.1.2` (versionCode 60)
-Latest integration commit: `release: v1.1.2 - 优化对比度、扫码卡片反转与44px触控尺寸`
+Product version: `1.1.3` (versionCode 61)
+Latest integration commit: `release: v1.1.3 - 优化界面细节排版与全系统一绿色视觉`
+
+## Release v1.1.3 (versionCode 61, main)
+
+- **集成内容**：
+  - 修复药品列表横幅在部分设备上打印出 SVG 源码文本与 HTML 的缺陷，改用 `parseSvg(getFeatureBottleSvg())` 动态解析与挂载矢量节点；
+  - 优化移动端文字排版与尺寸防御：今日页 AI 助手胶囊与顶栏 AI 助手胶囊增加 `white-space: nowrap; min-width: max-content;` 防折行保护，根治竖排断行问题；
+  - 扩大药品库页面底部内边距至 112px，防止右下角悬浮操作按钮遮挡底部药品卡片内容；
+  - 全面清理残留的紫色/紫蓝色视觉元素：顶栏「AI 助手」胶囊、服药历史状态按钮、药品编辑智能录入卡片、分药向导阴影、扫码页光晕与快捷图标、设置页各面板图标色调、头像选择态与关于小药盒 Logo/磁贴，彻底换用清爽自然的青绿色视觉体系（`--color-primary`, `--color-primary-soft`, `--color-border` 等）；
+  - 版本递增至 1.1.3 / versionCode 61。
+- **质量门禁**：
+  - `npm test`：91 文件 / 572 项 100% PASS；
+  - `npm run typecheck`：0 错误；
+  - `tone_lint.py`：PASS。
 
 ## Release v1.1.2 (versionCode 60, main)
 
