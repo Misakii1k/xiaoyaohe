@@ -107,6 +107,43 @@ Latest implementation: Plan B UI visual upgrade & focus dose workflow
 | 浅色 `--color-text-muted` 在浅灰底 `#edf1ef` 上 4.33 | 单一令牌无法适配所有浅色底 | 若需全覆盖建议 `#64706b`（浅灰底 4.53） |
 | ~~`e2e/fullscreen.spec.ts` 2 条~~ | ~~与 keep-alive 架构不符~~ | ✅ **已修复**（`c911f39`）：断言改为「可见的 `.app-shell` 只有 1 个」而非放宽为允许多个；`page.evaluate` 改为取可见元素，避免命中被保活隐藏的页签 |
 
+### 版本与打包（按 Version And Packaging Policy）
+
+本轮**未做产品构建、未递增版本号**，原因与后续动作：
+
+- B 方案属「大产品改动」，按 `docs/worktrees/README.md` 通常应递增版本并按 `docs/releases/GUIDE.md` 出包；
+- 但用户规则是「**每次向云端推送时**必须将版本号向上加一」，本轮**未向远端推送**，故不在本轮递增；
+- 因此此处按政策要求显式说明：**本轮未做产品构建，是因为尚未到发布/推送环节**，不是遗漏。
+- 后续推送/发布时需一并完成（`docs/releases/GUIDE.md` 完整流程）：
+  1. `npm version X.Y.Z --no-git-tag-version` → 提交；
+  2. `git tag vX.Y.Z` → push；
+  3. `gradlew.bat assembleRelease` → APK 拷入 `release/`；
+  4. `node scripts/gen-version.mjs`（同步 APK 与 Web Bundle 的 size/sha256 到 `version.json`，否则 `tests/versionManifest.test.ts` 会失败）；
+  5. `gh release create vX.Y.Z ...` → `node scripts/check-release-endpoints.mjs`；
+  6. 注意同步 `tests/apkUpdateVerification.test.ts` 中的候选版本 mock，需大于当前 versionCode，以免更新用例被跳过。
+
+### 集成到 main（已预检，待授权执行）
+
+- `main`(`9920bd9`) 是 `feature/ui-plan-b` 的祖先 → **合入为快进，零冲突**（`git merge-tree --write-tree main feature/ui-plan-b` exit 0）。
+- 合入后 `main` 前进 **15 个提交**：6 个历史发布提交（v1.0.20 → v1.1.1）+ 本轮 9 个。
+- 授权后执行（在集成目录）：
+  ```powershell
+  git checkout main
+  git merge --no-ff feature/ui-plan-b
+  npm run typecheck
+  npm test
+  ```
+- ⚠️ 切换分支后请立刻 `git rev-parse HEAD` 与 `git branch -a` 复核（见下「环境注意」第 1 条：本环境会丢失分支引用文件）。
+
+### ⚠️ 与 worktree 协议的两处偏差（下一个人务必先读）
+
+按 `docs/worktrees/README.md`，集成目录应常驻 `main`，且存在 `workspace/claude|gpt|grok|trae-qoder` 四个长期 worktree。实际状态（2026-09-18 核查）：
+
+1. **集成目录不在 `main`**：`git worktree list` 只有一个 worktree，即本目录，且 checkout 在 `feature/ui-plan-b`（非 `main`）。协议映射里 `main` 应在此目录。这是前序 B 方案工作留下的状态，**本轮未擅自改动**（切分支在本环境有丢失引用文件的风险）。
+2. **多 worktree 未建立**：`git branch -a` 仅有 `main`、`workspace/claude`、`feature/ui-plan-b` 与两个远端分支；**`workspace/gpt`、`workspace/grok`、`workspace/trae-qoder` 均不存在**。README 中的路径仍是 `C:\Users\87850\Desktop\...`，而仓库现位于 `D:\Desktop_Archive\...`（目录已迁移，README 路径已过期）。
+
+影响：协议里「在工具分支提交 → 从集成目录 merge 进 main」的流程当前跑不通，实际是本目录直接在特性分支上工作。**若要恢复协议约定，需要单独建立 worktree 并把 `main` 切回集成目录** —— 建议作为独立任务处理，不要混在 feature 工作里做。
+
 ### 环境注意（本仓库在本机沙箱下）
 
 1. **`git commit` 可能丢失分支引用文件**：提交对象会正常创建，但 `.git/refs/heads/<branch>` 被回收，`git log` 报「尚无任何提交」。诊断用 `git cat-file -t <sha>` + `tail .git/logs/HEAD`；修复用 `mkdir -p .git/refs/heads/<dir>` + `printf '<sha>\n' > .git/refs/heads/<branch>` 直接落盘。**`git update-ref` 在此环境返回 0 但不落盘，不可依赖。** 每次 git 写操作后务必 `git rev-parse HEAD` 复核。
