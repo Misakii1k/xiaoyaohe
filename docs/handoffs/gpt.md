@@ -52,6 +52,9 @@ Latest implementation: Plan B UI visual upgrade & focus dose workflow
 | `9176355` | Plan B 主体 | — |
 | `ff3cb71` | `fix(ui): 完善 B 方案移动端视口适配与交互焦点细节` | 10 |
 | `725ea62` | `fix(ui): 修复暗色模式主色填充面文字对比度与选中态丢失` | 13 (+49/−30) |
+| `fac0df1` | `docs(handoff): 记录收尾验收结果、遗留项与本机环境注意事项` | 2 (+86/−2) |
+| `edfeb55` | `docs(handoff): 补充各分支谱系位置与集成前置信息` | 1 (+7) |
+| `cf2517a` | `test(e2e): 新增三视口横向溢出与触控高度守卫用例` | 1 (+104) |
 
 起点备份 Tag：`pre-plan-b` = `7083792`。
 
@@ -83,6 +86,7 @@ Latest implementation: Plan B UI visual upgrade & focus dose workflow
 | `e2e/inventory-workflows` + `e2e/medication-batch` | **12/12 PASS** |
 | 全量 e2e | 44 passed / 8 failed（8 条全为历史遗留 P6，非本次引入） |
 | 320×700 / 390×844 / 430×932 横向溢出 | 6 组场景全 0，无中文竖排折行 |
+| `e2e/viewport-overflow.spec.ts`（新增守卫） | **48/48 PASS**（3 视口 × 4 项 × 4 project） |
 | 暗色 27 处填充面对比度实测 | 全部 ≥4.5；`.day.current` 底色恢复 `rgb(72,168,140)` |
 | 未误伤检查 | 非 current 的 `.day`、非 active 的胶囊仍为深色面 |
 | 浅色零回归 | `.day.current` 5.16 与改动前逐位一致 |
