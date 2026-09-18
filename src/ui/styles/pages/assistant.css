@@ -734,7 +734,8 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   text-underline-offset: 2px;
   text-decoration-thickness: 1px;
 }
-.ai-msg.is-user .ai-markdown a { color: #fff; }
+/* 已移除：`.ai-msg.is-user .ai-markdown a` 为死代码，永不匹配 ——
+   AiAssistant 的 user 消息走纯文本 span，只有 bot 路径会渲染 .ai-markdown。 */
 
 .ai-content-card,
 .ai-navigation-card {
