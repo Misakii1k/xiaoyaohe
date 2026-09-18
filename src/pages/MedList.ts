@@ -74,7 +74,7 @@ export function renderBPackageSvg(m: { id: string; name: string; dosageText?: st
 }
 
 function getFeatureBottleSvg(): string {
-  return `<svg class="feature-art" viewBox="0 0 160 180" aria-hidden="true">
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="feature-art" viewBox="0 0 160 180" aria-hidden="true">
     <defs>
       <linearGradient id="heroBottle" x1="0" x2="1">
         <stop stop-color="#e9ede7"/>
@@ -90,7 +90,7 @@ function getFeatureBottleSvg(): string {
     <g filter="url(#featureShadow)" transform="rotate(-12 78 90)">
       <path d="M46 47q-10 7-10 19v78q0 11 12 11h58q12 0 12-11V66q0-12-10-19" fill="url(#heroBottle)"/>
       <rect x="45" y="22" width="64" height="29" rx="6" fill="#fafbf5"/>
-      <path d="M49 26v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20" stroke="#d7ddd1"/>
+      <path d="M49 26v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20" stroke="#d7ddd1"/>
       <path d="M36 79h82v48H36" fill="#769b7e"/>
       <text x="77" y="98" font-size="8" fill="#edf4e9" text-anchor="middle" letter-spacing="1.5">DAILY CARE</text>
       <text x="77" y="118" font-family="Georgia,serif" font-size="20" fill="white" text-anchor="middle">Vitamin</text>
@@ -188,13 +188,19 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     'aria-label': '查看药品库存',
   });
   const featureText = el('div', { class: 'feature-text' });
+  const featureH3 = el('h3');
+  featureH3.append('照顾好自己，', el('br'), '从一件小事开始。');
+  const featureLink = el('span', { class: 'feature-link' }, [
+    document.createTextNode('查看库存 '),
+    el('span', { text: '↗' }),
+  ]);
   featureText.append(
     el('span', { class: 'eyebrow', text: 'A LITTLE CARE, EVERY DAY' }),
-    el('h3', { html: '照顾好自己，<br>从一件小事开始。' }),
+    featureH3,
     el('p', { text: '检查药箱，让安心有备而来。' }),
-    el('span', { class: 'feature-link', html: '查看库存 <span>↗</span>' })
+    featureLink
   );
-  const featureSvgWrap = el('div', { class: 'feature-art-wrap', html: getFeatureBottleSvg() });
+  const featureSvgWrap = el('div', { class: 'feature-art-wrap' }, [parseSvg(getFeatureBottleSvg())]);
   featureCard.append(featureText, featureSvgWrap);
   featureCard.onclick = () => navigate('/meds/inventory');
   content.append(featureCard);
