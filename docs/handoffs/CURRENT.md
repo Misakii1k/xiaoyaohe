@@ -8,6 +8,13 @@ Latest integration commit: `release: v1.1.1 - 设置页微卡片化视觉分割�
 ## Plan B「清爽秩序」收尾与验收 (feature/ui-plan-b，待集成)
 
 - **分支状态**：`feature/ui-plan-b`（自 `workspace/claude` 分离，起点备份 Tag `pre-plan-b` = `7083792`）。**尚未合并回 `main`**，待人工确认后集成。
+- **⚠️ 集成前置信息（各分支当前位置）**：
+  | 分支 | HEAD | 版本 |
+  |---|---|---|
+  | `main` | `9920bd9` | v1.0.19 |
+  | `workspace/claude` | `7083792` | v1.1.1 |
+  | `feature/ui-plan-b` | `fac0df1` | v1.1.1 + Plan B |
+  `main` 当前落后 `workspace/claude` **6 个提交**（v1.0.20 → v1.1.1 尚未集成）。因此把本分支合并进 `main` 会**一并带入这 6 个发布提交**，不只是 Plan B 改动。若只想集成 Plan B，应先确认 `main` 是否需要先同步到 v1.1.1。
 - **提交链**：`9176355`（Plan B 主体）→ `ff3cb71`（移动端视口适配与交互焦点细节）→ `725ea62`（暗色对比度与选中态修复）。
 - **核心内容**：
   - 视觉令牌体系（冰白 `#f6f8f7` / 青绿 `#236a55` / 柔绿 `#e3ede6` / 石墨 `#202e2b` / 细线 `#e1e8e4`），清除高饱和荧光弥散渐变；
