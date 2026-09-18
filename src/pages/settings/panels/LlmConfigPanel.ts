@@ -75,17 +75,42 @@ export function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) =
 
   // 网页端没有系统安全存储可用，密钥只能明文留在浏览器里。如实告知 + 给一个真正有效的选项。
   if (!isNativeSecretStore()) {
-    body.append(
-      el('div', { class: 'banner warn mt-3' }, [
+    const webSecretCard = el('div', { class: 'settings-subcard' });
+    const secHead = el('div', { class: 'settings-subcard-header' });
+    secHead.append(
+      el('div', { class: 'settings-subcard-title', text: '网页端密钥存储方式' }),
+      el('span', {
+        class: 'settings-subcard-badge',
+        style: 'background: rgba(245, 158, 11, 0.15); color: #b45309;',
+        text: '浏览器存储',
+      }),
+    );
+    webSecretCard.append(
+      secHead,
+      el('div', { class: 'banner warn' }, [
         el('span', { text: WEB_SECRET_STORAGE_NOTICE }),
       ]),
+      buildWebSecretPersistenceRow(),
     );
-    body.append(buildWebSecretPersistenceRow());
+    body.append(webSecretCard);
   }
 
-  const listWrap = el('div', { class: 'llm-provider-list mt-3' });
-  const failoverRow = el('div', { class: 'settings-toggle-row mt-3' });
-  body.append(listWrap, failoverRow);
+  const providerCard = el('div', { class: 'settings-subcard' });
+  const cardHead = el('div', { class: 'settings-subcard-header' });
+  const titleWrap = el('div', { class: 'settings-subcard-title-wrap' });
+  titleWrap.append(el('div', { class: 'settings-subcard-title', text: 'AI 服务商管理' }));
+  const countBadge = el('span', {
+    class: 'settings-subcard-badge',
+    style: 'background: var(--tone-info-bg, #eaeafb); color: var(--tone-info-fg, #4348a8);',
+    text: '智能容灾调度',
+  });
+  cardHead.append(titleWrap, countBadge);
+  providerCard.append(cardHead);
+
+  const listWrap = el('div', { class: 'llm-provider-list' });
+  const failoverRow = el('div', { class: 'settings-toggle-row' });
+  providerCard.append(listWrap, failoverRow);
+  body.append(providerCard);
 
   const persistAndRender = async (
     providers: LlmProvider[],
@@ -347,13 +372,25 @@ export function renderAiConsentPanel(): HTMLElement {
     iconTone: 'gold',
     chip: aiConsentChip(),
     renderBody: (body) => {
-      body.append(
+      const card = el('div', { class: 'settings-subcard' });
+      const head = el('div', { class: 'settings-subcard-header' });
+      head.append(
+        el('div', { class: 'settings-subcard-title', text: '已授权的服务商列表' }),
+        el('span', {
+          class: 'settings-subcard-badge',
+          style: 'background: rgba(245, 158, 11, 0.15); color: #b45309;',
+          text: '隐私保护',
+        }),
+      );
+      card.append(
+        head,
         el('div', {
-          class: 'muted',
+          class: 'muted settings-subcard-desc',
           text: '药盒、药单和用药信息会按“健康”类别授权；小助手对话和联网搜索按“助手”类别授权。同一服务商同一类别只会首次询问。',
         }),
         renderAiConsentControls(() => setChip(panelElement, aiConsentChip())),
       );
+      body.append(card);
     },
   });
   return panelElement;

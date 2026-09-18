@@ -134,6 +134,7 @@ public final class MedicationAlarmPlugin extends Plugin {
         String body = call.getString("body", "这是一条全屏/锁屏测试提醒");
         boolean scanVerify = call.getBoolean("scanVerify", false);
         String scanToken = call.getString("scanToken", "");
+        boolean slideUnlock = call.getBoolean("slideUnlock", true);
         try {
             JSONObject payload = new JSONObject();
             int id = Math.abs(("medbox-test-" + mode).hashCode()) | 1;
@@ -144,10 +145,14 @@ public final class MedicationAlarmPlugin extends Plugin {
             payload.put("tag", "medbox-test");
             payload.put("key", "test");
             payload.put("mode", mode);
+            payload.put("slideUnlock", slideUnlock);
+            payload.put("testAlarm", true);
             JSONObject data = new JSONObject();
             data.put("reminderMode", mode);
             data.put("medicationName", "测试药");
             data.put("medicationDose", "1 片");
+            data.put("slideUnlock", slideUnlock);
+            data.put("testAlarm", true);
             if (scanVerify && scanToken != null && !scanToken.isEmpty()) {
                 data.put("scanVerify", true);
                 data.put("scanToken", scanToken);
@@ -190,6 +195,8 @@ public final class MedicationAlarmPlugin extends Plugin {
             JSONObject payload = MedicationAlarmContract.buildSnoozePayload(
                 data, tag, System.currentTimeMillis() + Math.max(1, minutes) * 60_000L
             );
+            // 贪睡成为该组唯一下次响铃：先取消同组剩余递进闹钟，避免双轨重复弹出
+            if (!tag.isEmpty()) MedicationAlarmContract.cancelTag(getContext(), tag);
             MedicationAlarmContract.schedule(getContext(), payload);
             call.resolve();
         } catch (JSONException error) {

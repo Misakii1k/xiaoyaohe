@@ -33,6 +33,7 @@ import { navigate } from '../router';
 import { el, emptyState, icon, renderPage, toast, topbarAiPill } from '../ui/components';
 import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/BottomSheet';
 import { createButton } from '../ui/primitives/Button';
+import { createActionDock } from '../ui/primitives/ActionDock';
 import { createIconButton } from '../ui/primitives/IconButton';
 import { createDateControl } from '../ui/primitives/Pickers';
 import {
@@ -325,7 +326,8 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
     emptyCard.hidden = visibleCount > 0;
   }
 
-  renderPage({ root, title: '库存', activeTab: 'inventory', topRight, content });
+  const dock = createActionDock([fabAdd]);
+  renderPage({ root, title: '库存', activeTab: 'inventory', topRight, content, actionDock: dock });
 }
 
 function createOverviewCol(val: string, label: string, tone: string): HTMLElement {

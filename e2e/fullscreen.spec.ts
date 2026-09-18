@@ -19,15 +19,26 @@ test.describe('fullscreen visual matrix', () => {
       await page.goto(route.path);
       const heading = page.getByRole('heading', { level: 1, name: route.heading });
       await expect(heading).toBeVisible();
-      await expect(page.locator('.app-shell')).toHaveCount(1);
-      await expect(page.locator('.app-main')).toBeVisible();
+      // 保活页签（tabPool PRIMARY_TAB_ROUTES）会让每个缓存页签各持有一个 .app-shell，
+      // 非激活页签带 hidden + display:none。这里断言「可见的 shell 只有一个」，
+      // 既保留原用例意图，又兼容保活架构。
+      await expect(page.locator('.app-shell:visible')).toHaveCount(1);
+      await expect(page.locator('.app-main:visible')).toBeVisible();
 
-      const layout = await page.evaluate(() => ({
-        bodyWidth: document.body.scrollWidth,
-        viewportWidth: window.innerWidth,
-        main: document.querySelector('.app-main')?.getBoundingClientRect(),
-        navigation: document.querySelector('.app-navigation')?.getBoundingClientRect(),
-      }));
+      const layout = await page.evaluate(() => {
+        // 取可见的那个，避免 querySelector 命中被保活隐藏的页签
+        const visible = (sel: string): HTMLElement | undefined =>
+          Array.from(document.querySelectorAll<HTMLElement>(sel)).find((el) => {
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && getComputedStyle(el).display !== 'none';
+          });
+        return {
+          bodyWidth: document.body.scrollWidth,
+          viewportWidth: window.innerWidth,
+          main: visible('.app-main')?.getBoundingClientRect(),
+          navigation: visible('.app-navigation')?.getBoundingClientRect(),
+        };
+      });
       expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewportWidth);
       expect(layout.main).toBeTruthy();
       expect(layout.navigation).toBeTruthy();
@@ -49,7 +60,8 @@ test.describe('fullscreen visual matrix', () => {
     await seedVisualFixtures(page);
     await page.goto('/#/meds');
     await expect(page.getByRole('heading', { level: 1, name: '药品' })).toBeVisible();
-    await page.locator('a[href="#/today"]').click();
+    // 保活架构下存在多个 tabbar，取可见的那个
+    await page.locator('a[href="#/today"]:visible').first().click();
     await expect(page.getByRole('heading', { level: 1, name: '今天' })).toBeFocused();
   });
 

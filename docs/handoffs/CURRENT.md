@@ -1,9 +1,75 @@
 # Current Integration State
 
-Updated: 2026-09-13
+Updated: 2026-09-18
 Integration branch: `main`
-Product version: `1.0.19` (versionCode 54)
-Latest integration commit: `release: integrate v1.0.19 from workspace/claude`
+Product version: `1.1.1` (versionCode 59)
+Latest integration commit: `release: v1.1.1 - 设置页微卡片化视觉分割与层级结构优化`
+
+## Plan B「清爽秩序」收尾与验收 (feature/ui-plan-b，待集成)
+
+- **分支状态**：`feature/ui-plan-b`（自 `workspace/claude` 分离，起点备份 Tag `pre-plan-b` = `7083792`）。**尚未合并回 `main`**，待人工确认后集成。
+- **⚠️ 集成前置信息（各分支当前位置）**：
+  | 分支 | HEAD | 版本 |
+  |---|---|---|
+  | `main` | `9920bd9` | v1.0.19 |
+  | `workspace/claude` | `7083792` | v1.1.1 |
+  | `feature/ui-plan-b` | `fac0df1` | v1.1.1 + Plan B |
+  `main` 当前落后 `workspace/claude` **6 个提交**（v1.0.20 → v1.1.1 尚未集成）。因此把本分支合并进 `main` 会**一并带入这 6 个发布提交**，不只是 Plan B 改动。若只想集成 Plan B，应先确认 `main` 是否需要先同步到 v1.1.1。
+- **提交链**：`9176355`（Plan B 主体）→ `ff3cb71`（移动端视口适配与交互焦点细节）→ `725ea62`（暗色对比度与选中态修复）。
+- **核心内容**：
+  - 视觉令牌体系（冰白 `#f6f8f7` / 青绿 `#236a55` / 柔绿 `#e3ede6` / 石墨 `#202e2b` / 细线 `#e1e8e4`），清除高饱和荧光弥散渐变；
+  - 药品列表页双列卡片网格，药盒包装为第一视觉中心，三级包装回退（实拍 > 3D 拟物 > 矢量纸盒）；
+  - 今日用药页问候语 + Georgia 衬线日期 + 一周节奏条 + 进度环 + 「下一次用药」聚焦大卡片；
+  - 暗色模式：新增 `--color-on-primary` 令牌（浅 `#ffffff` / 暗 `#0d1a16`），27 处填充面文字改令牌；追加 (0,3,0) 规则恢复暗色下「今日」格与激活筛选胶囊的主色填充（此前被同特异性的暗色块刷成深色面，选中态完全不可见）。
+- **质量门禁**：`tsc --noEmit` 0 错误；91 文件 / 572 项测试 100% PASS；`build:web` 618 modules 通过；`e2e/inventory-workflows` + `e2e/medication-batch` 12/12 PASS；320×700 / 390×844 / 430×932 三视口零横向溢出。
+- **红线**：未触碰 IndexedDB schema、提醒调度、原生通知通道、同步协议；未向用户桌面复制任何构建产物；动效降级 `prefers-reduced-motion` 保持 13 处覆盖。
+- **集成前注意**：
+  1. 本轮修改了 `e2e/inventory-workflows.spec.ts` 的过期断言（该用例自 `4beac61` 起已红 7 天，非本次引入）；
+  2. 遗留 8 项（含 `.ai-markdown a` 死代码、5 类次级控件 <44px、`fullscreen.spec.ts` 2 条历史遗留失败），详见 `docs/handoffs/gpt.md`；
+  3. 本机沙箱下 `git commit` 会丢失分支引用文件，提交后需用 `git rev-parse HEAD` 复核（修复方式见 `gpt.md` 环境注意第 1 条）。
+
+## Settings Visual Hierarchy & Subcard Modularization (v1.1.1, versionCode 59, workspace/claude)
+
+- **核心需求与重构**：
+  - **设置子板块微卡片独立岛化 (`.settings-subcard`)**：在折叠面板展开后的浅灰底色（`var(--color-surface-muted, #f8fafc)`）上，各个业务子功能均封装为独立的纯白微卡片（`var(--color-surface, #ffffff)`），搭配 `14px` 圆角、细腻边框与轻微投影，彻底告别“设置内容灰蒙蒙挤在一起”的视觉混杂感；
+  - **内置卡片标题与胶囊状态徽章**：每个微卡片顶部配备加粗标题（13.5px）与胶囊徽章（如「已开启」、「多模型调度」、「隐私保护」等），子板块功能边界与当前状态一目了然；
+  - **展开面板标题底部分割线**：面板展开时（`.panel.open > .panel-head`），标题栏底部自动展示清晰细致的分割线（`border-bottom: 1px solid var(--color-border)`），将常驻白色标题与下方浅灰卡片区域明确分隔；
+  - **业务面板全面微卡片化**：
+    - `ReminderPanel`：拆分为「基础提醒与权限」、「提醒通道与全屏测试」、「系统权限建议」、「滑动解锁防手抖」、「扫码解除强制提醒」5 大独立微卡片；
+    - `AppearancePanel`：拆分为「配色方案」与「界面动效与材质」2 个微卡片；
+    - `BackupPanel`：将原本孤立散落的统计文字与导入/导出操作收纳为「数据归档与备份」微卡片；
+    - `LlmConfigPanel`：拆分为「AI 服务商管理」（列表+故障转移切换）、「网页端密钥存储方式」（网页端专用）以及「已授权的服务商列表」微卡片；
+    - `imageGenSettingsPanel`：开关行与接口配置表单整合进「药盒照片增强配置」微卡片；
+    - `lanSyncSettingsPanel`：多设备覆盖、自动同步、静默处理三大开关卡片升级为纯白微卡片，与设备列表、额外同步卡片保持一致；
+    - `DiagnosticsPanel`：脱敏日志框与操作按钮内聚进「后台失败日志摘要」微卡片。
+- **质量门禁**：全量 91 个测试套件 572 项测试 100% PASS，`npm run typecheck` 0 错误，`tone_lint.py` 严格校验通过。
+
+## Medication Alarm Repeat Suppression & Bottom Slide Unlock (v1.1.0, versionCode 58, workspace/claude)
+
+- **核心需求与修复**：
+  - **全屏提醒滑动解锁滑块居底**：将滑动解锁条固定渲染在全屏提醒容器底部（脱离纵向滚动内容区），彻底解决内容较短时滑块悬在屏幕中部的问题，符合单手拇指操作习惯；
+  - **服药确认后提醒重复弹出根治**：彻底解决确认服药或扫码验证后闹钟仍会重复弹出的问题。在原生层（`MedicationAlarmContract.java` 与 `MedicationAlarmPlugin.java`）判定当单药或整组服药完成（含扫码自动服药）时，立即取消同组剩余递进闹钟并清除 SharedPreferences 中的残留标识，杜绝后续多轨响铃及系统重启/时区变更时的过点补发；
+  - **稍后提醒机制优化**：在触发稍后提醒（贪睡）时，优先清空同组递进闹钟，使稍后提醒成为唯一下次响铃，避免多轨闹钟互相竞争；
+  - **原生底座门槛提升**：将最低原生 APK versionCode 提升至 58，确保旧版本用户必须通过完整 APK 安装更新以获得底层原生闹钟修复。
+- **质量门禁**：全量测试套件 100% 通过，`tone_lint.py` 严格校验通过，`check-release-endpoints.mjs` 4/4 通过。
+
+## Full-Screen Alarm Slide Unlock Fix & Dual-Channel Update Policy (v1.0.22, versionCode 57, workspace/claude)
+
+- **核心需求与修复**：
+  - **排版崩溃修复**：彻底重构「全屏提醒滑动解锁」设置卡片为标准垂直流布局，消除窄屏下文字单字垂直挤压错乱；
+  - **滑动解锁生效加固**：修复 `MedicationAlarmActivity` 中多次触发测试提醒时因相同 ID 导致的状态未复位问题；
+  - **更新通道精准分流**：根据增量更新能否落实进行按钮展示控制：当更新内容无法通过增量更新落实（底座版本过低或原生特性依赖）时，界面仅提供全量更新按钮；反之（增量可落实）则同时提供「一键秒级更新」与「下载完整包」双按钮；
+  - **底座版本门槛提升**：将原生底座最低门槛 `MIN_NATIVE_BUNDLE_VERSION_CODE` 提升至 56，彻底防止旧底座走纯增量更新导致全屏滑动解锁未生效。
+- **质量门禁**：全量 92 个测试套件全部通过，TypeScript 0 错误通过，文风经 `tone_lint.py` 严格校验通过。
+
+## Full-Screen Alarm Slide to Unlock & Optional Scan Verification (v1.0.20, versionCode 55, workspace/claude)
+
+- **核心需求与修复**：
+  - 修复全屏提醒误触发默认扫码解锁问题，改回按需开启；仅在「设置 - 系统通知」开启扫码解锁时要求扫描药品条形码；
+  - 未开启扫码解锁时，全屏提醒持续响铃并在底部提供「向右滑动解锁」滑块；滑动到位后解除锁定并停止响铃，平滑展示「已服用」和「稍后提醒」操作区，防止误触直接关闭；
+  - 未滑动解锁前，按系统返回手势触发震动并提示请向右滑动解锁，持续响铃至 10 分钟无人解锁安全超时自动转为稍后提醒；
+  - 设置面板中「测试全屏提醒」传入非扫码提醒测试，「试验扫码解锁」保持强制扫码验证测试。
+- **质量门禁**：全量 89 个测试套件 567 项测试 100% 通过，`npm run typecheck` 零报错，Android 原生编译顺利完成。
 
 ## Assistant Preference Picker Restyle (v1.0.19, versionCode 54, workspace/claude)
 

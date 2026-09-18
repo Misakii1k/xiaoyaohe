@@ -44,7 +44,7 @@
   border: 0;
   border-radius: var(--radius-lg);
   background: var(--color-primary-gradient);
-  color: #ffffff;
+  color: var(--color-on-primary);
   box-shadow: 0 6px 16px rgba(99, 102, 241, 0.28);
   font-size: var(--fs-body);
   font-weight: 600;
@@ -93,7 +93,7 @@
 .ui-button { padding-inline: var(--space-4); }
 .ui-button-primary {
   background: var(--color-primary-gradient);
-  color: #fff;
+  color: var(--color-on-primary);
   box-shadow: 0 4px 14px rgba(99, 102, 241, 0.25);
 }
 .ui-button-primary:hover:not([disabled]) {
@@ -355,7 +355,7 @@
   cursor: pointer;
 }
 .ui-segmented-control button:active { transform: scale(0.96); }
-.ui-segmented-control button.is-selected { background: var(--color-primary); color: #fff; font-weight: 600; box-shadow: var(--shadow-sm); }
+.ui-segmented-control button.is-selected { background: var(--color-primary); color: var(--color-on-primary); font-weight: 600; box-shadow: var(--shadow-sm); }
 .status-badge { display: inline-flex; align-items: center; min-block-size: 24px; padding-inline: 10px; border-radius: var(--radius-full); font-size: var(--fs-caption); font-weight: 600; }
 .status-badge-success { background: var(--tone-ok-bg); color: var(--tone-ok-fg); }
 .status-badge-warning { background: var(--tone-warn-bg); color: var(--tone-warn-fg); }
@@ -376,7 +376,7 @@
 .chip.on {
   background: var(--color-primary);
   border-color: transparent;
-  color: #fff;
+  color: var(--color-on-primary);
   box-shadow: none;
   animation: none;
 }
@@ -495,7 +495,7 @@ input[type='datetime-local']:not(.ui-picker-native) {
 
 .ui-badge-default {
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-on-primary);
 }
 
 .ui-badge-secondary {
@@ -652,7 +652,7 @@ input[type='datetime-local']:not(.ui-picker-native) {
 
 .ui-filter-chip.is-active {
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-on-primary);
   border-color: var(--color-primary);
   box-shadow: var(--shadow-sm);
   font-weight: 600;
@@ -677,9 +677,11 @@ input[type='datetime-local']:not(.ui-picker-native) {
   opacity: 0.55;
 }
 
+/* 计数徽标落在主色胶囊上：叠加层与文字统一走 --color-on-primary，
+   浅色为白、暗色为深墨绿，两种主题下都达标（浅 4.91 / 暗 5.05）。 */
 .ui-filter-chip.is-active .chip-count {
-  background: rgba(255, 255, 255, 0.25);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--color-on-primary) 12%, transparent);
+  color: var(--color-on-primary);
 }
 
 /* Alert Box */
@@ -1134,6 +1136,9 @@ input[type='datetime-local']:not(.ui-picker-native) {
   padding: 2px 8px;
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: max-content;
 }
 
 .take-med-footer {
@@ -1145,8 +1150,8 @@ input[type='datetime-local']:not(.ui-picker-native) {
   min-block-size: 54px;
   border-radius: var(--radius-full);
   border: none;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  color: #ffffff;
+  background: var(--color-primary, #236a55);
+  color: var(--color-on-primary);
   font-size: var(--fs-title3);
   font-weight: 700;
   cursor: pointer;
@@ -1154,13 +1159,17 @@ input[type='datetime-local']:not(.ui-picker-native) {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: 0 10px 24px -4px rgba(79, 70, 229, 0.4);
-  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s ease;
+  box-shadow: 0 4px 16px rgba(35, 106, 85, 0.32);
+  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.take-med-primary-btn:hover {
+  background: var(--color-primary-pressed, #175940);
 }
 
 .take-med-primary-btn:active {
   transform: scale(0.96);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  box-shadow: 0 2px 8px rgba(35, 106, 85, 0.25);
 }
 
 [data-theme='dark'] .take-med-sheet {

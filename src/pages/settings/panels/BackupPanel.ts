@@ -117,13 +117,26 @@ export function renderBackupCard(
     chip: { text: countSummary, tone: 'ok' },
     renderBody: (body) => {
       body.classList.add('settings-backup-panel-body');
+
+      const card = el('div', { class: 'settings-subcard' });
+      const cardHead = el('div', { class: 'settings-subcard-header' });
+      const titleWrap = el('div', { class: 'settings-subcard-title-wrap' });
+      titleWrap.append(el('div', { class: 'settings-subcard-title', text: '数据归档与备份' }));
+      const badge = el('span', {
+        class: 'settings-subcard-badge',
+        style: 'background: rgba(20, 184, 166, 0.12); color: var(--color-primary);',
+        text: countSummary,
+      });
+      cardHead.append(titleWrap, badge);
+      card.append(cardHead);
+
       if (counts) {
-        body.append(el('div', {
+        card.append(el('div', {
           class: 'muted settings-backup-summary',
           text: `本机现有 ${counts.meds} 种药品、${counts.rules} 条提醒规则、${counts.logs} 条服药记录。`,
         }));
       }
-      body.append(el('div', {
+      card.append(el('div', {
         class: 'muted settings-backup-note',
         text: '备份会完整包含以上数据。导入时按 ID 与更新时间合并，不会清空本地数据。',
       }));
@@ -153,9 +166,10 @@ export function renderBackupCard(
         await importBackupFileForRoute(root, file, signal, undefined, onRerender);
       };
 
-      const row = el('div', { class: 'btn-row backup-actions', style: 'margin-block-start: var(--space-3);' });
+      const row = el('div', { class: 'btn-row backup-actions', style: 'margin-block-start: var(--space-2);' });
       row.append(exportBtn, importBtn);
-      body.append(row, fileInput);
+      card.append(row);
+      body.append(card, fileInput);
     },
   });
 

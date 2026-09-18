@@ -80,7 +80,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     });
 
     // 1. 开关行
-    const toggleRow = el('div', { class: 'settings-toggle-row mt-3' });
+    const toggleRow = el('div', { class: 'settings-toggle-row' });
     const toggleCopy = el('div', { class: 'settings-toggle-copy' });
     toggleCopy.append(
       el('div', { class: 'settings-toggle-title', text: '启用药盒照片增强' }),
@@ -98,11 +98,26 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     toggleRow.append(toggleCopy, toggleSwitch);
 
     // 2. 表单输入区
-    const formWrap = el('div', { class: 'image-gen-form mt-3' });
+    const formWrap = el('div', { class: 'image-gen-form' });
     if (!current.enabled) {
       formWrap.style.opacity = '0.5';
       formWrap.style.pointerEvents = 'none';
     }
+
+    const card = el('div', { class: 'settings-subcard' });
+    const cardHead = el('div', { class: 'settings-subcard-header' });
+    const titleWrap = el('div', { class: 'settings-subcard-title-wrap' });
+    titleWrap.append(el('div', { class: 'settings-subcard-title', text: '药盒照片增强配置' }));
+    const cardBadge = el('span', {
+      class: 'settings-subcard-badge',
+      style: current.enabled
+        ? 'background: rgba(244, 63, 94, 0.12); color: #e11d48;'
+        : 'background: rgba(0, 0, 0, 0.05); color: var(--color-text-muted);',
+      text: current.enabled ? '已启用' : '未开启',
+    });
+    cardHead.append(titleWrap, cardBadge);
+    card.append(cardHead, toggleRow, formWrap);
+    body.append(card);
 
     toggleSwitch.onchange = async () => {
       const next = { ...getImageGenConfig(), enabled: toggleSwitch.checked };

@@ -11,7 +11,6 @@ import {
   renderPage,
   icon,
   toast,
-  banner,
   confirmDialog,
   topbarAiPill,
   topbarPill,
@@ -30,23 +29,81 @@ import { navigate } from '../router';
 import { isLowStock } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
-import {
-  purpleBottleImg,
-  clockPillImg,
-  aidBagImg,
-  medBottle3dImg,
-  medRecentMortarImg,
-  medAidKit3dImg,
-  getMedBottle3dSvg,
-  getClockPill3dSvg,
-  getAidBag3dSvg,
-  render3dMedia,
-} from '../ui/assets3d';
+import { parseSvg } from '../ui/assets3d';
 import { matchPinyinOrText } from '../utils/pinyin';
 import { openBottomSheet } from '../ui/primitives/BottomSheet';
 import { createActionDock } from '../ui/primitives/ActionDock';
 
-let activeCategory: 'all' | 'rx' | 'health' | 'external' = 'all';
+function getDeterministicTone(idOrName: string): string {
+  const tones = ['#74947a', '#6b878f', '#aa9470', '#8f8487', '#5c7c88', '#82728f', '#6c8b74', '#79808a'];
+  let hash = 0;
+  for (let i = 0; i < idOrName.length; i++) hash = (hash * 31 + idOrName.charCodeAt(i)) & 0xffffffff;
+  return tones[Math.abs(hash) % tones.length] || '#74947a';
+}
+
+function escapeHtml(value: string): string {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
+}
+
+export function renderBPackageSvg(m: { id: string; name: string; dosageText?: string; amountPerDose?: string }): string {
+  const tone = getDeterministicTone(m.id || m.name || 'med');
+  const spec = [m.dosageText, m.amountPerDose].filter(Boolean).join(' · ');
+  const safeName = escapeHtml(m.name || '药品');
+  const safeSpec = escapeHtml(spec || '');
+  const idAttr = escapeHtml(m.id || 'pack');
+  return `<svg viewBox="0 0 170 130" aria-hidden="true" class="b-package-svg">
+    <defs>
+      <linearGradient id="paper_${idAttr}" x1="0" y1="0" x2="1" y2="1">
+        <stop stop-color="#fffef9"/>
+        <stop offset="1" stop-color="#e9ece6"/>
+      </linearGradient>
+    </defs>
+    <ellipse cx="86" cy="116" rx="54" ry="6" fill="#354d34" opacity=".08"/>
+    <g transform="rotate(-9 85 68)">
+      <path d="M39 32 52 23h87l-12 9Z" fill="#fcfdf9"/>
+      <path d="m127 32 12-9v77l-12 11Z" fill="#d5ddd4"/>
+      <path d="M39 32h88v79H39Z" fill="url(#paper_${idAttr})" stroke="#dce2d9" stroke-width=".5"/>
+      <path d="M39 69h88v26H39Z" fill="${tone}"/>
+      <path d="m127 69 12-10v26l-12 10Z" fill="${tone}" opacity=".85"/>
+      <text x="48" y="48" font-size="5" fill="#79917d" letter-spacing="1.5">XIAOYAOHE</text>
+      <text x="48" y="62" font-size="8.5" font-weight="600" fill="#3b4c40">${safeName.length > 7 ? safeName.slice(0, 6) + '…' : safeName}</text>
+      <text x="48" y="84" font-size="7" font-family="Georgia,serif" fill="#fff" letter-spacing=".7">MEDBOX</text>
+      <text x="48" y="104" font-size="5" fill="#8b9688">${safeSpec.length > 12 ? safeSpec.slice(0, 11) + '…' : safeSpec}</text>
+    </g>
+  </svg>`;
+}
+
+function getFeatureBottleSvg(): string {
+  return `<svg class="feature-art" viewBox="0 0 160 180" aria-hidden="true">
+    <defs>
+      <linearGradient id="heroBottle" x1="0" x2="1">
+        <stop stop-color="#e9ede7"/>
+        <stop offset=".3" stop-color="#fff"/>
+        <stop offset=".74" stop-color="#f5f6f0"/>
+        <stop offset="1" stop-color="#d4dcd2"/>
+      </linearGradient>
+      <filter id="featureShadow">
+        <feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#345641" flood-opacity=".15"/>
+      </filter>
+    </defs>
+    <ellipse cx="84" cy="160" rx="48" ry="7" fill="#acc0ae" opacity=".25"/>
+    <g filter="url(#featureShadow)" transform="rotate(-12 78 90)">
+      <path d="M46 47q-10 7-10 19v78q0 11 12 11h58q12 0 12-11V66q0-12-10-19" fill="url(#heroBottle)"/>
+      <rect x="45" y="22" width="64" height="29" rx="6" fill="#fafbf5"/>
+      <path d="M49 26v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20" stroke="#d7ddd1"/>
+      <path d="M36 79h82v48H36" fill="#769b7e"/>
+      <text x="77" y="98" font-size="8" fill="#edf4e9" text-anchor="middle" letter-spacing="1.5">DAILY CARE</text>
+      <text x="77" y="118" font-family="Georgia,serif" font-size="20" fill="white" text-anchor="middle">Vitamin</text>
+      <text x="77" y="141" font-size="6" fill="#849381" text-anchor="middle" letter-spacing="2">60 TABLETS</text>
+    </g>
+    <g transform="rotate(28 123 140)">
+      <rect x="117" y="125" width="14" height="29" rx="7" fill="#fafaf2"/>
+      <path d="M117 140h14v7a7 7 0 0 1-14 0Z" fill="#bbd0b7"/>
+    </g>
+  </svg>`;
+}
+
+let activeCategory: 'all' | 'daily' | 'reserve' = 'all';
 let searchQuery = '';
 
 const medListCleanupByRoot = new WeakMap<HTMLElement, () => void>();
@@ -61,32 +118,28 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
 
   const content = el('div', { class: 'page medication-list-page' });
 
-  // 1. 顶部 3 个 3D 指标卡片
-  const statGrid = el('div', { class: 'med-stat-grid' });
-  function updateStatCards() {
-    const totalCount = meds.length;
-    const activeCount = meds.filter((m) => m.slots.length > 0).length || totalCount;
-    const lowStockCount = meds.filter((m) => isLowStock(m)).length;
-    statGrid.replaceChildren(
-      createStatCard('blue', '全部药品', `${totalCount} 种`, medBottle3dImg || purpleBottleImg, getMedBottle3dSvg),
-      createStatCard('green', '近期使用', `${activeCount} 种`, medRecentMortarImg || clockPillImg, getClockPill3dSvg),
-      createStatCard('pink', '需补充', `${lowStockCount} 种`, medAidKit3dImg || aidBagImg, getAidBag3dSvg),
-    );
-  }
-  updateStatCards();
-  content.append(statGrid);
+  // 1. 顶部标题栏
+  const header = el('header', { class: 'med-header header' });
+  const headerText = el('div');
+  headerText.append(
+    el('h2', { class: 'med-header-title', text: '我的药品' }),
+    el('p', { class: 'med-header-sub', text: '每一份照顾，都井井有条。' })
+  );
+  header.append(headerText);
+  content.append(header);
 
-  // 2. 搜索框与漏斗
-  const searchRow = el('div', { class: 'med-search-row' });
-  const inputWrap = el('div', { class: 'med-search-input-wrap' });
+  // 2. 搜索框
+  const searchRow = el('label', { class: 'search med-search-row' });
   const searchIcon = el('div', { class: 'med-search-icon' });
   searchIcon.append(icon('search'));
 
   const input = el('input', {
+    id: 'search',
     class: 'med-search-input',
     type: 'search',
     placeholder: '搜索药品名称、规格或备注',
     value: searchQuery,
+    'aria-label': '搜索药品名称',
   }) as HTMLInputElement;
 
   input.oninput = () => {
@@ -94,48 +147,67 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     renderFilteredCards();
   };
 
-  inputWrap.append(searchIcon, input);
-
-  const filterBtn = el('button', {
-    class: 'med-filter-btn',
-    type: 'button',
-    'aria-label': '筛选',
-  } as any);
-  filterBtn.append(icon('filter'));
-  filterBtn.onclick = () => {
-    toast('已按分类与库存状态过滤');
-  };
-
-  searchRow.append(inputWrap, filterBtn);
+  searchRow.append(searchIcon, input);
   content.append(searchRow);
 
-  // 3. 类别 Tab
-  const categoryTabs = el('div', { class: 'med-category-tabs' });
+  // 3. 类别筛选 Tab（全部药品 / 日常服用 / 家庭常备）
+  const filtersContainer = el('div', { class: 'filters med-category-tabs', role: 'tablist', 'aria-label': '药品分类' });
   const categories: Array<{ key: typeof activeCategory; label: string }> = [
-    { key: 'all', label: '全部' },
-    { key: 'rx', label: '处方药' },
-    { key: 'health', label: '保健品' },
-    { key: 'external', label: '外用药' },
+    { key: 'all', label: '全部药品' },
+    { key: 'daily', label: '日常服用' },
+    { key: 'reserve', label: '家庭常备' },
   ];
 
   categories.forEach((cat) => {
-    const pill = el('button', {
-      class: `med-category-pill${activeCategory === cat.key ? ' active' : ''}`,
+    const isAct = activeCategory === cat.key;
+    const filterBtn = el('button', {
+      class: `filter med-category-pill${isAct ? ' active' : ''}`,
       type: 'button',
+      'aria-pressed': isAct ? 'true' : 'false',
       text: cat.label,
     });
-    pill.onclick = () => {
+    filterBtn.onclick = () => {
       activeCategory = cat.key;
-      categoryTabs.querySelectorAll('.med-category-pill').forEach((p) => p.classList.remove('active'));
-      pill.classList.add('active');
+      filtersContainer.querySelectorAll('.filter').forEach((f) => {
+        f.classList.remove('active');
+        f.setAttribute('aria-pressed', 'false');
+      });
+      filterBtn.classList.add('active');
+      filterBtn.setAttribute('aria-pressed', 'true');
       renderFilteredCards();
     };
-    categoryTabs.append(pill);
+    filtersContainer.append(filterBtn);
   });
-  content.append(categoryTabs);
+  content.append(filtersContainer);
 
-  // 4. 药品列表容器
-  const listContainer = el('div', { class: 'med-card-list' });
+  // 4. Feature 卡片 (查看库存)
+  const featureCard = el('button', {
+    id: 'stockFeature',
+    class: 'feature med-feature-card',
+    type: 'button',
+    'aria-label': '查看药品库存',
+  });
+  const featureText = el('div', { class: 'feature-text' });
+  featureText.append(
+    el('span', { class: 'eyebrow', text: 'A LITTLE CARE, EVERY DAY' }),
+    el('h3', { html: '照顾好自己，<br>从一件小事开始。' }),
+    el('p', { text: '检查药箱，让安心有备而来。' }),
+    el('span', { class: 'feature-link', html: '查看库存 <span>↗</span>' })
+  );
+  const featureSvgWrap = el('div', { class: 'feature-art-wrap', html: getFeatureBottleSvg() });
+  featureCard.append(featureText, featureSvgWrap);
+  featureCard.onclick = () => navigate('/meds/inventory');
+  content.append(featureCard);
+
+  // 5. 分区标题
+  const sectionLabel = el('div', { class: 'section-label' });
+  const labelSpan = el('span', { text: '药箱里的日常' });
+  const countSmall = el('small', { id: 'medCount', text: `${meds.length} 种药品` });
+  sectionLabel.append(labelSpan, countSmall);
+  content.append(sectionLabel);
+
+  // 6. 双列网格药品卡片列表（以包装图为视觉中心）
+  const listContainer = el('div', { class: 'medicine-grid med-card-list' });
   content.append(listContainer);
 
   function renderFilteredCards() {
@@ -149,69 +221,106 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
       );
     }
 
-    if (activeCategory === 'rx') {
-      filtered = filtered.filter((m) => !m.name.includes('维生素') && !m.name.includes('钙'));
-    } else if (activeCategory === 'health') {
-      filtered = filtered.filter((m) => m.name.includes('维生素') || m.name.includes('钙') || m.name.includes('油'));
-    } else if (activeCategory === 'external') {
-      filtered = filtered.filter((m) => m.name.includes('膏') || m.name.includes('水') || m.name.includes('贴'));
+    if (activeCategory === 'daily') {
+      filtered = filtered.filter((m) => m.slots && m.slots.length > 0);
+    } else if (activeCategory === 'reserve') {
+      filtered = filtered.filter((m) => !m.slots || m.slots.length === 0);
     }
 
+    countSmall.textContent = `${filtered.length} 种药品`;
+
     if (filtered.length === 0) {
-      listContainer.append(banner('info', '未找到匹配的药品'));
+      const empty = el('div', { class: 'empty med-empty-state' });
+      empty.append(el('p', { text: '没有找到匹配的药品' }));
+      const resetBtn = el('button', {
+        class: 'ui-button ui-button-secondary',
+        type: 'button',
+        text: '查看全部药品',
+      });
+      resetBtn.onclick = () => {
+        searchQuery = '';
+        input.value = '';
+        activeCategory = 'all';
+        filtersContainer.querySelectorAll('.filter').forEach((f) => {
+          const isAll = (f as HTMLElement).textContent?.includes('全部');
+          f.classList.toggle('active', !!isAll);
+          f.setAttribute('aria-pressed', isAll ? 'true' : 'false');
+        });
+        renderFilteredCards();
+      };
+      empty.append(resetBtn);
+      listContainer.append(empty);
       return;
     }
 
-    for (const m of filtered) {
-      const med = m;
+    for (const med of filtered) {
       const medNameId = `med-name-${med.id}`;
+      const isDaily = med.slots && med.slots.length > 0;
       const card = el('div', {
-        class: 'med-item-card medication-list-row medication-batch-row',
+        class: 'medicine med-item-card medication-list-row medication-batch-row',
         'aria-selected': 'false',
         'aria-labelledby': medNameId,
+        'data-med': med.id,
       } as any);
 
-      // 缩略图
-      const thumb = el('div', { class: 'med-item-thumb' });
-      const img = el('img', {
-        src: photoUrls.get(med.id) || getOrCreateMed3DImage(med.id, med.name, med.amountPerDose || med.dosageText),
-        alt: med.name,
-      });
-      thumb.append(img);
+      // 缩略图（三级降级管线：实拍照/AI白底大图 -> 3D 拟物图 -> B 方案色块药盒矢量占位）
+      const art = el('div', { class: 'medicine-art med-item-thumb medication-batch-thumb' });
+      const photoUrl = photoUrls.get(med.id);
+      if (photoUrl) {
+        const img = el('img', {
+          src: photoUrl,
+          alt: med.name,
+          loading: 'lazy',
+        }) as HTMLImageElement;
+        img.onerror = () => {
+          art.replaceChildren(parseSvg(renderBPackageSvg(med)));
+        };
+        art.append(img);
+      } else {
+        const threeDImg = getOrCreateMed3DImage(med.id, med.name, med.amountPerDose || med.dosageText);
+        if (threeDImg && !threeDImg.startsWith('data:image/svg+xml')) {
+          const img = el('img', {
+            src: threeDImg,
+            alt: med.name,
+            loading: 'lazy',
+          }) as HTMLImageElement;
+          img.onerror = () => {
+            art.replaceChildren(parseSvg(renderBPackageSvg(med)));
+          };
+          art.append(img);
+        } else {
+          art.replaceChildren(parseSvg(renderBPackageSvg(med)));
+        }
+      }
 
-      // 信息
-      const info = el('div', { class: 'med-item-info' });
-      info.append(el('div', { id: medNameId, class: 'med-item-name medication-batch-name', text: m.name || '未命名' }));
+      const nameEl = el('h3', { id: medNameId, class: 'med-item-name medication-batch-name', text: med.name || '未命名' });
 
       const dose = med.amountPerDose || med.dosageText || '1片';
       const spec = med.dosageText && med.amountPerDose ? `${med.dosageText} · ${med.amountPerDose}` : dose;
-      const freqText = med.slots.length > 0 ? `每日${med.slots.length}次` : '按需服用';
-      info.append(el('div', { class: 'med-item-spec', text: `${spec} · ${freqText}` }));
+      const freqText = isDaily ? `每日${med.slots.length}次` : '按需服用';
+      const specEl = el('p', { class: 'med-item-spec', text: `${spec} · ${freqText}` });
 
-      const badges = el('div', { class: 'med-item-badges' });
+      const amountRow = el('div', { class: 'amount' });
       const stock = med.inventory?.remaining ?? 36;
       const low = isLowStock(med);
       const unit = med.doseUnit || '片';
-      const stockPill = el('span', {
-        class: `med-stock-pill ${low ? 'low' : 'ok'}`,
-        text: low ? `库存不足 剩余${stock}${unit}` : `库存充足 剩余${stock}${unit}`,
+      const stockSmall = el('small', { text: `余 ${stock} ${unit}` });
+      const tagText = !isDaily ? '家庭常备' : low ? '即将用完' : '日常服用';
+      const tagEl = el('span', {
+        class: `tag med-stock-pill ${low ? 'low' : ''}`,
+        text: tagText,
       });
-      badges.append(stockPill);
-      info.append(badges);
+      amountRow.append(stockSmall, tagEl);
 
-      // 右侧引导箭头
-      const chevron = el('div', { class: 'med-item-chevron' });
-      chevron.append(icon('chevron-right'));
-
+      card.append(art, nameEl, specEl, amountRow);
       card.onclick = () => navigate(`/meds/${med.id}/edit`);
-      card.append(thumb, info, chevron);
       listContainer.append(card);
     }
   }
 
   renderFilteredCards();
 
-  // 5. 底部右下角悬浮 "+ 添加药品" 按钮（通过 actionDock 稳定挂载）
+  // 7. 底部右下角悬浮 "+ 添加药品" 按钮（通过 actionDock 稳定挂载）
   const fabAdd = el('button', {
     class: 'med-fab-add',
     type: 'button',
@@ -225,7 +334,6 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     lastRevision = getDatabaseRevision();
     meds = await listMeds();
     photoUrls = await getMedPhotoUrls(meds.map((m) => m.id));
-    updateStatCards();
     renderFilteredCards();
   };
   root.addEventListener('tab:activated', onActivated);
@@ -352,15 +460,33 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
 
     // 缩略图
     const thumb = el('div', { class: 'medication-batch-thumb' });
-    const img = el('img', {
-      src: photoUrls.get(m.id) || getOrCreateMed3DImage(m.id, m.name, m.amountPerDose || m.dosageText),
-      alt: m.name || '药品',
-      loading: 'lazy',
-    });
-    img.onerror = () => {
-      img.src = getMedBottle3dSvg();
-    };
-    thumb.append(img);
+    const photoUrl = photoUrls.get(m.id);
+    if (photoUrl) {
+      const img = el('img', {
+        src: photoUrl,
+        alt: m.name || '药品',
+        loading: 'lazy',
+      }) as HTMLImageElement;
+      img.onerror = () => {
+        thumb.replaceChildren(parseSvg(renderBPackageSvg(m)));
+      };
+      thumb.append(img);
+    } else {
+      const threeDImg = getOrCreateMed3DImage(m.id, m.name, m.amountPerDose || m.dosageText);
+      if (threeDImg && !threeDImg.startsWith('data:image/svg+xml')) {
+        const img = el('img', {
+          src: threeDImg,
+          alt: m.name || '药品',
+          loading: 'lazy',
+        }) as HTMLImageElement;
+        img.onerror = () => {
+          thumb.replaceChildren(parseSvg(renderBPackageSvg(m)));
+        };
+        thumb.append(img);
+      } else {
+        thumb.replaceChildren(parseSvg(renderBPackageSvg(m)));
+      }
+    }
     body.append(thumb);
 
     const titleWrap = el('div', { class: 'medication-batch-copy' });
@@ -395,7 +521,7 @@ async function enterBatchMode(root: HTMLElement, signal?: AbortSignal): Promise<
   dock.classList.add('medication-batch-dock');
   const enableButton = createButton({ label: '启用', variant: 'secondary', onClick: () => void setRulesForSelected(true) });
   const disableButton = createButton({ label: '禁用', variant: 'secondary', onClick: () => void setRulesForSelected(false) });
-  const slotButton = createButton({ label: '改时段', variant: 'secondary', icon: 'clock', onClick: openSlotMenu });
+  const slotButton = createButton({ label: '改时段', ariaLabel: '修改时段', variant: 'secondary', icon: 'clock', onClick: openSlotMenu });
   const deleteButton = createButton({ label: '删除', variant: 'danger', icon: 'trash', onClick: () => void deleteSelected() });
   dock.append(enableButton, disableButton, slotButton, deleteButton);
 
@@ -555,14 +681,4 @@ export async function commitBatchRuleUpdatesForRoute(
   if (!signal.aborted) {
     complete();
   }
-}
-
-function createStatCard(colorCls: string, label: string, val: string, img: string, svgFn: () => string): HTMLElement {
-  const card = el('div', { class: `med-stat-card ${colorCls}` });
-  card.append(el('div', { class: 'med-stat-label', text: label }));
-  card.append(el('div', { class: 'med-stat-val', text: val }));
-  const iconWrap = el('div', { class: 'med-stat-icon-wrap' });
-  iconWrap.append(render3dMedia(img, svgFn, label, 'med-stat-icon-img'));
-  card.append(iconWrap);
-  return card;
 }

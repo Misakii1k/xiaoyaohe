@@ -10,7 +10,7 @@ const MEDIA_QUERY = '(prefers-color-scheme: dark)';
 
 /** 与 index.html 的 theme-color meta、tokens.css 的暗色底色保持一致。 */
 export const THEME_COLOR: Record<ResolvedTheme, string> = {
-  light: '#f2f3f6',
+  light: '#f6f8f7',
   dark: '#17181d',
 };
 

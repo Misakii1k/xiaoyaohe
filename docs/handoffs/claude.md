@@ -2,11 +2,89 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-13
+Updated: 2026-09-17
 Status: active
-Latest version: `1.0.19` (Android `versionCode: 54`)
+Latest version: `1.1.1` (Android `versionCode: 59`)
 
 ## Summary of Accomplished Work
+
+### 59. 设置页微卡片化视觉分割与层级结构优化 (v1.1.1, versionCode 59, workspace/claude)
+
+1. **需求与背景**：用户反馈设置页（「我的」及展开的各个面板）中缺少分割线，导致各个板块混在一起、层级模糊。
+2. **架构与视觉重构**：
+   - **独立微卡片规范 (`.settings-subcard`)**：在折叠面板展开后的浅灰底色（`var(--color-surface-muted, #f8fafc)`）上，各个业务子功能均封装为独立的纯白微卡片（`var(--color-surface, #ffffff)`），搭配 `14px` 圆角、细腻细边框与柔和微投影，彻底告别“设置内容灰蒙蒙挤在一起”的视觉混杂感；
+   - **内置标题栏与状态胶囊徽章**：微卡片内置 13.5px 加粗标题与状态指示胶囊，使各子板块边界清晰明了；
+   - **展开面板标题底部分割线**：面板展开时（`.panel.open > .panel-head`），标题栏底部自动展示一条细腻分割线（`border-bottom: 1px solid var(--color-border)`），将常驻白色标题栏与下方浅灰卡片内容区明确区隔；
+   - **全业务面板改造**：覆盖 `ReminderPanel`（5 大子板块）、`AppearancePanel`（2 大子板块）、`BackupPanel`（数据归档微卡片）、`LlmConfigPanel`（服务商调度与密钥存储微卡片）、`imageGenSettingsPanel`、`lanSyncSettingsPanel`（开关卡片升级）、`DiagnosticsPanel`（脱敏日志卡片）。
+3. **验证与门禁**：
+   - `npm run typecheck` 0 错误；
+   - `tests/settingsUiContracts.test.ts`、`tests/settingsDiagnostics.test.ts`、`tests/imageGenSettings.test.ts` 等设置单测全部 PASS；
+   - 全量 91 套件 572 项测试 100% 通过；
+   - `tone_lint.py` 严格校验通过。
+
+### 58. 确认/扫码后提醒重复弹出根治 (workspace/claude)
+
+1. **问题**：用户反馈全屏提醒中确认服药（已服用/全部已服用）或扫码验证成功后，提醒仍会再次弹出。
+2. **根因（两条叠加）**：
+   - **递进重复闹钟未随确认取消**：每个时段组最多排 4 个原生闹钟（dose + repeat-2/3/4，默认每 10 分钟 × 3 次）。`MedicationAlarmContract.handleAction` 确认时只停铃、取消当前通知并入队动作，**未取消同组剩余 repeat 闹钟**；只有 WebView 回前台触发重放+对账（`replayPendingMedicationReminderActions` → `rescheduleMedicationReminders` → `reconcile`）才会清掉。锁屏/后台确认后不打开应用的典型场景下，AlarmManager 按原节奏再次弹出全屏提醒。
+   - **IDS 残留过点补发**：已触发闹钟的 `payload_<id>` 与 id 留在 SharedPreferences IDS 集合（仅 reconcile/cancelTag 会清理）；`MedicationAlarmBootReceiver` 在 BOOT / TIME_CHANGED / TIMEZONE_CHANGED（含运营商自动对时）时调用 `restoreScheduled`，对 `at <= now` 的条目执行「过点补发一次」，把已确认的提醒再弹一次。
+   - 附带：贪睡分支（「10 分钟后提醒」）不清剩余 repeat，形成贪睡+递进双轨重复响铃。
+3. **修复**（`MedicationAlarmContract.java` / `MedicationAlarmPlugin.java`，纯原生逻辑）：
+   - 新增纯函数 `wholeReminderCompleted(action, payload)` 判定动作是否完结整组：非组载荷（遗留单药）任何确认/跳过即完结；组载荷「全部已服用 / 全部跳过」（含扫码自动已服用 `dispatchScanAutoTaken`）即完结；**单成员组**行级确认即完结；多成员组行级确认保留递进闹钟继续提醒其他药；
+   - `handleAction`：贪睡先 `cancelTag` 再排贪睡闹钟（贪睡成为该组唯一下次响铃）；确认/跳过完结整组时立即 `cancelTag` 取消剩余闹钟并顺带清理 IDS/payload 残留（同步根治过点补发路径）；
+   - `queueOccurrenceAction`（全屏页单行按钮）：单成员组确认即取消整组剩余闹钟；
+   - `MedicationAlarmPlugin.snooze`（TS 侧重放贪睡路径）：排贪睡前先清同组闹钟，与原生路径一致。
+4. **验证与门禁**：新增 4 项 `wholeReminderCompleted` 契约测试；`testReleaseUnitTest` 26 项全绿；`npm run typecheck` 0 错误；全量 vitest 91 套件 572 项通过。顺手修复存量失败 `AppConfigurationTest`（v1.0.1 时代硬编码版本断言 1.0.1/36 与当前 1.0.22/57 不符，改为仅断言包名，版本一致性由 TS 侧 versionManifest 门禁覆盖）。真机待验证：锁屏/后台确认或扫码后，10/20/30 分钟不再重复弹出全屏提醒；多药组服完一种药后其余药的递进提醒仍正常。
+
+### 57. 全屏提醒滑动解锁滑块固定至屏幕底部 (workspace/claude)
+
+1. **问题与诉求**：用户要求把全屏提醒中的滑动解锁滑块移动到底部。此前 `SlideToUnlockBar` 渲染在可滚动内容列内、紧随提醒正文之后，内容较短时滑块悬在屏幕中部，不符合拇指底部操作习惯。
+2. **修复**（`android/app/src/main/java/com/medbox/app/MedicationAlarmActivity.kt`，纯原生 UI 布局改动）：
+   - 将滑块从滚动内容列抽出，改为外层 `Box` 底部对齐的固定区域（`align(Alignment.BottomCenter)` + `navigationBarsPadding`），不随内容滚动、始终贴底；
+   - 底部区域附竖向渐变衬底（透明 → `Background` 实色），滚动内容穿过下方时自然淡出，不遮挡装饰层底部柔光；
+   - 解锁前滚动内容列预留 96dp 底部空间，防止末尾内容被固定滑块遮挡；滑动解锁后滑块消失，「已服用 / 10 分钟后提醒 / 跳过本次」按钮回流至内容流原位；
+   - `FooterActions` 移除 `slideUnlocked` / `onSlideUnlock` 参数与内嵌滑块分支，两处调用点同步精简；扫码反馈文案随滑块一并迁移至底部固定区域。
+3. **验证与门禁**：`./gradlew.bat compileDebugKotlin` 与 `assembleDebug` BUILD SUCCESSFUL；`npm run typecheck` 0 错误；未触碰 TS 源码与测试用例（`tests/alarmSlideUnlock.test.ts` 为偏好存储测试，不受影响）。真机视觉与滑动手感待用户验证。
+
+### 56. 提醒排版修复、滑动解锁生效加固与按增量落实度提供更新通道 (v1.0.22, versionCode 57, workspace/claude)
+
+1. **问题与诉求**：
+   - 用户反馈：设置面板提醒卡片出现单字竖排错乱；真机触发提醒依然直接出按钮、没有滑动解锁。
+   - 用户明确要求：更新分为增量更新和全量更新。若更新的内容通过增量更新无法落实，必须使用全量更新，则在更新时只提供全量更新的按钮，反之则两个按钮都提供。
+2. **根因定位与修复**：
+   - **排版崩溃**：`ReminderPanel.ts` 中 `slideCard` 在横向 flexbox 中强塞 40+ 字符导致窄屏被挤压成单字竖排；彻底重构为标准的 `settings-scan-card` 垂直流布局，文字通栏自适应，彻底消除排版错乱；
+   - **滑动解锁生效加固**：在 `MedicationAlarmPlugin` 中为测试提醒注入 `testAlarm` 标记，在 `MedicationAlarmActivity.kt` 中修复 `sameAlarm` 判定，使得多次测试与不同批次提醒每次均能彻底复位未解锁状态与会话；
+   - **增量/全量精准分流**：将 `MIN_NATIVE_BUNDLE_VERSION_CODE` 提升至 56。在 `AppUpdatePanel.ts` 中重构更新按钮体系：若更新内容无法通过增量更新落实（`updateType === 'full'`），更新界面只提供「下载并安装」全量按钮；反之（`updateType === 'incremental'`）则同时提供「一键秒级更新」与「下载完整包」双按钮，点击直达下载安装；
+   - **底座版本引导提示**：在滑动解锁设置卡片中增加底层 APK 版本判断，当仅增量更新未安装底座时明确提示需安装完整 APK。
+3. **验证与测试**：
+   - 新增 `tests/appUpdateButtons.test.ts` 单测覆盖全量与增量按钮呈现策略；全量 92 套件 574 项测试全部通过；`npm run typecheck` 0 错误；`tone_lint.py` 文风审计通过。
+
+### 55. 全屏提醒滑动解锁独立配置与测试 (v1.0.21, versionCode 56, workspace/claude)
+
+1. **问题**：用户反馈全屏提醒未提供滑动解锁的配置功能；设置页缺少开关与测试入口，且关闭扫码后的描述未对齐滑动解锁。
+2. **修复**：
+   - `src/features/alarmSlideUnlock.ts`：新增偏好管理模块，默认启用滑动解锁防误触；
+   - `src/pages/settings/panels/ReminderPanel.ts`：新增「全屏提醒滑动解锁」设置卡片与开关，提供「测试滑动解锁」按钮，并精准联动扫码关闭状态文案；
+   - `src/features/nativeMedicationAlarm.ts`：调度与测试载荷自动注入 `slideUnlock` 偏好；
+   - `android/app/src/main/java/com/medbox/app/MedicationAlarmPlugin.java` 与 `MedicationAlarmActivity.kt`：原生全屏提醒根据 `slideUnlock` 载荷动态判定；关闭时直接展示操作按钮，开启时呈现 `SlideToUnlockBar` 向右滑动解锁。
+3. **验证与门禁**：
+   - 新增 `tests/alarmSlideUnlock.test.ts`；90 套件 570 项测试 100% 通过；`npm run typecheck` 0 错误。
+
+### 54. 全屏提醒支持滑动解锁与按需扫码验证 (v1.0.20, versionCode 55, workspace/claude)
+
+1. **问题**：之前版本中全屏提醒误触发了默认扫码解锁，即只要弹出全屏闹钟就强制要求扫码，导致未勾选扫码解锁的用户无法正常便捷操作。
+2. **修复**：
+   - `android/app/src/main/java/com/medbox/app/MedicationAlarmActivity.kt`：
+     - 重构锁定状态判定逻辑：仅在闹钟有效载荷明确携带 `requiresScanVerification == true` 时才进入扫码解锁状态，杜绝历史状态残留；
+     - 增加向右滑动解锁组件 `SlideToUnlockBar`（64dp 浅色毛玻璃轨道、呼吸感提示文本、52dp 渐变手柄、70% 判定、弹簧回弹）；
+     - 未开启扫码解锁时，进入滑动解锁待机态：持续响铃与全屏覆盖，底部提供滑块，滑动到位后解除锁定并停止响铃，展开「已服用」和「稍后提醒」按钮，避免误触关闭；
+     - 拦截返回键手势：未滑动解锁前按返回键触发短震并 Toast 提示「请向右滑动解锁」，防止意外退出；
+     - 10 分钟无人解锁安全兜底：自动触发 `ACTION_SNOOZE`。
+   - `src/features/nativeMedicationAlarm.ts` 与 `src/pages/settings/panels/ReminderPanel.ts`：
+     - `fireNativeMedicationAlarmNow` 支持 `forceScanVerify`；
+     - 设置面板中「测试全屏提醒」传入 `{ forceScanVerify: false }` 测试滑动解锁与持续响铃，「试验扫码解锁」传入 `{ forceScanVerify: true }` 测试扫码流程。
+3. **验证与门禁**：
+   - 89 套件 567 项 Vitest 测试 100% 通过；`npm run typecheck` 0 错误；Android 原生编译 `assembleDebug` / `assembleRelease` 通过；发布说明通过 `oil-tone` 检查。
 
 ### 53. 小助手模型/推理选择器改为应用内弹层 (v1.0.19, versionCode 54, workspace/claude)
 

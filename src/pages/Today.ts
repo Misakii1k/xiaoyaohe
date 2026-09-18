@@ -34,8 +34,10 @@ import {
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import { openTakeMedModal } from '../ui/TakeMedModal';
+import { parseSvg } from '../ui/assets3d';
 import { navigate } from '../router';
 import { closeNotificationsByTag } from '../features/notifier';
+import { renderBPackageSvg } from './MedList';
 
 interface TodayItem {
   revision: MedicationScheduleRevision;
@@ -52,8 +54,6 @@ interface SlotGroup {
   earliest: number;
   earliestTime: string;
 }
-
-const WEEKDAY_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 let activeSlotFilter: 'all' | 'morning' | 'noon' | 'evening' = 'all';
 
@@ -90,17 +90,17 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   const skipped = activeItems.filter((item) => item.log?.status === 'skipped').length;
   const pending = total - taken - skipped;
 
-  const dateStr = `${now.getMonth() + 1}月${now.getDate()}日 ${WEEKDAY_CN[now.getDay()]}`;
-
-  // 1. 顶部问候栏
-  const headerRow = el('div', { class: 'today-header-row' });
-  const headerLeft = el('div', { class: 'today-header-left' });
+  // 1. 顶部问候栏 (Plan B 风格)
+  const headerRow = el('div', { class: 'today-head' });
+  const hour = now.getHours();
+  const greeting = hour < 11 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
+  const headerLeft = el('div');
   headerLeft.append(
-    el('h1', { class: 'today-header-title', text: '今天' }),
-    el('div', { class: 'today-header-date', text: dateStr }),
+    el('h2', { text: greeting }),
+    el('p', { text: '规律的小事，也值得认真对待。' })
   );
 
-  const headerActions = el('div', { class: 'today-header-actions' });
+  const headerRight = el('div', { class: 'today-head-right' });
   const aiBtn = el('button', {
     class: 'today-ai-btn',
     type: 'button',
@@ -110,39 +110,214 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   aiBtn.append(icon('sparkles'), el('span', { text: 'AI 助手' }));
   aiBtn.onclick = () => void import('../ui/AiAssistant').then((m) => m.openAssistantPanel());
 
-  headerActions.append(aiBtn);
-  headerRow.append(headerLeft, headerActions);
+  const dateNum = el('span', { class: 'today-date', text: String(now.getDate()) });
+  headerRight.append(aiBtn, dateNum);
+  headerRow.append(headerLeft, headerRight);
   content.append(headerRow);
 
-  // 2. 今日用药进度卡片 (带 today-summary class)
-  const progressCard = el('section', { class: 'today-summary' });
-  progressCard.classList.add('today-progress-card');
-  progressCard.append(el('div', { class: 'today-progress-title', text: '今日用药进度' }));
+  // 2. 本周日期栏 (周一到周日)
+  const currentDay = now.getDay();
+  const mondayOffset = (currentDay + 6) % 7;
+  const weekDays = ['一', '二', '三', '四', '五', '六', '日'];
+  const weekRow = el('div', { class: 'week', 'aria-label': '本周日期' });
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - mondayOffset + i);
+    const isToday = i === mondayOffset;
+    const dayEl = el('div', { class: `day${isToday ? ' current' : ''}` });
+    dayEl.append(
+      document.createTextNode(weekDays[i] || ''),
+      el('b', { text: String(d.getDate()) })
+    );
+    weekRow.append(dayEl);
+  }
+  content.append(weekRow);
 
-  const progressBody = el('div', { class: 'today-progress-body' });
-  const ringWrap = el('div', { class: 'today-summary-progress today-progress-ring-wrap' });
+  // 3. 今日用药进度卡片 (带 today-summary class)
+  const progressCard = el('section', { class: 'today-summary' });
+  progressCard.classList.add('today-progress-card', 'summary');
+  const summaryLeft = el('div', { class: 'summary-left' });
+  const countLarge = el('div', { class: 'large' });
+  countLarge.append(
+    el('strong', { id: 'takenCount', text: String(taken) }),
+    document.createTextNode(' '),
+    el('span', { text: `/ ${total}` })
+  );
+  const encourageText = total === 0 ? '今日没有用药计划' : pending === 0 ? '今天已完成全部用药' : `已完成 ${taken} 次，剩余 ${pending} 次待服`;
+  summaryLeft.append(countLarge, el('p', { text: encourageText }));
+
+  const ringWrap = el('div', { class: 'today-summary-progress today-progress-ring-wrap ring' });
   ringWrap.append(progressRing(taken, total));
 
-  const legend = el('div', { class: 'today-progress-legend' });
-  legend.append(
-    createLegendRow('taken', '已服用', taken),
-    createLegendRow('pending', '待服用', pending),
-    createLegendRow('skipped', '跳过', skipped)
-  );
-
-  progressBody.append(ringWrap, legend);
-  progressCard.append(progressBody);
-
-  const encourage = el('div', {
-    class: 'today-progress-encourage',
-    text: total === 0 ? '今日没有用药计划' : pending === 0 ? '今日用药已全部完成' : `剩余 ${pending} 次用药待处理`,
-  });
-  progressCard.append(encourage);
+  progressCard.append(summaryLeft, ringWrap);
   content.append(progressCard);
 
-  // 3. 今日用药计划
+  // 4. 下一次用药 / 待服聚焦大卡片 (置顶在进度卡片下方)
+  const pendingActiveItems = activeItems.filter((i) => !i.log || i.log.status === 'pending');
+  pendingActiveItems.sort((a, b) => a.dueAt - b.dueAt);
+
+  if (pendingActiveItems.length > 0) {
+    const nextItem = pendingActiveItems[0]!;
+    const slotLabel = SLOT_LABEL[nextItem.revision.slot] || '计划用药';
+    const dose = nextItem.med.amountPerDose || nextItem.med.dosageText || '1片';
+    const meal = formatMealRels([...(nextItem.revision.mealRels || [])]);
+
+    const focusSection = el('section', { class: 'today-focus-section' });
+    const timeLabel = el('div', { class: 'time-label' });
+    timeLabel.append(
+      document.createTextNode(`下一次用药 · ${nextItem.revision.timeLocal} `),
+      el('span', { class: 'tag', text: slotLabel })
+    );
+    focusSection.append(timeLabel);
+
+    const doseCard = el('article', { class: 'dose today-focus-card' });
+    const doseInfo = el('div', { class: 'dose-info' });
+    const doseImage = el('div', { class: 'dose-image' });
+
+    const photoUrl = photoUrls.get(nextItem.med.id);
+    if (photoUrl) {
+      const img = el('img', { src: photoUrl, alt: nextItem.med.name, loading: 'lazy' }) as HTMLImageElement;
+      img.onerror = () => { doseImage.replaceChildren(parseSvg(renderBPackageSvg(nextItem.med))); };
+      doseImage.append(img);
+    } else {
+      const threeD = getOrCreateMed3DImage(nextItem.med.id, nextItem.med.name, nextItem.med.amountPerDose || nextItem.med.dosageText);
+      if (threeD && !threeD.startsWith('data:image/svg+xml')) {
+        const img = el('img', { src: threeD, alt: nextItem.med.name, loading: 'lazy' }) as HTMLImageElement;
+        img.onerror = () => { doseImage.replaceChildren(parseSvg(renderBPackageSvg(nextItem.med))); };
+        doseImage.append(img);
+      } else {
+        doseImage.replaceChildren(parseSvg(renderBPackageSvg(nextItem.med)));
+      }
+    }
+
+    const doseMeta = el('div', { class: 'dose-meta' });
+    doseMeta.append(
+      el('h3', { text: nextItem.med.name }),
+      el('p', { text: `${dose}${meal ? ' · ' + meal : ' · 饭后温水服用'}` })
+    );
+    doseInfo.append(doseImage, doseMeta);
+
+    const doseBottom = el('div', { class: 'dose-bottom' });
+    doseBottom.append(el('small', { id: 'doseStatus', text: '现在可以记录服药' }));
+
+    const takeBtn = el('button', {
+      class: 'primary today-primary-btn',
+      type: 'button',
+      id: 'takeDose',
+      text: '确认已服用',
+    });
+    takeBtn.onclick = async () => {
+      if (!nextItem.occurrence) return;
+      takeBtn.disabled = true;
+      try {
+        const res = await setOccurrenceAction(nextItem.occurrence, 'taken');
+        if (nextItem.occurrence) {
+          closeNotificationsByTag(nextItem.occurrence.id);
+          closeNotificationsByTag(nextItem.occurrence.legacyLogId);
+        }
+        if (res.lowStock && res.lowStockMessage) {
+          toast(res.lowStockMessage);
+        } else {
+          toast(`已记录 ${nextItem.med.name} 服用，可随时撤销`);
+        }
+        await renderTodayPage(root, signal);
+      } catch {
+        toast('记录失败');
+        takeBtn.disabled = false;
+      }
+    };
+
+    doseBottom.append(takeBtn);
+    doseCard.append(doseInfo, doseBottom);
+    focusSection.append(doseCard);
+    content.append(focusSection);
+  } else if (total > 0 && pending === 0) {
+    const handledItems = activeItems.filter((i) => i.log?.status === 'taken' || i.log?.status === 'skipped');
+    const lastHandledItem = handledItems[handledItems.length - 1];
+    const allTaken = taken === total;
+    const allSkipped = skipped === total;
+
+    const focusSection = el('section', { class: 'today-focus-section' });
+    const timeLabel = el('div', { class: 'time-label' });
+    timeLabel.append(
+      document.createTextNode('今日安排 '),
+      el('span', {
+        class: 'tag',
+        text: allTaken ? '已全部完成' : allSkipped ? '已全部跳过' : '已全部处理',
+      })
+    );
+    focusSection.append(timeLabel);
+
+    const doseCard = el('article', { class: 'dose today-focus-card today-focus-done' });
+    const doseInfo = el('div', { class: 'dose-info' });
+    const doseImage = el('div', { class: 'dose-image done-check' });
+    doseImage.append(icon(allSkipped ? 'info' : 'check'));
+
+    const doseMeta = el('div', { class: 'dose-meta' });
+    doseMeta.append(
+      el('h3', {
+        text: allTaken
+          ? '今日用药已全部完成'
+          : allSkipped
+            ? '今日用药已全部跳过'
+            : '今日安排已全部处理',
+      }),
+      el('p', {
+        text: allTaken
+          ? '照顾好自己，从每一件小事开始。'
+          : allSkipped
+            ? '今日用药已跳过，可随时按需恢复。'
+            : `已完成 ${taken} 项，跳过 ${skipped} 项。`,
+      })
+    );
+    doseInfo.append(doseImage, doseMeta);
+
+    const doseBottom = el('div', { class: 'dose-bottom' });
+    doseBottom.append(
+      el('small', {
+        id: 'doseStatus',
+        text: allSkipped
+          ? '如需服药，可撤销跳过记录'
+          : '今日计划已达成，状态随时可撤销',
+      })
+    );
+
+    if (lastHandledItem && lastHandledItem.occurrence) {
+      const isLastSkipped = lastHandledItem.log?.status === 'skipped';
+      const undoBtn = el('button', {
+        class: 'secondary today-secondary-btn',
+        type: 'button',
+        text: isLastSkipped
+          ? `撤销跳过 (${lastHandledItem.med.name})`
+          : `撤销最近记录 (${lastHandledItem.med.name})`,
+      });
+      undoBtn.onclick = async () => {
+        if (!lastHandledItem.occurrence) return;
+        undoBtn.disabled = true;
+        try {
+          await setOccurrenceAction(lastHandledItem.occurrence, undefined);
+          if (lastHandledItem.occurrence) {
+            closeNotificationsByTag(lastHandledItem.occurrence.id);
+            closeNotificationsByTag(lastHandledItem.occurrence.legacyLogId);
+          }
+          toast(`已撤销 ${lastHandledItem.med.name} 记录`);
+          await renderTodayPage(root, signal);
+        } catch {
+          toast('撤销失败');
+          undoBtn.disabled = false;
+        }
+      };
+      doseBottom.append(undoBtn);
+    }
+
+    doseCard.append(doseInfo, doseBottom);
+    focusSection.append(doseCard);
+    content.append(focusSection);
+  }
+
+  // 5. 今日用药计划
   const sectionHeader = el('div', { class: 'today-section-header' });
-  sectionHeader.append(el('h2', { class: 'today-section-title', text: '今日用药计划' }));
+  sectionHeader.append(el('h2', { class: 'today-section-title', text: '今日用药安排' }));
   content.append(sectionHeader);
 
   // 统计各时段数量
@@ -255,26 +430,6 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   return cleanup;
 }
 
-function createLegendRow(
-  type: 'taken' | 'pending' | 'skipped',
-  label: string,
-  count: number
-): HTMLElement {
-  const row = el('div', { class: 'today-legend-item' });
-  const dot = el('span', { class: `today-legend-dot ${type}` });
-  dot.append(el('span', { class: 'today-legend-inner' }));
-
-  const textWrap = el('span', { class: 'today-legend-text' });
-  textWrap.append(
-    document.createTextNode(`${label} `),
-    el('strong', { class: 'today-legend-count', text: String(count) }),
-    document.createTextNode(' 项')
-  );
-
-  row.append(dot, textWrap);
-  return row;
-}
-
 function renderSlotGroup(
   group: SlotGroup,
   photoUrls: ReadonlyMap<string, string>,
@@ -343,13 +498,35 @@ function renderSlotGroup(
   for (const item of group.items) {
     const card = el('div', { class: 'today-card-item today-medication-row' });
 
-    // 缩略图
+    // 缩略图（三级降级管线：实拍照/AI白底大图 -> 3D 拟物图 -> B 方案色块药盒矢量占位）
     const thumb = el('div', { class: 'today-card-thumb' });
-    const img = el('img', {
-      src: photoUrls.get(item.med.id) || getOrCreateMed3DImage(item.med.id, item.med.name, item.med.amountPerDose || item.med.dosageText),
-      alt: item.med.name,
-    });
-    thumb.append(img);
+    const photoUrl = photoUrls.get(item.med.id);
+    if (photoUrl) {
+      const img = el('img', {
+        src: photoUrl,
+        alt: item.med.name,
+        loading: 'lazy',
+      }) as HTMLImageElement;
+      img.onerror = () => {
+        thumb.replaceChildren(parseSvg(renderBPackageSvg(item.med)));
+      };
+      thumb.append(img);
+    } else {
+      const threeD = getOrCreateMed3DImage(item.med.id, item.med.name, item.med.amountPerDose || item.med.dosageText);
+      if (threeD && !threeD.startsWith('data:image/svg+xml')) {
+        const img = el('img', {
+          src: threeD,
+          alt: item.med.name,
+          loading: 'lazy',
+        }) as HTMLImageElement;
+        img.onerror = () => {
+          thumb.replaceChildren(parseSvg(renderBPackageSvg(item.med)));
+        };
+        thumb.append(img);
+      } else {
+        thumb.replaceChildren(parseSvg(renderBPackageSvg(item.med)));
+      }
+    }
 
     // 信息
     const info = el('div', { class: 'today-card-info' });

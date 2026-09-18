@@ -156,7 +156,7 @@
   block-size: 64px;
   border-radius: var(--radius-full);
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   animation: med-wizard-pop 620ms var(--ease-spring);
 }
 

@@ -210,6 +210,14 @@ export function buildAppUpdateBody(
   });
 
   updateHeader.append(titleRow, updateMeta);
+  if (!isIncremental) {
+    const notice = el('div', {
+      class: 'app-update-meta mt-1',
+      style: 'color: #b45309; font-weight: 500;',
+      text: '提示：本次更新包含底层系统功能升级，增量热更新无法落实，需安装完整安装包。',
+    });
+    updateHeader.append(notice);
+  }
   updateCard.append(updateHeader);
 
   if (update.releaseNotes) {
@@ -231,25 +239,112 @@ export function buildAppUpdateBody(
   body.append(progressBox);
 
   const row = el('div', { class: 'btn-row mt-3' });
-  const downloadBtn = el('button', {
-    class: 'btn',
-    text: isIncremental ? '一键秒级更新' : '下载并安装',
-  });
-  const recheckBtn = el('button', { class: 'btn tonal', text: '重新检查' });
-  const skipBtn = el('button', { class: 'btn tonal', text: '本次跳过' });
+  const allActionButtons: HTMLButtonElement[] = [];
 
-  // 如果支持增量热更新，增加下载完整安装包备用按钮
-  let fullInstallBtn: HTMLElement | null = null;
-  if (isIncremental && update.downloadUrl) {
-    fullInstallBtn = el('button', {
-      class: 'btn tonal',
-      text: '下载完整包',
-    });
-    fullInstallBtn.onclick = async () => {
+  const setButtonsDisabled = (disabled: boolean) => {
+    for (const btn of allActionButtons) {
+      btn.disabled = disabled;
+    }
+  };
+
+  // 全量 APK 下载安装统一执行逻辑
+  const executeFullInstall = async (triggerBtn: HTMLButtonElement) => {
+    if (triggerBtn.getAttribute('aria-busy') === 'true') return;
+    triggerBtn.setAttribute('aria-busy', 'true');
+    setButtonsDisabled(true);
+    progressBox.style.display = 'block';
+    progressFill.style.width = '0%';
+    progressDetail.textContent = '0%';
+    progressText.textContent = '准备下载安装包...';
+    triggerBtn.textContent = '准备下载...';
+
+    try {
+      const apkPath = await downloadUpdate(update, (percent, received, total) => {
+        progressFill.style.width = `${percent}%`;
+        progressDetail.textContent = `${percent}%`;
+        if (total > 0) {
+          progressText.textContent = `${(received / (1024 * 1024)).toFixed(1)}MB / ${(total / (1024 * 1024)).toFixed(1)}MB`;
+        }
+        triggerBtn.textContent = `下载中 ${percent}%`;
+      });
+      toast(`已下载 v${update.version}，正在调起安装器`, 3200);
+      await installApk(apkPath, update.source === 'lan' ? update.versionCode : undefined);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '未知错误';
+      toast(`更新失败：${msg}`, 4200);
+    } finally {
+      triggerBtn.removeAttribute('aria-busy');
+      triggerBtn.textContent = isIncremental ? '下载完整包' : '下载并安装';
+      setButtonsDisabled(false);
+      progressBox.style.display = 'none';
+    }
+  };
+
+  // 增量秒级热更新统一执行逻辑
+  const executeIncrementalInstall = async (triggerBtn: HTMLButtonElement) => {
+    if (triggerBtn.getAttribute('aria-busy') === 'true') return;
+    triggerBtn.setAttribute('aria-busy', 'true');
+    setButtonsDisabled(true);
+    progressBox.style.display = 'block';
+    progressFill.style.width = '100%';
+    progressDetail.textContent = '下载中';
+    triggerBtn.textContent = '正在下载更新...';
+    progressText.textContent = '正在下载增量热更新包...';
+
+    try {
+      await downloadAndApplyWebBundle(update, (status) => {
+        triggerBtn.textContent = status;
+        progressText.textContent = status;
+      });
+      toast(`已更新至 v${update.version}，正在刷新生效...`, 2500);
+      setTimeout(() => {
+        window.location.reload();
+      }, 800);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '未知错误';
+      toast(`增量更新失败：${msg}，已切换为完整安装包`, 4200);
       update.updateType = 'full';
       buildAppUpdateBody(body, panelEl, available);
-    };
+    } finally {
+      triggerBtn.removeAttribute('aria-busy');
+      triggerBtn.textContent = '一键秒级更新';
+      setButtonsDisabled(false);
+      progressBox.style.display = 'none';
+    }
+  };
+
+  // 需求准则：若更新内容通过增量更新无法落实（isIncremental 为 false），只提供全量更新按钮；反之则两个按钮都提供。
+  if (isIncremental) {
+    const incrementalBtn = el('button', {
+      class: 'btn',
+      text: '一键秒级更新',
+    }) as HTMLButtonElement;
+    incrementalBtn.onclick = () => executeIncrementalInstall(incrementalBtn);
+    allActionButtons.push(incrementalBtn);
+    row.append(incrementalBtn);
+
+    if (update.downloadUrl) {
+      const fullBtn = el('button', {
+        class: 'btn tonal',
+        text: '下载完整包',
+      }) as HTMLButtonElement;
+      fullBtn.onclick = () => executeFullInstall(fullBtn);
+      allActionButtons.push(fullBtn);
+      row.append(fullBtn);
+    }
+  } else {
+    const fullOnlyBtn = el('button', {
+      class: 'btn',
+      text: '下载并安装',
+    }) as HTMLButtonElement;
+    fullOnlyBtn.onclick = () => executeFullInstall(fullOnlyBtn);
+    allActionButtons.push(fullOnlyBtn);
+    row.append(fullOnlyBtn);
   }
+
+  const recheckBtn = el('button', { class: 'btn tonal', text: '重新检查' }) as HTMLButtonElement;
+  const skipBtn = el('button', { class: 'btn tonal', text: '本次跳过' }) as HTMLButtonElement;
+  allActionButtons.push(recheckBtn, skipBtn);
 
   recheckBtn.onclick = async () => {
     recheckBtn.disabled = true;
@@ -277,70 +372,6 @@ export function buildAppUpdateBody(
     }
   };
 
-  downloadBtn.onclick = async () => {
-    if (downloadBtn.getAttribute('aria-busy') === 'true') return;
-    downloadBtn.setAttribute('aria-busy', 'true');
-    downloadBtn.disabled = true;
-    recheckBtn.disabled = true;
-    skipBtn.disabled = true;
-    if (fullInstallBtn) (fullInstallBtn as HTMLButtonElement).disabled = true;
-    progressBox.style.display = 'block';
-
-    if (isIncremental) {
-      try {
-        downloadBtn.textContent = '正在下载更新...';
-        progressText.textContent = '正在下载增量包...';
-        await downloadAndApplyWebBundle(update, (status) => {
-          downloadBtn.textContent = status;
-          progressText.textContent = status;
-        });
-        toast(`已更新至 v${update.version}，正在刷新生效...`, 2500);
-        setTimeout(() => {
-          window.location.reload();
-        }, 800);
-        return;
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : '未知错误';
-        toast(`增量更新失败：${msg}，已切换为完整安装包`, 4200);
-        update.updateType = 'full';
-        buildAppUpdateBody(body, panelEl, available);
-      } finally {
-        downloadBtn.removeAttribute('aria-busy');
-        downloadBtn.textContent = isIncremental ? '一键秒级更新' : '下载并安装';
-        downloadBtn.disabled = false;
-        recheckBtn.disabled = false;
-        skipBtn.disabled = false;
-        if (fullInstallBtn) (fullInstallBtn as HTMLButtonElement).disabled = false;
-        progressBox.style.display = 'none';
-      }
-      return;
-    }
-
-    downloadBtn.textContent = '准备下载...';
-    try {
-      const apkPath = await downloadUpdate(update, (percent, received, total) => {
-        progressFill.style.width = `${percent}%`;
-        progressDetail.textContent = `${percent}%`;
-        if (total > 0) {
-          progressText.textContent = `${(received / (1024 * 1024)).toFixed(1)}MB / ${(total / (1024 * 1024)).toFixed(1)}MB`;
-        }
-        downloadBtn.textContent = `下载中 ${percent}%`;
-      });
-      toast(`已下载 v${update.version}，正在调起安装器`, 3200);
-      await installApk(apkPath, update.source === 'lan' ? update.versionCode : undefined);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : '未知错误';
-      toast(`更新失败：${msg}`, 4200);
-    } finally {
-      downloadBtn.removeAttribute('aria-busy');
-      downloadBtn.textContent = isIncremental ? '一键秒级更新' : '下载并安装';
-      downloadBtn.disabled = false;
-      recheckBtn.disabled = false;
-      skipBtn.disabled = false;
-      progressBox.style.display = 'none';
-    }
-  };
-
   skipBtn.onclick = () => {
     clearAvailableUpdate();
     toast('已跳过本次更新');
@@ -348,8 +379,5 @@ export function buildAppUpdateBody(
     buildAppUpdateBody(body, panelEl, available);
   };
 
-  row.append(downloadBtn);
-  if (fullInstallBtn) row.append(fullInstallBtn);
-  row.append(recheckBtn, skipBtn);
   body.append(row);
 }

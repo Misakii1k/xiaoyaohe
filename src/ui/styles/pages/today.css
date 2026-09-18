@@ -1,353 +1,340 @@
 .page.today-page,
 .today-page {
-  display: grid;
-  gap: var(--space-4);
-  padding-top: calc(var(--safe-top) + var(--space-2));
-  padding-block-start: calc(var(--safe-top) + var(--space-2));
-  padding-block-end: calc(var(--space-8) + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+  padding-top: calc(var(--safe-top) + var(--space-2, 8px));
+  padding-block-start: calc(var(--safe-top) + var(--space-2, 8px));
+  padding-block-end: calc(var(--space-8, 32px) + var(--safe-bottom));
+  padding-inline: var(--space-4, 16px);
   position: relative;
   overflow-x: hidden;
 }
 
-/* 顶部晨光绿植背景图与毛玻璃遮罩 */
-.today-nature-bokeh-bg {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 250px;
-  height: 200px;
-  pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
-}
-
-.today-nature-bokeh-img {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: top right;
-  opacity: 0.95;
-}
-
-.today-nature-bokeh-glass {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 75% 25%, rgba(255, 255, 255, 0.22) 0%, rgba(248, 250, 252, 0.65) 60%, rgba(248, 250, 252, 0.96) 100%);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-[data-theme='dark'] .today-nature-bokeh-glass {
-  background: radial-gradient(circle at 75% 25%, rgba(15, 23, 42, 0.25) 0%, rgba(15, 23, 42, 0.75) 60%, rgba(15, 23, 42, 0.96) 100%);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-/* 顶部问候栏 */
-.today-header-row {
+/* 顶部问候栏 (Plan B 风格) */
+.today-head {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-1);
-  position: relative;
-  z-index: 1;
+  align-items: flex-end;
+  padding-top: var(--space-2, 8px);
+  margin-bottom: var(--space-1, 4px);
 }
 
-.today-header-left {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.today-header-title {
-  font-size: var(--fs-title1, 22px);
-  font-weight: 800;
+.today-head h2 {
+  font-size: var(--fs-title1, 28px);
+  font-weight: 600;
+  letter-spacing: -0.8px;
   color: var(--color-text);
   margin: 0;
-  letter-spacing: -0.4px;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 
-.today-header-title:focus,
-.today-header-title:focus-visible {
-  outline: none;
-}
-
-.today-header-date {
-  font-size: var(--fs-subheadline);
+.today-head p {
+  font-size: var(--fs-footnote, 13px);
   color: var(--color-text-muted);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
+  margin: 6px 0 0;
+  line-height: 1.4;
 }
 
-.today-header-slogan-wrap {
-  position: relative;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  margin-top: 2px;
-}
-
-.today-header-slogan {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  font-weight: 500;
-  letter-spacing: 0.2px;
-}
-
-.today-slogan-brush {
-  width: 64px;
-  height: 6px;
-  margin-top: -2px;
-  margin-left: 2px;
-}
-
-.today-header-actions {
-  display: inline-flex;
+.today-head-right {
+  display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 12px;
 }
 
 .today-ai-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-block-size: 38px;
-  padding: 0 14px;
+  min-block-size: var(--tap, 44px);
+  padding: 0 12px;
   border-radius: var(--radius-full);
-  border: 1px solid rgba(99, 102, 241, 0.3);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
   color: var(--color-primary);
-  font-size: var(--fs-footnote);
+  font-size: var(--fs-caption, 12px);
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12);
+  box-shadow: var(--shadow-sm);
   transition: transform 0.18s ease, background 0.18s ease;
 }
 
 .today-ai-btn svg {
-  inline-size: 16px;
-  block-size: 16px;
+  inline-size: 15px;
+  block-size: 15px;
   stroke: var(--color-primary);
 }
 
 .today-ai-btn:active {
   transform: scale(0.95);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(168, 85, 247, 0.22) 100%);
+  background: var(--color-surface-muted);
 }
 
-.today-header-avatar-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  inline-size: 40px;
-  block-size: 40px;
-  cursor: pointer;
-  border-radius: var(--radius-full);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
-  transition: transform 0.2s ease;
-  overflow: hidden;
+.today-date {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 38px;
+  line-height: 1;
+  color: var(--color-primary);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -1px;
+}
+
+/* 本周日期节奏条 (Plan B 风格) */
+.week {
   display: grid;
-  place-items: center;
-  position: relative;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-bottom: var(--space-2, 8px);
 }
 
-.today-header-avatar-btn:active {
-  transform: scale(0.92);
+.day {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  padding: 8px 0 10px;
+  border-radius: 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
-.today-header-avatar-img,
-.today-avatar-img {
-  inline-size: 40px;
-  block-size: 40px;
-  border-radius: var(--radius-full);
-  object-fit: cover;
-  display: block;
+.day b {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
 }
 
-.today-header-avatar-btn svg {
-  inline-size: 40px;
-  block-size: 40px;
-  display: block;
+.day.current {
+  background: var(--color-primary);
+  color: color-mix(in srgb, var(--color-on-primary) 85%, transparent);
+  border-color: var(--color-primary);
 }
 
-.app-shell:has(.today-page) > .topbar {
-  display: none;
-}
-
-.today-header-avatar-btn:active {
-  transform: scale(0.92);
+.day.current b {
+  color: var(--color-on-primary);
 }
 
 /* 今日用药进度卡片 */
+.today-summary,
+.today-summary.summary,
 .today-progress-card {
-  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
   background: var(--color-surface);
-  border-radius: var(--radius-xl);
-  padding: 18px 20px 16px 20px;
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+  border-radius: var(--radius-lg, 16px);
   border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  gap: var(--space-4, 16px);
+}
+
+.summary-left {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  overflow: visible;
+  gap: 4px;
+  flex: 1;
+  min-inline-size: 0;
 }
 
-.today-capsule-mini-wrap {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  animation: floatPillMini 4s ease-in-out infinite alternate;
-}
-
-.today-capsule-mini-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  filter: drop-shadow(0 6px 10px rgba(56, 189, 248, 0.32));
-}
-
-@keyframes floatPillMini {
-  0% { transform: translateY(0) rotate(0deg); }
-  100% { transform: translateY(-5px) rotate(3deg); }
-}
-
-.today-capsule-handwritten-text {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-family: 'Caveat', 'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', 'Ma Shan Zheng', cursive, sans-serif;
-  font-size: 13px;
-  font-weight: 700;
-  color: #6366f1;
-  line-height: 1.25;
-  letter-spacing: 0.3px;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
-}
-
-[data-theme='dark'] .today-capsule-handwritten-text {
-  color: #a5b4fc;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
-.today-capsule-chevron {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #818cf8;
-  opacity: 0.75;
-}
-
-.today-capsule-chevron svg {
-  width: 12px;
-  height: 12px;
-  stroke-width: 2.5;
-}
-
-.today-progress-title {
-  font-size: var(--fs-headline);
-  font-weight: 700;
+.summary .large {
+  font-size: 36px;
+  line-height: 1.1;
+  letter-spacing: -1px;
+  font-weight: 600;
   color: var(--color-text);
-  letter-spacing: -0.2px;
 }
 
-.today-progress-body {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 20px;
-  padding: 2px 0 4px;
+.summary .large span {
+  font-size: 18px;
+  color: var(--color-text-muted);
+  letter-spacing: 0;
+  font-weight: 400;
 }
 
-.today-progress-ring-wrap {
-  flex-shrink: 0;
-  inline-size: 104px;
-  block-size: 104px;
-  display: grid;
-  place-items: center;
-  position: relative;
+.summary p {
+  font-size: var(--fs-footnote, 13px);
+  color: var(--color-text-muted);
+  margin: 4px 0 0;
+  line-height: 1.4;
 }
 
-.today-progress-legend {
+/* 下一次用药 / 待服聚焦大卡片 */
+.today-focus-section {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  flex-grow: 1;
+  margin-top: var(--space-1, 4px);
 }
 
-.today-legend-item {
+.time-label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  font-size: var(--fs-subheadline, 14px);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.time-label .tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: max-content;
+}
+
+.dose.today-focus-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dose-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dose-image {
+  inline-size: 64px;
+  block-size: 64px;
+  flex-shrink: 0;
+  background: var(--color-surface-muted);
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.dose-image img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.dose-image svg {
+  inline-size: 58px;
+  block-size: 58px;
+}
+
+.dose-image.done-check {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  border-color: rgba(35, 106, 85, 0.2);
+}
+
+.dose-image.done-check svg {
+  inline-size: 32px;
+  block-size: 32px;
+  stroke: var(--color-primary);
+}
+
+.dose-meta {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dose-meta h3 {
   font-size: 15px;
-  color: var(--color-text-muted);
-  font-weight: 500;
-}
-
-.today-legend-dot {
-  inline-size: 18px;
-  block-size: 18px;
-  border-radius: var(--radius-full);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-
-.today-legend-inner {
-  inline-size: 8px;
-  block-size: 8px;
-  border-radius: var(--radius-full);
-}
-
-.today-legend-dot.taken {
-  background: #eff6ff;
-}
-.today-legend-dot.taken .today-legend-inner {
-  background: #2563eb;
-  box-shadow: 0 0 6px rgba(37, 99, 235, 0.45);
-}
-
-.today-legend-dot.pending {
-  background: #ecfdf5;
-}
-.today-legend-dot.pending .today-legend-inner {
-  background: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.45);
-}
-
-.today-legend-dot.skipped {
-  background: #f1f5f9;
-}
-.today-legend-dot.skipped .today-legend-inner {
-  background: #94a3b8;
-}
-
-.today-legend-text {
-  color: var(--color-text-muted);
-  font-size: 14px;
-}
-
-.today-legend-count {
   font-weight: 700;
   color: var(--color-text);
-  font-variant-numeric: tabular-nums;
-  min-inline-size: 16px;
-  display: inline-block;
-  text-align: end;
-  margin: 0 2px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
-.today-progress-encourage {
-  font-size: 13px;
+.dose-meta p {
+  font-size: var(--fs-caption, 12px);
   color: var(--color-text-muted);
-  font-weight: 500;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.dose-bottom {
   margin-top: 2px;
-  padding-top: 10px;
+  padding-top: 14px;
   border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dose-bottom small {
+  font-size: var(--fs-caption, 12px);
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.primary.today-primary-btn {
+  min-inline-size: 96px;
+  min-block-size: var(--tap, 44px);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-radius: var(--radius-md, 10px);
+  padding: 0 18px;
+  font-size: var(--fs-subheadline, 13px);
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.primary.today-primary-btn:hover {
+  background: var(--color-primary-hover, #1a5443);
+}
+
+.primary.today-primary-btn:active {
+  transform: scale(0.96);
+}
+
+.secondary.today-secondary-btn {
+  min-inline-size: 96px;
+  min-block-size: var(--tap, 44px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 10px);
+  font-size: var(--fs-subheadline, 13px);
+  font-weight: 600;
+  padding: 0 16px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.secondary.today-secondary-btn:hover {
+  background: var(--color-surface-muted);
+}
+
+.secondary.today-secondary-btn:active {
+  transform: scale(0.96);
 }
 
 /* 计划时段与时段筛选 */
@@ -355,37 +342,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: var(--space-2);
-}
-
-.today-section-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.today-title-calendar-badge {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  display: grid;
-  place-items: center;
-  color: #ffffff;
-  box-shadow: 0 3px 8px rgba(99, 102, 241, 0.3);
-  flex-shrink: 0;
-}
-
-.today-title-calendar-badge svg {
-  width: 18px;
-  height: 18px;
-  stroke: #ffffff;
-  stroke-width: 2.2;
+  margin-top: var(--space-3, 12px);
 }
 
 .today-section-title {
-  font-size: var(--fs-headline);
-  font-weight: 800;
+  font-size: var(--fs-headline, 17px);
+  font-weight: 700;
   color: var(--color-text);
   margin: 0;
 }
@@ -398,48 +360,44 @@
   scrollbar-width: none;
 }
 
-.today-filter-tabs::-webkit-scrollbar { display: none; }
+.today-filter-tabs::-webkit-scrollbar {
+  display: none;
+}
 
 .today-filter-pill {
-  border: 1px solid rgba(226, 232, 248, 0.8);
-  background: #ffffff;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
   color: var(--color-text-muted);
   padding: 6px 14px;
   border-radius: var(--radius-full);
-  font-size: var(--fs-subheadline);
+  font-size: var(--fs-caption, 12px);
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
+  min-width: max-content;
   transition: all 0.2s ease;
 }
 
 .today-filter-pill.active {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
 }
 
-/* 药品列表卡片 */
+/* 药品时段列表与卡片 */
 .today-time-group {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
-  animation: microFadeUp 220ms var(--ease-smooth) backwards;
+  gap: 10px;
+  margin-top: var(--space-2, 8px);
 }
-
-.today-time-group:nth-child(1) { animation-delay: 0ms; }
-.today-time-group:nth-child(2) { animation-delay: 35ms; }
-.today-time-group:nth-child(3) { animation-delay: 70ms; }
-.today-time-group:nth-child(4) { animation-delay: 105ms; }
-.today-time-group:nth-child(n + 5) { animation-delay: 140ms; }
 
 .today-time-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px;
+  padding: 0 2px;
 }
 
 .today-time-tag {
@@ -449,112 +407,93 @@
 }
 
 .today-slot-badge {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background: #ffffff;
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   display: grid;
   place-items: center;
-  color: #6366f1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
   flex-shrink: 0;
 }
 
 .today-slot-badge svg {
-  width: 18px;
-  height: 18px;
+  inline-size: 16px;
+  block-size: 16px;
   stroke-width: 2.2;
 }
 
-.today-slot-badge.slot-morning {
-  color: #4f46e5;
-  border-color: rgba(99, 102, 241, 0.25);
-}
-
-.today-slot-badge.slot-noon {
-  color: #f59e0b;
-  border-color: rgba(245, 158, 11, 0.25);
-}
-
-.today-slot-badge.slot-evening {
-  color: #ec4899;
-  border-color: rgba(236, 72, 153, 0.25);
-}
-
-.today-slot-badge.slot-bedtime {
-  color: #8b5cf6;
-  border-color: rgba(139, 92, 246, 0.25);
-}
-
-[data-theme='dark'] .today-slot-badge {
-  background: var(--color-surface);
-  border-color: var(--color-border);
-}
-
 .today-slot-time-text {
-  font-size: var(--fs-headline);
-  font-weight: 800;
+  font-size: var(--fs-subheadline, 14px);
+  font-weight: 700;
   color: var(--color-text);
 }
 
 .today-time-status-pill {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   padding: 3px 10px;
   border-radius: var(--radius-full);
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: max-content;
 }
 
 .today-time-status-pill.pending {
-  background: var(--tint-orange-bg);
-  color: var(--color-warning);
-  border: 1px solid rgba(249, 115, 22, 0.25);
+  background: #fdf3e7;
+  color: #987146;
+  border: 1px solid rgba(152, 113, 70, 0.2);
 }
 
 .today-time-status-pill.taken {
-  background: var(--tint-green-bg);
-  color: var(--color-success);
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  border: 1px solid rgba(35, 106, 85, 0.2);
 }
 
 .today-batch-take-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-block-size: 32px;
-  padding: 0 13px;
+  min-block-size: var(--tap);
+  padding: 0 12px;
   border-radius: var(--radius-full);
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(79, 70, 229, 0.16) 100%);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
   color: var(--color-primary);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.12);
-  transition: transform 0.18s var(--ease-spring), background 0.18s ease;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease, background 0.18s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: max-content;
 }
 
 .today-batch-take-btn svg {
-  inline-size: 14px;
-  block-size: 14px;
+  inline-size: 13px;
+  block-size: 13px;
   stroke: var(--color-primary);
 }
 
 .today-batch-take-btn:active {
-  transform: scale(0.95);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(79, 70, 229, 0.26) 100%);
+  transform: scale(0.96);
+  background: var(--color-surface-muted);
 }
 
 .today-card-item {
   background: var(--color-surface);
-  border-radius: var(--radius-xl);
-  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md, 14px);
+  padding: 12px 14px;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
-  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
   cursor: pointer;
 }
 
@@ -563,18 +502,21 @@
 }
 
 .today-card-thumb {
-  inline-size: 52px;
-  block-size: 52px;
-  border-radius: var(--radius-md);
+  inline-size: 48px;
+  block-size: 48px;
+  border-radius: var(--radius-sm, 10px);
   overflow: hidden;
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
-.today-card-thumb img {
+.today-card-thumb img,
+.today-card-thumb svg {
   inline-size: 100%;
   block-size: 100%;
+  max-inline-size: 100%;
+  max-block-size: 100%;
   object-fit: cover;
 }
 
@@ -583,12 +525,12 @@
   min-inline-size: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .today-card-name {
-  font-size: var(--fs-headline);
-  font-weight: 700;
+  font-size: var(--fs-subheadline, 14px);
+  font-weight: 600;
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
@@ -596,7 +538,7 @@
 }
 
 .today-card-meta {
-  font-size: var(--fs-caption);
+  font-size: var(--fs-caption, 11px);
   color: var(--color-text-muted);
 }
 
@@ -604,28 +546,31 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .today-stock-tag {
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: max-content;
 }
 
 .today-stock-tag.ok {
-  background: var(--tint-green-bg);
-  color: var(--color-success);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 
 .today-stock-tag.low {
-  background: var(--tint-orange-bg);
-  color: var(--color-warning);
+  background: #fdf3e7;
+  color: #987146;
 }
 
-/* 圆形打卡 Radio 按钮（扩大触控热区至 >= 44px） */
+/* 圆形打卡 Radio 按钮 (扩大触控热区至 >= 44px) */
 .today-radio-btn {
   position: relative;
   inline-size: 28px;
@@ -638,11 +583,11 @@
   place-items: center;
   padding: 0;
   flex-shrink: 0;
-  transition: border-color 0.2s var(--ease-smooth), background-color 0.2s var(--ease-smooth), transform 0.2s var(--ease-spring);
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
 }
 
 .today-radio-btn:active {
-  transform: scale(0.88);
+  transform: scale(0.9);
 }
 
 .today-radio-btn::after {
@@ -653,22 +598,15 @@
 }
 
 .today-radio-btn.taken {
-  background: var(--color-success);
-  border-color: var(--color-success);
-  color: #ffffff;
-  animation: checkmarkPop 260ms var(--ease-spring) forwards;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .today-radio-btn.taken svg {
   inline-size: 16px;
   block-size: 16px;
   stroke-width: 3;
-}
-
-.today-radio-btn.taken svg path {
-  stroke-dasharray: 28;
-  stroke-dashoffset: 28;
-  animation: checkmarkDraw 240ms var(--ease-smooth) forwards;
 }
 
 .today-radio-btn:not(.taken):hover {
@@ -686,26 +624,29 @@
   gap: 16px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.04);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: var(--shadow-sm);
 }
 
 .today-empty-title {
-  font-size: var(--fs-title2);
+  font-size: var(--fs-title2, 20px);
   font-weight: 700;
   color: var(--color-text);
 }
 
 .today-empty-sub {
-  font-size: var(--fs-body);
+  font-size: var(--fs-body, 14px);
   color: var(--color-text-muted);
   max-inline-size: 300px;
   line-height: 1.5;
 }
 
-.today-fab {
-  display: none !important;
+.today-empty-card .btn,
+.today-empty-card button {
+  flex: 0 0 auto;
+  min-block-size: var(--tap, 44px);
 }
+
 /* 契约兼容样式 */
 .today-summary-progress {
   inline-size: 112px;
@@ -729,32 +670,68 @@
   }
 }
 
+@media (max-width: 360px) {
+  .week {
+    gap: 3px;
+  }
+  .day {
+    padding: 6px 0 8px;
+    font-size: 10px;
+    border-radius: 10px;
+  }
+  .day b {
+    font-size: 12.5px;
+  }
+  .today-summary,
+  .today-summary.summary,
+  .today-progress-card {
+    padding: 14px 14px;
+    gap: 10px;
+  }
+  .summary-left .large {
+    font-size: 36px;
+  }
+  .dose.today-focus-card {
+    padding: 14px;
+  }
+  .dose-image {
+    inline-size: 54px;
+    block-size: 54px;
+  }
+  .primary.today-primary-btn,
+  .secondary.today-secondary-btn {
+    padding: 0 12px;
+    font-size: 12px;
+  }
+}
 
 /* 深色主题适配与无障碍动效支持 */
-[data-theme='dark'] .medication-list-page,
+[data-theme='dark'] .page.today-page,
 [data-theme='dark'] .today-page {
   color: var(--color-text);
 }
 
-[data-theme='dark'] .med-stat-card,
-[data-theme='dark'] .med-item-card,
+[data-theme='dark'] .today-summary,
 [data-theme='dark'] .today-progress-card,
-[data-theme='dark'] .today-card-item {
+[data-theme='dark'] .dose.today-focus-card,
+[data-theme='dark'] .today-card-item,
+[data-theme='dark'] .day {
   background: var(--color-surface);
   border-color: var(--color-border);
 }
 
-@media (max-width: 420px) {
-  .med-stat-grid {
-    gap: var(--space-2);
-  }
+/* 暗色下恢复「今日」格的主色填充：上一条 (0,2,0) 的 .day 会把 .current 也刷成 surface，
+   本条 (0,3,0) 更高特异性，确保今日格仍为主色底 + 深色字（on-primary）。 */
+[data-theme='dark'] .day.current {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .today-page *,
-  .medication-list-page *,
-  .today-fab,
-  .med-fab-add {
+  .today-card-item,
+  .primary.today-primary-btn,
+  .secondary.today-secondary-btn {
     transition: none !important;
     animation: none !important;
   }

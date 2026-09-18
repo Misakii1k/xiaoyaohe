@@ -38,6 +38,10 @@ import {
   hasAlarmScanToken,
   rotateAlarmScanToken,
 } from '../../../features/alarmScanVerify';
+import {
+  isAlarmSlideUnlockEnabled,
+  setAlarmSlideUnlockEnabled,
+} from '../../../features/alarmSlideUnlock';
 import { startScan, scanCodeFromImage, type Scanner } from '../../../features/scanner';
 import {
   checkAccessibilityGuardEnabled,
@@ -60,6 +64,7 @@ import {
 import { panel, setChip } from '../components/panelPrimitives';
 import type { PanelChip } from '../types';
 import { openKeepAliveGuideModal, openKeepAlivePromptSheet } from './KeepAlivePanel';
+import { LOCAL_APP_VERSION_CODE } from '../../../sync/lan/apkTransport';
 
 /** ---------------- 通知面板 ---------------- */
 export function reminderPanelChip(): PanelChip {
@@ -235,6 +240,17 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
   }
 
   const appEnabled = isAppNotificationsEnabled();
+  const basicCard = el('div', { class: 'settings-subcard' });
+  const basicHeader = el('div', { class: 'settings-subcard-header' });
+  const basicTitleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
+    el('span', { class: 'settings-subcard-title', text: '基础提醒设置' }),
+  ]);
+  const basicBadge = el('span', {
+    class: `chip-pill ${appEnabled ? 'chip-primary' : ''}`,
+    text: appEnabled ? '运行中' : '已暂停',
+  });
+  basicHeader.append(basicTitleWrap, basicBadge);
+
   const toggleRow = el('label', {
     class: 'settings-toggle-row',
   });
@@ -263,14 +279,15 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
     rerender();
   };
   toggleRow.append(toggleCopy, toggle);
-  body.append(toggleRow);
+  basicCard.append(basicHeader, toggleRow);
 
   if (!appEnabled) {
-    body.append(
+    basicCard.append(
       el('div', { class: 'banner info' }, [
         el('span', { html: '应用内提醒已关闭。系统通知权限可保留，但不会再发送用药提醒。' }),
       ]),
     );
+    body.append(basicCard);
     return;
   }
 
@@ -283,14 +300,13 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
     : perm === 'denied'
       ? '通知被拒绝。请到系统设置中允许通知。'
       : '通知尚未开启，开启后才能按时收到提醒。';
-  body.append(
+  basicCard.append(
     el('div', { class: 'banner ' + cls }, [el('span', { html: text })])
   );
 
-  // 诚实降级：网页端做不到手机 App 那种「到点必响」，这一点必须写在用户看得见的
-  // 地方，而不是藏在文档里。把话说满，用户漏吃药才是真正的代价。
+  // 诚实降级：网页端做不到手机 App 那种「到点必响」
   if (perm === 'granted' && !native) {
-    body.append(
+    basicCard.append(
       el('div', { class: 'banner warn mt-3' }, [
         el('span', {
           html:
@@ -311,8 +327,22 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       rerender();
     };
     row.append(grantBtn);
-    body.append(row);
-  } else {
+    basicCard.append(row);
+  }
+  body.append(basicCard);
+
+  if (perm === 'granted') {
+    const testCard = el('div', { class: 'settings-subcard' });
+    const testHeader = el('div', { class: 'settings-subcard-header' });
+    const testTitleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '通知通道测试' }),
+    ]);
+    testHeader.append(testTitleWrap);
+    const testDesc = el('div', {
+      class: 'settings-subcard-desc',
+      text: '测试系统通知与全屏强提醒是否能够准时弹出和响铃。',
+    });
+
     const isNativeAlarm = isNativeReminderPlatform() && nativeMedicationAlarmAvailable();
     const row = el('div', { class: isNativeAlarm ? 'settings-test-grid' : 'btn-row mt-3' });
     const testBtn = el('button', { class: 'btn tonal', html: '发送测试通知' });
@@ -333,7 +363,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       const strongTest = el('button', { class: 'btn tonal', html: '测试锁屏强提醒' });
       strongTest.onclick = async () => {
         try {
-          await fireNativeMedicationAlarmNow('strong');
+          await fireNativeMedicationAlarmNow('strong', { forceScanVerify: false });
           toast('已触发强提醒（如未弹出全屏页，请看通知栏/锁屏）');
         } catch {
           toast('触发失败');
@@ -342,7 +372,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       const fullTest = el('button', { class: 'btn tonal', html: '测试全屏提醒' });
       fullTest.onclick = async () => {
         try {
-          await fireNativeMedicationAlarmNow('fullscreen-short');
+          await fireNativeMedicationAlarmNow('strong', { forceScanVerify: false });
           toast('已触发全屏提醒');
         } catch {
           toast('触发失败，请先允许全屏权限');
@@ -350,22 +380,41 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       };
       row.append(strongTest, fullTest);
     }
-    body.append(row);
+    testCard.append(testHeader, testDesc, row);
+    body.append(testCard);
   }
 
   if (perm === 'granted' && isNativeReminderPlatform()) {
     const exactAlarm = getExactAlarmCapability();
+    const fullScreen = getFullScreenAlarmCapability();
+    const overlay = getOverlayAlarmCapability();
+    const hasOverlayIssue = overlay === 'denied';
+    const hasFullScreenIssue = fullScreen === 'denied';
+    const isFullyGranted = fullScreen === 'granted' && overlay !== 'denied';
+
+    const permCard = el('div', { class: 'settings-subcard' });
+    const permHeader = el('div', { class: 'settings-subcard-header' });
+    const permTitleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '系统高级权限与能力' }),
+    ]);
+    const permBadge = el('span', {
+      class: `chip-pill ${isFullyGranted && exactAlarm === 'granted' ? 'chip-primary' : 'chip-warn'}`,
+      text: isFullyGranted && exactAlarm === 'granted' ? '已完备' : '需优化',
+    });
+    permHeader.append(permTitleWrap, permBadge);
+    permCard.append(permHeader);
+
     if (exactAlarm !== 'granted') {
       const message = exactAlarm === 'unavailable'
         ? '当前系统无法确认精确闹钟能力，提醒可能有数分钟延迟。'
         : '精确闹钟尚未允许；Android 仍会安排提醒，但可能延迟送达。';
-      body.append(
-        el('div', { class: 'banner warn mt-3' }, [
+      permCard.append(
+        el('div', { class: 'banner warn' }, [
           el('span', { html: message }),
         ]),
       );
       if (exactAlarm !== 'unavailable') {
-        const exactRow = el('div', { class: 'btn-row mt-3' });
+        const exactRow = el('div', { class: 'btn-row' });
         const exactButton = el('button', { class: 'btn tonal', html: '允许精确闹钟' });
         exactButton.onclick = async () => {
           const capability = await requestExactAlarmCapability();
@@ -378,18 +427,13 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
           rerender();
         };
         exactRow.append(exactButton);
-        body.append(exactRow);
+        permCard.append(exactRow);
       }
     }
-    const fullScreen = getFullScreenAlarmCapability();
-    const overlay = getOverlayAlarmCapability();
-    const hasOverlayIssue = overlay === 'denied';
-    const hasFullScreenIssue = fullScreen === 'denied';
-    const isFullyGranted = fullScreen === 'granted' && overlay !== 'denied';
 
     if (isFullyGranted) {
-      body.append(
-        el('div', { class: 'banner ok mt-3' }, [
+      permCard.append(
+        el('div', { class: 'banner ok' }, [
           el('span', {
             html: '全屏提醒与悬浮显示已就绪：用药时间到达时将直接弹出全屏界面。',
           }),
@@ -397,8 +441,8 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       );
     } else {
       if (hasFullScreenIssue || fullScreen === 'unavailable') {
-        body.append(
-          el('div', { class: 'banner warn mt-3' }, [
+        permCard.append(
+          el('div', { class: 'banner warn' }, [
             el('span', {
               html: fullScreen === 'denied'
                 ? '全屏提醒权限尚未开启；到点提醒会被系统限制在通知栏，无法全屏覆盖。'
@@ -407,35 +451,36 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
           ]),
         );
         if (hasFullScreenIssue) {
-          const fullScreenRow = el('div', { class: 'btn-row mt-3' });
+          const fullScreenRow = el('div', { class: 'btn-row' });
           const fullScreenButton = el('button', { class: 'btn tonal', html: '允许全屏提醒' });
           fullScreenButton.onclick = async () => {
             await requestFullScreenAlarmCapability();
             toast('已打开系统设置，返回后会自动检查');
           };
           fullScreenRow.append(fullScreenButton);
-          body.append(fullScreenRow);
+          permCard.append(fullScreenRow);
         }
       }
 
       if (hasOverlayIssue) {
-        body.append(
-          el('div', { class: 'banner warn mt-3' }, [
+        permCard.append(
+          el('div', { class: 'banner warn' }, [
             el('span', {
               html: '在亮屏使用其他应用时弹出全屏需要「在其他应用上层显示（悬浮窗）」权限；未开启时仅显示顶部横幅。',
             }),
           ]),
         );
-        const overlayRow = el('div', { class: 'btn-row mt-3' });
+        const overlayRow = el('div', { class: 'btn-row' });
         const overlayButton = el('button', { class: 'btn tonal', html: '允许在其他应用上层显示' });
         overlayButton.onclick = async () => {
           await requestOverlayAlarmCapability();
           toast('已打开悬浮窗设置，返回后会自动检查');
         };
         overlayRow.append(overlayButton);
-        body.append(overlayRow);
+        permCard.append(overlayRow);
       }
     }
+    body.append(permCard);
     void refreshFullScreenAlarmCapability();
     void refreshOverlayAlarmCapability();
   }
@@ -443,8 +488,103 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
   // ── 用药提醒铃声设置（专属音乐 vs 系统默认）──
   body.append(renderAlarmRingtoneCard(rerender));
 
-  // ── 扫码解除强制提醒（全屏响铃仅 Android 原生生效，配置与绑定全局常驻）──
+  // ── 全屏提醒滑动解锁（防误触设置）──
   const isNativeAlarm = isNativeReminderPlatform() && nativeMedicationAlarmAvailable();
+  const slideUnlockEnabled = isAlarmSlideUnlockEnabled();
+  const slideRow = el('label', { class: 'settings-toggle-row mt-3' });
+  const slideCopy = el('div', { class: 'settings-toggle-copy' });
+
+  const slideTitleRow = el('div', {
+    class: 'settings-toggle-title',
+    style: 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap;',
+  });
+  slideTitleRow.append(el('span', { text: '全屏提醒滑动解锁' }));
+  if (!isNativeAlarm) {
+    slideTitleRow.append(
+      el('span', {
+        class: 'chip-pill',
+        style: 'font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: rgba(0, 0, 0, 0.06); color: var(--color-text-muted);',
+        text: '仅 Android App 生效',
+      }),
+    );
+  }
+
+  const slideDescText = slideUnlockEnabled
+    ? '已开启 · 全屏提醒到点需向右滑动解锁，防止在口袋中误触关闭'
+    : '已关闭 · 全屏提醒到点直接显示操作按钮，可一键点击完成';
+
+  slideCopy.append(
+    slideTitleRow,
+    el('div', { class: 'settings-toggle-desc', text: slideDescText }),
+  );
+  const slideToggle = el('input', {
+    type: 'checkbox',
+    role: 'switch',
+    'aria-label': '全屏提醒滑动解锁',
+  });
+  slideToggle.checked = slideUnlockEnabled;
+  slideToggle.onchange = async () => {
+    setAlarmSlideUnlockEnabled(slideToggle.checked);
+    toast(slideToggle.checked ? '已开启全屏滑动解锁防误触' : '已关闭滑动解锁，到点直接显示按钮');
+    await rescheduleMedicationReminders().catch(() => {});
+    rerender();
+  };
+  slideRow.append(slideCopy, slideToggle);
+
+  // 滑动解锁快捷测试与说明卡片（标准垂直流布局，微卡片化封装）
+  const slideCard = el('div', { class: 'settings-scan-card mt-2' });
+  const slideCardHeader = el('div', { class: 'settings-scan-card-header' });
+  slideCardHeader.append(
+    el('span', {
+      class: `chip-pill ${slideUnlockEnabled ? 'chip-primary' : ''}`,
+      text: slideUnlockEnabled ? '防误触保护中' : '直接出按钮模式',
+    }),
+    el('strong', { text: slideUnlockEnabled ? '滑动解锁体验' : '极速点击模式' }),
+  );
+
+  const slideCardDesc = el('div', {
+    class: 'settings-scan-card-desc',
+    text: slideUnlockEnabled
+      ? '未开启扫码验证时，全屏提醒将展示「向右滑动解锁」轨道，滑动后才显示服药操作按钮，杜绝口袋与拿取时的误触。'
+      : '全屏提醒将直接展示「已服用 / 10分钟后提醒 / 跳过」大按钮；如常将手机放在口袋中，建议开启滑动解锁。',
+  });
+
+  const needsApkUpgrade = isNativeAlarm && LOCAL_APP_VERSION_CODE > 0 && LOCAL_APP_VERSION_CODE < 56;
+  if (needsApkUpgrade) {
+    const upgradeNotice = el('div', {
+      class: 'settings-scan-card-desc mt-1',
+      style: 'color: #b45309; background: rgba(245, 158, 11, 0.1); padding: 8px 12px; border-radius: 8px; font-size: 12px; line-height: 1.5;',
+      text: '提示：滑动解锁属于系统底层全屏组件。您当前通过增量更新获取了最新界面，但仍需在「软件更新」中安装一次完整 APK 安装包方可在全屏闹钟中生效。',
+    });
+    slideCard.append(upgradeNotice);
+  }
+
+  const slideCardGrid = el('div', { class: 'settings-scan-grid' });
+  const testSlideBtn = el('button', {
+    class: 'btn tonal',
+    text: '测试滑动解锁',
+  });
+  testSlideBtn.onclick = async () => {
+    if (!isNativeAlarm) {
+      toast('全屏闹钟滑动解锁需在 Android App 中体验');
+      return;
+    }
+    if (needsApkUpgrade) {
+      toast('当前底层安装包版本未包含滑动解锁，请前往「软件更新」安装完整 APK');
+      return;
+    }
+    try {
+      await fireNativeMedicationAlarmNow('strong', { forceScanVerify: false, slideUnlock: true });
+      toast('已触发全屏提醒，请体验向右滑动解锁');
+    } catch {
+      toast('触发失败，请先允许全屏权限');
+    }
+  };
+  slideCardGrid.append(testSlideBtn);
+  slideCard.append(slideRow, slideCardHeader, slideCardDesc, slideCardGrid);
+  body.append(slideCard);
+
+  // ── 扫码解除强制提醒（全屏响铃仅 Android 原生生效，配置与绑定全局常驻）──
   const scanPref = getAlarmScanVerifyPreference();
   const scanRow = el('label', { class: 'settings-toggle-row mt-3' });
   const scanCopy = el('div', { class: 'settings-toggle-copy' });
@@ -471,7 +611,9 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
         : '已开启 · 全屏提醒必须扫描专属二维码后才能操作')
     : (isCustom
         ? `已关闭 · 当前备用：${formatCustomScanCodeSummary(scanPref.customLabel, scanPref.token)}`
-        : '已关闭 · 提醒到点可直接点击完成或贪睡');
+        : (slideUnlockEnabled
+            ? '已关闭扫码 · 全屏提醒将通过向右滑动解锁防误触'
+            : '已关闭 · 提醒到点可直接点击完成或贪睡'));
 
   scanCopy.append(
     titleRow,
@@ -511,7 +653,6 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
     rerender();
   };
   scanRow.append(scanCopy, scanToggle);
-  body.append(scanRow);
 
   // ── 常驻展示当前绑定状态卡片与操作按钮（无论开关开闭均可见）──
   const scanCard = el('div', { class: 'settings-scan-card mt-2' });
@@ -536,7 +677,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       : '截图保存专属二维码并打印贴在药箱或远离床的位置，到点起身扫码解除，杜绝睡迷糊随手关闭。',
   });
 
-  scanCard.append(cardHeader, cardDesc);
+  scanCard.append(scanRow, cardHeader, cardDesc);
   if (!isNativeAlarm) {
     scanCard.append(
       el('div', {
@@ -545,7 +686,6 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       }),
     );
   }
-  body.append(scanCard);
 
   // 操作按钮网格（双列排列，保证移动端自适应舒展）
   const qrGrid = el('div', { class: 'settings-scan-grid mt-2' });
@@ -560,7 +700,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       return;
     }
     try {
-      await fireNativeMedicationAlarmNow('fullscreen-short');
+      await fireNativeMedicationAlarmNow('strong', { forceScanVerify: true });
       toast('已触发全屏提醒，请体验扫码解锁');
     } catch {
       toast('触发失败，请先允许全屏权限');
@@ -583,7 +723,8 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
     bindCustomBtn.onclick = () => openBindCustomCodeSheet(rerender);
     qrGrid.append(showQrBtn, bindCustomBtn, testUnlockBtn);
   }
-  body.append(qrGrid);
+  scanCard.append(qrGrid);
+  body.append(scanCard);
 
   if (isNativeAlarm) {
     const accCard = el('div', {

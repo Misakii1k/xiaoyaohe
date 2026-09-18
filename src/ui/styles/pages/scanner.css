@@ -107,13 +107,22 @@
 }
 
 .scan-hero-card.blue {
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  box-shadow: 0 10px 24px -4px rgba(79, 70, 229, 0.35);
+  background: var(--color-primary, #236a55);
+  color: var(--color-on-primary);
+  box-shadow: 0 6px 20px -4px rgba(35, 106, 85, 0.35);
 }
 
+/* 绿色入口卡：浅色压深绿底走白字（5.49 / 7.64），
+   暗色反转为亮绿底配深墨绿字（9.26 / 7.05），不再固定白字。 */
 .scan-hero-card.green {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  box-shadow: 0 10px 24px -4px rgba(16, 185, 129, 0.35);
+  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 24px -4px rgba(6, 95, 70, 0.35);
+}
+
+[data-theme='dark'] .scan-hero-card.green {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  color: #0d1a16;
 }
 
 .scan-hero-card:active {

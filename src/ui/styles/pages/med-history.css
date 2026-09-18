@@ -181,9 +181,9 @@
 .calendar-cell.is-selected,
 .calendar-cell.selected,
 .calendar-day-cell.selected {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  color: #ffffff;
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+  background: var(--color-primary, #236a55);
+  color: var(--color-on-primary);
+  box-shadow: 0 4px 14px rgba(35, 106, 85, 0.35);
 }
 
 .calendar-cell.today,
@@ -301,7 +301,7 @@
 .history-plan-timeline-dot.taken { background: #10b981; }
 .history-plan-timeline-dot.skipped { background: #94a3b8; }
 .history-plan-timeline-dot.missed { background: #f59e0b; }
-.history-plan-timeline-dot.pending { background: #6366f1; }
+.history-plan-timeline-dot.pending { background: var(--color-primary, #236a55); }
 
 .history-plan-info {
   flex-grow: 1;
