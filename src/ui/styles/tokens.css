@@ -6,34 +6,31 @@
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
   --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
 
-  /* 参考图 1（微拟物柔和卡片）与 参考图 2（水凝玻璃 + 弥散渐变 + 3D 立绘）深度融合色板 */
-  --color-bg: #f2f4f9;
-  --color-bg-mesh: radial-gradient(at 10% 10%, #e0e7ff 0px, transparent 50%),
-                    radial-gradient(at 90% 20%, #fae8ff 0px, transparent 50%),
-                    radial-gradient(at 50% 80%, #e0f2fe 0px, transparent 50%),
-                    #f1f3f9;
-  --color-surface: rgba(255, 255, 255, 0.88);
+  /* B 方案（清爽秩序）：冰白背景、石墨文字、青绿主色 */
+  --color-bg: #f6f8f7;
+  --color-bg-mesh: #f6f8f7;
+  --color-surface: rgba(255, 255, 255, 0.94);
   --color-surface-solid: #ffffff;
-  --color-surface-glass: rgba(255, 255, 255, 0.78);
-  --color-surface-muted: rgba(243, 244, 248, 0.85);
-  --color-text: #1e202e;
-  --color-text-muted: #787c91;
-  --color-border: rgba(226, 230, 242, 0.8);
-  --color-border-glass: rgba(255, 255, 255, 0.88);
+  --color-surface-glass: rgba(255, 255, 255, 0.88);
+  --color-surface-muted: #edf1ef;
+  --color-text: #202e2b;
+  --color-text-muted: #74817d;
+  --color-border: #e1e8e4;
+  --color-border-glass: #e1e8e4;
 
-  --color-primary: #5c62d6;
-  --color-primary-pressed: #4a50bd;
-  --color-primary-soft: #eef0ff;
-  --color-primary-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  --color-hero-gradient: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #38bdf8 100%);
-  --color-lilac: #818cf8;
-  --color-ink-purple: #35385e;
+  --color-primary: #236a55;
+  --color-primary-pressed: #175940;
+  --color-primary-soft: #e3ede6;
+  --color-primary-gradient: linear-gradient(135deg, #236a55 0%, #175940 100%);
+  --color-hero-gradient: linear-gradient(135deg, #236a55 0%, #34785c 50%, #4a8c72 100%);
+  --color-lilac: #236a55;
+  --color-ink-purple: #202e2b;
 
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
-  --color-accent-coral: #fb7185;
-  --color-accent-mint: #06b6d4;
+  --color-success: #236a55;
+  --color-warning: #b27a3c;
+  --color-danger: #c94a4a;
+  --color-accent-coral: #d46859;
+  --color-accent-mint: #2a8369;
 
   /* 助手 Markdown 渲染面：代码块 / inline code / 表格 / 引用 */
   --color-code-bg: #2a2c36;
@@ -91,16 +88,17 @@
   --space-7: 32px;
   --space-8: 40px;
   --radius-sm: 10px;
-  --radius-md: 14px;
+  --radius-md: 16px;
   --radius-lg: 20px;
   --radius-xl: 26px;
   --radius-full: 999px;
   --tap: 44px;
-  --shadow-sm: 0 4px 12px rgba(30, 32, 46, 0.04), 0 1px 3px rgba(30, 32, 46, 0.02);
-  --shadow-md: 0 8px 24px -4px rgba(99, 102, 241, 0.09), 0 4px 12px rgba(30, 32, 46, 0.04);
-  --shadow-lg: 0 16px 40px -6px rgba(99, 102, 241, 0.15), 0 8px 20px rgba(30, 32, 46, 0.06);
+  --shadow-sm: 0 1px 3px rgba(32, 46, 43, 0.04), 0 4px 12px rgba(32, 46, 43, 0.03);
+  --shadow-md: 0 4px 16px rgba(35, 106, 85, 0.07), 0 2px 6px rgba(32, 46, 43, 0.04);
+  --shadow-lg: 0 12px 32px rgba(35, 106, 85, 0.10), 0 4px 12px rgba(32, 46, 43, 0.06);
 
   /* 动效系统 Tokens (iOS Springs & Shadcn Smooth Easings) */
+  --ease-standard: cubic-bezier(0.22, 0.8, 0.25, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
@@ -160,32 +158,29 @@
    由 legacy.css 末尾的暗色块继续承担（同一属性触发）。 */
 :root[data-theme='dark'] {
   --color-bg: #17181d;
-  --color-bg-mesh: radial-gradient(at 10% 10%, #262a3d 0px, transparent 50%),
-                    radial-gradient(at 90% 20%, #33233d 0px, transparent 50%),
-                    radial-gradient(at 50% 80%, #1c2a3d 0px, transparent 50%),
-                    #14151a;
-  --color-surface: rgba(32, 33, 40, 0.88);
-  --color-surface-solid: #202128;
-  --color-surface-glass: rgba(32, 33, 40, 0.78);
-  --color-surface-muted: rgba(45, 46, 56, 0.85);
-  --color-text: #f3f4fa;
-  --color-text-muted: #a4a8bc;
-  --color-border: rgba(68, 71, 88, 0.85);
-  --color-border-glass: rgba(255, 255, 255, 0.18);
+  --color-bg-mesh: #17181d;
+  --color-surface: rgba(30, 34, 32, 0.92);
+  --color-surface-solid: #1e2220;
+  --color-surface-glass: rgba(30, 34, 32, 0.82);
+  --color-surface-muted: rgba(40, 46, 44, 0.9);
+  --color-text: #edf2ef;
+  --color-text-muted: #95a39e;
+  --color-border: rgba(70, 84, 79, 0.75);
+  --color-border-glass: rgba(255, 255, 255, 0.14);
 
-  --color-primary: #8b90e8;
-  --color-primary-pressed: #6f74d8;
-  --color-primary-soft: #2b2e49;
-  --color-primary-gradient: linear-gradient(135deg, #7c82ee 0%, #6a5fe0 100%);
-  --color-hero-gradient: linear-gradient(135deg, #818cf8 0%, #a78bfa 50%, #38bdf8 100%);
-  --color-lilac: #8b90e8;
-  --color-ink-purple: #c8cbf0;
+  --color-primary: #48a88c;
+  --color-primary-pressed: #368f74;
+  --color-primary-soft: #183329;
+  --color-primary-gradient: linear-gradient(135deg, #48a88c 0%, #368f74 100%);
+  --color-hero-gradient: linear-gradient(135deg, #48a88c 0%, #57b594 50%, #74d6a2 100%);
+  --color-lilac: #48a88c;
+  --color-ink-purple: #c2d8cf;
 
-  --color-success: #34d399;
-  --color-warning: #fbbf24;
-  --color-danger: #f87171;
-  --color-accent-coral: #fb7185;
-  --color-accent-mint: #22d3ee;
+  --color-success: #48a88c;
+  --color-warning: #e09f4c;
+  --color-danger: #e26363;
+  --color-accent-coral: #e27d6f;
+  --color-accent-mint: #48a88c;
 
   /* 助手 Markdown 渲染面：深色模式下代码块维持深色，调亮边框与底色对比 */
   --color-code-bg: #1e2027;
