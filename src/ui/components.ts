@@ -691,6 +691,7 @@ export function renderPage(opts: {
   activeTab: string;
   topRight?: HTMLElement;
   topLeft?: HTMLElement;
+  header?: HTMLElement;
   content: HTMLElement;
   fab?: HTMLElement;
   actionDock?: HTMLElement;
@@ -708,7 +709,7 @@ export function renderPage(opts: {
   const dock = opts.actionDock ?? (opts.fab ? el('div', {}, [opts.fab]) : undefined);
   renderAppShell({
     root: opts.root,
-    header: topbar(opts.title, opts.topRight, left),
+    header: opts.header ?? topbar(opts.title, opts.topRight, left),
     content: opts.content,
     dock,
     navigation: opts.showTabbar !== false ? tabbar(opts.activeTab) : undefined,

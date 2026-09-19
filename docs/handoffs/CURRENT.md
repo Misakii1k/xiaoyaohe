@@ -2,8 +2,20 @@
 
 Updated: 2026-09-19
 Integration branch: `main`
-Product version: `1.1.4` (versionCode 62)
-Latest integration commit: `release: v1.1.4 - 今日页面顶部视觉重构、周历切换与只读保护`
+Product version: `1.1.5` (versionCode 63)
+Latest integration commit: `release: v1.1.5 - 今日页面顶栏问候语常驻与 AI 助手整合`
+
+## Release v1.1.5 (versionCode 63, main)
+
+- **集成内容**：
+  - 「今日」页面顶栏全新升级：将根据时段自适应的问候语（如早上好/中午好/下午好/晚上好）与副标题小字（“规律的小事，也值得认真对待。” / 日期提示）彻底提升为页面专属常驻顶栏（`app-header`），替换掉原先单独粗暴显示“今天”的顶栏标题；
+  - 顶栏右上角常驻「✦ AI 助手」水凝胶囊按钮，滑动浏览用药日程时问候与助手始终保持在屏幕顶端，不随内容滚动滚走；
+  - 页面主内容区域紧凑衔接周历卡片与环形进度条，整体视觉体验舒展通畅；
+  - 版本递增至 1.1.5 / versionCode 63。
+- **质量门禁**：
+  - `npm test`：91 文件 / 573 项 100% PASS；
+  - `npm run typecheck`：0 错误；
+  - `tone_lint.py`：PASS。
 
 ## Release v1.1.4 (versionCode 62, main)
 

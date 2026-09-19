@@ -96,14 +96,15 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   const skipped = activeItems.filter((item) => item.log?.status === 'skipped').length;
   const pending = total - taken - skipped;
 
-  // 1. 顶部问候栏 (Plan B 风格)
-  const headerRow = el('div', { class: 'today-head' });
+  // 1. 顶部常驻问候栏 (彻底替换默认「今天」顶栏，常驻最顶部：XX好 + 小字 + AI 助手)
+  const todayHeader = el('header', { class: 'topbar today-topbar' });
   const hour = now.getHours();
   const greeting = hour < 11 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
-  const headerLeft = el('div');
-  const greetingEl = el('h2', { text: greeting });
+  const headerLeft = el('div', { class: 'today-topbar-left' });
+  const greetingEl = el('h1', { class: 'today-greeting', text: greeting });
   const subtitleRow = el('div', { class: 'today-subtitle-row' });
   const subtitleText = el('p', {
+    class: 'today-subtitle',
     text: isViewingToday ? '规律的小事，也值得认真对待。' : `正在查看 ${currentViewDate} 安排`,
   });
   subtitleRow.append(subtitleText);
@@ -125,9 +126,9 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   }
   headerLeft.append(greetingEl, subtitleRow);
 
-  const headerRight = el('div', { class: 'today-head-right' });
+  const headerRight = el('div', { class: 'today-topbar-right' });
   const aiBtn = el('button', {
-    class: 'today-ai-btn',
+    class: 'topbar-pill topbar-ai-pill today-ai-btn',
     type: 'button',
     'aria-label': '打开 AI 助手',
     title: '打开 AI 助手',
@@ -136,8 +137,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   aiBtn.onclick = () => void import('../ui/AiAssistant').then((m) => m.openAssistantPanel());
   headerRight.append(aiBtn);
 
-  headerRow.append(headerLeft, headerRight);
-  content.append(headerRow);
+  todayHeader.append(headerLeft, headerRight);
 
   // 2. 本周日期栏 (周一到周日，支持翻周与点击高亮)
   const baseDate = new Date(now);
@@ -556,7 +556,13 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
     return cleanup;
   }
 
-  renderPage({ root, title: '今天', activeTab: 'today', content });
+  renderPage({
+    root,
+    title: '今日',
+    activeTab: 'today',
+    header: todayHeader,
+    content,
+  });
   return cleanup;
 }
 
