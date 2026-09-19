@@ -8,7 +8,7 @@ Latest version: `1.1.6` (Android `versionCode: 64`)
 
 ## Summary of Accomplished Work
 
-### 63. 全页面各交互环节优雅灵动动效与触觉反馈系统 (workspace/claude)
+### 63. 全页面各交互环节优雅灵动动效与触觉反馈系统 (commit `b6efdbc`, workspace/claude)
 
 1. **需求与背景**：全面检查各个页面的各个交互环节，添加自然、优雅、灵动的过渡动效与物理微弹（Spring）反馈，增强移动端操作的呼吸感与操作质感，且在 `prefers-reduced-motion` 下无障碍友好降级。
 2. **动效升级清单**：
