@@ -903,6 +903,122 @@ input[type='datetime-local']:not(.ui-picker-native) {
   }
 }
 
+/* 按钮微光涟漪扩散 (Pulse Ripple) */
+@keyframes pulseRipple {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 42%, transparent);
+  }
+  60% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* 满格与完成欢庆光晕 (Celebrate Pulse) */
+@keyframes celebratePulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 36%, transparent);
+  }
+  45% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-primary) 12%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* 标签与选项灵动弹跳选中 (Select Pop) */
+@keyframes selectPop {
+  0% {
+    transform: scale(0.93);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 底部操作坞弹簧浮现 (Dock Slide Up) */
+@keyframes dockSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 3D 拟物与悬浮资产治愈呼吸浮动 (Gentle Float) */
+@keyframes floatGentle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+/* 指示点与提示徽标轻柔呼吸 (Dot Pulse) */
+@keyframes dotPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.85;
+  }
+}
+
+/* 底栏图标弹性回弹 (Tab Icon Spring) */
+@keyframes tabIconSpring {
+  0% {
+    transform: scale(0.85);
+  }
+  45% {
+    transform: scale(1.2);
+  }
+  75% {
+    transform: scale(0.96);
+  }
+  100% {
+    transform: scale(1.06);
+  }
+}
+
+/* 条码取景框扫描激光线平滑往返 (Scanner Sweep) */
+@keyframes scannerSweep {
+  0%, 100% {
+    top: 8%;
+    opacity: 0.75;
+  }
+  50% {
+    top: 88%;
+    opacity: 1;
+  }
+}
+
+/* 对话消息与卡片轻柔上浮淡入 (AI Msg In) */
+@keyframes aiMsgIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* 通用无障碍动效降级 (Zero out animations on prefers-reduced-motion) */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -966,7 +1082,12 @@ input[type='datetime-local']:not(.ui-picker-native) {
 .take-med-overlay.closing {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.22s ease;
+}
+
+.take-med-overlay.closing .take-med-sheet {
+  transform: translateY(100%);
+  transition: transform 0.24s cubic-bezier(0.4, 0, 1, 1);
 }
 
 .take-med-sheet {

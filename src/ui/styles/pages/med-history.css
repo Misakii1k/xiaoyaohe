@@ -34,6 +34,12 @@
   padding: 4px 12px;
   display: grid;
   place-items: center;
+  transition: color 0.15s ease, transform 0.15s var(--ease-spring);
+}
+
+.calendar-month-btn:active {
+  color: var(--color-primary);
+  transform: scale(0.88);
 }
 
 .calendar-month-title {
@@ -168,14 +174,14 @@
   border-radius: var(--radius-full);
   cursor: pointer;
   position: relative;
-  transition: all 0.2s ease;
+  transition: transform 0.18s var(--ease-spring), background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
   background: transparent;
   border: 1px solid transparent;
 }
 
 .calendar-cell:active,
 .calendar-day-cell:active {
-  transform: scale(0.92);
+  transform: scale(0.9);
 }
 
 .calendar-cell.is-selected,
@@ -184,6 +190,7 @@
   background: var(--color-primary, #236a55);
   color: var(--color-on-primary);
   box-shadow: 0 4px 14px rgba(35, 106, 85, 0.35);
+  animation: selectPop 0.22s var(--ease-spring);
 }
 
 .calendar-cell.today,

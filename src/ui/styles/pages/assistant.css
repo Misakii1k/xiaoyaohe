@@ -333,6 +333,7 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   flex-direction: column;
   gap: var(--space-2);
   inline-size: 100%;
+  animation: aiMsgIn 0.25s var(--ease-smooth);
 }
 .ai-msg.is-user {
   align-items: flex-end;

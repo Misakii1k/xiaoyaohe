@@ -303,6 +303,7 @@
   background: transparent;
   color: var(--color-primary);
   transform: scale(1.06);
+  animation: tabIconSpring 0.36s var(--ease-spring);
 }
 
 .tabbar.app-navigation a.active .ic svg {

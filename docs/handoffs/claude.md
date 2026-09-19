@@ -8,6 +8,46 @@ Latest version: `1.1.6` (Android `versionCode: 64`)
 
 ## Summary of Accomplished Work
 
+### 63. 全页面各交互环节优雅灵动动效与触觉反馈系统 (workspace/claude)
+
+1. **需求与背景**：全面检查各个页面的各个交互环节，添加自然、优雅、灵动的过渡动效与物理微弹（Spring）反馈，增强移动端操作的呼吸感与操作质感，且在 `prefers-reduced-motion` 下无障碍友好降级。
+2. **动效升级清单**：
+   - **基础动效令牌（`tokens.css` / `primitives.css`）**：
+     - 新增 `--ease-spring-snappy`、`--ease-spring-gentle` 物理弹簧曲线；
+     - 新增打卡涟漪动效 `@keyframes pulseRipple`、满格欢庆光晕 `@keyframes celebratePulse`、选项灵动弹跳 `@keyframes selectPop`、浮动底栏弹入 `@keyframes dockSlideUp`、拟物悬浮呼吸 `@keyframes floatGentle`、徽标提示呼吸 `@keyframes dotPulse`、底栏图标弹跳回弹 `@keyframes tabIconSpring`、AI 消息轻柔淡入 `@keyframes aiMsgIn` 等核心动画。
+   - **「今日」页面（`Today.ts`, `today.css`）**：
+     - 今日小绿点徽标注入轻柔呼吸脉冲（`dotPulse`），周历日期胶囊在切换时触发弹跳选中；
+     - 翻周轻量按钮（`week-nav-btn`）加入弹性缩放反馈；
+     - 环形进度条达到 100% 或满格完成时触发 `celebratePulse` 欢庆光晕扩展与中心数值弹簧弹动；
+     - 单药与时段服药打卡增加单点涟漪扩散（`pulseRipple`）与对勾弹跳（`checkmarkPop`），已完成用药卡片平滑淡化（`is-taken`）；
+     - 服药全屏弹层（`TakeMedModal`）退出时增加抽屉顺滑向下离场动效。
+   - **「药品」页面（`medications.css`）**：
+     - 分类切换 Pill 标签选中时下划线增加灵动弹性生长；
+     - 药品卡片网格与查看库存横幅增加自然悬停与微缩放弹性回弹；
+     - 右下角「添加药品」悬浮按钮（FAB）增加登场弹性浮现与悬浮光晕；
+     - 批量管理模式下，卡片选中态增加 `selectPop` 弹跳，底部紧凑操作坞（`.medication-batch-dock`）加入顺滑向上弹簧滑入动效。
+   - **「历史」页面（`med-history.css`）**：
+     - 月历翻月按钮加入弹性微缩放，日期单元格点击切换时加入灵动弹跳高亮（`selectPop`）；
+   - **「库存」页面（`inventory.css`）**：
+     - 库存健康盾牌徽章加入优雅呼吸浮动（`floatGentle`）；
+     - 筛选标签胶囊加入弹簧选中反馈，库存列表行增加自然悬停提升与点击压缩；
+   - **「扫码」页面（`scanner.css`）**：
+     - 核心行动卡片增加悬停提升、柔和投影扩展与箭头向右微弹手势提示；
+     - 快捷分药小卡片增加微质感边框高亮与弹性缩放；
+   - **「设置」页面（`settings.css`）**：
+     - 折叠面板指示箭头（`panel-chevron`）改为顺畅 90° 旋转，展开内容区增加优雅微浮现淡入（`microFadeUp`）；
+   - **「药品编辑」页面（`medication-editor.css`）**：
+     - 用药频次与时段选择按钮（`medication-slot-buttons`）增加弹簧按压缩放与 `selectPop` 弹性高亮；
+     - 提醒模式选择卡片（`medication-reminder-mode-option`）增加弹性选中反馈与微阴影；
+   - **全局与底栏（`shell.css`, `assistant.css`）**：
+     - 原生通栏底栏（Tabbar）在标签激活时图标注入灵动果冻微弹（`tabIconSpring`）；
+     - 全局 AI 助手消息卡片与回复增加轻柔上浮淡入（`aiMsgIn`）；
+     - 所有动效在 `prefers-reduced-motion: reduce` 下保持瞬时响应，兼顾性能与无障碍。
+3. **验证与门禁**：
+   - `npm run typecheck`：0 错误；
+   - `npm test`：91 文件 / 574 项测试 100% PASS；
+   - `npm run build:web`：打包成功（Web Bundle 产物正常生成）。
+
 ### 62. 修复今日页面环形进度圈100%数值溢出 (v1.1.6, versionCode 64, main)
 
 1. **需求与背景**：用户反馈「今日」页面中的环状百分比进度圈在达到 100% 时，中间的数值会出现溢出圆环的问题。

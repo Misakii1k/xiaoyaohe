@@ -43,6 +43,7 @@
   width: 32px;
   height: 32px;
   object-fit: contain;
+  animation: floatGentle 3.6s ease-in-out infinite;
 }
 
 .inventory-overview-header-text {
@@ -134,7 +135,11 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.2s ease;
+  transition: transform 0.18s var(--ease-spring), background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.inventory-filter-pill:active {
+  transform: scale(0.93);
 }
 
 .inventory-filter-pill.active {
@@ -142,6 +147,7 @@
   color: var(--color-on-primary);
   border-color: var(--color-primary, #236a55);
   box-shadow: 0 2px 8px rgba(35, 106, 85, 0.25);
+  animation: selectPop 0.22s var(--ease-spring);
 }
 
 /* 药品库存卡片列表 */
@@ -161,8 +167,14 @@
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
-  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s ease;
+  transition: transform 0.2s var(--ease-spring), box-shadow 0.2s ease, border-color 0.18s ease;
   animation: microFadeUp 220ms var(--ease-smooth) backwards;
+}
+
+.inventory-card-item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
 }
 
 .inventory-card-item:nth-child(1) { animation-delay: 0ms; }

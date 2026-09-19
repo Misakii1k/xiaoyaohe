@@ -172,12 +172,13 @@
   color: var(--color-text-muted);
   cursor: pointer;
   padding: 0;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s var(--ease-spring);
 }
 
 .week-nav-btn:active {
   background: var(--color-surface-muted);
   color: var(--color-primary);
+  transform: scale(0.9);
 }
 
 .week-nav-btn svg {
@@ -228,6 +229,7 @@
   background: var(--color-primary, #236a55);
   border-color: var(--color-primary, #236a55);
   box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary, #236a55) 25%, transparent);
+  animation: selectPop 0.22s var(--ease-spring);
 }
 
 .day.selected span.day-name {
@@ -249,6 +251,7 @@
   border-radius: 50%;
   background: var(--color-primary, #236a55);
   pointer-events: none;
+  animation: dotPulse 2.4s ease-in-out infinite;
 }
 
 .day.selected .day-today-indicator {
@@ -274,6 +277,15 @@
   width: 78px;
   height: 78px;
   flex-shrink: 0;
+}
+
+.today-summary .progress-ring.is-full,
+.today-summary .progress-ring.is-done {
+  animation: celebratePulse 0.6s var(--ease-spring);
+}
+
+.today-summary .progress-ring.is-done .ring-center-content {
+  animation: checkmarkPop 0.4s var(--ease-spring);
 }
 
 /* 进度环 100% 满格状态下的字号与间距适配，彻底杜绝溢出内圈 */
@@ -652,12 +664,21 @@
   gap: 12px;
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.2s var(--ease-spring), box-shadow 0.2s ease, opacity 0.28s ease, background 0.25s ease, border-color 0.25s ease;
   cursor: pointer;
 }
 
 .today-card-item:active {
   transform: scale(0.985);
+}
+
+.today-card-item.is-taken {
+  opacity: 0.76;
+}
+
+.today-card-item.is-taken:hover,
+.today-card-item.is-taken:active {
+  opacity: 0.94;
 }
 
 .today-card-thumb {
@@ -742,11 +763,15 @@
   place-items: center;
   padding: 0;
   flex-shrink: 0;
-  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.18s var(--ease-spring), box-shadow 0.2s ease;
 }
 
 .today-radio-btn:active {
-  transform: scale(0.9);
+  transform: scale(0.88);
+}
+
+.today-radio-btn.punch-animating {
+  animation: pulseRipple 0.45s ease-out;
 }
 
 .today-radio-btn::after {
@@ -760,12 +785,14 @@
   background: var(--color-primary);
   border-color: var(--color-primary);
   color: var(--color-on-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .today-radio-btn.taken svg {
   inline-size: 16px;
   block-size: 16px;
   stroke-width: 3;
+  animation: checkmarkPop 0.32s var(--ease-spring);
 }
 
 .today-radio-btn:not(.taken):hover {

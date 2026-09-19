@@ -639,7 +639,8 @@ function renderSlotGroup(
   container.append(header);
 
   for (const item of group.items) {
-    const card = el('div', { class: 'today-card-item today-medication-row' });
+    const isTaken = item.log?.status === 'taken';
+    const card = el('div', { class: `today-card-item today-medication-row${isTaken ? ' is-taken' : ''}` });
 
     // 缩略图（三级降级管线：实拍照/AI白底大图 -> 3D 拟物图 -> B 方案色块药盒矢量占位）
     const thumb = el('div', { class: 'today-card-thumb' });
@@ -700,7 +701,6 @@ function renderSlotGroup(
     info.append(badges);
 
     // 圆形打卡 Radio 按钮
-    const isTaken = item.log?.status === 'taken';
     const radioBtn = el('button', {
       class: `today-radio-btn${isTaken ? ' taken' : ''}`,
       type: 'button',
@@ -732,6 +732,7 @@ function renderSlotGroup(
         }
       } else {
         try {
+          radioBtn.classList.add('punch-animating');
           const res = await setOccurrenceAction(item.occurrence, 'taken');
           if (item.occurrence) {
             closeNotificationsByTag(item.occurrence.id);

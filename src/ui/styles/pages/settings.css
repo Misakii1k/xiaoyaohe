@@ -165,23 +165,24 @@
 
 .settings-page .panel-chevron {
   color: var(--color-text-muted);
-  transition: transform 0.2s ease;
+  transition: transform 0.28s var(--ease-spring), color 0.2s ease;
 }
 
 .settings-page .panel.open .panel-chevron {
   color: var(--color-primary);
-  transform: rotate(180deg);
+  transform: rotate(90deg);
 }
 
 .settings-page .panel-body {
   padding-inline: var(--space-3);
-  transition: none;
+  transition: opacity 0.22s var(--ease-smooth);
 }
 
 .settings-page .panel.open .panel-body {
   max-block-size: 2400px;
   padding: var(--space-3);
   border-block-start: 1px solid var(--color-border);
+  animation: microFadeUp 0.22s var(--ease-smooth) both;
 }
 
 .settings-page .btn {
