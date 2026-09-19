@@ -1069,11 +1069,16 @@ body.lan-sync-panel-active .ai-launcher {
   border: none;
   padding: 0;
   cursor: pointer;
-  transition: transform 0.15s ease;
+  transition: transform 0.2s var(--ease-spring), box-shadow 0.2s ease;
+}
+
+.profile-avatar-wrap:hover {
+  transform: scale(1.04);
+  box-shadow: 0 6px 16px rgba(35, 106, 85, 0.35);
 }
 
 .profile-avatar-wrap:active {
-  transform: scale(0.94);
+  transform: scale(0.92);
 }
 
 .profile-avatar-wrap svg,

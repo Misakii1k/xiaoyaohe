@@ -17,7 +17,10 @@ Latest version: `1.1.6` (Android `versionCode: 64`)
      - 新增打卡涟漪动效 `@keyframes pulseRipple`、满格欢庆光晕 `@keyframes celebratePulse`、选项灵动弹跳 `@keyframes selectPop`、浮动底栏弹入 `@keyframes dockSlideUp`、拟物悬浮呼吸 `@keyframes floatGentle`、徽标提示呼吸 `@keyframes dotPulse`、底栏图标弹跳回弹 `@keyframes tabIconSpring`、AI 消息轻柔淡入 `@keyframes aiMsgIn` 等核心动画。
    - **「今日」页面（`Today.ts`, `today.css`）**：
      - 今日小绿点徽标注入轻柔呼吸脉冲（`dotPulse`），周历日期胶囊在切换时触发弹跳选中；
-     - 翻周轻量按钮（`week-nav-btn`）加入弹性缩放反馈；
+     - 翻周轻量按钮（`week-nav-btn`）与返回今天按钮（`today-return-btn`）加入弹性缩放反馈；
+     - 待服聚焦卡片主要操作按钮（立即服用/稍后提醒）加入弹簧触觉反馈与阴影高亮；
+     - 计划时段筛选胶囊（`today-filter-pill`）增加 `selectPop` 弹性跳动与微光晕；
+     - 时段一键打卡按钮（`today-batch-take-btn`）加入弹簧缩放与背景微光；
      - 环形进度条达到 100% 或满格完成时触发 `celebratePulse` 欢庆光晕扩展与中心数值弹簧弹动；
      - 单药与时段服药打卡增加单点涟漪扩散（`pulseRipple`）与对勾弹跳（`checkmarkPop`），已完成用药卡片平滑淡化（`is-taken`）；
      - 服药全屏弹层（`TakeMedModal`）退出时增加抽屉顺滑向下离场动效。
@@ -32,14 +35,18 @@ Latest version: `1.1.6` (Android `versionCode: 64`)
      - 库存健康盾牌徽章加入优雅呼吸浮动（`floatGentle`）；
      - 筛选标签胶囊加入弹簧选中反馈，库存列表行增加自然悬停提升与点击压缩；
    - **「扫码」页面（`scanner.css`）**：
+     - 分药助手 3D 分药机展台横幅（`scan-banner-img`）增加呼吸浮动动效（`floatGentle`）；
      - 核心行动卡片增加悬停提升、柔和投影扩展与箭头向右微弹手势提示；
      - 快捷分药小卡片增加微质感边框高亮与弹性缩放；
    - **「设置」页面（`settings.css`）**：
+     - 个人资料 3D 头像（`profile-avatar-wrap`）增加悬停微放大与弹簧按压缩放；
      - 折叠面板指示箭头（`panel-chevron`）改为顺畅 90° 旋转，展开内容区增加优雅微浮现淡入（`microFadeUp`）；
    - **「药品编辑」页面（`medication-editor.css`）**：
      - 用药频次与时段选择按钮（`medication-slot-buttons`）增加弹簧按压缩放与 `selectPop` 弹性高亮；
      - 提醒模式选择卡片（`medication-reminder-mode-option`）增加弹性选中反馈与微阴影；
-   - **全局与底栏（`shell.css`, `assistant.css`）**：
+   - **全局与底栏（`shell.css`, `assistant.css`, `primitives.css`）**：
+     - 全局通用弹层（`.bottom-sheet`）以 iOS 柔和弹簧曲线（`--ease-spring-gentle`）顺滑滑入；
+     - 顶栏图标按钮（`.topbar .icon-btn`）与顶栏胶囊（`.topbar-pill`）加入弹性反馈与悬浮微浮起；
      - 原生通栏底栏（Tabbar）在标签激活时图标注入灵动果冻微弹（`tabIconSpring`）；
      - 全局 AI 助手消息卡片与回复增加轻柔上浮淡入（`aiMsgIn`）；
      - 所有动效在 `prefers-reduced-motion: reduce` 下保持瞬时响应，兼顾性能与无障碍。

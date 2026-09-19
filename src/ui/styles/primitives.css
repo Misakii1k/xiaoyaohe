@@ -314,7 +314,7 @@
   background: var(--color-surface);
   padding: var(--space-5);
   box-shadow: var(--shadow-lg);
-  animation: sheetSlideUp var(--duration-normal) var(--ease-smooth) forwards;
+  animation: sheetSlideUp 0.32s var(--ease-spring-gentle) forwards;
   transform-origin: bottom center;
 }
 .bottom-sheet::before {
