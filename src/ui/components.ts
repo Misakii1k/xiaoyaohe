@@ -542,48 +542,6 @@ export function progressRing(value: number, total: number): HTMLElement {
   svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('viewBox', '0 0 100 100');
 
-  const defs = document.createElementNS(ns, 'defs');
-  const gradientId = `ring_grad_${Math.random().toString(36).substring(2, 8)}`;
-  const glowId = `ring_glow_${Math.random().toString(36).substring(2, 8)}`;
-
-  // 柔和天蓝 -> 明亮紫罗兰 -> 深邃群青蓝多段高质感渐变
-  const linearGrad = document.createElementNS(ns, 'linearGradient');
-  linearGrad.setAttribute('id', gradientId);
-  linearGrad.setAttribute('x1', '0%');
-  linearGrad.setAttribute('y1', '0%');
-  linearGrad.setAttribute('x2', '100%');
-  linearGrad.setAttribute('y2', '100%');
-
-  const stop1 = document.createElementNS(ns, 'stop');
-  stop1.setAttribute('offset', '0%');
-  stop1.setAttribute('stop-color', '#93c5fd');
-
-  const stop2 = document.createElementNS(ns, 'stop');
-  stop2.setAttribute('offset', '40%');
-  stop2.setAttribute('stop-color', '#818cf8');
-
-  const stop3 = document.createElementNS(ns, 'stop');
-  stop3.setAttribute('offset', '100%');
-  stop3.setAttribute('stop-color', '#4f46e5');
-
-  linearGrad.append(stop1, stop2, stop3);
-
-  // 弥散光晕滤镜
-  const filter = document.createElementNS(ns, 'filter');
-  filter.setAttribute('id', glowId);
-  filter.setAttribute('x', '-30%');
-  filter.setAttribute('y', '-30%');
-  filter.setAttribute('width', '160%');
-  filter.setAttribute('height', '160%');
-
-  const blur = document.createElementNS(ns, 'feGaussianBlur');
-  blur.setAttribute('stdDeviation', '4');
-  blur.setAttribute('result', 'blur');
-  filter.append(blur);
-
-  defs.append(linearGrad, filter);
-  svg.append(defs);
-
   // 背景底环
   const track = document.createElementNS(ns, 'circle');
   track.setAttribute('class', 'ring-bg');
@@ -593,22 +551,6 @@ export function progressRing(value: number, total: number): HTMLElement {
   track.setAttribute('pathLength', '100');
   svg.append(track);
 
-  // 底部弥散光晕弧（仅当有进度时展示）
-  if (percent > 0) {
-    const glow = document.createElementNS(ns, 'circle');
-    glow.setAttribute('class', 'ring-glow ring-glow-animated');
-    glow.setAttribute('cx', '50');
-    glow.setAttribute('cy', '50');
-    glow.setAttribute('r', '40');
-    glow.setAttribute('pathLength', '100');
-    glow.setAttribute('stroke', `url(#${gradientId})`);
-    glow.setAttribute('stroke-linecap', 'round');
-    glow.setAttribute('stroke-dasharray', `${percent} 100`);
-    glow.setAttribute('stroke-dashoffset', '0');
-    glow.setAttribute('filter', `url(#${glowId})`);
-    svg.append(glow);
-  }
-
   // 活跃前景进度弧
   if (percent > 0) {
     const fg = document.createElementNS(ns, 'circle');
@@ -617,7 +559,7 @@ export function progressRing(value: number, total: number): HTMLElement {
     fg.setAttribute('cy', '50');
     fg.setAttribute('r', '40');
     fg.setAttribute('pathLength', '100');
-    fg.setAttribute('stroke', `url(#${gradientId})`);
+    fg.setAttribute('stroke', 'var(--color-primary, #236a55)');
     fg.setAttribute('stroke-linecap', 'round');
     fg.setAttribute('stroke-dasharray', `${percent} 100`);
     fg.setAttribute('stroke-dashoffset', '0');

@@ -50,4 +50,30 @@ describe('today page compact fullscreen contracts', () => {
     expect(page).toContain('pendingItems.length > 0');
     expect(page).not.toContain("i.log?.status !== 'taken'");
   });
+
+  it('contracts: clean header without big date, interactive week strip with today dot and readonly guard', () => {
+    const page = source('src/pages/Today.ts');
+    const styles = source('src/ui/styles/pages/today.css');
+
+    // 移除右侧巨大斜体数字，仅保留 AI 助手与可选的返回今天按钮
+    expect(page).not.toContain('today-date');
+    expect(page).toContain('today-ai-btn');
+    expect(page).toContain('today-return-btn');
+
+    // 周历胶囊条契约
+    expect(page).toContain('week-container');
+    expect(page).toContain('week-nav-btn');
+    expect(page).toContain('day-today-indicator');
+    expect(page).toContain('day-name');
+
+    // 样式契约
+    expect(styles).toContain('.day.selected');
+    expect(styles).toContain('.day-today-indicator');
+    expect(styles).toContain('.today-return-btn');
+    expect(styles).toContain('.week-container');
+
+    // 只读保护契约：非今天隐藏下一次用药，卡片受保护
+    expect(page).toContain('isViewingToday');
+    expect(page).toContain('isReadOnly');
+  });
 });

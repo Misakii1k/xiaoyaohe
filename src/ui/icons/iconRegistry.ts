@@ -32,6 +32,7 @@ import micSvg from '@tabler/icons/icons/outline/microphone.svg?raw';
 import imageSvg from '@tabler/icons/icons/outline/photo.svg?raw';
 import retrySvg from '@tabler/icons/icons/outline/rotate.svg?raw';
 import shieldSvg from '@tabler/icons/icons/outline/shield-check.svg?raw';
+import chevronLeftSvg from '@tabler/icons/icons/outline/chevron-left.svg?raw';
 import chevronRightSvg from '@tabler/icons/icons/outline/chevron-right.svg?raw';
 import sendSvg from '@tabler/icons/icons/outline/send.svg?raw';
 import shareSvg from '@tabler/icons/icons/outline/share.svg?raw';
@@ -85,6 +86,7 @@ export type AppIconName =
   | 'robot'
   | 'lock'
   | 'devices'
+  | 'chevron-left'
   | 'chevron-right'
   | 'send'
   | 'share'
@@ -135,6 +137,7 @@ export const iconRegistry: Readonly<Record<AppIconName, string>> = {
   robot: robotSvg,
   lock: lockSvg,
   devices: devicesSvg,
+  'chevron-left': chevronLeftSvg,
   'chevron-right': chevronRightSvg,
   send: sendSvg,
   share: shareSvg,
