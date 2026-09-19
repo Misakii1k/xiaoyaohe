@@ -276,6 +276,23 @@
   flex-shrink: 0;
 }
 
+/* 进度环 100% 满格状态下的字号与间距适配，彻底杜绝溢出内圈 */
+.today-summary .progress-ring.is-full .ring-num,
+.today-summary .progress-ring.is-full .ring-value,
+.today-summary .progress-ring.is-done .ring-num,
+.today-summary .progress-ring.is-done .ring-value,
+.today-summary .progress-ring .ring-num.is-full {
+  font-size: 19px;
+  letter-spacing: -0.8px;
+}
+
+.today-summary .progress-ring.is-full .ring-unit,
+.today-summary .progress-ring.is-done .ring-unit,
+.today-summary .progress-ring .ring-unit.is-full {
+  font-size: 10.5px;
+  margin-left: 1px;
+}
+
 .summary-left {
   display: flex;
   flex-direction: column;

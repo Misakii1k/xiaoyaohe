@@ -939,6 +939,15 @@ textarea {
   font-family: var(--font-sans);
 }
 
+.progress-ring.is-full .ring-num,
+.progress-ring.is-full .ring-value,
+.progress-ring.is-done .ring-num,
+.progress-ring.is-done .ring-value,
+.progress-ring .ring-num.is-full {
+  font-size: 19px;
+  letter-spacing: -0.8px;
+}
+
 .progress-ring .ring-unit {
   font-size: 13px;
   font-weight: 700;
@@ -946,6 +955,13 @@ textarea {
   color: var(--color-text, #1e202e);
   margin-left: 2px;
   font-family: var(--font-sans);
+}
+
+.progress-ring.is-full .ring-unit,
+.progress-ring.is-done .ring-unit,
+.progress-ring .ring-unit.is-full {
+  font-size: 10.5px;
+  margin-left: 1px;
 }
 
 .progress-ring .ring-empty {

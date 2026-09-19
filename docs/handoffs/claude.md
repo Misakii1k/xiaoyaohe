@@ -4,9 +4,24 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-19
 Status: active
-Latest version: `1.1.3` (Android `versionCode: 61`)
+Latest version: `1.1.6` (Android `versionCode: 64`)
 
 ## Summary of Accomplished Work
+
+### 62. 修复今日页面环形进度圈100%数值溢出 (v1.1.6, versionCode 64, main)
+
+1. **需求与背景**：用户反馈「今日」页面中的环状百分比进度圈在达到 100% 时，中间的数值会出现溢出圆环的问题。
+2. **根因定位与修复**：
+   - 进度圈在今日卡片中的外部容器尺寸为 78px × 78px，内圆可用直径仅 56.16px；
+   - 原三位数百分比（100%）在 26px 字号下宽度达 57.02px，超出内圈净空，导致文本左右两侧覆盖压在墨绿色圆环进度条上；
+   - 在 `src/ui/components.ts` 的 `progressRing` 组件中增加 `is-full` 状态标记与 `data-percent` 属性；
+   - 在 `src/ui/styles/legacy.css` 与 `src/ui/styles/pages/today.css` 中针对 `is-full` / `is-done` 状态将数值字号下调至 19px，单位字号下调至 10.5px，左右两侧安全留白由负溢出恢复至 +5.01px，彻底杜绝溢出；
+   - 在 `tests/todayUiContracts.test.ts` 补充针对 100% 满格状态结构与样式的契约测试；
+   - 版本号与构建号单调递增至 1.1.6 / versionCode 64。
+3. **验证与门禁**：
+   - `npm test`：91 文件 / 574 项 100% PASS；
+   - `npm run typecheck`：0 错误；
+   - `tone_lint.py`：PASS。
 
 ### 61. 界面细节排版与全系统一绿色视觉优化 (v1.1.3, versionCode 61, main)
 

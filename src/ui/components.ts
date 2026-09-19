@@ -525,11 +525,14 @@ export function progressRing(value: number, total: number): HTMLElement {
   const safeValue = Math.max(0, Math.min(value, safeTotal || value));
   const ratio = safeTotal > 0 ? Math.min(1, safeValue / safeTotal) : 0;
   const percent = Math.round(ratio * 100);
+  const isFull = percent >= 100;
   const wrap = el('div', {
     class:
       'progress-ring'
-      + (safeTotal === 0 ? ' is-empty' : ratio >= 1 ? ' is-done' : ratio > 0 ? ' is-active' : ' is-pending'),
+      + (safeTotal === 0 ? ' is-empty' : ratio >= 1 ? ' is-done' : ratio > 0 ? ' is-active' : ' is-pending')
+      + (isFull ? ' is-full' : ''),
   });
+  wrap.dataset.percent = String(percent);
   wrap.setAttribute('role', 'progressbar');
   wrap.setAttribute('aria-valuemin', '0');
   wrap.setAttribute('aria-valuemax', String(safeTotal));
@@ -573,10 +576,13 @@ export function progressRing(value: number, total: number): HTMLElement {
     label.append(el('span', { class: 'ring-empty', text: '—' }));
   } else {
     const group = el('div', { class: 'ring-center-content' });
-    const numEl = el('span', { class: 'ring-num ring-value', text: String(percent) });
+    const numEl = el('span', {
+      class: 'ring-num ring-value' + (isFull ? ' is-full' : ''),
+      text: String(percent),
+    });
     group.append(
       numEl,
-      el('span', { class: 'ring-unit', text: '%' })
+      el('span', { class: 'ring-unit' + (isFull ? ' is-full' : ''), text: '%' })
     );
     label.append(group);
     if (percent > 0) {

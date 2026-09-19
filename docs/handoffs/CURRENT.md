@@ -2,8 +2,20 @@
 
 Updated: 2026-09-19
 Integration branch: `main`
-Product version: `1.1.5` (versionCode 63)
-Latest integration commit: `release: v1.1.5 - 今日页面顶栏问候语常驻与 AI 助手整合`
+Product version: `1.1.6` (versionCode 64)
+Latest integration commit: `release: v1.1.6 - 修复今日页面环形进度圈100%数值溢出`
+
+## Release v1.1.6 (versionCode 64, main)
+
+- **集成内容**：
+  - 修复「今日」页面环状百分比圈在达到 100% 满格时中间数值超出圆环边界溢出的问题；
+  - 结构层面在组件 `progressRing` 中补充 `is-full` 状态标记与 `data-percent` 属性；
+  - 样式层面针对三位数百分比（100%）自适应将数值字号由 26px 调整为 19px，单位字号由 13px 调整为 10.5px，左右保留安全留白；
+  - 版本递增至 1.1.6 / versionCode 64。
+- **质量门禁**：
+  - `npm test`：91 文件 / 574 项 100% PASS；
+  - `npm run typecheck`：0 错误；
+  - `tone_lint.py`：PASS。
 
 ## Release v1.1.5 (versionCode 63, main)
 

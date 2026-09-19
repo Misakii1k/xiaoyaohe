@@ -15,11 +15,11 @@ describe('软件更新操作按钮展示策略 (用户规则验证)', () => {
 
   it('若更新的内容通过增量更新无法落实 (updateType === full)，只提供全量更新按钮', () => {
     const fullOnlyUpdate: AvailableUpdate = {
-      version: '1.1.6',
-      versionCode: 64,
+      version: '1.1.7',
+      versionCode: 65,
       source: 'cloud',
       updateType: 'full',
-      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.6',
+      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7',
       minNativeVersionCode: 58,
       releaseNotes: '包含全屏滑动解锁原生组件升级',
       discoveredAt: Date.now(),
@@ -36,12 +36,12 @@ describe('软件更新操作按钮展示策略 (用户规则验证)', () => {
 
   it('反之若支持增量更新 (updateType === incremental)，则两个按钮都提供 (一键秒级更新 + 下载完整包)', () => {
     const incrementalUpdate: AvailableUpdate = {
-      version: '1.1.6',
-      versionCode: 64,
+      version: '1.1.7',
+      versionCode: 65,
       source: 'cloud',
       updateType: 'incremental',
-      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.6',
-      bundleUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.6&asset=bundle',
+      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7',
+      bundleUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7&asset=bundle',
       bundleSize: 1800000,
       bundleSha256: 'a'.repeat(64),
       minNativeVersionCode: 58,

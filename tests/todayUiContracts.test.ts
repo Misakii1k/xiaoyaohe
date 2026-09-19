@@ -76,4 +76,26 @@ describe('today page compact fullscreen contracts', () => {
     expect(page).toContain('isViewingToday');
     expect(page).toContain('isReadOnly');
   });
+
+  it('contracts: progress ring adapts font sizing and styling for 100% full state to prevent overflow', () => {
+    const components = source('src/ui/components.ts');
+    const legacyStyles = source('src/ui/styles/legacy.css');
+    const todayStyles = source('src/ui/styles/pages/today.css');
+
+    // 结构标记契约：100% 满格状态输出 is-full 标记与 dataset
+    expect(components).toContain("isFull ? ' is-full' : ''");
+    expect(components).toContain("wrap.dataset.percent = String(percent)");
+    expect(components).toContain("ring-num ring-value' + (isFull ? ' is-full' : '')");
+
+    // 样式防御契约：声明 100% 紧凑字号 19px 与 10.5px，防止三位数溢出 78px 环内圈
+    expect(legacyStyles).toContain('.progress-ring.is-full .ring-num');
+    expect(legacyStyles).toContain('.progress-ring.is-done .ring-num');
+    expect(legacyStyles).toContain('font-size: 19px');
+    expect(legacyStyles).toContain('font-size: 10.5px');
+
+    expect(todayStyles).toContain('.today-summary .progress-ring.is-full .ring-num');
+    expect(todayStyles).toContain('.today-summary .progress-ring.is-done .ring-num');
+    expect(todayStyles).toContain('font-size: 19px');
+    expect(todayStyles).toContain('font-size: 10.5px');
+  });
 });
