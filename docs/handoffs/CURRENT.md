@@ -2,10 +2,23 @@
 
 Updated: 2026-09-19
 Integration branch: `main`
-Product version: `1.1.3` (versionCode 61)
-Latest integration commit: `release: v1.1.3 - 优化界面细节排版与全系统一绿色视觉`
+Product version: `1.1.4` (versionCode 62)
+Latest integration commit: `release: v1.1.4 - 今日页面顶部视觉重构、周历切换与只读保护`
 
-## Release v1.1.3 (versionCode 61, main)
+## Release v1.1.4 (versionCode 62, main)
+
+- **集成内容**：
+  - 「今日」页面顶部区域视觉重构：移除巨大斜体数字，仅保留「✦ AI 助手」胶囊，标题栏更加通透舒展；
+  - 引入本周日期胶囊条（Week Container）：支持单手左右轻滑手势与左右箭头翻周查看日程，点击任意日期切换深绿高亮，今天日期自带高亮小绿点（`.day-today-indicator`）；
+  - 副标题旁增加极简「回到今天」轻量按钮，一键快速回到当日；
+  - 非今日排程开启只读保护模式：隐藏顶层「下一次用药」卡片，下方时段与药品清单自动禁用直接打卡交互，防止误触；
+  - 环形进度条（Progress Ring）全面重构：清理残留的硬编码蓝紫渐变与紫色阴影滤镜，全面统一为墨绿品牌主色（`var(--color-primary)`）与浅灰底环；
+  - 版本递增至 1.1.4 / versionCode 62。
+- **质量门禁**：
+  - `npm test`：91 文件 / 573 项 100% PASS；
+  - `npm run typecheck`：0 错误；
+  - `node scripts/check-release-endpoints.mjs`：4/4 PASS；
+  - 产物归档：`release/xiaoyaohe-1.1.4-android-release.apk`（20,819,228 字节）、`xiaoyaohe-1.1.4-web-bundle.zip`（8,198,040 字节）。
 
 - **集成内容**：
   - 修复药品列表横幅在部分设备上打印出 SVG 源码文本与 HTML 的缺陷，改用 `parseSvg(getFeatureBottleSvg())` 动态解析与挂载矢量节点；
