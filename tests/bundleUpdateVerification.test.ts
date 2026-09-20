@@ -55,11 +55,11 @@ describe('Web 增量热更新机制与判断逻辑', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        version: '1.1.7',
-        versionCode: 65,
-        downloadUrl: '/api/download?tag=v1.1.7',
+        version: '1.1.8',
+        versionCode: 66,
+        downloadUrl: '/api/download?tag=v1.1.8',
         fileSize: 18000000,
-        bundleUrl: '/api/download?tag=v1.1.7&asset=bundle',
+        bundleUrl: '/api/download?tag=v1.1.8&asset=bundle',
         bundleSize: 1800000,
         bundleSha256: 'b'.repeat(64),
         minNativeVersionCode: 40,
@@ -69,10 +69,10 @@ describe('Web 增量热更新机制与判断逻辑', () => {
 
     const update = await checkFastCloudVersion();
     expect(update).not.toBeNull();
-    expect(update?.version).toBe('1.1.7');
-    expect(update?.versionCode).toBe(65);
+    expect(update?.version).toBe('1.1.8');
+    expect(update?.versionCode).toBe(66);
     expect(update?.updateType).toBe('incremental');
-    expect(update?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7&asset=bundle');
+    expect(update?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8&asset=bundle');
     expect(update?.bundleSize).toBe(1800000);
     expect(update?.bundleSha256).toBe('b'.repeat(64));
     expect(update?.minNativeVersionCode).toBe(40);
@@ -82,11 +82,11 @@ describe('Web 增量热更新机制与判断逻辑', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        version: '1.1.7',
-        versionCode: 65,
-        downloadUrl: '/api/download?tag=v1.1.7',
+        version: '1.1.8',
+        versionCode: 66,
+        downloadUrl: '/api/download?tag=v1.1.8',
         fileSize: 18000000,
-        bundleUrl: '/api/download?tag=v1.1.7&asset=bundle',
+        bundleUrl: '/api/download?tag=v1.1.8&asset=bundle',
         bundleSize: 1800000,
         bundleSha256: 'c'.repeat(64),
         minNativeVersionCode: 9999, // 极高底座要求
@@ -96,27 +96,27 @@ describe('Web 增量热更新机制与判断逻辑', () => {
 
     const update = await checkFastCloudVersion();
     expect(update).not.toBeNull();
-    expect(update?.version).toBe('1.1.7');
+    expect(update?.version).toBe('1.1.8');
     expect(update?.updateType).toBe('full');
-    expect(update?.downloadUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7');
+    expect(update?.downloadUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8');
   });
 
   it('当 GitHub Release 包含 web-bundle.zip 资产时，正确解析增量包地址与体积', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        tag_name: 'v1.1.7',
+        tag_name: 'v1.1.8',
         body: 'GitHub 增量包发布说明',
         assets: [
           {
-            name: 'xiaoyaohe-1.1.7-android-release.apk',
+            name: 'xiaoyaohe-1.1.8-android-release.apk',
             size: 18500000,
-            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7',
+            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8',
           },
           {
-            name: 'xiaoyaohe-1.1.7-web-bundle.zip',
+            name: 'xiaoyaohe-1.1.8-web-bundle.zip',
             size: 1950000,
-            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7&asset=bundle',
+            browser_download_url: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8&asset=bundle',
           },
         ],
       }),
@@ -124,9 +124,9 @@ describe('Web 增量热更新机制与判断逻辑', () => {
 
     const update = await checkGithubRelease();
     expect(update).not.toBeNull();
-    expect(update?.version).toBe('1.1.7');
+    expect(update?.version).toBe('1.1.8');
     expect(update?.source).toBe('github');
-    expect(update?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7&asset=bundle');
+    expect(update?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8&asset=bundle');
     expect(update?.bundleSize).toBe(1950000);
     expect(update?.fileSize).toBe(18500000);
   });
@@ -185,12 +185,12 @@ describe('Web 增量热更新机制与判断逻辑', () => {
 
   it('getAvailableUpdate 从 localStorage 还原时保留增量包元数据与 incremental 类型（回归：此前被丢弃导致永远全量下载）', () => {
     saveAvailableUpdate({
-      version: '1.1.7',
-      versionCode: 65,
+      version: '1.1.8',
+      versionCode: 66,
       source: 'cloud',
       updateType: 'incremental',
-      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7',
-      bundleUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7&asset=bundle',
+      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8',
+      bundleUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8&asset=bundle',
       bundleSize: 8193776,
       bundleSha256: 'e'.repeat(64),
       minNativeVersionCode: 44,
@@ -200,7 +200,7 @@ describe('Web 增量热更新机制与判断逻辑', () => {
     const restored = getAvailableUpdate();
     expect(restored).not.toBeNull();
     expect(restored?.updateType).toBe('incremental');
-    expect(restored?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7&asset=bundle');
+    expect(restored?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8&asset=bundle');
     expect(restored?.bundleSize).toBe(8193776);
     expect(restored?.bundleSha256).toBe('e'.repeat(64));
     expect(restored?.minNativeVersionCode).toBe(44);
@@ -208,12 +208,12 @@ describe('Web 增量热更新机制与判断逻辑', () => {
 
   it('getAvailableUpdate 还原时若本机底座低于最低要求，则降级为 full', () => {
     saveAvailableUpdate({
-      version: '1.1.7',
-      versionCode: 65,
+      version: '1.1.8',
+      versionCode: 66,
       source: 'cloud',
       updateType: 'incremental',
-      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7',
-      bundleUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.7&asset=bundle',
+      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8',
+      bundleUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.1.8&asset=bundle',
       minNativeVersionCode: 9999,
       discoveredAt: Date.now(),
     });

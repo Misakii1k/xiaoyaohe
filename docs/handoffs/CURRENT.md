@@ -1,9 +1,23 @@
 # Current Integration State
 
-Updated: 2026-09-19
+Updated: 2026-09-20
 Integration branch: `main`
-Product version: `1.1.6` (versionCode 64)
-Latest integration commit: `release: v1.1.6 - 修复今日页面环形进度圈100%数值溢出`
+Product version: `1.1.7` (versionCode 65)
+Latest integration commit: `release: v1.1.7 - 全页面交互动效与灵动微反馈系统`
+
+## Release v1.1.7 (versionCode 65, main)
+
+- **集成内容**：
+  - 全页面各交互环节引入自然、优雅、灵动的物理微弹（Spring）与轻柔阻尼过渡反馈；
+  - 今日页面周历与现实今日指示器呼吸光晕，打卡涟漪与对勾跳动，100% 满格完成欢庆光晕；
+  - 药品卡片网格悬停提升与缩放微弹，批量管理坞顺滑向上弹入；
+  - 全局通用底部弹层以 iOS 柔和弹簧曲线顺滑入场，原生通栏底栏图标激活微弹；
+  - 所有动效在 `prefers-reduced-motion: reduce` 下保持瞬时响应，兼顾性能与无障碍；
+  - 版本递增至 1.1.7 / versionCode 65。
+- **质量门禁**：
+  - `npm test`：91 文件 / 574 项 100% PASS；
+  - `npm run typecheck`：0 错误；
+  - `tone_lint.py`：PASS。
 
 ## Release v1.1.6 (versionCode 64, main)
 
