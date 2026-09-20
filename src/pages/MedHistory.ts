@@ -32,7 +32,7 @@ import {
   icon,
   renderPage,
   toast,
-  banner,
+  emptyState,
   animateCountUp,
 } from '../ui/components';
 
@@ -357,7 +357,12 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
 
   // 月份导航
   const monthHeader = el('div', { class: 'calendar-month-header' });
-  const prevBtn = el('button', { class: 'calendar-month-btn', type: 'button', text: '<' });
+  const prevBtn = el('button', {
+    class: 'calendar-month-btn icon-btn',
+    type: 'button',
+    'aria-label': '上一月',
+  } as any);
+  prevBtn.append(icon('chevron-left'));
   prevBtn.onclick = () => {
     if (currentMonth === 1) {
       currentYear--;
@@ -376,10 +381,15 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
 
   const monthTitle = el('div', {
     class: 'calendar-month-title',
-    text: `${currentYear}年${currentMonth}月`,
+    text: `${currentYear}年 ${currentMonth}月`,
   });
 
-  const nextBtn = el('button', { class: 'calendar-month-btn', type: 'button', text: '>' });
+  const nextBtn = el('button', {
+    class: 'calendar-month-btn icon-btn',
+    type: 'button',
+    'aria-label': '下一月',
+  } as any);
+  nextBtn.append(icon('chevron-right'));
   nextBtn.onclick = () => {
     if (currentMonth === 12) {
       currentYear++;
@@ -401,8 +411,9 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
 
   // 星期表头
   const weekGrid = el('div', { class: 'calendar-weekdays' });
-  ['日', '一', '二', '三', '四', '五', '六'].forEach((d) => {
-    weekGrid.append(el('div', { class: 'calendar-week-cell', text: d }));
+  ['日', '一', '二', '三', '四', '五', '六'].forEach((d, idx) => {
+    const isWeekend = idx === 0 || idx === 6;
+    weekGrid.append(el('div', { class: `calendar-week-cell${isWeekend ? ' is-weekend' : ''}`, text: d }));
   });
   calCard.append(weekGrid);
 
@@ -424,7 +435,8 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
     const dayCell = el('button', {
       class: `calendar-cell${isSelected ? ' is-selected selected' : ''}${isToday ? ' today is-today' : ''}`,
       type: 'button',
-    });
+      'aria-label': `${dateStr}${isToday ? ' (今天)' : ''}${isSelected ? ' (已选)' : ''}`,
+    } as any);
 
     dayCell.append(el('span', { class: 'calendar-cell-day calendar-day-num', text: String(day) }));
 
@@ -452,6 +464,25 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
   }
 
   calCard.append(daysGrid);
+
+  // 日历底部状态图例
+  const legend = el('div', { class: 'calendar-legend' });
+  const legendItems = [
+    { color: 'green', text: '全部已服' },
+    { color: 'orange', text: '部分已服' },
+    { color: 'missed', text: '漏服' },
+    { color: 'gray', text: '待服' },
+  ];
+  for (const item of legendItems) {
+    const legItem = el('div', { class: 'calendar-legend-item' });
+    legItem.append(
+      el('span', { class: `calendar-dot ${item.color}` }),
+      el('span', { class: 'calendar-legend-text', text: item.text })
+    );
+    legend.append(legItem);
+  }
+  calCard.append(legend);
+
   content.append(calCard);
 
   // 2. 选中日期的时间线用药安排
@@ -459,11 +490,48 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
   const selectedOccs = monthOccurrences.filter((o) => o.localDate === selectedDate);
 
   const planHeader = el('div', { class: 'history-plan-header' });
-  planHeader.append(el('h2', { class: 'history-plan-title', text: `${selectedDate} 用药记录` }));
+  const titleWrap = el('div', { class: 'history-plan-title-wrap' });
+
+  // 自然日期表达
+  const parts = selectedDate.split('-');
+  const sy = Number(parts[0]) || currentYear;
+  const sm = Number(parts[1]) || currentMonth;
+  const sd = Number(parts[2]) || 1;
+  const selDateObj = new Date(sy, sm - 1, sd);
+  const weekDayName = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][selDateObj.getDay()];
+  let relativeLabel = '';
+  if (selectedDate === today) {
+    relativeLabel = '今天';
+  } else {
+    const diff = calendarDaysBetween(selectedDate, today);
+    if (diff === 1) relativeLabel = '昨天';
+    else if (diff === -1) relativeLabel = '明天';
+  }
+
+  const mainDateText = `${sm}月${sd}日 · ${weekDayName}`;
+  titleWrap.append(
+    el('h2', { class: 'history-plan-title', text: mainDateText }),
+    el('span', { class: 'history-plan-date-meta', text: relativeLabel ? `${relativeLabel} · ${selectedDate}` : selectedDate })
+  );
+
+  // 状态概览徽章
+  if (selectedOccs.length > 0) {
+    const takenCount = selectedOccs.filter((o) => findLogForOccurrence(o, logs)?.status === 'taken').length;
+    const isAllTaken = takenCount === selectedOccs.length;
+    const summaryBadge = el('div', {
+      class: `history-plan-summary-badge ${isAllTaken ? 'is-complete' : ''}`,
+      text: isAllTaken ? `共 ${selectedOccs.length} 次 · 全部已服` : `已服 ${takenCount}/${selectedOccs.length}`,
+    });
+    planHeader.append(titleWrap, summaryBadge);
+  } else {
+    planHeader.append(titleWrap);
+  }
   planSection.append(planHeader);
 
   if (selectedOccs.length === 0) {
-    planSection.append(banner('info', '该日无用药计划'));
+    const emptyCard = el('div', { class: 'history-empty-card' });
+    emptyCard.append(emptyState('calendar', '该日暂无用药安排', '规律生活，安心休息'));
+    planSection.append(emptyCard);
   } else {
     for (const occ of selectedOccs) {
       const med = medById.get(occ.medId);
@@ -476,10 +544,10 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
       const statusClass = isTaken ? 'taken' : isSkipped ? 'skipped' : isMissed ? 'missed' : 'pending';
       const statusLabel = isTaken ? '已服' : isSkipped ? '跳过' : isMissed ? '漏服' : '待服';
 
-      const itemCard = el('div', { class: 'history-plan-item' });
+      const itemCard = el('div', { class: `history-plan-item is-${statusClass}` });
 
-      // 时间标识
-      const timeBadge = el('div', { class: 'history-plan-time-badge' });
+      // 左侧时间与时段
+      const timeCol = el('div', { class: 'history-plan-time-col' });
       const rev = revisions.find((r) => r.medId === occ.medId && r.slot === occ.slot);
       const timeStr = rev?.timeLocal || occ.timeLocal || '08:00';
       let actualTimeStr: string | undefined;
@@ -488,14 +556,12 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
         actualTimeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       }
 
-      timeBadge.append(
-        el('div', { class: 'history-plan-time', text: actualTimeStr || timeStr }),
-        el('div', { class: 'history-plan-slot', text: actualTimeStr ? `计划 ${timeStr}` : (SLOT_LABEL[occ.slot] || '用药') })
+      timeCol.append(
+        el('div', { class: 'history-plan-time', text: timeStr }),
+        el('div', { class: 'history-plan-slot-tag', text: SLOT_LABEL[occ.slot] || '时段' })
       );
 
-      const timelineDot = el('div', { class: `history-plan-timeline-dot ${statusClass}` });
-
-      // 药品信息
+      // 中间药品信息
       const info = el('div', { class: 'history-plan-info' });
       info.append(el('div', { class: 'history-plan-name', text: med.name }));
       const dose = med.amountPerDose || med.dosageText || '1片';
@@ -505,19 +571,27 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
       const statusRow = el('div', { class: 'history-plan-status-row' });
       statusRow.append(el('span', { class: `history-status-badge ${statusClass}`, text: statusLabel }));
       if (actualTimeStr) {
-        statusRow.append(el('span', { class: 'history-plan-time-compare', text: `实际打卡 ${actualTimeStr} (计划 ${timeStr})` }));
-      } else {
-        statusRow.append(el('span', { class: 'history-plan-time-compare', text: `计划 ${timeStr} · ${SLOT_LABEL[occ.slot] || '时段'}` }));
+        statusRow.append(el('span', { class: 'history-plan-ack-time', text: `实际打卡 ${actualTimeStr}` }));
       }
       info.append(statusRow);
 
-      // 操作区域 (按钮 + 圆形打卡圈)
+      // 右侧操作区域 (单一体现药丸按钮)
       const actionsWrap = el('div', { class: 'history-plan-actions' });
       const actionBtn = el('button', {
-        class: `history-plan-action-btn ${statusClass}`,
+        class: `history-plan-action-btn history-action-pill ${statusClass}`,
         type: 'button',
-        text: isTaken ? '撤销' : isMissed ? '补卡' : isSkipped ? '补卡' : '打卡',
-      });
+        'aria-label': isTaken ? `已服 ${med.name}，点击撤销` : `打卡 ${med.name}`,
+      } as any);
+
+      if (isTaken) {
+        actionBtn.append(icon('check'), el('span', { text: '已服' }));
+      } else if (isMissed) {
+        actionBtn.append(icon('plus'), el('span', { text: '补卡' }));
+      } else if (isSkipped) {
+        actionBtn.append(icon('plus'), el('span', { text: '补卡' }));
+      } else {
+        actionBtn.append(icon('check'), el('span', { text: '打卡' }));
+      }
 
       const handleAction = async () => {
         try {
@@ -542,19 +616,9 @@ export async function renderMedHistoryPage(root: HTMLElement, signal?: AbortSign
       };
 
       actionBtn.onclick = handleAction;
+      actionsWrap.append(actionBtn);
 
-      const radio = el('button', {
-        class: `history-radio-circle${isTaken ? ' taken' : ''}`,
-        type: 'button',
-        'aria-label': isTaken ? '点击撤销打卡' : '点击打卡',
-      } as any);
-      if (isTaken) {
-        radio.append(icon('check'));
-      }
-      radio.onclick = handleAction;
-
-      actionsWrap.append(actionBtn, radio);
-      itemCard.append(timeBadge, timelineDot, info, actionsWrap);
+      itemCard.append(timeCol, info, actionsWrap);
       planSection.append(itemCard);
     }
   }
