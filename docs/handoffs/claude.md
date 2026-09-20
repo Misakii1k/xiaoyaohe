@@ -8,6 +8,35 @@ Latest version: `1.1.7` (Android `versionCode: 65`)
 
 ## Summary of Accomplished Work
 
+### 65. 时段提醒设置排版重构、全屏提醒选项优化、独立开关与时间增删落地 (workspace/claude)
+
+1. **需求与背景**：解决设置面板中「时段提醒设置」早/中/晚/睡前视觉混杂无分隔、全屏提醒二级编辑器 3 列挤压造成文字断行折叠破损，并为每个时段提供独立开启/关闭开关、支持配置时段内多个具体提醒时间点以及自定义时段的添加与删除功能。
+2. **改动清单**：
+   - **数据模型与底层仓储扩展 (`src/db/schema.ts`, `src/db/repositories/reminderPeriodsRepo.ts`)**：
+     - `ReminderPeriodSetting` 扩展 `name?: string`（时段名称）、`extraTimes?: string[]`（额外提醒时间点列表）、`enabled?: boolean`（是否开启该时段提醒）、`isCustom?: boolean`（自定义时段标记）；
+     - 仓储方法 `updateReminderPeriodSetting` 支持原子更新 `enabled`、`extraTimes`、`name` 等字段，校验所有时间格式（`HH:mm`）；
+     - 新增 `deleteReminderPeriodSetting` 支持彻底删除自定义时段并广播更新事件。
+   - **提醒调度计划联动 (`src/features/medicationReminderPlan.ts`)**：
+     - 增加 `if (setting && setting.enabled === false) continue;`，关闭的时段不再生成系统通知与原生闹钟；
+     - 收集时段内主时间与所有额外时间（`targetTimes = [timeLocal, ...extraTimes]`），为各生效时间点独立排期生成对应的服药组提醒。
+   - **时段列表独立微卡片与原生滑动开关 (`ReminderPanel.ts`, `settings.css`)**：
+     - 将原本平铺的灰底行重构为符合规范的独立纯白微卡片（`14px` 圆角、细边框、阴影与 `10px` 呼吸间隔）；
+     - 早（琥珀日出）、中（绿意正午）、晚（暖蓝晚霞）、睡前（静夜弯月）与自定义（极客青时钟）配备专属微拟物矢量彩色徽章；
+     - 每张卡片右侧内置原生质感 iOS 滑动开关（Switch），支持在列表上直接一键开启或暂停该时段提醒，暂停时卡片平滑淡化且标记「已停用」；
+     - 列表底部新增大触控区域虚线卡片「+ 添加提醒时段」，拉起底层弹层支持自定义时段名称（如「下午」、「加餐」等）与首选时间。
+   - **二级编辑器全屏提醒排版根治与多时间点增删 (`ReminderPanel.ts`, `settings.css`)**：
+     - 废除横向 3 列等宽栅格，重构成单列全宽卡片式单选架构（`.period-mode-cards` 与 `.period-mode-card`）；
+     - 各选项大字加粗、配备「推荐」绿色微徽章与完整无截断的解释副标题（持续全屏提醒 / 10 秒全屏提醒 / 60 秒全屏提醒），彻底消除手机屏幕上的断行与折叠；
+     - 时间配置区域升级为多时间点动态容器：每行展示一个时间选择器，右侧配备删除按钮（多于 1 个时间点时可删除）；下方提供「+ 添加提醒时间」轻量按钮，支持灵活增减多个催服时间点；
+     - 自定义时段底部提供「删除该时段」危险操作与二次确认防护。
+3. **验证与门禁**：
+   - 补充 `tests/reminderPeriodSettings.test.ts` 验证时段独立开关、多时间点校验与自定义时段增删；
+   - 补充 `tests/medicationReminderPlan.test.ts` 验证时段停用时通知排期拦截以及多时间点触发排期；
+   - `npm run typecheck`：0 错误；
+   - `npm test`：91 文件 / 577 项 100% PASS；
+   - `npm run build:web`：生产构建正常，Web Bundle 正确生成；
+   - `npm run cap:sync`：Android 资源同步成功。
+
 ### 64. 用药日历排版重构与状态图例/单操作按钮优化 (workspace/claude)
 
 1. **需求与背景**：重构「用药日历」（`/history`）界面的视觉排版、信息架构与操作层级，彻底根治月份切换字符简陋、日历单元格椭圆拉伸变形、缺少状态图例认知负担重、当日用药列表横向拥挤挤压折行、按钮与Radio双重冗余操作等体验缺陷。

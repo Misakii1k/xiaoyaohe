@@ -1,5 +1,7 @@
 import {
   SLOT_LABEL,
+  SLOT_DEFAULT_TIME,
+  defaultEscalate,
   deriveReminderPeriodSettings,
   formatMealRels,
   type DerivedReminderPeriodSetting,
@@ -120,10 +122,20 @@ export function buildMedicationReminderPlan({
     const parts = key.split(':');
     const date = parts[0]! as LocalDate;
     const slot = parts[1] as Slot;
-    const setting = settingsBySlot.get(slot)!;
-    const groupId = `reminder-group:${date}:${slot}`;
-    // 组触发时间 = 时段设置 timeLocal 当日的本地时间戳（组内各药的精确时间仅用于记录）
-    const dueAt = localDateAtTime(date, setting.timeLocal);
+    const setting = settingsBySlot.get(slot);
+    // 若该时段被用户关闭，则不再为其生成通知计划
+    if (setting && setting.enabled === false) {
+      continue;
+    }
+    const effectiveSetting = setting ?? {
+      slot,
+      timeLocal: SLOT_DEFAULT_TIME[slot] ?? '08:00',
+      extraTimes: [] as string[],
+      mode: 'strong' as const,
+      escalate: defaultEscalate(),
+      state: 'active' as const,
+    };
+
     const sortedMembers = [...members].sort((left, right) =>
       left.occurrence.id < right.occurrence.id ? -1 : left.occurrence.id > right.occurrence.id ? 1 : 0,
     );
@@ -146,34 +158,47 @@ export function buildMedicationReminderPlan({
       };
     });
 
+    // 收集所有需要触发的时间点（主时间 + 额外时间点）
+    const targetTimes = [
+      effectiveSetting.timeLocal,
+      ...((effectiveSetting as any).extraTimes ?? []),
+    ].filter((t, idx, arr) => t && arr.indexOf(t) === idx);
+
     // 重复策略按组（dose / repeat-N），由时段设置的 escalate 决定
-    const repeatEveryMin = Math.max(1, safeMinutes(setting.escalate.repeatEveryMin));
+    const repeatEveryMin = Math.max(1, safeMinutes(effectiveSetting.escalate.repeatEveryMin));
     const repeatCount = Math.min(
       MAX_REPEATS_PER_GROUP,
-      Math.max(0, Math.floor(setting.escalate.maxRepeats)),
+      Math.max(0, Math.floor(effectiveSetting.escalate.maxRepeats)),
     );
-    for (let index = 0; index <= repeatCount; index += 1) {
-      const count = index + 1;
-      const at = dueAt + index * repeatEveryMin * 60_000;
-      if (!keepPastPhases && at <= now) continue;
-      notifications.push({
-        at,
-        title: buildReminderGroupTitle(slot, count),
-        body: buildReminderGroupBody(occurrences, index * repeatEveryMin),
-        tag: groupId,
-        key: count === 1 ? 'dose' : `repeat-${count}`,
-        data: {
-          kind: 'reminder-group',
-          groupId,
-          date,
-          slot,
-          dueAt,
-          mode: setting.mode,
-          reminderCount: count,
-          occurrences,
-        },
-      });
-    }
+
+    targetTimes.forEach((timeStr, timeIdx) => {
+      const dueAt = localDateAtTime(date, timeStr);
+      const timeSuffix = timeIdx === 0 ? '' : `@${timeStr.replace(':', '')}`;
+      const groupId = `reminder-group:${date}:${slot}${timeSuffix}`;
+
+      for (let index = 0; index <= repeatCount; index += 1) {
+        const count = index + 1;
+        const at = dueAt + index * repeatEveryMin * 60_000;
+        if (!keepPastPhases && at <= now) continue;
+        notifications.push({
+          at,
+          title: buildReminderGroupTitle(slot, count),
+          body: buildReminderGroupBody(occurrences, index * repeatEveryMin),
+          tag: groupId,
+          key: count === 1 ? 'dose' : `repeat-${count}`,
+          data: {
+            kind: 'reminder-group',
+            groupId,
+            date,
+            slot,
+            dueAt,
+            mode: effectiveSetting.mode,
+            reminderCount: count,
+            occurrences,
+          },
+        });
+      }
+    });
   }
 
   return notifications.sort(

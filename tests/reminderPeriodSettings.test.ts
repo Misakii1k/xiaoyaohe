@@ -130,6 +130,45 @@ describe('时段提醒设置（设备本地 v9）', () => {
     expect(after.mode).toBe(before.mode);
   });
 
+  it('支持时段独立开启/关闭、多时间点及自定义时段增删', async () => {
+    // 1. 独立开启/关闭
+    await updateReminderPeriodSetting('noon', { enabled: false });
+    let noon = await getReminderPeriodSetting('noon');
+    expect(noon.enabled).toBe(false);
+
+    await updateReminderPeriodSetting('noon', { enabled: true });
+    noon = await getReminderPeriodSetting('noon');
+    expect(noon.enabled).toBe(true);
+
+    // 2. 多时间点配置
+    await updateReminderPeriodSetting('morning', { extraTimes: ['08:30', '09:00'] });
+    const morning = await getReminderPeriodSetting('morning');
+    expect(morning.extraTimes).toEqual(['08:30', '09:00']);
+
+    // 非法额外时间校验
+    await expect(
+      updateReminderPeriodSetting('morning', { extraTimes: ['invalid-time'] }),
+    ).rejects.toThrow();
+
+    // 3. 自定义时段新增与删除
+    const customSlot = 'custom_test_afternoon' as Slot;
+    await updateReminderPeriodSetting(customSlot, {
+      name: '下午茶',
+      timeLocal: '15:30',
+      isCustom: true,
+      enabled: true,
+    });
+
+    let list = await listReminderPeriodSettings();
+    expect(list.some((s) => s.slot === customSlot && s.name === '下午茶')).toBe(true);
+
+    const { deleteReminderPeriodSetting } = await import('../src/db/local');
+    await deleteReminderPeriodSetting(customSlot);
+
+    list = await listReminderPeriodSettings();
+    expect(list.some((s) => s.slot === customSlot)).toBe(false);
+  });
+
   it('setOccurrenceActions 单事务批量记录；任一条失败则整批回滚', async () => {
     await putMed(medication('batch-med', '批量药', { doseQuantity: 0.5, doseUnit: '片' }));
     await putRule(rule('batch-rule-m', 'batch-med', 'morning'));

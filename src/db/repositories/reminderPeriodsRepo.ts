@@ -18,7 +18,9 @@ import { normalizeMedication } from '../normalization';
 
 const REMINDER_PERIOD_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-export type ReminderPeriodSettingPatch = Partial<Pick<ReminderPeriodSetting, 'timeLocal' | 'mode' | 'escalate'>>;
+export type ReminderPeriodSettingPatch = Partial<
+  Pick<ReminderPeriodSetting, 'timeLocal' | 'mode' | 'escalate' | 'enabled' | 'extraTimes' | 'name' | 'isCustom'>
+>;
 
 /** 幂等 seed：仅当 store 为空且有贡献规则时，按派生值建行（recompute 语义等价）。 */
 export async function seedReminderPeriodSettings(d: IDBPDatabase<MedboxDB>): Promise<void> {
@@ -30,7 +32,7 @@ export async function seedReminderPeriodSettings(d: IDBPDatabase<MedboxDB>): Pro
 // 自动向连接模块注册 seeder，避免循环调用时尚未加载的问题
 registerReminderPeriodSeeder(seedReminderPeriodSettings);
 
-/** 返回全部 4 个时段：已保存的行原样返回，未保存的时段按派生值合成（不落库）。 */
+/** 返回全部时段：既包含默认4个时段（已存或派生），也包含用户添加的自定义时段。 */
 export async function listReminderPeriodSettings(): Promise<ReminderPeriodSetting[]> {
   const d = await db();
   const [stored, meds, rules] = await Promise.all([
@@ -41,7 +43,24 @@ export async function listReminderPeriodSettings(): Promise<ReminderPeriodSettin
   const derived = deriveReminderPeriodSettings(meds.map(normalizeMedication), rules);
   const storedBySlot = new Map(stored.map((setting) => [setting.slot, setting]));
   const now = Date.now();
-  return derived.map((setting) => storedBySlot.get(setting.slot) ?? { ...setting, updatedAt: now });
+
+  const results: ReminderPeriodSetting[] = [];
+  const handledSlots = new Set<string>();
+
+  // 优先按默认时段顺序放置
+  for (const setting of derived) {
+    handledSlots.add(setting.slot);
+    results.push(storedBySlot.get(setting.slot) ?? { ...setting, enabled: true, updatedAt: now });
+  }
+
+  // 追加用户自定义时段（非内置 4 时段）
+  for (const item of stored) {
+    if (!handledSlots.has(item.slot)) {
+      results.push(item);
+    }
+  }
+
+  return results;
 }
 
 export async function getReminderPeriodSetting(slot: Slot): Promise<ReminderPeriodSetting> {
@@ -96,14 +115,18 @@ export async function updateReminderPeriodSetting(
       .find((setting) => setting.slot === slot);
     const base = stored ?? derived ?? {
       slot,
-      timeLocal: SLOT_DEFAULT_TIME[slot],
+      timeLocal: SLOT_DEFAULT_TIME[slot] ?? '08:00',
       mode: 'strong' as const,
       escalate: defaultEscalate(),
       state: 'active' as const,
     };
     const next: ReminderPeriodSetting = {
       slot,
+      name: patch.name !== undefined ? patch.name : base.name,
       timeLocal: patch.timeLocal ?? base.timeLocal,
+      extraTimes: patch.extraTimes !== undefined ? patch.extraTimes : base.extraTimes,
+      enabled: patch.enabled !== undefined ? patch.enabled : (base.enabled ?? true),
+      isCustom: patch.isCustom !== undefined ? patch.isCustom : base.isCustom,
       mode: patch.mode ? normalizeMedicationReminderMode(patch.mode) : base.mode,
       escalate: applyEscalatePatch(base.escalate, patch.escalate),
       state: base.state,
@@ -112,10 +135,35 @@ export async function updateReminderPeriodSetting(
     if (!REMINDER_PERIOD_TIME_PATTERN.test(next.timeLocal)) {
       throw new TypeError(`无效的提醒时间：${next.timeLocal}（应为 HH:mm）`);
     }
+    if (next.extraTimes) {
+      for (const t of next.extraTimes) {
+        if (!REMINDER_PERIOD_TIME_PATTERN.test(t)) {
+          throw new TypeError(`无效的额外提醒时间：${t}（应为 HH:mm）`);
+        }
+      }
+    }
     await tx.objectStore('reminderPeriods').put(next);
     await tx.done;
     notifyDataChanged('rules');
     return next;
+  } catch (error) {
+    try { tx.abort(); } catch { /* Transaction may already be closed. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+}
+
+/** 删除自定义时段（内置 4 时段不允许删除） */
+export async function deleteReminderPeriodSetting(slot: Slot): Promise<void> {
+  const d = await db();
+  const tx = d.transaction('reminderPeriods', 'readwrite');
+  try {
+    const existing = await tx.objectStore('reminderPeriods').get(slot);
+    if (existing) {
+      await tx.objectStore('reminderPeriods').delete(slot);
+    }
+    await tx.done;
+    notifyDataChanged('rules');
   } catch (error) {
     try { tx.abort(); } catch { /* Transaction may already be closed. */ }
     await tx.done.catch(() => undefined);

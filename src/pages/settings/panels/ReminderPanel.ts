@@ -54,12 +54,14 @@ import {
   listReminderPeriodSettings,
   getReminderPeriodSetting,
   updateReminderPeriodSetting,
+  deleteReminderPeriodSetting,
 } from '../../../db/local';
 import {
   SLOT_LABEL,
   MEDICATION_REMINDER_MODE_LABEL,
   type ReminderPeriodSetting,
   type MedicationReminderMode,
+  type Slot,
 } from '../../../db/schema';
 import { panel, setChip } from '../components/panelPrimitives';
 import type { PanelChip } from '../types';
@@ -1081,26 +1083,102 @@ export async function renderPeriodSettingsBody(body: HTMLElement, panelEl: HTMLE
   body.replaceChildren();
   body.append(el('div', {
     class: 'settings-hint',
-    html: '每天按早、中、晚、睡前各发送 1 次聚合提醒。点击下方时段可自定义整体时间与响铃方式。',
+    html: '每天按各时段统一发送聚合提醒。可独立开启或停用某一时段，点击卡片可自定义多提醒时间与响铃方式。',
   }));
 
   const needsReview = settings.filter((s) => s.state === 'needs-review');
   if (needsReview.length > 0) {
     body.append(el('div', { class: 'banner warn mt-3' }, [
       el('span', {
-        html: `以下时段内不同药的提醒时间或方式不完全一致：${needsReview.map((s) => SLOT_LABEL[s.slot]).join('、')}。请逐个确认统一的整体时间与方式。`,
+        html: `以下时段内不同药的提醒时间或方式不完全一致：${needsReview.map((s) => s.name || SLOT_LABEL[s.slot] || s.slot).join('、')}。请逐个确认统一的整体时间与方式。`,
       }),
     ]));
   }
 
   const list = el('div', { class: 'period-setting-list mt-3' });
-  for (const setting of settings) list.append(buildPeriodSettingRow(setting, body, panelEl));
+  for (const setting of settings) {
+    list.append(buildPeriodSettingRow(setting, body, panelEl));
+  }
   body.append(list);
 
+  // 添加自定义提醒时段按钮
+  const addSlotBtn = el('button', {
+    class: 'period-add-slot-btn',
+    type: 'button',
+  });
+  addSlotBtn.append(icon('plus'), document.createTextNode('添加提醒时段'));
+  addSlotBtn.onclick = () => {
+    openAddPeriodModal(body, panelEl);
+  };
+  body.append(addSlotBtn);
+
   body.append(el('div', {
-    class: 'settings-hint',
-    html: '各药品自身的具体时间仍保留，新增药品不会重置上方设置。',
+    class: 'settings-hint mt-3',
+    html: '各药品自身的具体时间仍保留，新增药品不会重置上方设置。关闭时段后对应时段将不再响铃。',
   }));
+}
+
+/** 打开添加自定义时段弹层 */
+function openAddPeriodModal(body: HTMLElement, panelEl: HTMLElement): void {
+  let sheet!: ReturnType<typeof openBottomSheet>;
+  const content = el('div', { class: 'settings-sheet-content' });
+  content.append(el('h3', { class: 'settings-sheet-title', text: '添加提醒时段' }));
+  content.append(el('p', { class: 'settings-sheet-desc', text: '自定义一个新的用药时段，用于管理特定时间的服药与提醒。' }));
+
+  const nameIn = el('input', {
+    type: 'text',
+    placeholder: '例如：下午、夜间、加餐',
+  }) as HTMLInputElement;
+  nameIn.maxLength = 10;
+
+  const timeIn = el('input', {
+    type: 'time',
+    step: '60',
+    value: '15:00',
+  }) as HTMLInputElement;
+
+  content.append(
+    field('时段名称', nameIn),
+    field('首选提醒时间', timeIn),
+  );
+
+  const btnRow = el('div', { class: 'btn-row mt-4' });
+  const cancelBtn = el('button', { class: 'btn text', type: 'button', text: '取消' });
+  cancelBtn.onclick = () => sheet.close();
+
+  const confirmBtn = el('button', { class: 'btn primary', type: 'button', text: '确认添加' });
+  confirmBtn.onclick = async () => {
+    const name = nameIn.value.trim();
+    if (!name) {
+      toast('请输入时段名称');
+      return;
+    }
+    const time = timeIn.value || '15:00';
+    const customSlot = `custom_${Date.now()}` as Slot;
+    try {
+      await updateReminderPeriodSetting(customSlot, {
+        name,
+        timeLocal: time,
+        enabled: true,
+        isCustom: true,
+        mode: 'strong',
+      });
+      await rescheduleMedicationReminders();
+      toast(`已添加「${name}」时段提醒`);
+      sheet.close();
+      void renderPeriodSettingsBody(body, panelEl);
+    } catch (err) {
+      toast('添加失败：' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  btnRow.append(cancelBtn, confirmBtn);
+  content.append(btnRow);
+
+  sheet = openBottomSheet({
+    label: '添加提醒时段',
+    content,
+  });
 }
 
 export function buildPeriodSettingRow(
@@ -1108,40 +1186,92 @@ export function buildPeriodSettingRow(
   body: HTMLElement,
   panelEl: HTMLElement,
 ): HTMLElement {
-  const row = el('div', {
-    class: 'period-setting-row' + (setting.state === 'needs-review' ? ' needs-review' : ''),
-    role: 'button',
-    tabIndex: 0,
-    'aria-label': `编辑${SLOT_LABEL[setting.slot]}时段提醒`,
+  const isEnabled = setting.enabled !== false;
+  const displayName = setting.name || SLOT_LABEL[setting.slot] || setting.slot;
+  const isReview = setting.state === 'needs-review';
+
+  const card = el('div', {
+    class: `period-setting-card${isEnabled ? '' : ' is-disabled'}${isReview ? ' needs-review' : ''}`,
   });
-  const copy = el('div', { class: 'settings-toggle-copy' });
-  const title = el('div', { class: 'settings-toggle-title' });
-  title.append(el('span', { text: SLOT_LABEL[setting.slot] }));
-  if (setting.state === 'needs-review') {
-    title.append(el('span', { class: 'panel-chip tone-warn period-review-badge', text: '待复核' }));
+
+  // 主体点击区（跳转二级编辑）
+  const mainBtn = el('button', {
+    class: 'period-setting-card-main',
+    type: 'button',
+    'aria-label': `编辑${displayName}时段设置`,
+  });
+
+  // 左侧五彩图标
+  const iconWrap = el('div', {
+    class: `period-setting-icon-badge ${['morning', 'noon', 'evening', 'bedtime'].includes(setting.slot) ? setting.slot : 'custom'}`,
+  });
+  const iconName = setting.slot === 'morning' ? 'sun'
+    : setting.slot === 'noon' ? 'sun-high'
+    : setting.slot === 'evening' ? 'sunset'
+    : setting.slot === 'bedtime' ? 'moon'
+    : 'clock';
+  iconWrap.append(icon(iconName as any));
+
+  // 中间文字
+  const content = el('div', { class: 'period-setting-card-content' });
+  const titleRow = el('div', { class: 'period-setting-card-title-row' });
+  titleRow.append(el('span', { class: 'period-setting-card-name', text: displayName }));
+  if (isReview) {
+    titleRow.append(el('span', { class: 'panel-chip tone-warn period-review-badge', text: '待复核' }));
   }
+  if (!isEnabled) {
+    titleRow.append(el('span', { class: 'panel-chip tone-muted', text: '已停用' }));
+  }
+
+  // 提醒时间与多时间点指示
+  const extraCount = setting.extraTimes ? setting.extraTimes.length : 0;
+  const timeRow = el('div', { class: 'period-setting-time-badge' });
+  timeRow.append(document.createTextNode(setting.timeLocal));
+  if (extraCount > 0) {
+    timeRow.append(el('span', { class: 'period-setting-extra-count', text: `+${extraCount}个时间` }));
+  }
+
   const meta = [MEDICATION_REMINDER_MODE_LABEL[setting.mode]];
   if (setting.escalate.repeatEveryMin > 0) meta.push(`每 ${setting.escalate.repeatEveryMin} 分钟重推`);
-  copy.append(
-    title,
-    el('div', { class: 'period-setting-time', text: setting.timeLocal }),
-    el('div', { class: 'settings-toggle-desc', text: meta.join(' · ') }),
-  );
-  const chevron = el('span', { class: 'panel-chevron' });
-  chevron.append(icon('chevron-right'));
-  row.append(copy, chevron);
-  const open = () => void renderPeriodEditor(body, setting, panelEl);
-  row.onclick = open;
-  row.onkeydown = (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      open();
+  const desc = el('div', { class: 'period-setting-meta-text', text: meta.join(' · ') });
+
+  content.append(titleRow, timeRow, desc);
+  mainBtn.append(iconWrap, content);
+  mainBtn.onclick = () => void renderPeriodEditor(body, setting, panelEl);
+
+  // 右侧操作区：独立滑动开关 + 箭头
+  const actions = el('div', { class: 'period-setting-card-actions' });
+  const toggleSwitch = el('button', {
+    class: 'period-switch',
+    type: 'button',
+    role: 'switch',
+    'aria-label': `${isEnabled ? '关闭' : '开启'}${displayName}时段提醒`,
+    'aria-checked': String(isEnabled),
+  });
+  toggleSwitch.append(el('span', { class: 'period-switch-thumb' }));
+  toggleSwitch.onclick = async (e) => {
+    e.stopPropagation();
+    const nextState = !isEnabled;
+    toggleSwitch.setAttribute('aria-checked', String(nextState));
+    try {
+      await updateReminderPeriodSetting(setting.slot, { enabled: nextState });
+      await rescheduleMedicationReminders();
+      toast(`${displayName}时段提醒已${nextState ? '开启' : '关闭'}`);
+      void renderPeriodSettingsBody(body, panelEl);
+    } catch (err) {
+      toast('操作失败：' + (err instanceof Error ? err.message : String(err)));
     }
   };
-  return row;
+
+  const chevron = el('span', { class: 'panel-chevron' });
+  chevron.append(icon('chevron-right'));
+
+  actions.append(toggleSwitch, chevron);
+  card.append(mainBtn, actions);
+  return card;
 }
 
-/** 时段编辑器：整体时间 + 提醒方式 + 重复策略，保存后重建闹钟。 */
+/** 时段编辑器：单列卡片式全屏提醒选择 + 多时间点添加/删除 + 自定义时段删除 */
 export async function renderPeriodEditor(
   body: HTMLElement,
   setting: ReminderPeriodSetting,
@@ -1156,11 +1286,13 @@ export async function renderPeriodEditor(
   }
   body.replaceChildren();
 
+  const displayName = latest.name || SLOT_LABEL[latest.slot] || latest.slot;
+
   const back = el('button', { class: 'btn text small', type: 'button', html: '← 返回时段列表' });
   back.onclick = () => void renderPeriodSettingsBody(body, panelEl);
   body.append(back);
 
-  body.append(el('div', { class: 'section-title mt-3', html: `${SLOT_LABEL[latest.slot]}时段整体提醒` }));
+  body.append(el('div', { class: 'section-title mt-3', html: `${displayName}时段整体提醒` }));
 
   if (latest.state === 'needs-review') {
     body.append(el('div', { class: 'banner warn mt-3' }, [
@@ -1170,36 +1302,137 @@ export async function renderPeriodEditor(
     ]));
   }
 
-  const timeIn = el('input', { type: 'time', step: '60', value: latest.timeLocal }) as HTMLInputElement;
+  // 1. 时段名称（仅自定义时段允许修改名称）
+  let nameIn: HTMLInputElement | null = null;
+  if (latest.isCustom || !['morning', 'noon', 'evening', 'bedtime'].includes(latest.slot)) {
+    nameIn = el('input', { type: 'text', value: displayName }) as HTMLInputElement;
+    nameIn.maxLength = 10;
+    body.append(field('时段名称', nameIn));
+  }
 
-  const modeControl = el('div', {
-    class: 'period-mode-chips',
+  // 2. 多时间点增删容器
+  let timesList = [latest.timeLocal, ...(latest.extraTimes ?? [])].filter(Boolean);
+  if (timesList.length === 0) timesList = ['08:00'];
+
+  const timesContainer = el('div', { class: 'period-times-container' });
+
+  function renderTimesInputs(): void {
+    timesContainer.replaceChildren();
+    timesList.forEach((t, idx) => {
+      const row = el('div', { class: 'period-time-row' });
+      const input = el('input', {
+        type: 'time',
+        step: '60',
+        value: t,
+        'aria-label': `提醒时间 ${idx + 1}`,
+      }) as HTMLInputElement;
+      input.onchange = () => {
+        timesList[idx] = input.value;
+      };
+      row.append(input);
+
+      // 允许删除多余的时间点（至少保留 1 个）
+      if (timesList.length > 1) {
+        const delBtn = el('button', {
+          class: 'period-time-delete-btn icon-btn',
+          type: 'button',
+          'aria-label': `删除时间 ${t}`,
+        });
+        delBtn.append(icon('trash'));
+        delBtn.onclick = () => {
+          timesList.splice(idx, 1);
+          renderTimesInputs();
+        };
+        row.append(delBtn);
+      }
+      timesContainer.append(row);
+    });
+
+    const addTimeBtn = el('button', {
+      class: 'period-time-add-btn',
+      type: 'button',
+    });
+    addTimeBtn.append(icon('plus'), document.createTextNode('添加提醒时间'));
+    addTimeBtn.onclick = () => {
+      // 默认比最后一个时间晚 30 分钟或当前时间
+      timesList.push('08:30');
+      renderTimesInputs();
+    };
+    timesContainer.append(addTimeBtn);
+  }
+
+  renderTimesInputs();
+  body.append(field('提醒时间点（支持多个）', timesContainer));
+
+  // 3. 单列卡片式提醒方式选项（消除断行排版错乱）
+  const modeCardsWrap = el('div', {
+    class: 'period-mode-cards',
     role: 'radiogroup',
     'aria-label': '提醒方式',
   });
+
   let selectedMode: MedicationReminderMode = latest.mode;
-  for (const mode of Object.keys(MEDICATION_REMINDER_MODE_LABEL) as MedicationReminderMode[]) {
-    const option = el('button', {
-      class: 'period-mode-chip' + (mode === selectedMode ? ' is-selected' : ''),
+
+  const modeOptionsConfig: Array<{
+    mode: MedicationReminderMode;
+    title: string;
+    desc: string;
+    isRecommend?: boolean;
+  }> = [
+    {
+      mode: 'strong',
+      title: '持续全屏提醒',
+      desc: '全屏覆盖并持续响铃，直到您手动处理，防漏服最可靠。',
+      isRecommend: true,
+    },
+    {
+      mode: 'fullscreen-short',
+      title: '10 秒全屏提醒',
+      desc: '全屏响铃展示 10 秒后，自动转为系统常驻静默通知。',
+    },
+    {
+      mode: 'fullscreen-persistent',
+      title: '60 秒全屏提醒',
+      desc: '全屏响铃展示 60 秒后，自动转为系统常驻静默通知。',
+    },
+  ];
+
+  for (const item of modeOptionsConfig) {
+    const isSelected = item.mode === selectedMode;
+    const card = el('button', {
+      class: `period-mode-card${isSelected ? ' is-selected' : ''}`,
       type: 'button',
       role: 'radio',
-      'aria-checked': String(mode === selectedMode),
+      'aria-checked': String(isSelected),
     });
-    option.append(el('strong', { text: MEDICATION_REMINDER_MODE_LABEL[mode] }));
-    option.append(el('span', {
-      text: mode === 'strong' ? '高优先级通知' : mode === 'fullscreen-short' ? '全屏 10 秒' : '持续提醒',
-    }));
-    option.onclick = () => {
-      selectedMode = mode;
-      for (const child of modeControl.querySelectorAll<HTMLElement>('[role="radio"]')) {
-        const selected = child === option;
-        child.classList.toggle('is-selected', selected);
-        child.setAttribute('aria-checked', String(selected));
+
+    const contentWrap = el('div', { class: 'period-mode-card-content' });
+    const headerRow = el('div', { class: 'period-mode-card-header' });
+    headerRow.append(el('span', { class: 'period-mode-card-title', text: item.title }));
+    if (item.isRecommend) {
+      headerRow.append(el('span', { class: 'period-mode-card-tag', text: '推荐' }));
+    }
+    const descText = el('span', { class: 'period-mode-card-desc', text: item.desc });
+    contentWrap.append(headerRow, descText);
+
+    const checkIcon = el('span', { class: 'period-mode-card-check' });
+    checkIcon.append(icon('check'));
+
+    card.append(contentWrap, checkIcon);
+    card.onclick = () => {
+      selectedMode = item.mode;
+      for (const c of modeCardsWrap.querySelectorAll('.period-mode-card')) {
+        const sel = c === card;
+        c.classList.toggle('is-selected', sel);
+        c.setAttribute('aria-checked', String(sel));
       }
     };
-    modeControl.append(option);
+    modeCardsWrap.append(card);
   }
 
+  body.append(field('提醒方式', modeCardsWrap));
+
+  // 4. 重复策略字段
   const repeatIn = el('input', {
     type: 'number', min: '1', step: '1', value: String(latest.escalate.repeatEveryMin),
   }) as HTMLInputElement;
@@ -1211,21 +1444,27 @@ export async function renderPeriodEditor(
   }) as HTMLInputElement;
 
   body.append(
-    field('整体提醒时间', timeIn),
-    field('提醒方式', modeControl),
     field('未确认时每几分钟再提醒', repeatIn),
     field('最多重推次数（不含首次）', maxRepeatsIn),
     field('超过几分钟通知照护者（0 = 不通知）', caregiverIn),
   );
 
-  const row = el('div', { class: 'btn-row mt-3' });
-  const saveBtn = el('button', { class: 'btn', html: '保存' });
+  // 5. 底部操作按钮行
+  const btnRow = el('div', { class: 'btn-row mt-4' });
+  const saveBtn = el('button', { class: 'btn primary', html: '保存设置' });
   saveBtn.onclick = async () => {
     if (saveBtn.hasAttribute('disabled')) return;
     saveBtn.setAttribute('disabled', 'true');
+
+    const primaryTime = timesList[0] || '08:00';
+    const extraTimes = timesList.slice(1);
+    const updatedName = nameIn ? nameIn.value.trim() : latest.name;
+
     try {
       await updateReminderPeriodSetting(latest.slot, {
-        timeLocal: timeIn.value,
+        name: updatedName,
+        timeLocal: primaryTime,
+        extraTimes: extraTimes,
         mode: selectedMode,
         escalate: {
           repeatEveryMin: Math.max(1, Math.floor(Number(repeatIn.value) || 1)),
@@ -1233,15 +1472,33 @@ export async function renderPeriodEditor(
           notifyCaregiverAfterMin: Math.max(0, Math.floor(Number(caregiverIn.value) || 0)),
         },
       });
+      await rescheduleMedicationReminders();
+      toast(`${updatedName || displayName}时段设置已保存，闹钟已重建`);
+      void renderPeriodSettingsBody(body, panelEl);
     } catch (error) {
       saveBtn.removeAttribute('disabled');
       toast('保存失败：' + (error instanceof Error ? error.message : String(error)));
-      return;
     }
-    try { await rescheduleMedicationReminders(); } catch { /* best-effort */ }
-    toast(`${SLOT_LABEL[latest.slot]}时段提醒已保存，闹钟已重建`);
-    void renderPeriodSettingsBody(body, panelEl);
   };
-  row.append(saveBtn);
-  body.append(row);
+  btnRow.append(saveBtn);
+
+  // 自定义时段提供删除按钮
+  if (latest.isCustom || !['morning', 'noon', 'evening', 'bedtime'].includes(latest.slot)) {
+    const deleteBtn = el('button', { class: 'btn danger', type: 'button', html: '删除该时段' });
+    deleteBtn.onclick = async () => {
+      const confirmed = await confirmDialog(`确定要删除「${displayName}」时段吗？删除后该时段内的提醒将被移除。`, '确认删除', true);
+      if (!confirmed) return;
+      try {
+        await deleteReminderPeriodSetting(latest.slot);
+        await rescheduleMedicationReminders();
+        toast(`已删除「${displayName}」时段`);
+        void renderPeriodSettingsBody(body, panelEl);
+      } catch (err) {
+        toast('删除失败：' + (err instanceof Error ? err.message : String(err)));
+      }
+    };
+    btnRow.append(deleteBtn);
+  }
+
+  body.append(btnRow);
 }

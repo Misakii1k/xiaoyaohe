@@ -248,4 +248,49 @@ describe('native medication reminder plan', () => {
     expect(occurrences).toHaveLength(1);
     expect(occurrences[0].medName).toBe('甲药');
   });
+
+  it('skips scheduled reminders when the period setting is disabled', () => {
+    const med = medication();
+    const reminderRule = rule({ escalate: { ...defaultEscalate(), maxRepeats: 0 } });
+    const revision = createScheduleRevision(med, reminderRule, { effectiveDate: '2026-07-13', createdAt: 100 });
+
+    const plan = buildMedicationReminderPlan({
+      meds: [med],
+      rules: [reminderRule],
+      revisions: [revision],
+      logs: [],
+      now,
+      horizonDays: 1,
+      periodSettings: [periodSetting({ slot: 'morning', enabled: false })],
+    });
+
+    expect(plan).toHaveLength(0);
+  });
+
+  it('schedules reminders for both primary and extra times in a period', () => {
+    const med = medication();
+    const reminderRule = rule({ escalate: { ...defaultEscalate(), maxRepeats: 0 } });
+    const revision = createScheduleRevision(med, reminderRule, { effectiveDate: '2026-07-13', createdAt: 100 });
+
+    const plan = buildMedicationReminderPlan({
+      meds: [med],
+      rules: [reminderRule],
+      revisions: [revision],
+      logs: [],
+      now,
+      horizonDays: 1,
+      periodSettings: [
+        periodSetting({
+          slot: 'morning',
+          timeLocal: '08:00',
+          extraTimes: ['08:30'],
+          escalate: { ...defaultEscalate(), maxRepeats: 0 },
+        }),
+      ],
+    });
+
+    expect(plan).toHaveLength(2);
+    expect(plan[0].tag).toBe('reminder-group:2026-07-13:morning');
+    expect(plan[1].tag).toBe('reminder-group:2026-07-13:morning@0830');
+  });
 });

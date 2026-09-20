@@ -256,13 +256,21 @@ export type ReminderPeriodState = 'active' | 'needs-review';
 
 /**
  * 按时段聚合的整体提醒设置（设备本地，不入局域网同步）。
- * 每个时段每天只发一条整体提醒，其触发时间、方式与升级策略由该设置决定；
+ * 每个时段每天只发整体提醒，其触发时间、方式与升级策略由该设置决定；
  * 时段内各药自身的精确时间仍保留，仅用于记录与库存归因。
  */
 export interface ReminderPeriodSetting {
   slot: Slot;
-  /** 整体提醒触发时间 "HH:mm"（本地） */
+  /** 自定义时段名称（若为空则回退 SLOT_LABEL[slot]） */
+  name?: string;
+  /** 整体提醒主触发时间 "HH:mm"（本地） */
   timeLocal: string;
+  /** 该时段内额外的提醒时间点列表，例如 ["08:30"] */
+  extraTimes?: string[];
+  /** 是否开启该时段提醒，默认为 true；关闭后不再下发系统闹钟 */
+  enabled?: boolean;
+  /** 是否为用户自定义添加的时段 */
+  isCustom?: boolean;
   mode: MedicationReminderMode;
   escalate: EscalatePolicy;
   state: ReminderPeriodState;
