@@ -82,7 +82,7 @@ function getFeatureBottleSvg(): string {
         <stop offset=".74" stop-color="#f5f6f0"/>
         <stop offset="1" stop-color="#d4dcd2"/>
       </linearGradient>
-      <filter id="featureShadow">
+      <filter id="featureShadow" x="-15%" y="-15%" width="130%" height="130%">
         <feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#345641" flood-opacity=".15"/>
       </filter>
     </defs>
@@ -90,7 +90,7 @@ function getFeatureBottleSvg(): string {
     <g filter="url(#featureShadow)" transform="rotate(-12 78 90)">
       <path d="M46 47q-10 7-10 19v78q0 11 12 11h58q12 0 12-11V66q0-12-10-19" fill="url(#heroBottle)"/>
       <rect x="45" y="22" width="64" height="29" rx="6" fill="#fafbf5"/>
-      <path d="M49 26v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20" stroke="#d7ddd1"/>
+      <path d="M49 26v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20" fill="none" stroke="#d7ddd1"/>
       <path d="M36 79h82v48H36" fill="#769b7e"/>
       <text x="77" y="98" font-size="8" fill="#edf4e9" text-anchor="middle" letter-spacing="1.5">DAILY CARE</text>
       <text x="77" y="118" font-family="Georgia,serif" font-size="20" fill="white" text-anchor="middle">Vitamin</text>

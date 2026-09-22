@@ -1142,6 +1142,9 @@ input[type='datetime-local']:not(.ui-picker-native) {
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-sm);
+  /* 允许胶囊主体探出卡片下沿 */
+  position: relative;
+  overflow: visible;
 }
 
 .take-med-time {
@@ -1161,9 +1164,11 @@ input[type='datetime-local']:not(.ui-picker-native) {
 }
 
 .take-med-3d-visual {
-  inline-size: 130px;
-  block-size: 130px;
+  inline-size: 150px;
+  block-size: 150px;
   margin-top: var(--space-2);
+  /* 下沿探出卡片，主体不被裁切 */
+  margin-bottom: calc(-1 * var(--space-4));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1189,8 +1194,11 @@ input[type='datetime-local']:not(.ui-picker-native) {
 }
 
 .take-med-pill-img {
-  max-inline-size: 110px;
-  max-block-size: 110px;
+  /* 788×980 竖版已裁净透明边：按高撑满并略微探出容器 */
+  block-size: 164px;
+  inline-size: auto;
+  max-inline-size: none;
+  max-block-size: none;
   object-fit: contain;
   position: relative;
   z-index: 1;

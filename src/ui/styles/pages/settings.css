@@ -147,13 +147,13 @@
 
 .settings-page .panel-chip.tone-muted {
   background: #f1f5f9;
-  color: #64748b;
+  color: #475569;
   border-color: #e2e8f0;
 }
 
 .settings-page .panel-chip.tone-ok {
   background: #e6f9f0;
-  color: #10b981;
+  color: #047857;
   border-color: #c7f3de;
 }
 
@@ -161,6 +161,25 @@
   background: #eef0ff;
   color: var(--tone-info-fg, #4348a8);
   border-color: #e0e7ff;
+}
+
+/* 暗色模式：上方硬编码亮底会让文字对比度掉到 2:1~4.3:1，此处整体翻转 */
+[data-theme='dark'] .settings-page .panel-chip.tone-muted {
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+[data-theme='dark'] .settings-page .panel-chip.tone-ok {
+  background: rgba(52, 211, 153, 0.16);
+  color: #6ee7b7;
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+[data-theme='dark'] .settings-page .panel-chip.tone-info {
+  background: rgba(129, 140, 248, 0.18);
+  color: #c7d2fe;
+  border-color: rgba(129, 140, 248, 0.32);
 }
 
 .settings-page .panel-chevron {
@@ -1327,7 +1346,8 @@ body.lan-sync-panel-active .ai-launcher {
 
   .profile-stat-card {
     min-height: 84px;
-    padding: var(--space-3) var(--space-4);
+    /* 顶部保持收紧，让 3D 图标在宽屏下同样突破上边框 */
+    padding: 4px var(--space-4) var(--space-3);
   }
 
   /* 设置功能面板卡片在宽屏下自适应 2 列网格排布 */
@@ -1490,13 +1510,14 @@ body.lan-sync-panel-active .ai-launcher {
 }
 
 [data-theme='dark'] .profile-streak-badge {
-  background: rgba(35, 106, 85, 0.15);
-  color: var(--color-primary-soft);
-  border-color: rgba(35, 106, 85, 0.3);
+  background: rgba(72, 168, 140, 0.16);
+  /* 修复：原先用 --color-primary-soft（暗色下为 #183329 近黑绿），对比度仅 1.18:1 */
+  color: var(--color-primary);
+  border-color: rgba(72, 168, 140, 0.34);
 }
 
 [data-theme='dark'] .profile-streak-badge svg {
-  stroke: var(--color-primary-soft);
+  stroke: var(--color-primary);
 }
 
 /* 我的数据 1x3 统计网格移动端基础样式 */
@@ -1517,13 +1538,16 @@ body.lan-sync-panel-active .ai-launcher {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  /* 为突破卡片上边框的 3D 图标预留空间 */
+  margin-block-start: 26px;
 }
 
 .profile-stat-card {
   background: var(--color-surface);
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-border);
-  padding: 14px 6px;
+  /* 顶部留白收紧，配合图标上移与卡片上外边距形成破框感 */
+  padding: 4px 6px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1534,6 +1558,9 @@ body.lan-sync-panel-active .ai-launcher {
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
   min-inline-size: 0;
   box-sizing: border-box;
+  /* 允许 3D 图标突破卡片上边框 */
+  overflow: visible;
+  position: relative;
 }
 
 .profile-stat-card:active {
@@ -1542,23 +1569,47 @@ body.lan-sync-panel-active .ai-launcher {
 }
 
 .profile-stat-icon {
-  inline-size: 38px;
-  block-size: 38px;
+  inline-size: 52px;
+  block-size: 52px;
   border-radius: var(--radius-full);
-  background: #f1f5f9;
+  /* 半透明光晕替代实心灰盘，保留圆形但不再"关住"图标 */
+  background: radial-gradient(
+    circle,
+    rgba(35, 106, 85, 0.18) 0%,
+    rgba(35, 106, 85, 0.08) 55%,
+    transparent 80%
+  );
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  overflow: visible;
+  /* 上移突破卡片上边框 */
+  margin-block-start: -22px;
+  margin-block-end: 6px;
 }
 
 [data-theme='dark'] .profile-stat-icon {
-  background: rgba(255, 255, 255, 0.08);
+  background: radial-gradient(
+    circle,
+    rgba(52, 211, 153, 0.2) 0%,
+    rgba(52, 211, 153, 0.09) 55%,
+    transparent 80%
+  );
 }
 
-.profile-stat-icon svg,
+/* 3D 位图图标：已裁净透明边，适度放大并上移突破卡片边框 */
 .profile-stat-icon img {
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: auto;
+  block-size: 60px;
+  max-inline-size: 62px;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 12px rgba(35, 106, 85, 0.26));
+}
+
+/* SVG 兜底图标为 48×48 满幅绘制，保持原尺寸避免失真 */
+.profile-stat-icon svg {
+  inline-size: 26px;
+  block-size: 26px;
   object-fit: contain;
 }
 
@@ -1942,22 +1993,13 @@ body.lan-sync-panel-active .ai-launcher {
 .settings-about-logo {
   position: relative;
   z-index: 1;
-  inline-size: 56px;
-  block-size: 56px;
-  border-radius: 16px;
-  background: var(--color-primary-gradient);
-  display: grid;
-  place-items: center;
-  color: #ffffff;
-  box-shadow: 0 8px 24px rgba(35, 106, 85, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  inline-size: 72px;
+  block-size: 72px;
+  border-radius: 18px;
+  object-fit: contain;
+  display: block;
+  box-shadow: 0 8px 24px rgba(35, 106, 85, 0.32);
   flex-shrink: 0;
-}
-
-.settings-about-logo svg {
-  inline-size: 28px;
-  block-size: 28px;
-  stroke: #ffffff;
-  stroke-width: 2.2;
 }
 
 .settings-about-app-name {
@@ -1988,7 +2030,8 @@ body.lan-sync-panel-active .ai-launcher {
   padding: 3px 12px;
   border-radius: var(--radius-full);
   background: rgba(37, 99, 235, 0.08);
-  color: #2563eb;
+  /* #2563eb 在淡蓝底上仅 4.35:1，加深一档满足 AA */
+  color: #1d4ed8;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.2px;

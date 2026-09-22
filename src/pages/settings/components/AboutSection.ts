@@ -1,14 +1,20 @@
 import { el, icon, type IconName } from '../../../ui/components';
+import appIconUrl from '../../../assets/images3d/app-icon.png';
 
 export function renderAboutSection(): HTMLElement {
   const aboutSection = el('section', { class: 'settings-group-section settings-about-section' });
 
   const aboutCard = el('div', { class: 'settings-group-card settings-about-card settings-about-center' });
 
-  // 1. 居中药盒 Logo 与光晕底座
+  // 1. 居中 App 图标与光晕底座
   const logoWrap = el('div', { class: 'settings-about-logo-wrap' });
-  const logo = el('div', { class: 'settings-about-logo' });
-  logo.append(icon('pill'));
+  const logo = el('img', {
+    class: 'settings-about-logo',
+    src: appIconUrl,
+    alt: '小药盒 App 图标',
+    loading: 'lazy',
+    decoding: 'async',
+  });
   logoWrap.append(logo);
 
   // 2. 居中标题与副标

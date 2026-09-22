@@ -154,9 +154,15 @@
 }
 .feature-text p {
   font-size: 11px;
-  color: var(--color-text-muted);
+  /* 卡片为淡绿底，通用 muted (#64706b) 仅 4.3:1，此处单独加深至 AA */
+  color: #4a564f;
   line-height: 1.6;
   margin: 0;
+}
+
+/* 暗色卡片底为 #172a22，需反向提亮 */
+[data-theme='dark'] .feature-text p {
+  color: #a7b8b0;
 }
 .feature-link {
   display: inline-flex;

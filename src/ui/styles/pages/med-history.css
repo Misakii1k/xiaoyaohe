@@ -196,6 +196,8 @@
   transition: transform 0.18s var(--ease-spring), background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
   background: transparent;
   border: 1.5px solid transparent;
+  /* button 不继承页面文字色，缺省会落到祖先的浅色上导致白字看不见 */
+  color: var(--color-text);
 }
 
 .calendar-cell:active,
@@ -215,7 +217,8 @@
 
 .calendar-cell.is-selected .calendar-cell-day,
 .calendar-cell.selected .calendar-cell-day {
-  color: #ffffff;
+  /* 暗色下 --color-primary 变浅，白字仅 2.89:1；跟随 on-primary 令牌 */
+  color: var(--color-on-primary, #ffffff);
 }
 
 .calendar-cell.today,
@@ -235,6 +238,20 @@
 .calendar-day-cell.empty {
   opacity: 0.18;
   pointer-events: none;
+}
+
+/* medications.css 的通用 .empty 会给占位格 grid-column: 1/-1 与 36px 内补，
+   导致月首占位格各自独占一行、顶部撑出大片空白。此处收回为普通网格单元。 */
+.calendar-grid .calendar-cell.empty,
+.calendar-days-grid .calendar-cell.empty,
+.calendar-grid .calendar-cell.is-other-month,
+.calendar-days-grid .calendar-cell.is-other-month {
+  grid-column: auto;
+  padding: 0;
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-lg, 12px);
+  font-size: inherit;
 }
 
 .calendar-cell-day,

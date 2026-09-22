@@ -15,20 +15,23 @@
 .scan-banner-card {
   background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%);
   border-radius: var(--radius-xl);
-  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
+  padding: var(--space-4) calc(var(--space-4) + 150px) var(--space-4) var(--space-5);
   display: flex;
   align-items: center;
   justify-content: space-between;
   border: 1px solid rgba(226, 232, 248, 0.8);
   box-shadow: var(--shadow-sm);
   position: relative;
-  overflow: hidden;
+  /* 让盒宝主体探出卡片边缘，形成穿透悬浮感 */
+  overflow: visible;
+  margin-block-start: 8px;
 }
 
 .scan-banner-left {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-inline-size: 0;
 }
 
 .scan-banner-title {
@@ -46,16 +49,22 @@
 }
 
 .scan-banner-visual {
-  flex-shrink: 0;
+  /* 绝对定位挂在卡片右缘外侧：图片已去除透明留白，主体直接贴边 */
+  position: absolute;
+  inset-inline-end: -14px;
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  inline-size: 150px;
   display: grid;
   place-items: center;
-  position: relative;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .scan-banner-visual::before {
   content: '';
   position: absolute;
-  inset: -14px;
+  inset: -12px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(35, 106, 85, 0.32) 0%, rgba(42, 131, 105, 0.16) 50%, transparent 72%);
   filter: blur(14px);
@@ -71,26 +80,46 @@
 }
 
 .scan-banner-img {
-  max-inline-size: 140px;
-  max-block-size: 85px;
+  /* 横版 1400×929 已裁净透明边，按宽撑满并允许上下探出卡片 */
+  inline-size: 150px;
+  block-size: auto;
+  max-inline-size: none;
+  max-block-size: none;
   object-fit: contain;
   border-radius: 0;
   position: relative;
   z-index: 1;
   filter: drop-shadow(0 6px 16px rgba(35, 106, 85, 0.2));
   transition: transform 0.25s var(--ease-spring);
-  animation: floatGentle 4.2s ease-in-out infinite;
+  animation: scanBannerFloat 4.2s ease-in-out infinite;
+}
+
+@keyframes scanBannerFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
 }
 
 .scan-banner-card:hover .scan-banner-img {
   transform: scale(1.05) translateY(-2px);
 }
 
+@media (max-width: 380px) {
+  .scan-banner-card {
+    padding-inline-end: calc(var(--space-4) + 118px);
+  }
+
+  .scan-banner-visual,
+  .scan-banner-img {
+    inline-size: 130px;
+  }
+}
+
 /* 两大核心渐变行动卡片 */
 .scan-action-cards {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  /* 两卡之间留出更明确的间隔 */
+  gap: var(--space-4);
 }
 
 .scan-hero-card {
@@ -116,23 +145,54 @@
   transform: scale(0.98);
 }
 
+/* 主行动卡：实心深绿，视觉权重最高 */
 .scan-hero-card.blue {
   background: var(--color-primary, #236a55);
   color: var(--color-on-primary);
   box-shadow: 0 6px 20px -4px rgba(35, 106, 85, 0.35);
 }
 
-/* 绿色入口卡：浅色压深绿底走白字（5.49 / 7.64），
-   暗色反转为亮绿底配深墨绿字（9.26 / 7.05），不再固定白字。 */
+/* 次行动卡：浅色中性底 + 绿色文字，与主卡形成明确层级区分，
+   避免两张卡同为深绿难以分辨。 */
 .scan-hero-card.green {
-  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
-  color: #ffffff;
-  box-shadow: 0 10px 24px -4px rgba(6, 95, 70, 0.35);
+  background: var(--color-surface, #ffffff);
+  color: #0f5132;
+  border: 1.5px solid rgba(35, 106, 85, 0.22);
+  box-shadow: 0 4px 14px -6px rgba(35, 106, 85, 0.22);
+}
+
+.scan-hero-card.green .scan-hero-icon-wrap,
+.scan-hero-card.green .scan-hero-arrow {
+  background: rgba(35, 106, 85, 0.12);
+}
+
+.scan-hero-card.green .scan-hero-icon-wrap svg,
+.scan-hero-card.green .scan-hero-arrow svg {
+  stroke: #0f5132;
+}
+
+.scan-hero-card.green .scan-hero-sub {
+  color: rgba(15, 81, 50, 0.78);
 }
 
 [data-theme='dark'] .scan-hero-card.green {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
-  color: #0d1a16;
+  background: rgba(255, 255, 255, 0.06);
+  color: #6ee7b7;
+  border-color: rgba(110, 231, 183, 0.28);
+}
+
+[data-theme='dark'] .scan-hero-card.green .scan-hero-icon-wrap,
+[data-theme='dark'] .scan-hero-card.green .scan-hero-arrow {
+  background: rgba(110, 231, 183, 0.16);
+}
+
+[data-theme='dark'] .scan-hero-card.green .scan-hero-icon-wrap svg,
+[data-theme='dark'] .scan-hero-card.green .scan-hero-arrow svg {
+  stroke: #6ee7b7;
+}
+
+[data-theme='dark'] .scan-hero-card.green .scan-hero-sub {
+  color: rgba(110, 231, 183, 0.8);
 }
 
 .scan-hero-card:active {

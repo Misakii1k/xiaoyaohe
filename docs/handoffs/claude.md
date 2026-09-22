@@ -1302,3 +1302,42 @@ Latest version: `1.1.8` (Android `versionCode: 66`)
 - **缺陷修复**：0.9.11 期间 `gen-icons.mjs` 的 `adaptiveForeground` 被改为直接缩放 `design/brand/master/app-icon-foreground.png`，但该素材的紫色渐变背景未抠除（外环 100% 不透明），`tests/iconAssets.test.ts` 安全区断言失败，并回退了 0.9.10 的 66/108 防裁切修复。已还原为 HEAD 的透明画布合成逻辑，重新生成全部 32 个图标资源，测试转绿。
 - **遗留**：`release/xiaoyaohe-0.9.11-android-release.apk` 仍含修复前的图标，下次发版重建时自动带上；「主体抠图式自适应前景」列为后续优化项（需先产出真正透明底的抠图素材）。
 - 后端全面审计计划见 `docs/plans/2026-09-03-backend-audit.md`。**2026-09-03 用户拍板：腾讯云语音代理彻底退役（决策 A）**——`main` 已快进合并 `workspace/claude`，`server/`（tencent-asr-proxy.mjs + README）随 0.9.11 基线从 main 移除；审计计划 Task 2/3 作废。遗留收尾（需用户在 git 之外操作）：下线服务器上的代理进程、在腾讯云控制台删除/轮换 `TENCENT_SECRET_ID/KEY`。
+
+## 2026-09-23 v1.1.8 新版 3D 素材修复 + 破框视觉 + 全局对比度审计
+
+### 1. 3D 素材被裁切问题（根因与重做）
+- **根因**：`src/assets/images3d/` 中 v1.1.8 替换的 6 张图被压缩改造过——主体统一被缩到 512×512 后填充进大透明画布（横幅甚至被改成 700×1331 竖版），且 `floating-pill`/`stat-target`、`stat-notebook`/`mascot-empty` 两两 md5 完全相同（重复文件）。页面用 `object-fit: contain` 时透明留白同样占位，主体被压到实际尺寸的 40%~65%。
+- **修复**：从 `design/brand/raw/` 原图（与用户桌面原图 md5 一致）重新生成，**只裁纯透明留白、不裁主体**：
+  - `pillbox-banner` 700×1331 → **1400×929**（恢复横版）
+  - `stat-pillbox` → 712×960；`stat-notebook`/`mascot-empty` → 800×914；`floating-pill`/`stat-target` → 788×980
+- 新增 `src/assets/images3d/app-icon.png`（由 `public/icons/icon-512-full.png` 复制，供 Vite 打包引用）。
+
+### 2. 破框穿透视觉
+- **分药横幅**：`.scan-banner-card` overflow hidden→visible，图片绝对定位挂右缘外，右探 13px / 上探 9px。
+- **我的数据统计卡**：图标 22px → 60px，向上突破卡片上边框 17px；实心灰盘 `#f1f5f9` 改为半透明径向光晕（明暗双主题）。（注：曾试过 76px/破框 25px，视觉过重与下方文字不协调，回调至当前比例。）
+- **服药弹窗**：胶囊 110px → 164px，探出容器下沿。
+- **今日空状态**：盒宝 110px → 150px，从卡片顶部探出 48px。
+- **关于页**：绿色圆角方块 + 线性 pill 图标 → 新版 App 图标（3D 日历小胶囊），56 → 72px。
+
+### 3. 缺陷修复
+- **日历日期全白不可见**：`.calendar-cell` 是 `<button>`，不继承页面文字色，基础规则又缺 `color`，导致 30 个可见日期格落到祖先浅色上变白字。补 `color: var(--color-text)`。
+- **日历顶部大片空白**：`medications.css` 的通用 `.empty` 类误命中日历月首占位格，给了 `grid-column: 1/-1` + 36px 内补，使两个占位格各自独占整行。在日历作用域内收回为普通网格单元——网格高 391px → 236px，顶部空隙 155px → 0。
+- **药品页卡片左侧黑色溢出**：`MedList.ts` 瓶身标签线 `<path>` 只有 `stroke` 没有 `fill`，SVG 默认 `fill: black` 画出黑色楔形；叠加 `rotate(-12)` 后露在卡片左缘。补 `fill="none"`，并给 `#featureShadow` 滤镜显式限定区域。
+- **暗色周历选中日不可见**：`[data-theme='dark'] .day`(0,2,0) 覆盖了 `.day.selected`(0,2,0, 源码更靠前)，选中格背景与未选中**完全相同**（对比度 1.0）。补 `[data-theme='dark'] .day.selected` 恢复主色填充 → 选中/未选中对比度 **5.56:1**，数字 6.17:1。
+- **分药两入口卡难分辨**：`.blue` 与 `.green` 同为深绿。改为主次层级——主卡实心深绿，次卡浅色中性底 + 绿字绿描边（暗色为半透白底 + 亮绿字）；卡间距 `--space-3` → `--space-4`。两卡区分度：亮色 6.43:1、暗色 5.22:1。
+
+### 4. 对比度审计（实测渲染值，非静态读取）
+逐元素遍历 6 个页面、合成半透明背景后计算，**暗色违规 12 处 → 0**：
+- `.profile-streak-badge` 暗色用了 `--color-primary-soft`(#183329 近黑绿) → 1.18:1，改用 `--color-primary`。
+- `.panel-chip` 三个 tone 暗色下仍是硬编码亮底 → 补 `[data-theme='dark']` 整体翻转。
+- 日历选中格硬编码白字压浅绿底 → 2.89:1，改用 `--color-on-primary`。
+- 顺带修亮色本就不达标项：`tone-ok` 2.32→、`tone-muted` 4.34→、tabbar `#8e8e93` 3.26→4.6:1（并补暗色覆盖）、`.settings-about-badge` 4.35→5.92:1、`.feature-text p` 4.3→6.41:1（并补暗色 7.28:1）。
+
+### 5. 验证
+- `npm run typecheck` 0 报错；`npm run test` **577/577** 通过（91 套件）。
+- `npx playwright test` **72/72** 通过（phone-320 / phone-390 / tablet-landscape / desktop）。
+- `npm run build` 成功；浏览器控制台与网络请求均无报错。
+- 375px / 768px 两种宽度实测：无横向滚动、卡片不重叠、文字不被图片遮挡。
+
+### 6. 遗留
+- `.ai-panel-backdrop` 在关闭态为 `opacity:0; visibility:hidden` 但仍是 `pointer-events: auto`，存在拦截点击的隐患（本次排查时发现，未修改，因不属本次范围）。
