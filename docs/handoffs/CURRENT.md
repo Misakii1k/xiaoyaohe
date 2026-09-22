@@ -1,9 +1,31 @@
 # Current Integration State
 
-Updated: 2026-09-20
-Integration branch: `main`
-Product version: `1.1.7` (versionCode 65)
-Latest integration commit: `release: v1.1.7 - 全页面交互动效与灵动微反馈系统`
+Updated: 2026-09-22
+Integration branch: `workspace/claude`
+Product version: `1.1.8` (versionCode 66)
+Latest integration commit: `release: v1.1.8 - 全新3D日历小胶囊主图标与吉祥物盒宝多场景融入/用药日历与时段提醒设置重构`
+
+## Release v1.1.8 (versionCode 66, workspace/claude)
+
+- **集成内容**：
+  - 全新 3D 日历小胶囊品牌主图标制作与分发：512x512 规范化母版、沉稳高级深墨绿自适应渐变底色，全套 32 个尺寸 PWA 与 Android 启动器/闪屏图标全量同步构建；
+  - 官方吉祥物「盒宝」确立并全方位融入软件各个界面：
+    - 分药助手右侧横幅升级为「盒宝 · 分药小管家」3D 形象；
+    - 设置页我的数据统计卡片升级为「盒宝 · 药箱小卫士」、「盒宝 · 日历计划官」与「盒宝 · 点赞鼓励官」；
+    - 服药打卡确认弹窗升级为「盒宝 · 点赞鼓励官」；
+    - 今日用药空状态卡片引入「盒宝 · 日历计划官」浮动呼吸感 3D 治愈插画；
+    - 头像库扩充至 17 款统一角色，新增官方专属角色「盒宝」（吉祥物，`#e6f7ef` 萌趣透明底半身像，支持 SVG 兜底）；
+  - 用药日历（`/history`）视觉排版重构：消除单元格拉伸畸变，增设状态图例栏，三列流式用药卡片与单一清晰药丸操作按钮；
+  - 时段提醒设置（`/settings`）重塑：早/中/晚/睡前独立纯白微卡片化与彩色图标分割，支持列表直接滑动开关开启/停用；
+  - 全屏提醒选项重构为单列全宽微卡片，彻底根除移动端文字截断与折字难看缺陷；
+  - 支持时段内多时间点动态添加/删除，支持添加与删除自定义新时段；
+  - 版本号单调递增至 1.1.8 / versionCode 66。
+- **质量门禁**：
+  - `npm test`：91 文件 / 577 项 100% PASS；
+  - `npm run typecheck`：0 错误；
+  - `npm run assets:check`：100% 同步 PASS；
+  - `npm run build:web`：生产构建正常，Web Bundle 增量包生成成功；
+  - `tone_lint.py`：PASS。
 
 ## Release v1.1.7 (versionCode 65, main)
 

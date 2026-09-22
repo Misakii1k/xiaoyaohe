@@ -84,7 +84,7 @@ export function openTakeMedModal(options: TakeMedModalOptions): void {
 
   const visualContainer = document.createElement('div');
   visualContainer.className = 'take-med-3d-visual';
-  visualContainer.append(render3dMedia(floatingPillImg, getTakeMedPill3dSvg, '服药药丸', 'take-med-pill-img'));
+  visualContainer.append(render3dMedia(floatingPillImg, getTakeMedPill3dSvg, '盒宝 · 服药提醒', 'take-med-pill-img'));
 
   heroCard.append(timeEl, timeSub, visualContainer);
 

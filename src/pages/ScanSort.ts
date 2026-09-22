@@ -208,7 +208,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
       el('div', { class: 'scan-banner-sub', text: '轻松管理每日用药' })
     );
     const bannerVisual = el('div', { class: 'scan-banner-visual' });
-    bannerVisual.append(render3dMedia(pillboxBannerImg, getPillboxMachine3dSvg, '智能分药机', 'scan-banner-img'));
+    bannerVisual.append(render3dMedia(pillboxBannerImg, getPillboxMachine3dSvg, '盒宝 · 分药小管家', 'scan-banner-img'));
     bannerCard.append(bannerLeft, bannerVisual);
     home.append(bannerCard);
 

@@ -35,7 +35,7 @@ import {
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import { openTakeMedModal } from '../ui/TakeMedModal';
-import { parseSvg } from '../ui/assets3d';
+import { mascotEmptyImg, parseSvg } from '../ui/assets3d';
 import { navigate } from '../router';
 import { closeNotificationsByTag } from '../features/notifier';
 import { renderBPackageSvg } from './MedList';
@@ -503,7 +503,15 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
     }
   } else {
     const emptyCard = el('div', { class: 'today-empty-card' });
+    const emptyImg = el('img', {
+      class: 'today-empty-img',
+      src: mascotEmptyImg,
+      alt: '盒宝 · 暂无用药计划',
+      loading: 'lazy',
+      decoding: 'async',
+    });
     emptyCard.append(
+      emptyImg,
       el('div', { class: 'today-empty-title', text: '暂无用药计划' }),
       el('div', { class: 'today-empty-sub', text: '前往「药品」页面添加药品并配置服药时段，此处将自动生成每日计划。' })
     );

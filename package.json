@@ -1,6 +1,6 @@
 {
   "name": "xiaoyaohe",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "private": true,
   "type": "module",
   "engines": {
@@ -40,6 +40,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.1",
+    "@esbuild/win32-x64": "^0.28.2",
     "@playwright/test": "^1.61.1",
     "@types/qrcode": "^1.5.6",
     "fake-indexeddb": "^6.2.5",

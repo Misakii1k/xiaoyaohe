@@ -14,8 +14,9 @@ import avatar13 from './assets/avatars/avatar_13_toddler.png';
 import avatar14 from './assets/avatars/avatar_14_dog.png';
 import avatar15 from './assets/avatars/avatar_15_cat.png';
 import avatar16 from './assets/avatars/avatar_16_robot.png';
+import avatar17 from './assets/avatars/avatar_17_hebao.png';
 
-// 16 款风格统一的 3D 黏土 / 皮克斯质感全家福头像库
+// 17 款风格统一的 3D 黏土 / 皮克斯质感全家福与官方吉祥物头像库
 // 共享 100x100 柔光视角、亲和色彩与治愈陶土拟物质感
 
 export interface AvatarItem {
@@ -406,6 +407,29 @@ export const AVATAR_LIST: readonly AvatarItem[] = [
       <ellipse cx="59" cy="47" rx="1.5" ry="2" fill="#ffffff"/>
       <circle cx="23" cy="51" r="3.5" fill="#818cf8"/>
       <circle cx="77" cy="51" r="3.5" fill="#818cf8"/>
+    </svg>`,
+  },
+  {
+    id: 'hebao_mascot',
+    imgUrl: avatar17,
+    name: '盒宝',
+    role: '吉祥物',
+    bgColor: '#e6f7ef',
+    svg: `<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="asset-3d-avatar">
+      <defs>
+        <linearGradient id="av17-body" x1="20" y1="20" x2="80" y2="80" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#ffffff"/><stop offset="50%" stop-color="#f0fdf4"/><stop offset="100%" stop-color="#dcfce7"/></linearGradient>
+        <linearGradient id="av17-green" x1="20" y1="40" x2="80" y2="90" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#34d399"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+      </defs>
+      <circle cx="50" cy="50" r="48" fill="#e6f7ef"/>
+      <rect x="30" y="24" width="40" height="52" rx="20" fill="url(#av17-body)"/>
+      <path d="M 30 50 A 20 20 0 0 0 70 50 L 70 56 A 20 20 0 0 1 30 56 Z" fill="url(#av17-green)"/>
+      <circle cx="42" cy="42" r="3.5" fill="#1e293b"/>
+      <circle cx="43.2" cy="40.8" r="1.2" fill="#ffffff"/>
+      <circle cx="58" cy="42" r="3.5" fill="#1e293b"/>
+      <circle cx="59.2" cy="40.8" r="1.2" fill="#ffffff"/>
+      <ellipse cx="36" cy="47" rx="3" ry="1.8" fill="#fda4af" opacity="0.75"/>
+      <ellipse cx="64" cy="47" rx="3" ry="1.8" fill="#fda4af" opacity="0.75"/>
+      <path d="M 46 47 Q 50 51 54 47" stroke="#1e293b" stroke-width="1.8" stroke-linecap="round" fill="none"/>
     </svg>`,
   },
 ] as const;

@@ -4,11 +4,44 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-20
 Status: active
-Latest version: `1.1.7` (Android `versionCode: 65`)
+Latest version: `1.1.8` (Android `versionCode: 66`)
 
 ## Summary of Accomplished Work
 
-### 65. 时段提醒设置排版重构、全屏提醒选项优化、独立开关与时间增删落地 (workspace/claude)
+### 66. 全新 3D 日历小胶囊品牌主图标与官方吉祥物「盒宝」多场景深度融入 (v1.1.8, versionCode 66, workspace/claude)
+
+1. **需求与背景**：全面替换小药盒 App 主图标为全新的 3D 萌系日历小胶囊形象（立体白绿小胶囊坐在绿色日历看板中央，配备微拟物对勾徽章），外圈采用无缝高质感深墨绿色，形成极具辨识度与亲和力的品牌视觉；同时确立该小胶囊形象为软件官方吉祥物「盒宝」，深度融入软件分药、统计、提醒、空状态及头像系统。
+2. **改动清单**：
+   - **母版制作与图标分发 (`design/brand/master/app-icon.png`)**：
+     - 将用户提供的 1024x1024 高保真 3D 渲染母版无损规范化为 512x512 PNG；
+     - 边缘外延无缝平铺深墨绿（`#0d3f32`），立体日历与小胶囊主体严格居中；
+     - `ic_launcher_background.xml` 替换为与新图标一体化融合的沉稳高级深墨绿线性渐变（`#114C3C` -> `#0D3F32` -> `#082A21`）；
+     - `scripts/gen-icons.mjs` 优化：去除 `.trim()` 消除宽高比漂移与黑边信箱条，重新生成 32 款 Android 各密度图标与 PWA 图标。
+   - **吉祥物「盒宝」3D 素材规范化生成 (`scripts/build-mascot-assets.mjs`)**：
+     - 将用户提供的 4 款高保真透明底 PNG 处理为规范的 512x512 高清素材与 256x256 透明底头像；
+     - `src/assets/images3d/pillbox-banner.png`：分药助手横幅专用「盒宝 · 分药小管家」；
+     - `src/assets/images3d/stat-pillbox.png`：我的数据 · 全部药品「盒宝 · 药箱小卫士」；
+     - `src/assets/images3d/stat-notebook.png`：我的数据 · 用药计划「盒宝 · 日历计划官」；
+     - `src/assets/images3d/stat-target.png`：我的数据 · 打卡记录「盒宝 · 点赞鼓励官」；
+     - `src/assets/images3d/floating-pill.png`：服药打卡弹窗「盒宝 · 点赞鼓励官」；
+     - `src/assets/images3d/mascot-empty.png`：空状态插画「盒宝 · 日历计划官」；
+     - `src/ui/assets/avatars/avatar_17_hebao.png`：官方专属头像「盒宝」。
+   - **业务场景无缝融入**：
+     - `src/pages/ScanSort.ts`：分药助手顶部横幅挂载「盒宝 · 分药小管家」；
+     - `src/pages/settings/components/StatsGrid.ts`：数据统计三卡片对齐对应盒宝形象；
+     - `src/ui/TakeMedModal.ts`：服药确认弹窗搭载点赞鼓励官形象与优化文案；
+     - `src/pages/Today.ts` & `src/ui/styles/pages/today.css`：今日清单空状态卡片增加浮动呼吸感盒宝 3D 插画；
+     - `src/ui/avatars.ts` & `tests/avatarPicker.test.ts`：头像库扩充至 17 款角色，支持盒宝头像选择与 SVG 矢量回退。
+3. **验证与门禁**：
+   - `npm run assets:check`：32 个图标文件校验 100% 匹配无陈旧；
+   - `tests/iconAssets.test.ts`：4/4 测试项全绿通过；
+   - `tests/avatarPicker.test.ts`：5/5 测试项全绿通过；
+   - `npm run typecheck`：0 错误；
+   - `npm test`：91 文件 / 577 项测试全绿通过；
+   - `npm run build:web`：生产构建正常，Web Bundle 增量包正确生成；
+   - `tone_lint.py`：PASS。
+
+### 65. 时段提醒设置排版重构、全屏提醒选项优化、独立开关与时间增删落地 (v1.1.8, versionCode 66, workspace/claude)
 
 1. **需求与背景**：解决设置面板中「时段提醒设置」早/中/晚/睡前视觉混杂无分隔、全屏提醒二级编辑器 3 列挤压造成文字断行折叠破损，并为每个时段提供独立开启/关闭开关、支持配置时段内多个具体提醒时间点以及自定义时段的添加与删除功能。
 2. **改动清单**：

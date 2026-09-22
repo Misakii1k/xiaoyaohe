@@ -832,6 +832,16 @@
   box-shadow: var(--shadow-sm);
 }
 
+.today-empty-img {
+  inline-size: 110px;
+  block-size: 110px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 18px rgba(35, 106, 85, 0.18));
+  animation: floatGentle 4.2s ease-in-out infinite;
+  user-select: none;
+  pointer-events: none;
+}
+
 .today-empty-title {
   font-size: var(--fs-title2, 20px);
   font-weight: 700;

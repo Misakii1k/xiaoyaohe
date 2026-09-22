@@ -20,7 +20,7 @@ const pngOptions = {
   palette: false,
 };
 
-const masterTrimmedBuffer = await sharp(masterPath).trim().toBuffer();
+const masterTrimmedBuffer = await sharp(masterPath).ensureAlpha().toBuffer();
 
 async function standardIcon(size) {
   const source = await sharp(masterTrimmedBuffer)
@@ -34,7 +34,7 @@ async function standardIcon(size) {
 async function fullIcon(size) {
   return sharp(masterTrimmedBuffer)
     .resize(size, size, { fit: 'contain', kernel: sharp.kernel.lanczos3 })
-    .flatten({ background: '#eef1f5' })
+    .flatten({ background: '#0d3f32' })
     .png(pngOptions)
     .toBuffer();
 }
@@ -81,7 +81,7 @@ async function splash(width, height) {
       width,
       height,
       channels: 4,
-      background: '#f2f3f6',
+      background: '#0d3f32',
     },
   })
     .composite([

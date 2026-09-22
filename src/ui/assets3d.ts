@@ -14,6 +14,7 @@ import medBottle3dImg from '../assets/images3d/med-bottle-3d.png';
 import medRecentMortarImg from '../assets/images3d/med-recent-mortar.png';
 import medAidKit3dImg from '../assets/images3d/med-aid-kit-3d.png';
 import userAvatar3dImg from '../assets/images3d/user-avatar-3d.png';
+import mascotEmptyImg from '../assets/images3d/mascot-empty.png';
 
 export {
   purpleBottleImg,
@@ -32,6 +33,7 @@ export {
   medRecentMortarImg,
   medAidKit3dImg,
   userAvatar3dImg,
+  mascotEmptyImg,
 };
 
 const svgParser = typeof DOMParser !== 'undefined' ? new DOMParser() : null;

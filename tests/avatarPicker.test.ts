@@ -9,18 +9,19 @@ import {
 } from '../src/ui/avatars';
 import { openAvatarPicker } from '../src/ui/AvatarPicker';
 
-describe('avatars.ts & AvatarPicker.ts - 16套统一风格3D头像库契约', () => {
+describe('avatars.ts & AvatarPicker.ts - 17套统一风格3D头像库契约', () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.body.replaceChildren();
   });
 
-  it('头像库恰好包含 16 款统一角色，ID 全部唯一且包含合法 SVG', () => {
+  it('头像库恰好包含 17 款统一角色，ID 全部唯一且包含合法 SVG', () => {
     const list = getAvatarList();
-    expect(list).toHaveLength(16);
+    expect(list).toHaveLength(17);
 
     const ids = new Set(list.map((item) => item.id));
-    expect(ids.size).toBe(16);
+    expect(ids.size).toBe(17);
+    expect(ids.has('hebao_mascot')).toBe(true);
 
     for (const item of list) {
       expect(item.name.length).toBeGreaterThan(0);
@@ -56,7 +57,7 @@ describe('avatars.ts & AvatarPicker.ts - 16套统一风格3D头像库契约', ()
     expect(svg).toContain('av14-fur');
   });
 
-  it('openAvatarPicker 会在 DOM 中展开包含 16 款头像的底部抽屉，并标出当前激活项', () => {
+  it('openAvatarPicker 会在 DOM 中展开包含 17 款头像的底部抽屉，并标出当前激活项', () => {
     setActiveAvatarId('smart_pill_bot');
     const onSelect = vi.fn();
     const handle = openAvatarPicker(onSelect);
@@ -65,7 +66,7 @@ describe('avatars.ts & AvatarPicker.ts - 16套统一风格3D头像库契约', ()
     expect(sheet).not.toBeNull();
 
     const cards = document.querySelectorAll('.avatar-picker-card');
-    expect(cards).toHaveLength(16);
+    expect(cards).toHaveLength(17);
 
     const activeCard = document.querySelector('.avatar-picker-card.active');
     expect(activeCard).not.toBeNull();
