@@ -26,18 +26,60 @@ export const onRequestOptions = async (context: { request: Request }) => {
  * 动态提取 APK 与 Web Bundle 的真实字节数与 SHA256 校验和，
  * 彻底杜绝 CDN 静态 version.json 与实际分发附件之间的哈希漂移。
  */
-function parseVersionCode(version: string, body?: string): number {
+
+/**
+ * package.json 版本号 → Android versionCode 映射。
+ *
+ * 必须与 `scripts/lib/release-utils.mjs` 的 `VERSION_CODE_BY_VERSION` 保持一致
+ * （Pages Functions 打包不引 scripts/，只能在此镜像一份；
+ * `tests/functionsApi.test.ts` 有一致性断言守住两者不漂移）。
+ */
+const VERSION_CODE_BY_VERSION: Record<string, number> = {
+  '1.0.20': 55,
+  '1.0.21': 56,
+  '1.0.22': 57,
+  '1.1.0': 58,
+  '1.1.1': 59,
+  '1.1.2': 60,
+  '1.1.3': 61,
+  '1.1.4': 62,
+  '1.1.5': 63,
+  '1.1.6': 64,
+  '1.1.7': 65,
+  '1.1.8': 66,
+  '1.1.9': 67,
+};
+
+/**
+ * 支持 Web 增量热更新的最低原生底座 versionCode。
+ * 与 `scripts/lib/release-utils.mjs` 的 `MIN_NATIVE_BUNDLE_VERSION_CODE` 一致：
+ * 低于此值的底座缺少 v1.1.0 起的原生闹钟修复，必须走全量 APK 更新。
+ */
+const MIN_NATIVE_BUNDLE_VERSION_CODE = 58;
+
+/**
+ * 解析 Android versionCode，按可靠性从高到低尝试：
+ * 1. 发布说明正文里显式声明的 versionCode；
+ * 2. 版本号映射表（发版 SOP 要求新版本必须登记）；
+ * 3. `1.0.x` 的历史线性规律（35 + patch）。
+ *
+ * 全部落空时返回 null——绝不编造数字，让调用方省略该字段，
+ * 客户端会退回按版本号字符串比较，而不是拿错误的 code 做判断。
+ */
+function parseVersionCode(version: string, body?: string): number | null {
   if (body) {
-    const m = body.match(/versionCode[:\s]+(\d+)/i) || body.match(/code[:\s]+(\d+)/i);
+    const m = body.match(/versionCode[:\s]+(\d+)/i);
     const codeStr = m?.[1];
     if (codeStr) return parseInt(codeStr, 10);
   }
+  const mapped = VERSION_CODE_BY_VERSION[version];
+  if (typeof mapped === 'number') return mapped;
   const match = version.match(/^1\.0\.(\d+)$/);
   const patchStr = match?.[1];
   if (patchStr) {
     return 35 + parseInt(patchStr, 10);
   }
-  return 48;
+  return null;
 }
 
 export const onRequestGet = async (context: { request: Request; env: Env }) => {
@@ -82,10 +124,15 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
 
     const manifest: Record<string, unknown> = {
       version,
-      versionCode: parseVersionCode(version, typeof release.body === 'string' ? release.body : undefined),
       releaseDate: typeof release.published_at === 'string' ? release.published_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
       downloadUrl: `/api/download?tag=v${encodeURIComponent(version)}`,
     };
+
+    // 解析不出可信的 versionCode 时整个字段省略，客户端退回按版本号字符串比较。
+    const versionCode = parseVersionCode(version, typeof release.body === 'string' ? release.body : undefined);
+    if (versionCode !== null) {
+      manifest.versionCode = versionCode;
+    }
 
     if (apkAsset) {
       if (typeof apkAsset.size === 'number' && apkAsset.size > 0) {
@@ -104,7 +151,7 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
       if (bundleSha256) {
         manifest.bundleSha256 = bundleSha256;
       }
-      manifest.minNativeVersionCode = 44;
+      manifest.minNativeVersionCode = MIN_NATIVE_BUNDLE_VERSION_CODE;
     }
 
     if (typeof release.body === 'string' && release.body.trim()) {

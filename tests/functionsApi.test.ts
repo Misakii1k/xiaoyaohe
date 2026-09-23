@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { onRequestGet as releasesGet, onRequestOptions as releasesOptions } from '../functions/api/releases';
 import { onRequestGet as downloadGet } from '../functions/api/download';
+import { onRequestGet as versionGet } from '../functions/version.json';
 import { parseReleaseTag, releaseApiUrl, pickApkAsset } from '../functions/api/_shared';
 
 const TOKEN = 'test-token';
@@ -168,5 +171,121 @@ describe('Cloudflare Functions: download 代理', () => {
     const res = await downloadGet({ request: request('/api/download'), env: { GITHUB_TOKEN: TOKEN } });
     expect(res.status).toBe(502);
     expect(await res.text()).not.toContain('boom');
+  });
+});
+
+/**
+ * /version.json 是客户端更新判定的唯一权威来源，而 Pages Functions 打包
+ * 不引 scripts/，只能在 functions 里镜像一份版本映射与底座门槛常量。
+ * 这里守住两份常量不漂移——此前 versionCode 兜底写死 48、
+ * minNativeVersionCode 写死 44（权威值已是 58），线上下发了错误元数据。
+ */
+describe('version.json 动态元数据', () => {
+  const versionFixture = (tag: string, body: string, assets: unknown[]) => ({
+    tag_name: tag,
+    body,
+    published_at: '2026-09-23T03:09:23Z',
+    assets,
+  });
+
+  const apkAsset = (version: string, size = 20929065) => ({
+    id: 10,
+    name: `xiaoyaohe-${version}-android-release.apk`,
+    size,
+    digest: 'sha256:7a7159407a0146e5089c832313a597c0e75057636350e665fac8bebad555d1e3',
+  });
+
+  const bundleAsset = (version: string, size = 8297859) => ({
+    id: 11,
+    name: `xiaoyaohe-${version}-web-bundle.zip`,
+    size,
+    digest: 'sha256:f3f7b4a82401cbd0e85d38388da08c772b19a27bb0425414528e0634726f45a6',
+  });
+
+  it('镜像的版本映射与 release-utils 权威表一致', async () => {
+    const { VERSION_CODE_BY_VERSION, MIN_NATIVE_BUNDLE_VERSION_CODE } = await import(
+      '../scripts/lib/release-utils.mjs'
+    );
+    const source = readFileSync(join(process.cwd(), 'functions', 'version.json.ts'), 'utf8');
+
+    // 底座门槛必须等于权威常量，不能各写一个数字
+    expect(source).toContain(`const MIN_NATIVE_BUNDLE_VERSION_CODE = ${MIN_NATIVE_BUNDLE_VERSION_CODE};`);
+
+    // 镜像表里出现的每个版本，其 code 必须与权威表相同
+    const mirrored = [...source.matchAll(/'(\d+\.\d+\.\d+)':\s*(\d+),/g)];
+    expect(mirrored.length).toBeGreaterThan(0);
+    for (const [, version, code] of mirrored) {
+      expect(VERSION_CODE_BY_VERSION[version]).toBe(Number(code));
+    }
+
+    // 当前发布版本必须已登记进镜像表，否则线上会省略 versionCode
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string };
+    expect(source).toContain(`'${pkg.version}': ${VERSION_CODE_BY_VERSION[pkg.version]},`);
+  });
+
+  it('按映射表下发正确的 versionCode 与底座门槛', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse(
+      versionFixture('v1.1.9', '# 小药盒 v1.1.9 更新说明', [apkAsset('1.1.9'), bundleAsset('1.1.9')]),
+    )) as unknown as typeof fetch;
+
+    const res = await versionGet({ request: request('/version.json'), env: { GITHUB_TOKEN: TOKEN } });
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+
+    expect(body.version).toBe('1.1.9');
+    expect(body.versionCode).toBe(67);
+    // 回归：曾写死 44，会让底座 44~57 的设备被误判为可增量更新
+    expect(body.minNativeVersionCode).toBe(58);
+    expect(body.fileSize).toBe(20929065);
+    expect(body.sha256).toBe('7a7159407a0146e5089c832313a597c0e75057636350e665fac8bebad555d1e3');
+    expect(body.bundleSize).toBe(8297859);
+    expect(body.downloadUrl).toBe('/api/download?tag=v1.1.9');
+  });
+
+  it('发布说明里显式声明的 versionCode 优先于映射表', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse(
+      versionFixture('v9.9.9', 'versionCode: 123\n\n说明', [apkAsset('9.9.9')]),
+    )) as unknown as typeof fetch;
+
+    const res = await versionGet({ request: request('/version.json'), env: { GITHUB_TOKEN: TOKEN } });
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.versionCode).toBe(123);
+  });
+
+  it('未登记且无法推断时省略 versionCode，而不是编造数字', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse(
+      versionFixture('v2.5.0', '# 未登记版本', [apkAsset('2.5.0')]),
+    )) as unknown as typeof fetch;
+
+    const res = await versionGet({ request: request('/version.json'), env: { GITHUB_TOKEN: TOKEN } });
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.version).toBe('2.5.0');
+    expect(body).not.toHaveProperty('versionCode');
+  });
+
+  it('1.0.x 历史线性规律仍可推断', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse(
+      versionFixture('v1.0.9', '# 1.0.9', [apkAsset('1.0.9')]),
+    )) as unknown as typeof fetch;
+
+    const res = await versionGet({ request: request('/version.json'), env: { GITHUB_TOKEN: TOKEN } });
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.versionCode).toBe(44);
+  });
+
+  it('无增量包时不下发 bundle 字段与底座门槛', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse(
+      versionFixture('v1.1.9', '# 1.1.9', [apkAsset('1.1.9')]),
+    )) as unknown as typeof fetch;
+
+    const res = await versionGet({ request: request('/version.json'), env: { GITHUB_TOKEN: TOKEN } });
+    const body = await res.json() as Record<string, unknown>;
+    expect(body).not.toHaveProperty('bundleUrl');
+    expect(body).not.toHaveProperty('minNativeVersionCode');
+  });
+
+  it('未配置 token 时返回 503', async () => {
+    const res = await versionGet({ request: request('/version.json'), env: {} });
+    expect(res.status).toBe(503);
   });
 });
