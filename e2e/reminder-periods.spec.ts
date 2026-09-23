@@ -85,7 +85,7 @@ async function openPeriodSettingsPanel(page: import('@playwright/test').Page): P
   await page.goto('/#/settings');
   await expect(page.getByRole('heading', { level: 1, name: /设置|我的/ })).toBeVisible();
   await page.getByRole('button', { name: /时段提醒设置/ }).click();
-  await expect(page.locator('.period-setting-row')).toHaveCount(4);
+  await expect(page.locator('.period-setting-card')).toHaveCount(4);
 }
 
 test.describe('period-level reminder settings', () => {
@@ -94,7 +94,7 @@ test.describe('period-level reminder settings', () => {
     await seedMorningMedication(page, 'e2e-med', '测试药', 'strong');
     await openPeriodSettingsPanel(page);
 
-    const rows = page.locator('.period-setting-row');
+    const rows = page.locator('.period-setting-card');
     await expect(rows.nth(0)).toContainText('早上');
     await expect(rows.nth(1)).toContainText('中午');
     await expect(rows.nth(2)).toContainText('晚上');
@@ -112,14 +112,14 @@ test.describe('period-level reminder settings', () => {
     await seedMorningMedication(page, 'e2e-med', '测试药', 'strong');
     await openPeriodSettingsPanel(page);
 
-    await page.locator('.period-setting-row').nth(0).click();
+    await page.locator('.period-setting-card').nth(0).click();
     // 编辑器：整体提醒时间 + 提醒方式分段 + 保存
     await expect(page.locator('input[type="time"]')).toBeVisible();
     await page.locator('input[type="time"]').fill('07:00');
     await page.getByRole('button', { name: '保存' }).click();
 
-    await expect(page.locator('.period-setting-row')).toHaveCount(4);
-    await expect(page.locator('.period-setting-row').nth(0)).toContainText('07:00');
+    await expect(page.locator('.period-setting-card')).toHaveCount(4);
+    await expect(page.locator('.period-setting-card').nth(0)).toContainText('07:00');
   });
 
   test('shows a needs-review banner when slot modes disagree and confirms review clears it', async ({ page }) => {
@@ -130,12 +130,12 @@ test.describe('period-level reminder settings', () => {
 
     // 待复核 banner + 行内标记
     await expect(page.locator('.banner.warn').first()).toContainText('不完全一致');
-    await expect(page.locator('.period-setting-row').nth(0)).toContainText('待复核');
+    await expect(page.locator('.period-setting-card').nth(0)).toContainText('待复核');
 
     // 进入编辑器确认统一时间后保存，差异仍在 → 复核标记保留（需要用户消除差异）
-    await page.locator('.period-setting-row').nth(0).click();
+    await page.locator('.period-setting-card').nth(0).click();
     await page.getByRole('button', { name: '保存' }).click();
-    await expect(page.locator('.period-setting-row').nth(0)).toContainText('待复核');
+    await expect(page.locator('.period-setting-card').nth(0)).toContainText('待复核');
     await expect(page.locator('.banner.warn').first()).toContainText('不完全一致');
   });
 

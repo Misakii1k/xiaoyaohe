@@ -1,8 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { seedVisualFixtures } from './visual-fixtures';
 
+// 今日页顶栏自 v1.1.5 起改为常驻问候语（`.today-greeting`），
+// h1 文案随当前时辰变化，因此按时段问候语匹配而非固定「今天」。
+const TODAY_HEADING = /^(早上好|中午好|下午好|晚上好)$/;
+
 const primaryRoutes = [
-  { path: '/#/today', heading: '今天', name: 'today' },
+  { path: '/#/today', heading: TODAY_HEADING, name: 'today' },
   { path: '/#/meds', heading: '药品', name: 'medications' },
   { path: '/#/meds/inventory', heading: '库存', name: 'inventory' },
   { path: '/#/history', heading: '用药日历', name: 'history' },
@@ -62,12 +66,12 @@ test.describe('fullscreen visual matrix', () => {
     await expect(page.getByRole('heading', { level: 1, name: '药品' })).toBeVisible();
     // 保活架构下存在多个 tabbar，取可见的那个
     await page.locator('a[href="#/today"]:visible').first().click();
-    await expect(page.getByRole('heading', { level: 1, name: '今天' })).toBeFocused();
+    await expect(page.getByRole('heading', { level: 1, name: TODAY_HEADING })).toBeFocused();
   });
 
   test('redirects the removed work route to today', async ({ page }) => {
     await page.goto('/#/work');
-    await expect(page.getByRole('heading', { level: 1, name: '今天' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: TODAY_HEADING })).toBeVisible();
     await expect(page).toHaveURL(/#\/today$/);
   });
 });

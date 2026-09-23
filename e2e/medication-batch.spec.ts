@@ -27,6 +27,9 @@ test.describe('medication batch visual workflow', () => {
 
     await page.goto('/#/today');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByRole('heading', { level: 1, name: '今天' })).toBeFocused();
+    // 今日页 h1 为常驻问候语（v1.1.5 起），文案随时辰变化
+    await expect(
+      page.getByRole('heading', { level: 1, name: /^(早上好|中午好|下午好|晚上好)$/ }),
+    ).toBeFocused();
   });
 });

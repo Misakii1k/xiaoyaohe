@@ -2,9 +2,9 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-20
+Updated: 2026-09-23
 Status: active
-Latest version: `1.1.8` (Android `versionCode: 66`)
+Latest version: `1.1.9` (Android `versionCode: 67`)
 
 ## Summary of Accomplished Work
 
@@ -1351,3 +1351,35 @@ Latest version: `1.1.8` (Android `versionCode: 66`)
 - 产物：`release/xiaoyaohe-1.1.8-android-release.apk`（20,929,021 字节，sha256 `349747813972e2812b3bdb033f07885768aff9d23eb54b78ddffa448a2f3dcf7`）+ 同名 SHA256SUMS.txt；`version.json` 已由 `gen-version.mjs` 刷新为该哈希。
 - 注意：版本号仍为 1.1.8 / versionCode 66（本次为同版本重打包，未 bump），APK 体积由 21,705,841 → 20,929,021 字节。
 
+
+### 67. v1.1.9 版本递增、E2E 存量失败清零与正式出包 (v1.1.9, versionCode 67, workspace/claude)
+
+1. **版本递增（1.1.8 / 66 → 1.1.9 / 67）**：
+   - 起因：上一轮为同版本重打包，versionCode 未变，装有旧 1.1.8 的设备不会收到更新提示。
+   - 改动点：`package.json`、`package-lock.json`（两处 version 字段）、`android/app/build.gradle`（versionCode 67 / versionName "1.1.9"）、`scripts/lib/release-utils.mjs` 的 `VERSION_CODE_BY_VERSION` 登记 `'1.1.9': 67`、新建 `docs/releases/1.1.9.md`（通过 oil-tone 风格的双条目摘要）。
+   - `tests/release-utils.test.ts` 补 1.1.9/67 的映射断言；`npm run test:release` 12 项通过。
+
+2. **测试 fixture 版本推位**：
+   - `tests/appUpdateButtons.test.ts`、`tests/bundleUpdateVerification.test.ts`、`tests/apkUpdateVerification.test.ts` 原本用 `1.1.9 / 67` 充当「云端更高版本」的假数据；本机 bump 到 1.1.9 后这些 fixture 不再「更高」，导致 17 项单测失败（`updateType` 判定与按钮呈现断言）。统一推位至 `1.2.0 / 68`，577/577 恢复全绿。
+
+3. **E2E 存量失败清零（72/100 → 100/100）**：
+   - **重要更正**：此前两轮 handoff 与对话中报告的「playwright 72/72 通过」是**误读**——实际是 100 项中 72 通过、**28 失败**，读取 `tail` 输出时把滚出的失败清单当成了通过清单。
+   - 通过 checkout 到 `213fad3`（v1.1.8）实测确认：同样的 28 条在基线上全部失败，集合完全一致，属 v1.1.8 就存在的存量问题，非本轮改动引入。
+   - 根因是用例断言与实现脱节：
+     - `e2e/fullscreen.spec.ts` + `e2e/medication-batch.spec.ts` 断言今日页有 `<h1>今天</h1>`，但自 v1.1.5（提交 `dfe1c11`）起今日页顶栏改为常驻问候语，实际 h1 是 `.today-greeting`（早上好/中午好/下午好/晚上好）。改为按 `/^(早上好|中午好|下午好|晚上好)$/` 匹配，并抽出 `TODAY_HEADING` 常量复用。
+     - `e2e/reminder-periods.spec.ts` 用 `.period-setting-row` 定位时段行，但 v1.1.8（第 65 条）把时段列表重构为独立微卡片 `.period-setting-card`，旧类名在 `settings.css:676` 仅剩 `display: none` 的兼容空壳。8 处选择器改名即可，其余文案断言（早上/中午/晚上/睡前、08:00、不自动收起）在当前实现下仍然成立，未作放宽。
+
+4. **Android 出包**：
+   - **首次打包后发现 `verifyApkWebAssets` 报 `stale or modified dist resource: version.json`**：`gen-version.mjs` 需要 `release/` 下存在同版本 APK 才能写入 `fileSize`/`sha256`，而首次打包时该 APK 尚不存在——先有鸡后有蛋。历史版本两种情况都出现过（1.1.8 的 APK 内嵌带哈希，1.1.7 不带），取决于打包前 `release/` 是否已有同版本产物。
+   - 处理：拿到 APK 哈希后重跑 `gen-version.mjs` → `npx cap sync android` → `./gradlew.bat assembleRelease` 第二轮，使 APK 内嵌的 `version.json` 完整。校验通过：**109 个内嵌文件**与 dist 完全一致，聚合哈希 `77de699b7276a468bfa7dac8d2b4923bb38e809a52a9e1b1045b0cb7aea41a8b`。
+   - 产物：`release/xiaoyaohe-1.1.9-android-release.apk`（20,929,065 字节，sha256 `7a7159407a0146e5089c832313a597c0e75057636350e665fac8bebad555d1e3`）+ 同名 SHA256SUMS.txt；Web Bundle `xiaoyaohe-1.1.9-web-bundle.zip`（8,297,859 字节，sha256 `f3f7b4a82401cbd0e85d38388da08c772b19a27bb0425414528e0634726f45a6`）。
+   - `public/version.json`（客户端校验用的那份）已刷新为最终产物哈希，与 `release/` 实际文件一致。
+   - 注意：APK 内嵌的 `version.json` 记录的是上一轮打包的哈希（自引用无法自洽），客户端更新校验读的是云端下发的 `public/version.json`，不受影响。
+
+5. **验证门禁**：
+   - `npm run typecheck` 0 报错；
+   - `npm run test` **577/577**（91 套件）；
+   - `npx playwright test` **100/100**（phone-320 / phone-390 / tablet-landscape / desktop，此前 72/100）；
+   - `npm run build` 成功；`npx cap sync android` 正常；`assembleRelease` BUILD SUCCESSFUL（含 lintVitalRelease），使用 `app/medbox-release.jks` 正式签名。
+
+6. **上一轮遗留项已处理**：`.ai-panel-backdrop` 关闭态显式 `pointer-events: none`、`.ai-root.is-open` 下恢复 `auto`。实测（375×812）关闭态视口命中落到页面内容（`.day`），打开态命中 backdrop，点击遮罩关闭的交互保留。
