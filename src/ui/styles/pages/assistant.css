@@ -40,12 +40,15 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   background: var(--scrim);
   opacity: 0;
   visibility: hidden;
+  /* 关闭态彻底退出命中测试，避免全屏遮罩静默拦截点击 */
+  pointer-events: none;
   transition: opacity 240ms ease, visibility 0s 240ms;
 }
 
 .ai-root.is-open .ai-panel-backdrop {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
   transition: opacity 240ms ease;
 }
 

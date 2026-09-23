@@ -1339,5 +1339,15 @@ Latest version: `1.1.8` (Android `versionCode: 66`)
 - `npm run build` 成功；浏览器控制台与网络请求均无报错。
 - 375px / 768px 两种宽度实测：无横向滚动、卡片不重叠、文字不被图片遮挡。
 
-### 6. 遗留
-- `.ai-panel-backdrop` 在关闭态为 `opacity:0; visibility:hidden` 但仍是 `pointer-events: auto`，存在拦截点击的隐患（本次排查时发现，未修改，因不属本次范围）。
+### 6. 遗留项后续处理（同日追加）
+- `.ai-panel-backdrop` 关闭态的 `pointer-events` 隐患已按用户确认修复：关闭态显式 `pointer-events: none`，`.ai-root.is-open` 下恢复 `auto`。
+  - 实测（375×812）：关闭态视口命中测试落到页面内容（`.day`）；打开态命中 `.ai-panel-backdrop`，点击遮罩关闭面板的交互保留。
+- 修复后重跑全量门禁：typecheck 0 报错 · vitest 577/577 · playwright 72/72 · `npm run build` 成功（web bundle sha256 `ad725cd3756316548f1e963deaf4eeb63fd2376cabd7060b1ddfce2d561cb12a`）。
+
+### 7. Android 出包（v1.1.8 重打）
+- `npx cap sync android` → 复制 dist 到 `android/app/src/main/assets/public`，2 个 Capacitor 插件（secure-storage 8.0.0、local-notifications 8.2.0）正常识别。
+- `./gradlew.bat assembleRelease` BUILD SUCCESSFUL（1m30s，含 lintVitalRelease），使用 `app/keystore.properties` + `app/medbox-release.jks` 正式签名。
+- `publishReleaseArtifacts` 校验 APK 内嵌 web 资源与 dist 完全一致：**109 个文件**，聚合哈希 `dcf75e1e77cf64c57adeb8d53119e61df9d515b03b878d9be2dd2724226d18ac`。
+- 产物：`release/xiaoyaohe-1.1.8-android-release.apk`（20,929,021 字节，sha256 `349747813972e2812b3bdb033f07885768aff9d23eb54b78ddffa448a2f3dcf7`）+ 同名 SHA256SUMS.txt；`version.json` 已由 `gen-version.mjs` 刷新为该哈希。
+- 注意：版本号仍为 1.1.8 / versionCode 66（本次为同版本重打包，未 bump），APK 体积由 21,705,841 → 20,929,021 字节。
+
