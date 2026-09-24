@@ -1383,3 +1383,17 @@ Latest version: `1.1.9` (Android `versionCode: 67`)
    - `npm run build` 成功；`npx cap sync android` 正常；`assembleRelease` BUILD SUCCESSFUL（含 lintVitalRelease），使用 `app/medbox-release.jks` 正式签名。
 
 6. **上一轮遗留项已处理**：`.ai-panel-backdrop` 关闭态显式 `pointer-events: none`、`.ai-root.is-open` 下恢复 `auto`。实测（375×812）关闭态视口命中落到页面内容（`.day`），打开态命中 backdrop，点击遮罩关闭的交互保留。
+
+### 68. 修复 Cloudflare 边缘动态 version.json 端点缺陷与发布说明元数据补全 (v1.1.9, versionCode 67, workspace/claude & main)
+
+1. **缺陷根因与排查**：
+   - 线上发布 v1.1.9 后运行 `check-release-endpoints.mjs`，发现 `version.json` 下发 `versionCode: 48`、`minNativeVersionCode: 44`；
+   - 根因一：`functions/version.json.ts` 中针对 `1.1.x` 无法命中 `^1.0.(\d+)$` 正则，正文未显式包含 `versionCode` 时兜底返回写死的 48；`minNativeVersionCode` 写死为 44；
+   - 根因二：Cloudflare Pages 绑定生产分支 `main`，而此前发版提交仅在 `workspace/claude`，导致边缘服务仍在运行旧版本。
+2. **修复落地**：
+   - `functions/version.json.ts`：引入与 `release-utils` 对齐的 `VERSION_CODE_BY_VERSION` 映射表，`minNativeVersionCode` 引用权威常量 58，全落空时缺省字段退回字符串版本对比；
+   - `tests/functionsApi.test.ts`：补充 7 项端点防漂移一致性回归测试，全量测试达到 584/584 项 100% 通过；
+   - 在 `docs/releases/1.1.9.md` 与 GitHub Release `v1.1.9` 正文中补充 `<!-- versionCode: 67 -->`，使当前线上旧边缘函数即刻解析出 67；
+   - 将 `workspace/claude` 合并推送至 `main` 分支，触发 Cloudflare Pages 重新构建部署新版边缘函数；
+   - `check-release-endpoints.mjs` 冒烟 4/4 项全部 PASS。
+

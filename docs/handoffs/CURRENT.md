@@ -1,9 +1,26 @@
 # Current Integration State
 
-Updated: 2026-09-22
-Integration branch: `workspace/claude`
-Product version: `1.1.8` (versionCode 66)
-Latest integration commit: `release: v1.1.8 - 全新3D日历小胶囊主图标与吉祥物盒宝多场景融入/用药日历与时段提醒设置重构`
+Updated: 2026-09-24
+Integration branch: `main` (同步自 `workspace/claude`)
+Product version: `1.1.9` (versionCode 67)
+Latest integration commit: `release: v1.1.9 (versionCode 67)`
+
+## Release v1.1.9 (versionCode 67, main & workspace/claude)
+
+- **集成内容**：
+  - 吉祥物「盒宝」全场景视觉高清化：换用高清原图并突破卡片边框，分药助手、我的数据与今日空状态的插画更立体通透；
+  - 关于页同步换上新版 3D 品牌应用图标；
+  - 用药日历视觉与交互修复：修复日期看不清与顶部大片空白、暗色模式下选中日期不明显等问题；
+  - 分药功能体验优化：修复两个入口卡难以分辨问题，全面提升深色模式文字对比度；
+  - E2E 存量测试清零：修复存量测试断言脱节，Playwright 100/100 全绿通过；
+  - 边缘分发修复：修复 Cloudflare Pages `version.json.ts` 动态端点中旧有硬编码 versionCode 与底座门槛缺陷，新增 7 项防漂移回归测试；
+  - 版本号单调递增至 1.1.9 / versionCode 67。
+- **质量门禁**：
+  - `npm test`：91 文件 / 584 项 100% PASS；
+  - `npx playwright test`：100/100 PASS；
+  - `npm run typecheck`：0 错误；
+  - `node scripts/check-release-endpoints.mjs`：4/4 全链路 PASS；
+  - `tone_lint.py`：PASS。
 
 ## Release v1.1.8 (versionCode 66, workspace/claude)
 
