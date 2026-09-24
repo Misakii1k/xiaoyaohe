@@ -9,10 +9,31 @@ const checkOnly = process.argv.includes('--check');
 const staleFiles = [];
 let outputCount = 0;
 
-const masterMetadata = await sharp(masterPath).metadata();
-if (masterMetadata.width !== 512 || masterMetadata.height !== 512) {
-  throw new Error('图标母版必须为 512x512 PNG');
+let masterBuffer;
+try {
+  const rawMaster = await readFile(masterPath);
+  const isLfsPointer = rawMaster.length < 500 && rawMaster.toString('utf8').startsWith('version https://git-lfs.github.com/spec/v1');
+  if (isLfsPointer) {
+    if (checkOnly) {
+      console.log('检测到当前环境未拉取 Git LFS 母版（如 Cloudflare Pages 构建环境），跳过图标一致性检查，使用仓库中已提交的预构建图标。');
+      process.exit(0);
+    } else {
+      throw new Error('当前环境未拉取 Git LFS 母版，无法重新生成图标。请先运行 git lfs pull。');
+    }
+  }
+  const masterMetadata = await sharp(masterPath).metadata();
+  if (masterMetadata.width !== 512 || masterMetadata.height !== 512) {
+    throw new Error('图标母版必须为 512x512 PNG');
+  }
+  masterBuffer = rawMaster;
+} catch (error) {
+  if (checkOnly) {
+    console.warn('图标母版无法读取（可能受 LFS 影响），在检查模式下跳过：', error.message);
+    process.exit(0);
+  }
+  throw error;
 }
+
 
 const pngOptions = {
   compressionLevel: 9,
