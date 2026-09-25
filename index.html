@@ -24,6 +24,9 @@
   <body>
     <!--
       液态玻璃折射滤镜（供 backdrop-filter: url(#…) 引用）。
+      对齐 Apple Liquid Glass：不再用随机噪点抖动，而是用预生成的「凸透镜位移图」——
+      中心区域中性灰不位移，越靠边缘越把背景往内弯折，形成真实的透镜边缘折射，
+      中心始终清晰可读。位移图由 scripts/gen-lens-maps.py 生成为 256×256 PNG（public/icons/lens-*.png）。
       静态内联、零尺寸、不遮挡布局；display:none 会破坏部分引擎的滤镜引用，
       因此用绝对定位 + 0 尺寸隐藏。
     -->
@@ -33,80 +36,47 @@
       style="position: absolute; inline-size: 0; block-size: 0; overflow: hidden"
     >
       <defs>
-        <!-- 小面积全表面折射：顶栏按钮胶囊 / 扫描 FAB / Toast -->
+        <!-- 小面积控件（顶栏圆钮 / 悬浮按钮 / Toast）：整面透镜 -->
         <filter
           id="medbox-lens"
-          x="-15%"
-          y="-15%"
-          width="130%"
-          height="130%"
+          x="-8%"
+          y="-8%"
+          width="116%"
+          height="116%"
           color-interpolation-filters="sRGB"
+          primitiveUnits="objectBoundingBox"
         >
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.012 0.015"
-            numOctaves="2"
-            seed="7"
-            result="noise"
-          />
-          <feGaussianBlur in="noise" stdDeviation="1.5" result="soft-noise" />
-          <feDisplacementMap
-            in="SourceGraphic"
-            in2="soft-noise"
-            scale="7"
-            xChannelSelector="R"
-            yChannelSelector="G"
-          />
+          <feImage href="/icons/lens-full.png" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map" />
+          <feGaussianBlur in="map" stdDeviation="0.012" result="soft" />
+          <feDisplacementMap in="SourceGraphic" in2="soft" scale="0.10" xChannelSelector="R" yChannelSelector="G" />
         </filter>
-        <!-- 边缘环带折射：底栏 / 操作坞（配合遮罩只取边缘细环，成本低） -->
+        <!-- 大面积条（底栏 / 操作坞 / 抽屉）：只在边缘一圈弯折 -->
         <filter
           id="medbox-lens-edge"
-          x="-15%"
-          y="-15%"
-          width="130%"
-          height="130%"
+          x="-4%"
+          y="-4%"
+          width="108%"
+          height="108%"
           color-interpolation-filters="sRGB"
+          primitiveUnits="objectBoundingBox"
         >
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.009 0.012"
-            numOctaves="2"
-            seed="11"
-            result="noise"
-          />
-          <feGaussianBlur in="noise" stdDeviation="2" result="soft-noise" />
-          <feDisplacementMap
-            in="SourceGraphic"
-            in2="soft-noise"
-            scale="13"
-            xChannelSelector="R"
-            yChannelSelector="G"
-          />
+          <feImage href="/icons/lens-edge.png" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map" />
+          <feGaussianBlur in="map" stdDeviation="0.008" result="soft" />
+          <feDisplacementMap in="SourceGraphic" in2="soft" scale="0.05" xChannelSelector="R" yChannelSelector="G" />
         </filter>
-        <!-- 选中泡专用：低频强位移，模拟凸透镜的边缘弯折 -->
+        <!-- 选中泡：更强的边缘弯折 -->
         <filter
           id="medbox-lens-bubble"
-          x="-25%"
-          y="-25%"
-          width="150%"
-          height="150%"
+          x="-12%"
+          y="-12%"
+          width="124%"
+          height="124%"
           color-interpolation-filters="sRGB"
+          primitiveUnits="objectBoundingBox"
         >
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.006 0.008"
-            numOctaves="2"
-            seed="23"
-            result="noise"
-          />
-          <feGaussianBlur in="noise" stdDeviation="3" result="soft-noise" />
-          <feDisplacementMap
-            in="SourceGraphic"
-            in2="soft-noise"
-            scale="26"
-            xChannelSelector="R"
-            yChannelSelector="G"
-          />
+          <feImage href="/icons/lens-full.png" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map" />
+          <feGaussianBlur in="map" stdDeviation="0.02" result="soft" />
+          <feDisplacementMap in="SourceGraphic" in2="soft" scale="0.16" xChannelSelector="R" yChannelSelector="G" />
         </filter>
       </defs>
     </svg>

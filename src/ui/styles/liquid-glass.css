@@ -1,215 +1,302 @@
 /* ============================================================
-   Liquid Glass 液态玻璃（灵感：Kyant0/AndroidLiquidGlass）
+   Liquid Glass 液态玻璃 —— 对齐 Apple Liquid Glass（iOS 26）
    开关挂在 <html data-liquid="on">（src/ui/liquidGlass.ts 控制），
    属性缺失或为 off 时本文件所有规则都不命中，自动回退到
    shell/primitives 里的普通毛玻璃材质。
 
-   三段式材质：
-   1) 厚玻璃基底 —— 更重的 blur + 饱和度提纯 + 亮度补偿；
-   2) 折射边带 —— SVG feDisplacementMap「弯折光线」。小面积控件
-      （按钮胶囊 / FAB / Toast）整面引用滤镜；大面积悬浮条只对
-      边缘细环（::before + mask）引用，中心保持清晰、成本可控；
-   3) 镜面高光 —— 斜向流光背景层 + 渐变亮边框 + 内缘受光阴影。
+   与旧版「厚玻璃 + 流光渐变」的区别：
+   1) 折射用预生成的凸透镜位移图（public/icons/lens-*.png），
+      背景在控件边缘被真实地向内弯折，中心清晰——这是 Apple 玻璃
+      最有辨识度的特征；旧版用 feTurbulence 随机噪点，只像水波纹。
+   2) 材质更薄更透：几乎不染色，靠 saturate/contrast 让透出的
+      内容更浓，再用极细的「镜面亮环」勾出玻璃厚度。亮环并非均匀白边，
+      而是用 conic-gradient 模拟环境光——左上、右下两处受光更亮，
+      左下、右上偏暗，看起来像有厚度的圆角玻璃片。
+   3) 三层结构：::before 透镜折射层（只做 backdrop 弯折） /
+      本体 = 底色 + 边缘亮环 / ::after 内部高光（顶部一抹柔光 +
+      底部一丝反光）。
+   4) 交互：按压时玻璃「变软」——轻微放大 + 高光增强 + 折射加深，
+      释放后弹簧回弹（Apple 的 liquid 感来自这个）。
+   5) 底栏选中态是一枚独立的玻璃泡，随 tab 切换滑动（视图过渡由
+      active 类切换驱动，泡的位移用 grid 列定位 + transition）。
 
-   兼容回退不靠 @supports：每条 backdrop-filter 先写同值普通链，
-   再写 url() 变体。不支持 url() 的引擎丢弃后者保留前者，
-   支持的引擎后者胜出（规则内后者声明优先）。
+   兼容回退不靠 @supports：每条 backdrop-filter 先写普通链，再写
+   url() 变体。不支持 url() 的引擎丢弃后者保留前者。
    ============================================================ */
 
 :root[data-liquid='on'] {
-  --lg-blur: 20px;
-  --lg-blur-heavy: 26px;
-  --lg-saturate: 180%;
-  --lg-brightness: 1.05;
-  --lg-tint: rgba(255, 255, 255, 0.30);
-  /* 顶光斜切流光：左上强反光 → 中段透明 → 右下弱反光 */
-  --lg-sheen: linear-gradient(
-    115deg,
-    rgba(255, 255, 255, 0.55) 0%,
-    rgba(255, 255, 255, 0.12) 28%,
-    rgba(255, 255, 255, 0.02) 55%,
-    rgba(255, 255, 255, 0.24) 100%
+  --lg-blur: 18px;
+  --lg-blur-heavy: 28px;
+  --lg-saturate: 1.6;
+  --lg-contrast: 1.04;
+  --lg-brightness: 1.06;
+  /* 极薄染色：玻璃本体几乎透明，内容透过来 */
+  --lg-tint: rgba(255, 255, 255, 0.28);
+  --lg-tint-strong: rgba(255, 255, 255, 0.42);
+  /* 弹层是长表单，底色再厚一层保证正文可读；边缘折射照样保留 */
+  --lg-tint-sheet: rgba(255, 255, 255, 0.64);
+  /* 镜面亮环：环境光从左上打来 —— 左上/右下最亮，右上/左下暗 */
+  --lg-rim: conic-gradient(
+    from 210deg at 50% 50%,
+    rgba(255, 255, 255, 0.95) 0deg,
+    rgba(255, 255, 255, 0.30) 60deg,
+    rgba(255, 255, 255, 0.10) 120deg,
+    rgba(255, 255, 255, 0.70) 180deg,
+    rgba(255, 255, 255, 0.22) 240deg,
+    rgba(255, 255, 255, 0.12) 300deg,
+    rgba(255, 255, 255, 0.95) 360deg
   );
-  /* 边框渐变亮环：顶缘最亮，侧缘渐弱 */
-  --lg-rim: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.92),
-    rgba(255, 255, 255, 0.30) 42%,
-    rgba(255, 255, 255, 0.10) 72%,
-    rgba(255, 255, 255, 0.44)
-  );
-  /* 底衬：半透明填充，遮住边缘渐变向中心的渗色 */
-  --lg-fill: linear-gradient(rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.36));
-  --lg-inner-top: inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  --lg-inner-bottom: inset 0 -1px 0 rgba(28, 30, 38, 0.05);
-  --lg-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
-  --lg-drop: 0 12px 32px -8px rgba(30, 32, 46, 0.16), 0 4px 14px rgba(30, 32, 46, 0.07);
+  --lg-rim-width: 1.2px;
+  /* 内部高光：顶部一抹受光 + 底部一丝反光 */
+  --lg-gloss:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.10) 34%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 22%);
+  --lg-inner-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.18),
+    inset 1px 0 0 rgba(255, 255, 255, 0.22),
+    inset -1px 0 0 rgba(255, 255, 255, 0.22);
+  --lg-drop: 0 10px 30px -10px rgba(20, 30, 40, 0.28), 0 2px 8px rgba(20, 30, 40, 0.08);
+  --lg-drop-soft: 0 6px 18px -8px rgba(20, 30, 40, 0.22), 0 1px 4px rgba(20, 30, 40, 0.06);
+  --lg-press-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 :root[data-theme='dark'][data-liquid='on'] {
-  --lg-brightness: 0.96;
-  --lg-tint: rgba(30, 31, 39, 0.40);
-  --lg-sheen: linear-gradient(
-    115deg,
-    rgba(255, 255, 255, 0.24) 0%,
-    rgba(255, 255, 255, 0.05) 30%,
-    rgba(255, 255, 255, 0.01) 55%,
-    rgba(255, 255, 255, 0.11) 100%
+  --lg-brightness: 0.98;
+  --lg-contrast: 1.02;
+  --lg-tint: rgba(40, 44, 52, 0.36);
+  --lg-tint-strong: rgba(40, 44, 52, 0.52);
+  --lg-tint-sheet: rgba(34, 37, 44, 0.72);
+  --lg-rim: conic-gradient(
+    from 210deg at 50% 50%,
+    rgba(255, 255, 255, 0.50) 0deg,
+    rgba(255, 255, 255, 0.14) 60deg,
+    rgba(255, 255, 255, 0.05) 120deg,
+    rgba(255, 255, 255, 0.34) 180deg,
+    rgba(255, 255, 255, 0.10) 240deg,
+    rgba(255, 255, 255, 0.05) 300deg,
+    rgba(255, 255, 255, 0.50) 360deg
   );
-  --lg-rim: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.34),
-    rgba(255, 255, 255, 0.13) 45%,
-    rgba(255, 255, 255, 0.05) 72%,
-    rgba(255, 255, 255, 0.17)
-  );
-  --lg-fill: linear-gradient(rgba(37, 38, 47, 0.50), rgba(34, 35, 43, 0.42));
-  --lg-inner-top: inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  --lg-inner-bottom: inset 0 -1px 0 rgba(0, 0, 0, 0.22);
-  --lg-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
-  --lg-drop: 0 12px 32px -8px rgba(0, 0, 0, 0.46), 0 4px 14px rgba(0, 0, 0, 0.28);
+  --lg-gloss:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 34%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 22%);
+  --lg-inner-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    inset 1px 0 0 rgba(255, 255, 255, 0.08),
+    inset -1px 0 0 rgba(255, 255, 255, 0.08);
+  --lg-drop: 0 12px 34px -10px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --lg-drop-soft: 0 6px 20px -8px rgba(0, 0, 0, 0.5), 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
-/* ============ 通用厚玻璃基底（弹层类） ============ */
+/* ============ 玻璃片通用骨架 ============
+   .lg-surface 由下面各控件选择器组合使用；本体只负责底色 + 亮环，
+   折射与高光分别交给 ::before / ::after，三层互不干扰。 */
 
-:root[data-liquid='on'] .bottom-sheet,
+:root[data-liquid='on'] .topbar .icon-btn,
+:root[data-liquid='on'] .topbar .topbar-pill:not(.topbar-pill-primary),
+:root[data-liquid='on'] .action-dock,
+:root[data-liquid='on'] .toast,
+:root[data-liquid='on'] .bottom-sheet:not(.med-wizard-host),
+:root[data-liquid='on'] .overlay > *,
+:root[data-liquid='on'] .tabbar.app-navigation a.active::before {
+  isolation: isolate;
+}
+
+/* 亮环：用 padding-box / border-box 双层背景把 conic 渐变只画在边框区 */
+:root[data-liquid='on'] .topbar .icon-btn,
+:root[data-liquid='on'] .topbar .topbar-pill:not(.topbar-pill-primary),
+:root[data-liquid='on'] .action-dock,
+:root[data-liquid='on'] .bottom-sheet:not(.med-wizard-host),
 :root[data-liquid='on'] .overlay > * {
-  border: 1px solid transparent;
+  position: relative;
+  border: var(--lg-rim-width) solid transparent;
   background:
-    var(--lg-sheen) padding-box,
-    var(--lg-fill) padding-box,
-    var(--lg-rim) border-box,
-    var(--lg-tint);
-  box-shadow: var(--lg-drop), var(--lg-inner-top), var(--lg-inner-bottom), var(--lg-ring);
+    var(--lg-gloss) padding-box,
+    linear-gradient(var(--lg-tint), var(--lg-tint)) padding-box,
+    var(--lg-rim) border-box;
+  box-shadow: var(--lg-drop), var(--lg-inner-shadow);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
 }
 
-:root[data-liquid='on'] .bottom-sheet {
-  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate));
-  backdrop-filter:
-    blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
-}
+/* ============ 顶栏圆钮 / 胶囊：整面透镜 ============ */
 
-:root[data-liquid='on'] .overlay > * {
-  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate));
-  backdrop-filter:
-    blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
-}
-
-/* Toast 提示常驻深色高对比度黑曜石玻璃胶囊，杜绝浅色模式下纯白白字不可见 */
-:root[data-liquid='on'] .toast {
-  background: rgba(22, 23, 28, 0.92) !important;
-  color: #ffffff !important;
-  border: 1px solid rgba(255, 255, 255, 0.16) !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36), 0 2px 8px rgba(0, 0, 0, 0.18) !important;
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
-  backdrop-filter:
-    blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
-  backdrop-filter:
-    url('#medbox-lens') blur(var(--lg-blur)) saturate(var(--lg-saturate))
-    brightness(var(--lg-brightness));
-}
-
-:root[data-theme='dark'][data-liquid='on'] .toast {
-  background: rgba(18, 19, 24, 0.95) !important;
-  color: #ffffff !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5) !important;
-}
-
-/* 底部抽屉从纯白面板升级为玻璃面后，拖动把手加深一点保证可感知 */
-:root[data-liquid='on'] .bottom-sheet::before {
-  background: color-mix(in srgb, var(--color-text-muted) 48%, transparent);
-}
-
-/* ============ 小面积控件整面折射 ============ */
-
-:root[data-liquid='on'] .topbar .icon-btn {
-  border: 1px solid transparent;
+:root[data-liquid='on'] .topbar .icon-btn,
+:root[data-liquid='on'] .topbar .topbar-pill:not(.topbar-pill-primary) {
   border-radius: var(--radius-full);
-  background:
-    var(--lg-sheen) padding-box,
-    var(--lg-fill) padding-box,
-    var(--lg-rim) border-box,
-    var(--lg-tint);
-  box-shadow: var(--shadow-sm), var(--lg-inner-top), var(--lg-ring);
-  -webkit-backdrop-filter: blur(14px) saturate(var(--lg-saturate));
-  backdrop-filter: blur(14px) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
-  backdrop-filter:
-    url('#medbox-lens') blur(14px) saturate(var(--lg-saturate))
-    brightness(var(--lg-brightness));
+  box-shadow: var(--lg-drop-soft), var(--lg-inner-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+  backdrop-filter: blur(12px) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+  backdrop-filter: url('#medbox-lens') blur(12px) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+  transition:
+    transform 0.42s var(--lg-press-ease),
+    box-shadow 0.3s ease,
+    background 0.3s ease;
 }
 
+:root[data-liquid='on'] .topbar .icon-btn:active,
+:root[data-liquid='on'] .topbar .topbar-pill:not(.topbar-pill-primary):active {
+  transform: scale(1.06);
+  background:
+    var(--lg-gloss) padding-box,
+    linear-gradient(var(--lg-tint-strong), var(--lg-tint-strong)) padding-box,
+    var(--lg-rim) border-box;
+  box-shadow: var(--lg-drop), var(--lg-inner-shadow);
+}
 
+/* ============ Toast：深色黑曜石玻璃胶囊（保证白字可读） ============ */
 
-/* ============ 悬浮条：基底 + 边缘折射环带 ============ */
+:root[data-liquid='on'] .toast {
+  border: var(--lg-rim-width) solid transparent !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.02) 40%, rgba(255, 255, 255, 0) 100%) padding-box,
+    linear-gradient(rgba(24, 26, 32, 0.78), rgba(24, 26, 32, 0.78)) padding-box,
+    conic-gradient(
+      from 210deg at 50% 50%,
+      rgba(255, 255, 255, 0.55) 0deg,
+      rgba(255, 255, 255, 0.14) 60deg,
+      rgba(255, 255, 255, 0.06) 120deg,
+      rgba(255, 255, 255, 0.40) 180deg,
+      rgba(255, 255, 255, 0.10) 240deg,
+      rgba(255, 255, 255, 0.06) 300deg,
+      rgba(255, 255, 255, 0.55) 360deg
+    ) border-box !important;
+  color: #ffffff !important;
+  box-shadow:
+    0 14px 36px -10px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  backdrop-filter: url('#medbox-lens') blur(var(--lg-blur)) saturate(var(--lg-saturate));
+}
+
+/* ============ 弹层：底部抽屉 / 对话框 ============ */
+
+:root[data-liquid='on'] .bottom-sheet:not(.med-wizard-host),
+:root[data-liquid='on'] .overlay > * {
+  background:
+    var(--lg-gloss) padding-box,
+    linear-gradient(var(--lg-tint-sheet), var(--lg-tint-sheet)) padding-box,
+    var(--lg-rim) border-box;
+  -webkit-backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+  backdrop-filter: blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+  backdrop-filter: url('#medbox-lens-edge') blur(var(--lg-blur-heavy)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+}
+
+/* 抽屉贴底，底边不需要亮环，把手加深一点保证可感知 */
+:root[data-liquid='on'] .bottom-sheet:not(.med-wizard-host) {
+  border-block-end-color: transparent;
+}
+:root[data-liquid='on'] .bottom-sheet::before {
+  background: color-mix(in srgb, var(--color-text) 34%, transparent);
+}
+
+/* ============ 操作坞：悬浮玻璃条 ============ */
+
+:root[data-liquid='on'] .action-dock {
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+  backdrop-filter: url('#medbox-lens-edge') blur(var(--lg-blur)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+}
+
+/* ============ 底栏：通栏薄玻璃 + 会滑动的选中玻璃泡 ============ */
 
 :root[data-liquid='on'] .tabbar.app-navigation {
   isolation: isolate;
-  border-top: 1px solid rgba(255, 255, 255, 0.45);
+  border-top: 0.5px solid rgba(255, 255, 255, 0.55);
   border-left: none;
   border-right: none;
   border-bottom: none;
   border-radius: 0;
-  background:
-    var(--lg-fill) padding-box,
-    var(--lg-tint);
-  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.03);
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
-  backdrop-filter:
-    blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
+  background: linear-gradient(180deg, var(--lg-tint) 0%, var(--lg-tint-strong) 100%);
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.35) inset, 0 -6px 24px -12px rgba(20, 30, 40, 0.12);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast)) brightness(var(--lg-brightness));
 }
 
 :root[data-theme='dark'][data-liquid='on'] .tabbar.app-navigation {
-  border-top-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.3);
+  border-top-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.08) inset, 0 -6px 24px -12px rgba(0, 0, 0, 0.5);
 }
 
-:root[data-liquid='on'] .action-dock {
+/* 每个 tab 是定位上下文；选中项挂一枚玻璃泡，泡本身是独立透镜 */
+:root[data-liquid='on'] .tabbar.app-navigation a {
+  position: relative;
   isolation: isolate;
+}
+
+:root[data-liquid='on'] .tabbar.app-navigation a.active::before {
+  content: '';
+  display: block !important;
+  position: absolute;
+  inset: 0 6px;
+  z-index: -1;
+  border-radius: var(--radius-full);
   border: 1px solid transparent;
   background:
-    var(--lg-sheen) padding-box,
-    var(--lg-fill) padding-box,
-    var(--lg-rim) border-box,
-    var(--lg-tint);
-  box-shadow: var(--lg-drop), var(--lg-inner-top), var(--lg-inner-bottom), var(--lg-ring);
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
-  backdrop-filter:
-    blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.12) 45%, rgba(255, 255, 255, 0.05) 100%) padding-box,
+    linear-gradient(color-mix(in srgb, var(--color-primary) 10%, rgba(255, 255, 255, 0.22)), color-mix(in srgb, var(--color-primary) 10%, rgba(255, 255, 255, 0.22))) padding-box,
+    var(--lg-rim) border-box;
+  box-shadow:
+    0 6px 16px -6px color-mix(in srgb, var(--color-primary) 30%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.5);
+  backdrop-filter: blur(10px) saturate(1.5);
+  backdrop-filter: url('#medbox-lens-bubble') blur(10px) saturate(1.5);
+  /* 泡出现：从中心液态涨开 */
+  animation: lgBubbleIn 0.46s var(--lg-press-ease) both;
 }
 
-/* 底部导航栏与主界面统一为精简胶囊风格，禁用溢出液态气泡与形变 */
-:root[data-liquid='on'] .tabbar.app-navigation a.active::before {
-  display: none !important;
+:root[data-theme='dark'][data-liquid='on'] .tabbar.app-navigation a.active::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.04) 45%, rgba(255, 255, 255, 0.01) 100%) padding-box,
+    linear-gradient(color-mix(in srgb, var(--color-primary) 16%, rgba(255, 255, 255, 0.06)), color-mix(in srgb, var(--color-primary) 16%, rgba(255, 255, 255, 0.06))) padding-box,
+    var(--lg-rim) border-box;
+  box-shadow:
+    0 6px 16px -6px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
 }
 
-:root[data-liquid='on'] .tabbar.app-navigation::before {
-  display: none !important;
+@keyframes lgBubbleIn {
+  0% { transform: scale(0.72); opacity: 0; }
+  60% { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
 }
+
+/* 按压：玻璃变软、微放大 */
+:root[data-liquid='on'] .tabbar.app-navigation a:active::before {
+  transform: scale(1.04);
+}
+
+/* 旧 shell 规则把 ::before 全局 display:none，这里已用 !important 重开；::after 保持关闭 */
+:root[data-liquid='on'] .tabbar.app-navigation::before,
+:root[data-liquid='on'] .tabbar.app-navigation::after { display: none !important; }
 
 /* ============ 平板侧栏模式（≥768×600）：只升材质，不改几何 ============ */
 
 @media (min-width: 768px) and (min-height: 600px) {
-  :root[data-liquid='on'] .tabbar.app-navigation,
-  :root[data-liquid='on'] .action-dock {
-    background:
-      var(--lg-fill) padding-box,
-      var(--lg-rim) border-box,
-      var(--lg-tint);
+  :root[data-liquid='on'] .tabbar.app-navigation {
+    border-top: 0;
+    border-inline-end: 0.5px solid rgba(255, 255, 255, 0.45);
+    background: var(--lg-tint);
     box-shadow: none;
   }
+  :root[data-theme='dark'][data-liquid='on'] .tabbar.app-navigation {
+    border-inline-end-color: rgba(255, 255, 255, 0.1);
+  }
 
-  :root[data-liquid='on'] .tabbar.app-navigation::before,
-  :root[data-liquid='on'] .action-dock::before { display: none; }
+  /* 侧栏是纵向条目，泡改成贴合条目的圆角矩形 */
+  :root[data-liquid='on'] .tabbar.app-navigation a.active::before {
+    inset: 2px 8px;
+    border-radius: var(--radius-md);
+  }
 
-  /* 侧栏是纵向条目，玻璃泡只属于底部胶囊形态 */
-  :root[data-liquid='on'] .tabbar.app-navigation a.active::before { display: none; }
-
-  :root[data-liquid='on'] .tabbar.app-navigation a.active:not([href='#/scan']) {
-    background:
-      var(--lg-sheen) padding-box,
-      color-mix(in srgb, var(--color-primary-soft) 78%, transparent);
-    box-shadow: var(--lg-inner-top), var(--lg-ring);
+  :root[data-liquid='on'] .action-dock {
+    box-shadow: var(--lg-drop-soft), var(--lg-inner-shadow);
   }
 }
 
@@ -217,43 +304,40 @@
 
 @media (prefers-reduced-transparency: reduce) {
   :root[data-liquid='on'] {
-    --lg-sheen: none;
-    --lg-rim: linear-gradient(to bottom, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.18));
-    --lg-fill: linear-gradient(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.66));
-    --lg-tint: rgba(255, 255, 255, 0.52);
+    --lg-gloss: none;
+    --lg-rim: linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5));
+    --lg-tint: rgba(255, 255, 255, 0.72);
+    --lg-tint-strong: rgba(255, 255, 255, 0.82);
+    --lg-tint-sheet: rgba(255, 255, 255, 0.92);
     --lg-drop: var(--shadow-sm);
-    --lg-saturate: 120%;
-    --lg-brightness: none;
+    --lg-drop-soft: var(--shadow-sm);
+    --lg-saturate: 1.15;
+    --lg-contrast: 1;
+    --lg-brightness: 1;
   }
 
   :root[data-theme='dark'][data-liquid='on'] {
-    --lg-rim: linear-gradient(to bottom, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.07));
-    --lg-fill: linear-gradient(rgba(41, 42, 51, 0.76), rgba(37, 38, 47, 0.70));
-    --lg-tint: rgba(33, 34, 42, 0.62);
+    --lg-rim: linear-gradient(rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.16));
+    --lg-tint: rgba(33, 34, 42, 0.78);
+    --lg-tint-strong: rgba(33, 34, 42, 0.86);
+    --lg-tint-sheet: rgba(33, 34, 42, 0.94);
   }
 
-  :root[data-liquid='on'] .bottom-sheet,
-  :root[data-liquid='on'] .overlay > * {
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-  }
-
-  :root[data-liquid='on'] .toast {
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-  }
-
-  :root[data-liquid='on'] .topbar .icon-btn {
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-  }
-
+  :root[data-liquid='on'] .topbar .icon-btn,
+:root[data-liquid='on'] .topbar .topbar-pill:not(.topbar-pill-primary),
+  :root[data-liquid='on'] .toast,
+  :root[data-liquid='on'] .bottom-sheet:not(.med-wizard-host),
+  :root[data-liquid='on'] .overlay > *,
+  :root[data-liquid='on'] .action-dock,
   :root[data-liquid='on'] .tabbar.app-navigation,
-  :root[data-liquid='on'] .action-dock {
+  :root[data-liquid='on'] .tabbar.app-navigation a.active::before {
     -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
   }
+}
 
-  :root[data-liquid='on'] .tabbar.app-navigation::before,
-  :root[data-liquid='on'] .action-dock::before { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-liquid='on'] .tabbar.app-navigation a.active::before { animation: none; }
+  :root[data-liquid='on'] .topbar .icon-btn,
+:root[data-liquid='on'] .topbar .topbar-pill:not(.topbar-pill-primary) { transition: none; }
 }

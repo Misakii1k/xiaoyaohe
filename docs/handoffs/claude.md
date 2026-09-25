@@ -1435,3 +1435,19 @@ Latest version: `1.1.10` (Android `versionCode: 68`)
 - 两遍出包：APK 20931897 B（较 1.1.10 +3296 B），sha256 `3617ff88…95ca3f`；Web Bundle 8300708 B，sha256 `165cbe4e…b316e`；`minNativeVersionCode: 58`。
 - 门禁：tsc 0 错误；Vitest 94 文件 / 619 项 PASS；Playwright 100/100（第 71 节同一代码）。
 - 已推送 `workspace/claude`、tag `v1.1.11`，fast-forward `main`；GitHub Release `v1.1.11` 含 APK / Web Bundle / SHA256SUMS；`check-release-endpoints.mjs` 4/4 PASS，线上更新说明已无注释元数据。
+
+### 73. 自绘控件统一 / 时段可删 / 深层页布局收敛 / 液态玻璃对齐 Apple Liquid Glass (workspace/claude, 未发版)
+
+1. **时段提醒设置**：自定义时段卡片右侧新增删除按钮（`period-card-delete-btn`，二次确认后 `deleteReminderPeriodSetting` + 重建闹钟），编辑器底部的删除保留。内置四个时段仍只能停用（仓储层会重新推导，删不掉）。
+2. **控件统一（自绘优先）**：
+   - `Pickers.ts`：`openTimeSheet` 支持标题 / 分钟档位 / 顶部大字预览（`.ui-picker-preview`）；新增 `enhanceSelect(select)` 就地把已有 `<select>` 换成自绘下拉，原引用不变、选项实时读取（用于库存识别对应药品、模型下拉、生图接口模式）。
+   - 新增 `src/ui/primitives/Stepper.ts`（`createStepper`）：「− 数值 +」步进器，支持 min/max/step/unit/allowEmpty/小数、拦截 `input.value` 赋值同步按钮态；替换时段重推 / 库存 / 周期天数 / 剂量等所有原生 number 框（`ReminderPanel` / `MedEdit` / `MedicationBatchEditor`）。
+   - `primitives.css`：全局自绘复选框 / 单选 / `role=switch` 开关 / 步进器样式；页面级 `accent-color` 覆写清理。测试 `tests/ownControls.test.ts`。
+   - **规则**已写入 `medbox/AGENTS.md`（及根 AGENTS.md、记忆）：所有现有与新增功能一律优先用 `src/ui/primitives` 自绘控件，禁止原生时间 / 日期 / 下拉弹层。
+3. **深层页布局**：用临时 Playwright 审计脚本扫 10 条路由 × 2 宽度（溢出 / 截断 / 竖排 / 小热区 / 小字 / 套框）。修复：AI 服务商卡片 320 宽溢出（grid 子项 `min-inline-size:0`）；设置第三层卡片改浅底色块去描边；时段编辑页改「返回 + 标题」页头 + `.period-editor-body` 统一间距；周切换 / 筛选胶囊 / 步骤条 / 服务商按钮热区加大；最小字号 ≥10px；扫码绑定按钮窄屏折行。
+4. **液态玻璃重做**（`liquid-glass.css` 重写 + `index.html` 滤镜 + `scripts/gen-lens-maps.py`）：
+   - 折射改用预生成「凸透镜位移图」`public/icons/lens-full.png` / `lens-edge.png`（中心中性灰不位移，边缘向内弯折），`feImage → feDisplacementMap`，替代原 feTurbulence 随机噪点；三档滤镜 `#medbox-lens`（小控件）/ `#medbox-lens-edge`（大面积条只弯边缘）/ `#medbox-lens-bubble`（选中泡）。
+   - 材质更薄：几乎不染色（tint 0.28~0.42，弹层 0.64 保可读），`saturate/contrast/brightness` 让透出内容更浓；边缘亮环用 `conic-gradient` 模拟左上环境光；顶部柔光 + 底部反光两层 gloss；按压微放大弹簧回弹。
+   - 底栏选中项恢复为独立玻璃泡（`a.active::before`，`lgBubbleIn` 液态涨开，深色 / 平板侧栏各有变体）；顶栏 `.topbar-pill` 纳入玻璃规则；Toast 保持黑曜石深底白字（架构契约测试改为断言深色填充层）。
+   - `prefers-reduced-transparency` / `prefers-reduced-motion` 退回普通毛玻璃。
+5. 门禁：tsc 0 错误；Vitest 95 文件 / 624 项 PASS；Playwright 100/100 PASS。截图在本环境超时，玻璃效果需真机确认（Android WebView 对 `backdrop-filter: url()` 支持取决于系统 WebView 版本，不支持时自动退回普通模糊）。

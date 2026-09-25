@@ -179,8 +179,12 @@ describe('0.7.0 UI architecture contracts', () => {
     // Must NOT group .toast into light translucent fill
     expect(liquid).not.toMatch(/:root\[data-liquid='on'\][^{}]*?\.toast[^{}]*?\{[^}]*?var\(--lg-fill\)/);
 
-    // Liquid glass must explicitly specify dark background and white text for toast
-    expect(liquid).toMatch(/:root\[data-liquid='on'\] \.toast\s*\{[\s\S]*?background:\s*rgba\(22,\s*23,\s*28,[\s\S]*?color:\s*#ffffff !important;/);
+    // Liquid glass must explicitly specify a dark obsidian fill and white text for toast
+    // (multi-layer background: gloss / dark fill / rim — the fill layer must be a dark rgba)
+    const toastRule = /:root\[data-liquid='on'\] \.toast\s*\{([\s\S]*?)\}/.exec(liquid)?.[1] ?? '';
+    expect(toastRule).toMatch(/rgba\((1\d|2\d|3\d),\s*(1\d|2\d|3\d),\s*(1\d|2\d|3\d|4\d),\s*0\.[7-9]\d*\)/);
+    expect(toastRule).toMatch(/color:\s*#ffffff !important;/);
+    expect(toastRule).not.toMatch(/var\(--lg-tint/);
 
     // Primitives must center toast and enforce dark high contrast
     expect(primitives).toMatch(/\.toast\s*\{[\s\S]*?inset-inline:\s*0;[\s\S]*?margin-inline:\s*auto;[\s\S]*?background:\s*rgba\(22,\s*23,\s*28,[\s\S]*?color:\s*#ffffff !important;/);
