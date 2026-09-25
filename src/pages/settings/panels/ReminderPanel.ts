@@ -1312,14 +1312,20 @@ export async function renderPeriodEditor(
 
   const displayName = latest.name || SLOT_LABEL[latest.slot] || latest.slot;
 
-  const back = el('button', { class: 'btn text small', type: 'button', html: '← 返回时段列表' });
-  back.onclick = () => void renderPeriodSettingsBody(body, panelEl);
-  body.append(back);
-
-  body.append(el('div', { class: 'section-title mt-3', html: `${displayName}时段整体提醒` }));
+  const outerBody = body;
+  const head = el('div', { class: 'period-editor-head' });
+  const back = el('button', { class: 'btn text small', type: 'button', 'aria-label': '返回时段列表' });
+  back.append(icon('chevron-left'), document.createTextNode('时段列表'));
+  back.onclick = () => void renderPeriodSettingsBody(outerBody, panelEl);
+  head.append(back);
+  outerBody.append(head);
+  outerBody.append(el('h3', { class: 'period-editor-title', text: `${displayName}时段整体提醒` }));
+  // 编辑器内容放在独立容器里，统一纵向间距，不再逐个 mt-3
+  body = el('div', { class: 'period-editor-body' });
+  outerBody.append(body);
 
   if (latest.state === 'needs-review') {
-    body.append(el('div', { class: 'banner warn mt-3' }, [
+    body.append(el('div', { class: 'banner warn' }, [
       el('span', {
         html: '该时段内不同药的提醒时间或方式不完全一致，当前按下面的统一设置发送整体提醒。确认后复核标记自动消除；每种药自己的精确时间仍保留，仅用于记录与库存归因。',
       }),
@@ -1472,7 +1478,7 @@ export async function renderPeriodEditor(
   );
 
   // 5. 底部操作按钮行
-  const btnRow = el('div', { class: 'btn-row mt-4' });
+  const btnRow = el('div', { class: 'btn-row' });
   const saveBtn = el('button', { class: 'btn primary', html: '保存设置' });
   saveBtn.onclick = async () => {
     if (saveBtn.hasAttribute('disabled')) return;
@@ -1496,7 +1502,7 @@ export async function renderPeriodEditor(
       });
       await rescheduleMedicationReminders();
       toast(`${updatedName || displayName}时段设置已保存，闹钟已重建`);
-      void renderPeriodSettingsBody(body, panelEl);
+      void renderPeriodSettingsBody(outerBody, panelEl);
     } catch (error) {
       saveBtn.removeAttribute('disabled');
       toast('保存失败：' + (error instanceof Error ? error.message : String(error)));
@@ -1514,7 +1520,7 @@ export async function renderPeriodEditor(
         await deleteReminderPeriodSetting(latest.slot);
         await rescheduleMedicationReminders();
         toast(`已删除「${displayName}」时段`);
-        void renderPeriodSettingsBody(body, panelEl);
+        void renderPeriodSettingsBody(outerBody, panelEl);
       } catch (err) {
         toast('删除失败：' + (err instanceof Error ? err.message : String(err)));
       }

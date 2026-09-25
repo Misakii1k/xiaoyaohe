@@ -622,6 +622,8 @@
 .med-wizard-step-item {
   display: flex;
   align-items: center;
+  /* 细进度条本身只有 5px，上下留足热区方便点按跳步 */
+  min-block-size: 32px;
   padding: 4px 0;
   background: none;
   border: none;

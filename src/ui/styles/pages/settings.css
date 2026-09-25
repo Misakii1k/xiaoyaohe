@@ -383,7 +383,10 @@
 
 .settings-scan-grid .btn {
   inline-size: 100%;
-  white-space: nowrap;
+  /* 窄屏下两列放不下时允许按钮文字折成两行，而不是被截掉 */
+  white-space: normal;
+  line-height: 1.3;
+  text-align: center;
   padding-inline: var(--space-2);
   font-size: var(--fs-footnote);
   min-block-size: 40px;
@@ -1009,9 +1012,9 @@
 .llm-actions-left { display: flex; align-items: center; gap: var(--space-1); }
 .llm-actions-right { display: flex; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
 .llm-provider-actions .btn.small {
-  padding: 3px 10px;
-  font-size: 12px;
-  min-block-size: 26px;
+  padding: 4px 12px;
+  font-size: 13px;
+  min-block-size: 34px;
   border-radius: var(--radius-full);
 }
 .llm-activate-btn { color: var(--color-primary) !important; font-weight: 600; }
@@ -2569,6 +2572,62 @@ body.lan-sync-panel-active .ai-launcher {
   margin-block-start: var(--space-1, 4px);
 }
 
+/* ---------- 二级及更深层级布局收敛 ----------
+ * 1. 网格/弹性子项默认 min-width:auto，会被不换行的长文本撑出卡片（320 宽下 AI 服务商卡片溢出）。
+ * 2. 分组卡 → 面板 → 微卡片 → 条目，四层都带边框和阴影会显得层层套框；
+ *    第三层以下改成浅底色块，只靠底色区分，不再描边加阴影。
+ * 3. 深层页（时段编辑器等）的「返回」做成固定的页头行，和标题对齐。
+ */
+.llm-provider-list > *,
+.period-setting-list > *,
+.settings-ringtone-list > * { min-inline-size: 0; }
+.llm-provider-meta { min-inline-size: 0; }
+.llm-provider-meta > * { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+.llm-provider-head { flex-wrap: wrap; row-gap: 6px; }
+.llm-provider-actions { flex-wrap: wrap; row-gap: 6px; }
 
+.settings-subcard .llm-provider-row,
+.settings-ringtone-card .settings-ringtone-item {
+  border-color: transparent;
+  background: var(--color-surface-muted);
+  box-shadow: none;
+}
+.settings-subcard .llm-provider-row.is-active {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface-muted));
+  box-shadow: none;
+}
+.settings-ringtone-card .settings-ringtone-item.active {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface-muted));
+}
+[data-theme='dark'] .settings-subcard .llm-provider-row,
+[data-theme='dark'] .settings-ringtone-card .settings-ringtone-item {
+  background: rgba(255, 255, 255, 0.04);
+}
 
-
+.period-editor-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-1);
+}
+.period-editor-head .btn.text.small {
+  min-block-size: 36px;
+  padding-inline: 8px;
+  margin-inline-start: -8px;
+}
+.period-editor-title {
+  margin: 0;
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  color: var(--color-text);
+  min-inline-size: 0;
+}
+.period-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.period-editor-body > .field { margin: 0; }
+.period-editor-body > .btn-row { margin-block-start: var(--space-2); }

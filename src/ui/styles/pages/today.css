@@ -169,8 +169,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  position: relative;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-full);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -545,6 +546,7 @@
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-muted);
+  min-block-size: 38px;
   padding: 6px 14px;
   border-radius: var(--radius-full);
   font-size: var(--fs-caption, 12px);
@@ -971,4 +973,11 @@
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* 周切换按钮视觉 32px，点击热区向外扩到 44px */
+.week-nav-btn::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
