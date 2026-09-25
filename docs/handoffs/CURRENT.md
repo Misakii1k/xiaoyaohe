@@ -1,9 +1,19 @@
 # Current Integration State
 
-Updated: 2026-09-24
+Updated: 2026-09-25
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.1.9` (versionCode 67)
-Latest integration commit: `release: v1.1.9 (versionCode 67)`
+Product version: `1.1.11` (versionCode 69)
+Latest integration commit: `release: v1.1.11 (versionCode 69)`
+
+## Release v1.1.11 (versionCode 69, workspace/claude)
+
+- **集成内容**：
+  - 打卡后进度环从当前位置延伸，不再从 0 重扫；
+  - 分药页横幅与「开始分药」间距调整，分药向导去掉重复外壳（单层弹层、单把手）；
+  - 更新面板智能推荐秒级更新 / 完整包并给出理由，双通道保留；
+  - 更新说明黑话约束：发布侧 lint 阻断 + 客户端展示过滤，18 份历史说明改写为大白话；
+  - AI 助手页视觉与输入体验优化。
+- **质量门禁**：见 `docs/handoffs/claude.md` 第 71/72 节。
 
 ## Release v1.1.9 (versionCode 67, main & workspace/claude)
 
