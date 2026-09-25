@@ -1427,3 +1427,11 @@ Latest version: `1.1.10` (Android `versionCode: 68`)
 4. **更新说明去黑话**：发布侧 `scripts/lib/release-notes-lint.mjs`（移植 tone_lint 硬规则 + 词表 + 英文技术标识检测），接入 `gen-version.mjs` 与 `release-utils.mjs` 命中即阻断；HTML 注释元数据先剥离不下发。客户端 `src/sync/lan/releaseNotesText.ts` 展示前过滤。18 份历史 `docs/releases/*.md` 改写为大白话。AI「检查更新」卡片去掉 Cloudflare / versionCode / APK 等字样。测试 `tests/releaseNotesJargon.test.ts`（词表两端一致性 + 全量扫描）。
 5. **AI 助手页**（`assistant.css` / `AiAssistant.ts` 仅 UI）：墨绿配色统一、深色白块修复、去掉 `prefers-color-scheme` 分支改走 `data-theme`、头部按钮 36px、多行自增输入框（回车发送 / Shift+回车换行 / 输入法组词不误发）、visualViewport 键盘避让、近底才追底、错误消息样式、加载点去跳动、按压缩放 0.95~0.97。
 6. 门禁：tsc 0 错误；Vitest 94 文件 / 619 项 PASS；Playwright 100/100 PASS。截图读取在本环境超时，视觉效果待真机确认。
+
+### 72. v1.1.11 发版 (v1.1.11, versionCode 69, workspace/claude & main)
+
+- 版本递增 1.1.10/68 → 1.1.11/69（package.json / lock / build.gradle / `VERSION_CODE_BY_VERSION` / `functions/version.json.ts` 镜像表），新增 `docs/releases/1.1.11.md`（tone_lint PASS、黑话 lint PASS）。
+- 测试夹具「更新的假版本」从 1.2.1/69 上推到 1.2.2/70；`tests/release-utils.test.ts` 补 1.1.11 断言。
+- 两遍出包：APK 20931897 B（较 1.1.10 +3296 B），sha256 `3617ff88…95ca3f`；Web Bundle 8300708 B，sha256 `165cbe4e…b316e`；`minNativeVersionCode: 58`。
+- 门禁：tsc 0 错误；Vitest 94 文件 / 619 项 PASS；Playwright 100/100（第 71 节同一代码）。
+- 已推送 `workspace/claude`、tag `v1.1.11`，fast-forward `main`；GitHub Release `v1.1.11` 含 APK / Web Bundle / SHA256SUMS；`check-release-endpoints.mjs` 4/4 PASS，线上更新说明已无注释元数据。
