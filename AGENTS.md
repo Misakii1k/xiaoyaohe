@@ -34,6 +34,7 @@ This repository is edited from Claude, GPT/Codex, Grok, Trae, and Qoder. Chat hi
 - **严禁向用户个人桌面复制任何构建产物**：构建产物（APK、Web 增量包、校验和文件）一律且仅保存在 `release/` 目录与 GitHub Releases 云端，严禁执行任何复制至用户个人电脑桌面（Desktop）的操作，避免污染用户个人工作空间。
 - **每次向云端推送时必须将版本号向上加一**：每次 push 提交到云端远程仓库前，必须同步递增版本号与 Android `versionCode`（如 1.0.6/41 -> 1.0.7/42），同步 `package.json`、`package-lock.json`、`android/app/build.gradle`，生成对应 `docs/releases/X.Y.Z.md` 发布记录，并同步 `tests/apkUpdateVerification.test.ts` 中的 mock 候选版本。
 - **版本更新说明必须简短明确且无专业术语**：用户明确规则——后续所有的版本更新说明与更新日志，在用户前端界面（应用内更新弹窗、设置更新面板及 `docs/releases/*.md`）展示的内容必须**简短明确，短小精悍，直奔主题，严禁长篇大论**；提炼为 2~3 条要点，每条一两句话讲清楚客观改动和体验变化；遵循 `oil-tone` 文风规范，严禁出现 DOM、CSS 类名、FAB、操作坞、微拟物、径向渐变、JNI、API 等晦涩技术黑话；成稿需经 `tone_lint.py` 校验。
+- **控件一律优先使用软件自有设计控件**：用户明确规则——现有及今后新增的所有功能，凡需要控件，一律先用 `src/ui/primitives/` 里的自绘控件，严禁直接使用安卓/浏览器原生弹层控件：时间用 `createTimeControl`、日期用 `createDateControl`、日期时间用 `createDateTimeControl`、下拉用 `createSelectControl`（已有 `<select>` 且选项动态变化时用 `enhanceSelect` 就地替换）、数字加减用 `createStepper`、弹层用 `openBottomSheet`、按钮用 `createButton`、分段切换用 `SegmentedControl`；复选框 / 单选 / `role="switch"` 开关直接用原生 input，外观由 `primitives.css` 全局统一，不要再写 `accent-color` 或页面级私有样式。现有控件不满足需求时，先扩展 primitives 再使用，不要在页面里另起一套。
 - **Web 增量热更新机制守则**：
   1. 增量热更新支持基于最低原生 APK versionCode 底座门槛（`DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE = 44`）判定，只要本机底座版本 `>= 44` 且存在可用增量包即优先走秒级轻量热更新；绝不可与目标新版本比较以免增量更新被误判失效。
   2. 增量包打包必须保持跨平台确定性（纯 JS 实现、标准化正斜杠路径与固定 UTC 2000-01-01 时间戳），严禁调用依赖操作系统环境的外部压缩命令（如系统 `tar`），以防止 SHA-256 哈希漂移导致客户端验签拦截。

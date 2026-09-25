@@ -9,6 +9,7 @@ import { createAccordion } from './primitives/Accordion';
 import { createIconButton } from './primitives/IconButton';
 import { createStatusBadge } from './primitives/StatusBadge';
 import { createDateControl, createTimeControl } from './primitives/Pickers';
+import { createStepper, type StepperOptions } from './primitives/Stepper';
 
 export interface MedicationBatchEditorOptions {
   drafts: MedicationCreateDraft[];
@@ -184,9 +185,10 @@ export class MedicationBatchEditor {
       draft.medication.expiryLocalDate = expiry.input.value ? expiry.input.value as LocalDate : undefined;
       this.notify();
     });
-    const stock = inputField('当前库存', 'number', draft.medication.inventory ? String(draft.medication.inventory.remaining) : '');
-    stock.input.min = '0';
-    stock.input.step = '0.01';
+    const stock = stepperField('当前库存', {
+      value: draft.medication.inventory ? draft.medication.inventory.remaining : null,
+      min: 0, allowEmpty: true, inputMode: 'decimal',
+    });
     const unit = inputField('库存单位', 'text', draft.medication.inventory?.unit ?? '');
     const ensureInventory = () => {
       const remaining = Number(stock.input.value);
@@ -218,11 +220,9 @@ export class MedicationBatchEditor {
       enabled.type = 'checkbox';
       enabled.checked = Boolean(rule.cycle);
       label.append(enabled, document.createTextNode(`${SLOT_LABEL[rule.slot]}按周期服用`));
-      const active = inputField('服药天数', 'number', String(rule.cycle?.activeDays ?? 1));
-      active.input.min = '1';
-      const rest = inputField('停药天数', 'number', String(rule.cycle?.restDays ?? 0));
-      rest.input.min = '0';
-      const start = inputField('周期首日', 'date', rule.cycleStartDate ?? localToday());
+      const active = stepperField('服药天数', { value: rule.cycle?.activeDays ?? 1, min: 1, max: 365, unit: '天' });
+      const rest = stepperField('停药天数', { value: rule.cycle?.restDays ?? 0, min: 0, max: 365, unit: '天' });
+      const start = pickerField('周期首日', 'date', rule.cycleStartDate ?? localToday());
       const sync = () => {
         if (!enabled.checked) {
           delete rule.cycle;
@@ -350,6 +350,12 @@ function pickerField(label: string, type: 'time' | 'date', value: string): { wra
     ? createTimeControl({ value, ariaLabel: label })
     : createDateControl({ value, ariaLabel: label, placeholder: '可选' });
   return { wrapper: labeledControl(label, control.root), input: control.input as HTMLInputElement };
+}
+
+/** 数字用自绘步进器，不走原生上下小箭头 */
+function stepperField(label: string, options: StepperOptions): { wrapper: HTMLElement; input: HTMLInputElement } {
+  const control = createStepper({ ariaLabel: label, ...options });
+  return { wrapper: labeledControl(label, control.root), input: control.input };
 }
 
 function labeledControl(label: string, control: HTMLElement): HTMLElement {

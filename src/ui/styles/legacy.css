@@ -2900,9 +2900,6 @@ textarea {
   cursor: pointer;
 }
 .cycle-toggle-row input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--brand);
   cursor: pointer;
 }
 .cycle-inputs-wrap {

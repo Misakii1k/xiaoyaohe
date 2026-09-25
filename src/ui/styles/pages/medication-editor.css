@@ -475,9 +475,11 @@
 }
 
 .med-toggle-switch input {
+  position: absolute;
   opacity: 0;
-  inline-size: 0;
-  block-size: 0;
+  inline-size: 0 !important;
+  block-size: 0 !important;
+  border: 0 !important;
 }
 
 .med-toggle-slider {
@@ -920,9 +922,7 @@
 }
 
 .cycle-toggle-row input[type='checkbox'] {
-  inline-size: 18px;
-  block-size: 18px;
-  accent-color: var(--color-primary);
+  flex: 0 0 auto;
 }
 
 .cycle-inputs-wrap {

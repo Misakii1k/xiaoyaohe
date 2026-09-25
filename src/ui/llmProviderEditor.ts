@@ -2,6 +2,7 @@
 // 独立成模块是因为设置页的架构契约禁止出现 openDialog/closeDialog 等标识符。
 import { el, toast, openDialog, closeDialog, field, type IconName } from './components';
 import { grantBatchConsent } from '../ai/consent';
+import { enhanceSelect } from './primitives/Pickers';
 import {
   createLlmProviderId,
   DEFAULT_LLM_CONFIG,
@@ -166,6 +167,8 @@ export function openLlmProviderEditor(
   modelIn.id = `settings-provider-model-input-${seq}`;
   modelIn.name = modelIn.id;
   modelRow.append(modelSel, modelIn, refreshBtn);
+  // 模型列表用自绘下拉；select 本身仍由 populateModelControl 维护
+  enhanceSelect(modelSel, { ariaLabel: '选择模型', className: 'model-select' });
   const modelField = field('模型', modelRow);
   const modelLabel = modelField.querySelector<HTMLLabelElement>('label')!;
 

@@ -1,4 +1,5 @@
 import { el, icon, toast, confirmDialog, promptDialog } from './components';
+import { enhanceSelect } from './primitives/Pickers';
 import {
   getImageGenConfig,
   setImageGenConfig,
@@ -212,6 +213,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     };
 
     modeField.append(modeLabel, modeSelect, modeHint);
+    const modeControl = enhanceSelect(modeSelect, { ariaLabel: '生图接口模式' });
 
     // 已保存自定义配置列表区
     const profilesField = el('div', { class: 'field mt-2' });
@@ -251,6 +253,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
           if (p.apiKey) keyInput.value = p.apiKey;
           modelInput.value = p.model;
           modeSelect.value = p.endpointMode;
+          modeControl.refresh();
           updateModeHint(p.endpointMode);
           toast(`已载入配置「${p.name}」`);
         };

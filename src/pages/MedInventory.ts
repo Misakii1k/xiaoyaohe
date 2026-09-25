@@ -35,7 +35,7 @@ import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/Bottom
 import { createButton } from '../ui/primitives/Button';
 import { createActionDock } from '../ui/primitives/ActionDock';
 import { createIconButton } from '../ui/primitives/IconButton';
-import { createDateControl } from '../ui/primitives/Pickers';
+import { createDateControl, enhanceSelect } from '../ui/primitives/Pickers';
 import {
   toLocalDate,
   getMedicationExpiryLocalDate,
@@ -1312,6 +1312,7 @@ function renderInventoryReviewEntry(
   target.append(newOption);
   target.onchange = () => { entry.target = target.value as InventoryReviewTarget; entry.error = undefined; onChange(); };
   targetLabel.append(target);
+  enhanceSelect(target, { ariaLabel: `${entry.item.name || `药品 ${index + 1}`}对应药品`, placeholder: '请选择相近药品' });
 
   const amountRow = el('div', { class: 'inventory-review-amount' });
   const quantity = el('input', {

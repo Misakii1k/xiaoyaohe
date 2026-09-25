@@ -1,5 +1,7 @@
 import { el, toast, icon, field, confirmDialog } from '../../../ui/components';
 import { openBottomSheet } from '../../../ui/primitives/BottomSheet';
+import { createTimeControl } from '../../../ui/primitives/Pickers';
+import { createStepper } from '../../../ui/primitives/Stepper';
 import QRCode from 'qrcode';
 import {
   notificationsSupported,
@@ -1131,15 +1133,12 @@ function openAddPeriodModal(body: HTMLElement, panelEl: HTMLElement): void {
   }) as HTMLInputElement;
   nameIn.maxLength = 10;
 
-  const timeIn = el('input', {
-    type: 'time',
-    step: '60',
-    value: '15:00',
-  }) as HTMLInputElement;
+  const timeControl = createTimeControl({ value: '15:00', ariaLabel: '首选提醒时间' });
+  const timeIn = timeControl.input;
 
   content.append(
     field('时段名称', nameIn),
-    field('首选提醒时间', timeIn),
+    field('首选提醒时间', timeControl.root),
   );
 
   const btnRow = el('div', { class: 'btn-row mt-4' });
@@ -1266,6 +1265,31 @@ export function buildPeriodSettingRow(
   const chevron = el('span', { class: 'panel-chevron' });
   chevron.append(icon('chevron-right'));
 
+  // 自定义时段直接在列表上可删除；内置四个时段只能停用
+  const isCustom = setting.isCustom || !['morning', 'noon', 'evening', 'bedtime'].includes(setting.slot);
+  if (isCustom) {
+    const deleteBtn = el('button', {
+      class: 'period-card-delete-btn',
+      type: 'button',
+      'aria-label': `删除${displayName}时段`,
+    });
+    deleteBtn.append(icon('trash'));
+    deleteBtn.onclick = async (e) => {
+      e.stopPropagation();
+      const confirmed = await confirmDialog(`确定要删除「${displayName}」时段吗？删除后该时段的提醒将不再响铃。`, '确认删除', true);
+      if (!confirmed) return;
+      try {
+        await deleteReminderPeriodSetting(setting.slot);
+        await rescheduleMedicationReminders();
+        toast(`已删除「${displayName}」时段`);
+        void renderPeriodSettingsBody(body, panelEl);
+      } catch (err) {
+        toast('删除失败：' + (err instanceof Error ? err.message : String(err)));
+      }
+    };
+    actions.append(deleteBtn);
+  }
+
   actions.append(toggleSwitch, chevron);
   card.append(mainBtn, actions);
   return card;
@@ -1320,16 +1344,11 @@ export async function renderPeriodEditor(
     timesContainer.replaceChildren();
     timesList.forEach((t, idx) => {
       const row = el('div', { class: 'period-time-row' });
-      const input = el('input', {
-        type: 'time',
-        step: '60',
-        value: t,
-        'aria-label': `提醒时间 ${idx + 1}`,
-      }) as HTMLInputElement;
-      input.onchange = () => {
-        timesList[idx] = input.value;
-      };
-      row.append(input);
+      const timeControl = createTimeControl({ value: t, ariaLabel: `提醒时间 ${idx + 1}` });
+      timeControl.input.addEventListener('change', () => {
+        timesList[idx] = timeControl.input.value;
+      });
+      row.append(timeControl.root);
 
       // 允许删除多余的时间点（至少保留 1 个）
       if (timesList.length > 1) {
@@ -1433,20 +1452,23 @@ export async function renderPeriodEditor(
   body.append(field('提醒方式', modeCardsWrap));
 
   // 4. 重复策略字段
-  const repeatIn = el('input', {
-    type: 'number', min: '1', step: '1', value: String(latest.escalate.repeatEveryMin),
-  }) as HTMLInputElement;
-  const maxRepeatsIn = el('input', {
-    type: 'number', min: '0', step: '1', value: String(latest.escalate.maxRepeats),
-  }) as HTMLInputElement;
-  const caregiverIn = el('input', {
-    type: 'number', min: '0', step: '1', value: String(latest.escalate.notifyCaregiverAfterMin),
-  }) as HTMLInputElement;
+  const repeatStepper = createStepper({
+    value: latest.escalate.repeatEveryMin, min: 1, max: Math.max(120, latest.escalate.repeatEveryMin), unit: '分钟', ariaLabel: '再提醒间隔',
+  });
+  const maxRepeatsStepper = createStepper({
+    value: latest.escalate.maxRepeats, min: 0, max: Math.max(20, latest.escalate.maxRepeats), unit: '次', ariaLabel: '最多重推次数',
+  });
+  const caregiverStepper = createStepper({
+    value: latest.escalate.notifyCaregiverAfterMin, min: 0, max: Math.max(720, latest.escalate.notifyCaregiverAfterMin), step: 5, unit: '分钟', ariaLabel: '通知照护者等待时间',
+  });
+  const repeatIn = repeatStepper.input;
+  const maxRepeatsIn = maxRepeatsStepper.input;
+  const caregiverIn = caregiverStepper.input;
 
   body.append(
-    field('未确认时每几分钟再提醒', repeatIn),
-    field('最多重推次数（不含首次）', maxRepeatsIn),
-    field('超过几分钟通知照护者（0 = 不通知）', caregiverIn),
+    field('未确认时每几分钟再提醒', repeatStepper.root),
+    field('最多重推次数（不含首次）', maxRepeatsStepper.root),
+    field('超过几分钟通知照护者（0 = 不通知）', caregiverStepper.root),
   );
 
   // 5. 底部操作按钮行

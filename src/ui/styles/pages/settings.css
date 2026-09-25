@@ -429,8 +429,7 @@
 }
 
 .settings-ringtone-item input[type='radio'] {
-  margin-top: 3px;
-  accent-color: var(--color-primary);
+  margin-top: 1px;
   flex-shrink: 0;
 }
 
@@ -778,7 +777,8 @@
   width: 100%;
 }
 
-.period-time-row input[type='time'] {
+.period-time-row input[type='time'],
+.period-time-row .ui-picker {
   flex: 1;
   min-width: 0;
 }
@@ -796,6 +796,24 @@
   flex-shrink: 0;
   transition: background-color 0.15s ease;
 }
+
+/* 列表卡片上的自定义时段删除按钮 */
+.period-card-delete-btn {
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--color-danger, #ef4444);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.period-card-delete-btn svg { inline-size: 18px; block-size: 18px; }
+.period-card-delete-btn:hover { background: rgba(239, 68, 68, 0.1); }
+.period-card-delete-btn:active { transform: scale(0.92); }
+.period-card-delete-btn:focus-visible { outline: 2px solid var(--color-danger, #ef4444); outline-offset: 2px; }
 
 .period-time-delete-btn:hover {
   background: rgba(239, 68, 68, 0.1);
@@ -1095,12 +1113,7 @@
   transform: scale(0.99);
 }
 .lan-sync-toggle-card input[type="checkbox"] {
-  inline-size: 18px;
-  block-size: 18px;
-  margin-block-start: 2px;
-  accent-color: var(--color-primary);
-  cursor: pointer;
-  flex: 0 0 auto;
+  margin-block-start: 1px;
 }
 .lan-sync-toggle-copy {
   display: grid;
@@ -1162,10 +1175,8 @@ fieldset.lan-sync-extras legend {
   border-color: var(--color-primary);
 }
 .lan-sync-extras-item input[type="checkbox"] {
-  inline-size: 16px;
-  block-size: 16px;
-  accent-color: var(--color-primary);
-  cursor: pointer;
+  inline-size: 20px;
+  block-size: 20px;
 }
 .lan-sync-extras-item svg {
   inline-size: 16px;

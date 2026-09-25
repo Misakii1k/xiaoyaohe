@@ -174,6 +174,8 @@ export function createTimeControl(options: {
   value?: string;
   ariaLabel?: string;
   placeholder?: string;
+  /** 分钟档位，默认 5 分钟 */
+  minuteStep?: number;
 }): PickerControl {
   const value = options.value && /^\d{1,2}:\d{2}$/.test(options.value)
     ? formatTime(parseTime(options.value).hour, parseTime(options.value).minute)
@@ -188,10 +190,13 @@ export function createTimeControl(options: {
     trigger.querySelector('.ui-picker-value-text')!.textContent = displayTime(input.value, options.placeholder);
   };
 
-  trigger.addEventListener('click', () => openTimeSheet(input.value || '08:00', (next) => {
-    setControlValue(input, next);
-    refresh();
-  }));
+  trigger.addEventListener('click', () => {
+    if (input.disabled) return;
+    openTimeSheet(input.value || '08:00', (next) => {
+      setControlValue(input, next);
+      refresh();
+    }, options.ariaLabel || '选择时间', options.minuteStep);
+  });
 
   // 外部改 value 时保持显示同步
   const observer = new MutationObserver(refresh);
@@ -209,27 +214,42 @@ function displayTime(value: string, placeholder?: string): string {
   return formatTime(hour, minute);
 }
 
-function openTimeSheet(current: string, onConfirm: (value: string) => void): void {
+function openTimeSheet(
+  current: string,
+  onConfirm: (value: string) => void,
+  title = '选择时间',
+  minuteStep = 5,
+): void {
   let { hour, minute } = parseTime(current);
-  // 分钟按 5 分钟档；若当前不是 5 的倍数，就近吸附
-  minute = Math.round(minute / 5) * 5;
+  const step = Math.max(1, Math.min(30, Math.floor(minuteStep)));
+  // 分钟按档位吸附；若当前不在档位上，就近吸附
+  minute = Math.round(minute / step) * step;
   if (minute >= 60) {
     minute = 0;
     hour = (hour + 1) % 24;
   }
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
-  const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
+  const minutes = Array.from({ length: Math.ceil(60 / step) }, (_, i) => i * step);
+
+  // 顶部大字预览：选了什么一眼可见，不必去两列里找高亮
+  const preview = document.createElement('div');
+  preview.className = 'ui-picker-preview';
+  preview.setAttribute('aria-live', 'polite');
+  const syncPreview = () => { preview.textContent = formatTime(hour, minute); };
+  syncPreview();
 
   const wheels = document.createElement('div');
   wheels.className = 'ui-picker-wheels';
   const hourCol = wheelColumn('时', hours, hour, pad2, (n) => {
     hour = n;
     updateWheelSelection(hourCol, hour);
+    syncPreview();
   });
   const minuteCol = wheelColumn('分', minutes, minute, pad2, (n) => {
     minute = n;
     updateWheelSelection(minuteCol, minute);
+    syncPreview();
   });
   wheels.append(hourCol, minuteCol);
 
@@ -247,8 +267,8 @@ function openTimeSheet(current: string, onConfirm: (value: string) => void): voi
   actions.append(cancel, ok);
 
   const sheet = openBottomSheet({
-    label: '选择时间',
-    content: [sheetTitle('选择时间'), wheels, actions],
+    label: title,
+    content: [sheetTitle(title), preview, wheels, actions],
     initialFocus: ok,
   });
 }
@@ -461,9 +481,68 @@ export function createSelectControl(options: {
 }
 
 function labelFor(select: HTMLSelectElement, placeholder?: string): string {
-  const opt = select.selectedOptions[0];
+  const opt = select.options[select.selectedIndex];
   if (!opt || !opt.value && !opt.textContent) return placeholder || '请选择';
   return opt.textContent || placeholder || '请选择';
+}
+
+/**
+ * 把一个已有的 select 就地换成自绘下拉：原 select 引用不变（业务代码照常读写 .value、
+ * 增删 option、监听 change），选项在打开时实时读取，适合选项会动态变化的场景。
+ * select 被设为 display:none / disabled 时，触发按钮同步隐藏 / 禁用。
+ */
+export function enhanceSelect(
+  select: HTMLSelectElement,
+  options: { ariaLabel?: string; placeholder?: string; className?: string } = {},
+): PickerControl & { select: HTMLSelectElement } {
+  const ariaLabel = options.ariaLabel || select.getAttribute('aria-label') || undefined;
+  const root = document.createElement('div');
+  root.className = `ui-picker ui-picker-select${options.className ? ` ${options.className}` : ''}`;
+  const trigger = makeTrigger(labelFor(select, options.placeholder));
+  if (ariaLabel) trigger.setAttribute('aria-label', ariaLabel);
+
+  const refresh = () => {
+    trigger.querySelector('.ui-picker-value-text')!.textContent = labelFor(select, options.placeholder);
+    trigger.disabled = select.disabled;
+    root.style.display = select.style.display === 'none' ? 'none' : '';
+  };
+
+  trigger.addEventListener('click', () => {
+    if (select.disabled) return;
+    const items = Array.from(select.options)
+      .filter((opt) => !opt.disabled)
+      .map((opt) => ({ value: opt.value, label: opt.textContent || opt.value }));
+    const list = optionList(items, select.value, (value) => {
+      setControlValue(select, value);
+      refresh();
+      sheet.close();
+    });
+    const cancel = createButton({ label: '取消', variant: 'text', onClick: () => sheet.close() });
+    const actions = document.createElement('div');
+    actions.className = 'ui-picker-sheet-actions';
+    actions.append(cancel);
+    const title = ariaLabel || '请选择';
+    const sheet = openBottomSheet({
+      label: title,
+      content: [sheetTitle(title), list, actions],
+      initialFocus: list.querySelector<HTMLElement>('.is-selected') ?? undefined,
+    });
+  });
+
+  const parent = select.parentElement;
+  if (parent) parent.replaceChild(root, select);
+  select.classList.add('ui-picker-native');
+  select.tabIndex = -1;
+  select.setAttribute('aria-hidden', 'true');
+  root.append(trigger, select);
+
+  // 选项增删、禁用、显隐变化时同步触发按钮
+  const observer = new MutationObserver(refresh);
+  observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'style'] });
+  select.addEventListener('change', refresh);
+  select.addEventListener('input', refresh);
+  refresh();
+  return { root, input: select, select, refresh };
 }
 
 /** 替换已有 input[type=time|date|datetime-local] 为自绘控件，保留同一 input 引用 */

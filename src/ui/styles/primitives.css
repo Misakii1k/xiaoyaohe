@@ -219,6 +219,16 @@
   font-size: var(--fs-title3);
   font-weight: 700;
 }
+.ui-picker-preview {
+  margin-block-end: var(--space-3);
+  text-align: center;
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
 .ui-picker-wheels {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
@@ -407,18 +417,181 @@ textarea:focus {
   box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
-input[type="checkbox"],
-input[type="radio"] {
-  accent-color: var(--color-primary);
+/* ============ 自有设计控件：勾选框 / 单选 / 开关 ============
+ * 全局接管原生 checkbox / radio 的外观（行为、无障碍语义不变），
+ * 带 role="switch" 的 checkbox 画成胶囊开关。新功能直接用原生 input 即可自动获得统一外观。
+ * 隐藏覆盖层式的 checkbox（批量选择卡片、旧版滑块开关）不参与。 */
+input[type="checkbox"]:not(.medication-batch-checkbox):not(.ui-picker-native),
+input[type="radio"]:not(.ui-picker-native) {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  inline-size: 22px;
+  block-size: 22px;
+  min-block-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--color-border-strong, var(--color-border));
+  background: var(--color-surface);
+  background-repeat: no-repeat;
+  background-position: center;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
   cursor: pointer;
   vertical-align: middle;
-  border: 0;
-  box-shadow: none;
+  transition:
+    background-color var(--duration-fast, 0.15s) ease,
+    border-color var(--duration-fast, 0.15s) ease,
+    box-shadow var(--duration-fast, 0.15s) ease;
 }
 
-input[type="checkbox"]:focus,
-input[type="radio"]:focus {
+input[type="checkbox"]:not(.medication-batch-checkbox):not(.ui-picker-native):not([role="switch"]) {
+  border-radius: 7px;
+  background-size: 14px 14px;
+}
+
+input[type="checkbox"]:not(.medication-batch-checkbox):not(.ui-picker-native):not([role="switch"]):checked {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+}
+
+input[type="radio"]:not(.ui-picker-native) {
+  border-radius: 50%;
+}
+
+input[type="radio"]:not(.ui-picker-native):checked {
+  border-color: var(--color-primary);
+  background-color: var(--color-surface);
+  box-shadow: inset 0 0 0 5px var(--color-primary);
+}
+
+/* 胶囊开关：与时段卡片上的开关同一套尺寸与手感 */
+input[type="checkbox"][role="switch"]:not(.ui-picker-native) {
+  position: relative;
+  inline-size: 46px;
+  block-size: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+input[type="checkbox"][role="switch"]:not(.ui-picker-native)::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline-start: 3px;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  transition: transform 0.22s var(--ease-spring, ease);
+}
+
+input[type="checkbox"][role="switch"]:not(.ui-picker-native):checked {
+  background: var(--color-primary);
+}
+
+input[type="checkbox"][role="switch"]:not(.ui-picker-native):checked::after {
+  transform: translateX(18px);
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: none;
   box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+input[type="radio"]:not(.ui-picker-native):checked:focus-visible {
+  box-shadow: inset 0 0 0 5px var(--color-primary), 0 0 0 3px var(--color-primary-soft);
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 原生数字框的上下小箭头在手机上点不准，统一隐藏；需要加减请用 createStepper */
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* 数字步进器：− 数值 + */
+.ui-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  min-block-size: var(--tap);
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.ui-stepper-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  inline-size: 40px;
+  block-size: 40px;
+  min-block-size: 40px;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 4px);
+  background: var(--color-surface-muted);
+  color: var(--color-primary);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.ui-stepper-btn:disabled {
+  color: var(--color-text-muted);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ui-stepper-value {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.ui-stepper .ui-stepper-input {
+  inline-size: 4.5ch;
+  min-block-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  color: var(--color-text);
+  font-size: var(--fs-title3, 20px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.ui-stepper .ui-stepper-input:focus { box-shadow: none; }
+.ui-stepper:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+.ui-stepper-unit {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  white-space: nowrap;
 }
 
 /* 兜底：少数仍用原生 select 的地方，也改成新版外观（不弹系统默认样式） */

@@ -62,6 +62,7 @@ import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { createActionDock } from '../ui/primitives/ActionDock';
 import { createButton } from '../ui/primitives/Button';
 import { createDateControl, createTimeControl } from '../ui/primitives/Pickers';
+import { createStepper } from '../ui/primitives/Stepper';
 
 export async function renderMedEditPage(
   root: HTMLElement,
@@ -156,14 +157,12 @@ export async function renderMedEditPage(
   const nameInput = el('input', { type: 'text', value: med.name, placeholder: '例如：阿司匹林肠溶片' });
   const dosageInput = el('input', { type: 'text', value: med.dosageText, placeholder: '例如：100mg/片' });
   const amountInput = el('input', { type: 'text', value: med.amountPerDose, placeholder: '例如：1片 / 半片' });
-  const doseQuantityInput = el('input', {
-    type: 'number',
-    min: '0.0001',
-    step: '0.01',
-    inputMode: 'decimal',
-    value: med.doseQuantity != null ? String(med.doseQuantity) : '',
-    placeholder: '例如：1',
-  } as any) as HTMLInputElement;
+  // 剂量常见 0.5 / 1 / 2，按半片步进；0.25 这类值仍可直接手输
+  const doseQuantityStepper = createStepper({
+    value: med.doseQuantity ?? null, min: 0, step: 0.5, allowEmpty: true,
+    inputMode: 'decimal', placeholder: '例如：1', ariaLabel: '每次剂量数值',
+  });
+  const doseQuantityInput = doseQuantityStepper.input;
   const doseUnitInput = el('input', {
     type: 'text',
     value: med.doseUnit || '',
@@ -194,32 +193,26 @@ export async function renderMedEditPage(
   // 库存可用天数显示（随库存输入实时刷新）
   const daysLeftHint = el('div', { class: 'days-left-hint muted', html: '' });
 
-  const remainingInput = el('input', {
-    type: 'number',
-    min: '0',
-    step: '0.5',
-    value: med.inventory?.remaining != null ? String(med.inventory.remaining) : '',
-    placeholder: '例如：21',
-  } as any) as HTMLInputElement;
+  const remainingStepper = createStepper({
+    value: med.inventory?.remaining ?? null, min: 0, step: 1, allowEmpty: true,
+    inputMode: 'decimal', placeholder: '例如：21', ariaLabel: '当前剩余',
+  });
+  const remainingInput = remainingStepper.input;
   const unitInput = el('input', {
     type: 'text',
     value: med.inventory?.unit || '',
     placeholder: '片 / 粒 / 袋 / mL',
   }) as HTMLInputElement;
-  const packageQtyInput = el('input', {
-    type: 'number',
-    min: '0',
-    step: '0.5',
-    value: med.inventory?.packageQuantity != null ? String(med.inventory.packageQuantity) : '',
-    placeholder: '例如：28',
-  } as any) as HTMLInputElement;
-  const lowThresholdInput = el('input', {
-    type: 'number',
-    min: '0',
-    step: '0.5',
-    value: med.inventory?.lowThreshold != null ? String(med.inventory.lowThreshold) : '',
-    placeholder: '例如：5',
-  } as any) as HTMLInputElement;
+  const packageQtyStepper = createStepper({
+    value: med.inventory?.packageQuantity ?? null, min: 0, step: 1, allowEmpty: true,
+    inputMode: 'decimal', placeholder: '例如：28', ariaLabel: '一盒 / 一瓶有多少',
+  });
+  const packageQtyInput = packageQtyStepper.input;
+  const lowThresholdStepper = createStepper({
+    value: med.inventory?.lowThreshold ?? null, min: 0, step: 1, allowEmpty: true,
+    inputMode: 'decimal', placeholder: '例如：5', ariaLabel: '剩多少时提醒买药',
+  });
+  const lowThresholdInput = lowThresholdStepper.input;
   const inventorySourceInput = el('textarea', {
     value: med.inventory?.sourceNote || '',
     placeholder: '手动填写、票据识别或药盒识别的依据',
@@ -283,7 +276,7 @@ export async function renderMedEditPage(
   // 2.1 每次服用剂量卡（合二为一，提供数值+单位与快捷胶囊）
   const doseCard = createSectionCard('服用剂量', 'pill', '每次服用的具体数值与计量单位');
   const doseInputRow = el('div', { class: 'dose-input-row' });
-  doseInputRow.append(field('每次剂量数值 *', doseQuantityInput));
+  doseInputRow.append(field('每次剂量数值 *', doseQuantityStepper.root));
   doseInputRow.append(field('剂量单位 *', doseUnitInput));
   doseCard.append(doseInputRow);
 
@@ -368,28 +361,22 @@ export async function renderMedEditPage(
   cycleToggleRow.append(el('span', { html: '开启周期用药（吃 N 天停 M 天）' }));
   cycleCard.append(cycleToggleRow);
   const cycleInputsWrap = el('div', { class: 'cycle-inputs-wrap' });
-  const activeDaysInput = el('input', {
-    type: 'number',
-    min: '1',
-    step: '1',
-    value: String(existingCycle?.activeDays ?? 5),
-    placeholder: '5',
-  } as any) as HTMLInputElement;
-  const restDaysInput = el('input', {
-    type: 'number',
-    min: '0',
-    step: '1',
-    value: String(existingCycle?.restDays ?? 2),
-    placeholder: '2',
-  } as any) as HTMLInputElement;
+  const activeDaysStepper = createStepper({
+    value: existingCycle?.activeDays ?? 5, min: 1, max: 365, unit: '天', ariaLabel: '服药天数',
+  });
+  const activeDaysInput = activeDaysStepper.input;
+  const restDaysStepper = createStepper({
+    value: existingCycle?.restDays ?? 2, min: 0, max: 365, unit: '天', ariaLabel: '停药天数',
+  });
+  const restDaysInput = restDaysStepper.input;
   const cycleStartPicker = createDateControl({
     value: existingCycleRule?.cycleStartDate ?? (!existingCycle ? toLocalDate() : ''),
     ariaLabel: '本周期首个服药日',
     required: true,
   });
   const cycleStartInput = cycleStartPicker.input as HTMLInputElement;
-  cycleInputsWrap.append(field('服药天数', activeDaysInput));
-  cycleInputsWrap.append(field('停药天数', restDaysInput));
+  cycleInputsWrap.append(field('服药天数', activeDaysStepper.root));
+  cycleInputsWrap.append(field('停药天数', restDaysStepper.root));
   cycleInputsWrap.append(field('本周期首个服药日', cycleStartPicker.root));
   cycleCard.append(cycleInputsWrap);
   setCycleInputsVisibility();
@@ -408,13 +395,13 @@ export async function renderMedEditPage(
   stockCard.append(buildInventoryAiBlock());
 
   const stockGrid1 = el('div', { class: 'inventory-fields-grid' });
-  stockGrid1.append(field('当前剩余', remainingInput));
+  stockGrid1.append(field('当前剩余', remainingStepper.root));
   stockGrid1.append(field('库存单位', unitInput));
   stockCard.append(stockGrid1);
 
   const stockGrid2 = el('div', { class: 'inventory-fields-grid' });
-  stockGrid2.append(field('一盒 / 一瓶有多少', packageQtyInput));
-  stockGrid2.append(field('剩多少时提醒买药', lowThresholdInput));
+  stockGrid2.append(field('一盒 / 一瓶有多少', packageQtyStepper.root));
+  stockGrid2.append(field('剩多少时提醒买药', lowThresholdStepper.root));
   stockCard.append(stockGrid2);
 
   stockCard.append(daysLeftHint);
