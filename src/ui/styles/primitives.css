@@ -206,7 +206,22 @@
   cursor: pointer;
 }
 .ui-picker-trigger:active { background: var(--color-surface-muted); }
-.ui-picker-value-text { min-inline-size: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.ui-picker-value-text {
+  min-inline-size: 0;
+  flex: 1 1 auto;
+  /* 日期 / 时间 / 选项只占一行：两列表单里折行会把控件撑高，与旁边的输入框错位 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+/* 窄列里收紧左右留白，给「2026年9月26日」这类文本留足一行空间 */
+.medication-field .ui-picker-trigger,
+.inventory-fields-grid .ui-picker-trigger,
+.medication-detail-grid .ui-picker-trigger {
+  padding-inline: 10px 8px;
+  gap: 4px;
+}
 .ui-picker-chevron {
   flex: none;
   color: var(--color-text-muted);
@@ -527,12 +542,17 @@ input[type='number']::-webkit-outer-spin-button {
 
 /* 数字步进器：− 数值 + */
 .ui-stepper {
+  container-type: inline-size;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 4px;
+  box-sizing: border-box;
   inline-size: 100%;
-  min-block-size: var(--tap);
-  padding: 4px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  /* 单行控件统一高度 --control-h，并排放在两列表单里上下对齐 */
+  block-size: var(--control-h);
+  padding: 3px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
@@ -541,9 +561,11 @@ input[type='number']::-webkit-outer-spin-button {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  inline-size: 40px;
-  block-size: 40px;
-  min-block-size: 40px;
+  inline-size: 36px;
+  block-size: 36px;
+  min-block-size: 36px;
+  min-inline-size: 36px;
+  padding: 0;
   border: 0;
   border-radius: calc(var(--radius-md) - 4px);
   background: var(--color-surface-muted);
@@ -567,7 +589,11 @@ input[type='number']::-webkit-outer-spin-button {
   min-inline-size: 0;
 }
 .ui-stepper .ui-stepper-input {
-  inline-size: 4.5ch;
+  /* 输入框随可用宽度收缩，不再固定 4.5ch 把整个控件撑出两列栅格 */
+  flex: 1 1 auto;
+  inline-size: 100%;
+  min-inline-size: 2ch;
+  max-inline-size: 6ch;
   min-block-size: 0;
   margin: 0;
   padding: 0;
@@ -1498,3 +1524,21 @@ a:active,
   word-break: break-word;
 }
 
+/* ---------- 单行表单控件统一高度 ----------
+ * 文本框（padding + 行高算出来约 45.6px）、自绘选择器（44px）、步进器（44px）
+ * 以前各自算高度，两列并排时会差 1~2px 看起来错位。统一钉死为同一个高度。 */
+:root { --control-h: 46px; }
+:is(.field, .medication-field, .inventory-review-field, .settings-sheet-content) > input:is([type='text'], [type='search'], [type='password'], [type='url'], [type='email'], [type='tel'], :not([type])),
+.ui-picker-trigger {
+  box-sizing: border-box;
+  block-size: var(--control-h);
+  min-block-size: var(--control-h);
+  padding-block: 0;
+}
+
+/* 步进器很窄时（两列表单 + 320 宽屏），单位让位给数字，避免数字被截断；
+   单位已写在字段标题里（如「服药天数」），隐藏不影响理解 */
+@container (max-width: 140px) {
+  .ui-stepper-unit { display: none; }
+  .ui-stepper .ui-stepper-input { font-size: var(--fs-headline, 16px); }
+}

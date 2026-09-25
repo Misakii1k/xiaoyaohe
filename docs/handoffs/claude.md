@@ -1458,3 +1458,10 @@ Latest version: `1.1.10` (Android `versionCode: 68`)
 - 测试夹具「更新的假版本」从 1.2.2/70 上推到 1.2.3/71（本机已是 70）；`tests/release-utils.test.ts` 补 1.1.12 断言。
 - 两遍出包：APK 20968100 B，sha256 `567d1c42…fa35f8`；Web Bundle 8337018 B，sha256 `0ac5379f…cea3fa`；`publishReleaseArtifacts` 校验 111 个 dist 文件字节一致（新增 2 个透镜位移图）。
 - 门禁：tsc 0 错误；Vitest 95 文件 / 624 项 PASS；Playwright 100/100（第 73 节同一代码）。
+
+### 75. 添加药品表单错位修复 (workspace/claude, 未发版)
+
+- 根因：① 新步进器输入框固定 `4.5ch` + 两个 40px 按钮，最小宽度约 155px，在批量添加页两列栅格（每列约 144px）里撑出字段、压到右侧；② 步进器 44px / 自绘选择器 44px / 文本框约 45.6px（padding+行高）各算各的，并排时差 1~6px；③ 日期文本在窄列里折成两行把选择器撑到 64px。
+- 修复（`primitives.css`）：步进器改为可收缩（按钮 36px、输入 `flex:1` 2~6ch、`min-inline-size:0`），窄于 140px 时借容器查询隐藏单位；新增 `--control-h: 46px`，字段内单行文本框 / 选择器 / 步进器统一钉死同一高度；选择器文本单行省略、窄列收紧左右留白。
+- 新增回归 `e2e/medication-form-alignment.spec.ts`（`/meds/new`、`/meds/create` × 4 视口：不溢出字段、单行控件等高）。回退样式时该用例能抓到「溢出字段」「44/50」「46/56」。
+- 门禁：tsc 0 错误；Vitest 624/624；Playwright 108/108。
