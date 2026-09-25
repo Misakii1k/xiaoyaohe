@@ -1,5 +1,5 @@
 import { registerRouteTransitionCleanup } from '../../router';
-import { makeAppInert, restoreAppAfterLastDialog, trapFocusIn } from '../components';
+import { makeAppInert, playOverlayExit, restoreAppAfterLastDialog, trapFocusIn } from '../components';
 
 export interface BottomSheetOptions {
   label: string;
@@ -58,6 +58,7 @@ export function openBottomSheet(options: BottomSheetOptions): BottomSheetHandle 
     closed = true;
     removeTrap?.();
     activeBottomSheets.delete(close);
+    playOverlayExit(overlay);
     overlay.remove();
     restoreAppAfterLastDialog();
     previouslyFocused?.focus({ preventScroll: true });

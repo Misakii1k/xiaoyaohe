@@ -68,7 +68,7 @@
   /* ---- iOS 动效曲线 ---- */
   --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-spring: cubic-bezier(0.5, 1.5, 0.5, 1);
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
   --dur-fast: 180ms;
   --dur-base: 280ms;
   --dur-slow: 420ms;
@@ -427,16 +427,14 @@ h1[tabindex='-1']:focus,
   pointer-events: none;
   opacity: 0;
 }
-.btn:not(.tonal):not(.outlined):not(.text):hover::before {
-  animation: btn-shimmer 1100ms var(--ease-out);
-}
+/* 悬停扫光属于网页营销式动效，iOS 没有；保留 keyframes 仅供兼容，不再触发 */
 @keyframes btn-shimmer {
   0% { transform: translateX(-100%); opacity: 0; }
   20% { opacity: 1; }
   100% { transform: translateX(100%); opacity: 0; }
 }
 .btn:active:not([disabled]) {
-  transform: scale(0.94);
+  transform: scale(0.97);
   box-shadow:
     0 2px 8px rgba(0, 122, 255, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.32),
@@ -585,15 +583,15 @@ h1[tabindex='-1']:focus,
   transition: transform 380ms var(--ease-spring),
     box-shadow 280ms var(--ease-out);
   will-change: transform, opacity;
-  animation: fab-enter 620ms var(--ease-spring) 240ms backwards;
+  animation: fab-enter 500ms var(--ease-spring) 120ms backwards;
 }
+/* 悬浮按钮入场：轻微上浮 + 缩放落定，不旋转、不过冲 */
 @keyframes fab-enter {
-  0% { opacity: 0; transform: translateY(40px) scale(0.4) rotate(-20deg); }
-  60% { opacity: 1; transform: translateY(-4px) scale(1.08) rotate(6deg); }
-  100% { transform: translateY(0) scale(1) rotate(0); }
+  from { opacity: 0; transform: translateY(12px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .fab:active {
-  transform: scale(0.86);
+  transform: scale(0.94);
 }
 .fab:hover {
   transform: translateY(-2px) scale(1.04);
@@ -764,7 +762,7 @@ textarea {
   font-family: inherit;
 }
 .chip:active {
-  transform: scale(0.92);
+  transform: scale(0.96);
 }
 .chip.on {
   background: var(--brand);
@@ -773,13 +771,11 @@ textarea {
   box-shadow:
     0 4px 12px rgba(0, 122, 255, 0.30),
     inset 0 1px 0 rgba(255, 255, 255, 0.40);
-  animation: chip-pop 460ms var(--ease-spring);
+  animation: chip-pop 360ms var(--ease-spring);
 }
 @keyframes chip-pop {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.10); }
-  70% { transform: scale(0.97); }
-  100% { transform: scale(1); }
+  from { transform: scale(0.96); }
+  to { transform: scale(1); }
 }
 .chip.on::before {
   content: '';
@@ -815,12 +811,11 @@ textarea {
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   box-shadow: var(--glass-highlight);
-  animation: slot-tag-pop 560ms var(--ease-spring) backwards;
+  animation: slot-tag-pop 360ms ease backwards;
 }
 @keyframes slot-tag-pop {
-  0% { opacity: 0; transform: scale(0.4); }
-  60% { opacity: 1; transform: scale(1.08); }
-  100% { opacity: 1; transform: scale(1); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .slot-morning { background: var(--slot-morning-bg); color: var(--slot-morning-fg); }
 .slot-noon { background: var(--slot-noon-bg); color: var(--slot-noon-fg); }
@@ -1028,10 +1023,10 @@ textarea {
 }
 
 .tabbar a:active {
-  transform: scale(0.90);
+  transform: scale(0.96);
 }
 .tabbar a:active .ic {
-  transform: scale(0.85);
+  transform: scale(0.92);
 }
 .tabbar a.active {
   color: var(--brand-deep);
@@ -1047,16 +1042,13 @@ textarea {
 }
 
 @keyframes tab-icon-pop {
-  0% { transform: scale(1); }
-  35% { transform: scale(1.28) rotate(-4deg); }
-  60% { transform: scale(0.96) rotate(2deg); }
-  100% { transform: scale(1.08) rotate(0); }
+  from { transform: scale(0.92); }
+  to { transform: scale(1); }
 }
 
 @keyframes tab-label-pop {
-  0% { opacity: 0.55; transform: translateY(4px); }
-  60% { opacity: 1; transform: translateY(-1px); }
-  100% { opacity: 1; transform: translateY(0); }
+  from { opacity: 0.6; }
+  to { opacity: 1; }
 }
 
 /* ============ Toast：深色高对比度黑曜石玻璃胶囊 ============ */
@@ -1170,13 +1162,13 @@ textarea {
   min-height: 60px;
   content-visibility: auto;
   contain-intrinsic-size: 80px;
-  animation: list-item-in 520ms var(--ease-spring) backwards;
+  animation: list-item-in 360ms var(--ease-out) backwards;
 }
 .list-item:nth-child(1) { animation-delay: 0ms; }
-.list-item:nth-child(2) { animation-delay: 60ms; }
-.list-item:nth-child(3) { animation-delay: 120ms; }
-.list-item:nth-child(4) { animation-delay: 180ms; }
-.list-item:nth-child(n + 5) { animation-delay: 240ms; }
+.list-item:nth-child(2) { animation-delay: 25ms; }
+.list-item:nth-child(3) { animation-delay: 50ms; }
+.list-item:nth-child(4) { animation-delay: 75ms; }
+.list-item:nth-child(n + 5) { animation-delay: 100ms; }
 .list-item:last-child {
   border-bottom: none;
 }
@@ -1270,7 +1262,7 @@ textarea {
   backdrop-filter: blur(var(--glass-blur-heavy)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur-heavy)) saturate(var(--glass-saturate));
   border: 0.5px solid var(--glass-border-strong);
-  animation: dialog-in var(--dur-slow) var(--ease-spring);
+  animation: dialog-in 360ms var(--ease-spring);
 }
 @keyframes scrim-in {
   from { opacity: 0; }
@@ -1279,7 +1271,7 @@ textarea {
 @keyframes dialog-in {
   from {
     opacity: 0;
-    transform: scale(0.92) translateY(8px);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
@@ -2054,8 +2046,8 @@ textarea {
 
 /* ============ 列表项淡入（如 MedList 内的 list-item）============ */
 @keyframes list-item-in {
-  from { opacity: 0; transform: translateX(-8px) scale(0.97); }
-  to { opacity: 1; transform: translateX(0) scale(1); }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ============ Settings iOS 折叠面板 ============ */
@@ -2068,11 +2060,11 @@ textarea {
   box-shadow: var(--shadow-sm), var(--glass-highlight);
   margin: 12px 0;
   overflow: hidden;
-  animation: panel-enter 480ms var(--ease-spring) backwards;
+  animation: panel-enter 360ms var(--ease-out) backwards;
 }
 @keyframes panel-enter {
-  from { opacity: 0; transform: translateY(8px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .panel-head {

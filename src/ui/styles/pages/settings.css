@@ -184,7 +184,7 @@
 
 .settings-page .panel-chevron {
   color: var(--color-text-muted);
-  transition: transform 0.28s var(--ease-spring), color 0.2s ease;
+  transition: transform 0.36s var(--ease-spring), color 0.2s ease;
 }
 
 .settings-page .panel.open .panel-chevron {
@@ -754,8 +754,8 @@
   color: var(--color-primary);
   flex-shrink: 0;
   opacity: 0;
-  transform: scale(0.7);
-  transition: opacity 0.15s ease, transform 0.15s var(--ease-spring);
+  transform: scale(0.8);
+  transition: opacity 0.2s ease, transform 0.36s var(--ease-spring);
 }
 
 .period-mode-card.is-selected .period-mode-card-check {

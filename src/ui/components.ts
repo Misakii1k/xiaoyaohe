@@ -168,6 +168,30 @@ export function trapFocusIn(container: HTMLElement, onEscape?: (() => void) | nu
   return () => document.removeEventListener('keydown', onKeyDown);
 }
 
+/**
+ * 弹层退场动画：真实节点仍同步移除（焦点、inert、监听器的生命周期不变），
+ * 另放一个仅供观看的克隆体播放下滑/淡出，播完即删。
+ * 不支持 WAAPI（测试环境）或用户开启减弱动态效果时直接跳过。
+ */
+export function playOverlayExit(overlay: HTMLElement): void {
+  if (typeof overlay.animate !== 'function') return;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  if (!overlay.isConnected) return;
+  const ghost = overlay.cloneNode(true) as HTMLElement;
+  // 幽灵只负责被看：去掉会与真实节点冲突的语义与 id
+  ghost.removeAttribute('id');
+  ghost.removeAttribute('role');
+  ghost.removeAttribute('aria-modal');
+  ghost.removeAttribute('aria-labelledby');
+  for (const node of ghost.querySelectorAll('[id]')) node.removeAttribute('id');
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.inert = true;
+  ghost.classList.add('is-leaving');
+  ghost.style.pointerEvents = 'none';
+  overlay.after(ghost);
+  window.setTimeout(() => ghost.remove(), 400);
+}
+
 export interface OpenDialogOptions {
   /** id of the element that labels the dialog (sets aria-labelledby) */
   labelId?: string;
@@ -280,6 +304,7 @@ export function openDialog(
     dialogClosers.delete(overlay);
     activeDialogs.delete(overlay);
     removeTrap?.();
+    playOverlayExit(overlay);
     overlay.remove();
     restoreAppAfterLastDialog();
     opts.onClose?.();

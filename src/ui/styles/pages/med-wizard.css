@@ -5,7 +5,7 @@
   display: grid;
   align-items: end;
   padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
-  animation: med-wizard-fade 240ms var(--ease-out);
+  animation: med-wizard-fade 300ms ease;
 }
 
 /* display 规则会盖掉 UA 的 [hidden]，向导内统一补回 */
@@ -30,7 +30,7 @@
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--color-surface);
   box-shadow: var(--shadow-lg);
-  animation: med-wizard-rise 560ms var(--ease-spring);
+  animation: med-wizard-rise 480ms var(--ease-out);
 }
 
 .med-wizard-grabber {
@@ -62,10 +62,11 @@
   block-size: 6px;
   border-radius: var(--radius-full);
   background: var(--color-border);
-  transition: transform 320ms var(--ease-spring), background 200ms var(--ease-out), opacity 200ms var(--ease-out);
+  transition: inline-size 360ms var(--ease-spring), background 200ms ease, opacity 200ms ease;
 }
 
-.med-wizard-dots span.is-current { background: var(--color-primary); transform: scale(1.4); }
+/* 当前页拉长成胶囊，而不是放大圆点 */
+.med-wizard-dots span.is-current { background: var(--color-primary); inline-size: 16px; }
 .med-wizard-dots span.is-done { background: var(--color-primary); opacity: 0.4; }
 
 /* 卡片叠放在同一格子里，切换时新旧卡重叠滑动 */
@@ -89,7 +90,7 @@
 
 .med-wizard-photo.has-photo { border: 0; background: var(--color-surface-muted); }
 .med-wizard-photo-img { inline-size: 100%; block-size: 100%; max-block-size: 260px; object-fit: cover; }
-.med-wizard-photo-img.is-pop { animation: med-wizard-pop 620ms var(--ease-spring); }
+.med-wizard-photo-img.is-pop { animation: med-wizard-pop 420ms var(--ease-spring); }
 
 .med-wizard-photo-empty {
   display: grid;
@@ -129,12 +130,12 @@
   background: var(--color-surface-muted);
   color: var(--color-text-muted);
   text-align: center;
-  animation: med-wizard-slot-in 460ms var(--ease-spring) backwards;
+  animation: med-wizard-slot-in 420ms var(--ease-spring) backwards;
 }
 
-.med-wizard-slot:nth-child(2) { animation-delay: 50ms; }
-.med-wizard-slot:nth-child(3) { animation-delay: 100ms; }
-.med-wizard-slot:nth-child(4) { animation-delay: 150ms; }
+.med-wizard-slot:nth-child(2) { animation-delay: 30ms; }
+.med-wizard-slot:nth-child(3) { animation-delay: 60ms; }
+.med-wizard-slot:nth-child(4) { animation-delay: 90ms; }
 
 .med-wizard-slot svg { inline-size: 18px; block-size: 18px; }
 .med-wizard-slot.is-active { background: var(--color-primary-soft); color: var(--color-primary); }
@@ -157,7 +158,7 @@
   border-radius: var(--radius-full);
   background: var(--color-primary);
   color: var(--color-on-primary);
-  animation: med-wizard-pop 620ms var(--ease-spring);
+  animation: med-wizard-pop 420ms var(--ease-spring);
 }
 
 .med-wizard-check svg { inline-size: 30px; block-size: 30px; }
@@ -202,18 +203,20 @@
 
 /* 逐药切换：旧卡滑出、新卡带弹簧滑入 */
 .med-wizard-stage > .is-enter-forward { animation: med-wizard-in-fwd 420ms var(--ease-spring); }
-.med-wizard-stage > .is-exit-forward { animation: med-wizard-out-fwd 300ms var(--ease-out) forwards; pointer-events: none; }
+.med-wizard-stage > .is-exit-forward { animation: med-wizard-out-fwd 360ms var(--ease-out) forwards; pointer-events: none; }
 .med-wizard-stage > .is-enter-back { animation: med-wizard-in-back 420ms var(--ease-spring); }
-.med-wizard-stage > .is-exit-back { animation: med-wizard-out-back 300ms var(--ease-out) forwards; pointer-events: none; }
+.med-wizard-stage > .is-exit-back { animation: med-wizard-out-back 360ms var(--ease-out) forwards; pointer-events: none; }
 
 @keyframes med-wizard-fade { from { opacity: 0; } }
-@keyframes med-wizard-rise { from { transform: translateY(72px); opacity: 0; } }
-@keyframes med-wizard-pop { from { transform: scale(0.4); opacity: 0; } }
+/* 底部弹卡：整张从屏幕下沿推入，不做透明度渐变（iOS sheet 本身不透明） */
+@keyframes med-wizard-rise { from { transform: translateY(100%); } }
+@keyframes med-wizard-pop { from { transform: scale(0.8); opacity: 0; } }
 @keyframes med-wizard-slot-in { from { transform: translateY(14px); opacity: 0; } }
-@keyframes med-wizard-in-fwd { from { transform: translateX(64px); opacity: 0; } }
-@keyframes med-wizard-out-fwd { to { transform: translateX(-64px); opacity: 0; } }
-@keyframes med-wizard-in-back { from { transform: translateX(-64px); opacity: 0; } }
-@keyframes med-wizard-out-back { to { transform: translateX(64px); opacity: 0; } }
+/* 导航式切页：新卡推入、旧卡只退 30% 并变淡，形成 iOS 的视差层次 */
+@keyframes med-wizard-in-fwd { from { transform: translateX(40%); opacity: 0; } }
+@keyframes med-wizard-out-fwd { to { transform: translateX(-30%); opacity: 0; } }
+@keyframes med-wizard-in-back { from { transform: translateX(-30%); opacity: 0; } }
+@keyframes med-wizard-out-back { to { transform: translateX(40%); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   .med-wizard-host,

@@ -212,7 +212,7 @@
   color: var(--color-on-primary, #ffffff) !important;
   border-color: transparent !important;
   box-shadow: 0 4px 14px rgba(35, 106, 85, 0.32);
-  animation: selectPop 0.22s var(--ease-spring);
+  animation: selectPop 0.36s var(--ease-spring);
 }
 
 .calendar-cell.is-selected .calendar-cell-day,

@@ -40,7 +40,7 @@
   background: var(--color-primary-soft);
   color: var(--color-primary);
   font-weight: 600;
-  animation: selectPop 0.22s var(--ease-spring);
+  animation: selectPop 0.36s var(--ease-spring);
 }
 .medication-slot-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
 .medication-duplicate-notice { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--tone-warn-border); background: var(--tone-warn-bg); color: var(--tone-warn-fg); border-radius: var(--radius-md); font-size: var(--fs-footnote); }
@@ -101,7 +101,7 @@
   background: var(--color-primary-soft);
   color: var(--color-primary);
   box-shadow: 0 0 0 1px var(--color-primary);
-  animation: selectPop 0.22s var(--ease-spring);
+  animation: selectPop 0.36s var(--ease-spring);
 }
 @media (max-width: 520px) {
   .medication-reminder-mode { grid-template-columns: 1fr; }
@@ -178,9 +178,10 @@
   color: #ffffff;
 }
 
+/* 加载中只做透明度呼吸，不缩放 */
 @keyframes pulse-badge {
-  0%, 100% { transform: scale(1); opacity: 0.92; }
-  50% { transform: scale(1.03); opacity: 1; }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
 }
 
 .box-photo-preview img.packshot-fade-in {
@@ -663,20 +664,20 @@
 .med-wizard-step-content {
   display: grid;
   gap: var(--space-4);
-  animation: med-step-fade-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: med-step-fade-in 0.36s var(--ease-spring);
   will-change: transform, opacity;
 }
 
 .med-wizard-step-content.slide-from-right {
-  animation: stepSlideFromRight 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: stepSlideFromRight 0.42s var(--ease-spring) forwards;
 }
 
 .med-wizard-step-content.slide-from-left {
-  animation: stepSlideFromLeft 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: stepSlideFromLeft 0.42s var(--ease-spring) forwards;
 }
 
 .med-wizard-step-content.step-shake {
-  animation: stepShake 0.3s ease-in-out;
+  animation: stepShake 0.4s var(--ease-out);
 }
 
 @keyframes stepSlideFromRight {
@@ -701,10 +702,13 @@
   }
 }
 
+/* iOS 密码错误式横向抖动：幅度逐次衰减 */
 @keyframes stepShake {
   0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-6px); }
-  40%, 80% { transform: translateX(6px); }
+  15% { transform: translateX(-7px); }
+  35% { transform: translateX(5px); }
+  55% { transform: translateX(-3px); }
+  75% { transform: translateX(1.5px); }
 }
 
 @keyframes med-step-fade-in {

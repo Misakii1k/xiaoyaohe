@@ -43,7 +43,6 @@
   width: 32px;
   height: 32px;
   object-fit: contain;
-  animation: floatGentle 3.6s ease-in-out infinite;
 }
 
 .inventory-overview-header-text {
@@ -147,7 +146,7 @@
   color: var(--color-on-primary);
   border-color: var(--color-primary, #236a55);
   box-shadow: 0 2px 8px rgba(35, 106, 85, 0.25);
-  animation: selectPop 0.22s var(--ease-spring);
+  animation: selectPop 0.36s var(--ease-spring);
 }
 
 /* 药品库存卡片列表 */

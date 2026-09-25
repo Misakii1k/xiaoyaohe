@@ -314,7 +314,7 @@
   background: var(--color-surface);
   padding: var(--space-5);
   box-shadow: var(--shadow-lg);
-  animation: sheetSlideUp 0.32s var(--ease-spring-gentle) forwards;
+  animation: sheetSlideUp 0.46s var(--ease-out) forwards;
   transform-origin: bottom center;
 }
 .bottom-sheet::before {
@@ -338,7 +338,7 @@
     inline-size: 100%;
     max-inline-size: 560px;
     border-radius: var(--radius-xl);
-    animation: dialogSpringIn var(--duration-normal) var(--ease-smooth) forwards;
+    animation: dialogSpringIn 0.36s var(--ease-spring) forwards;
     transform-origin: center center;
   }
 }
@@ -458,6 +458,20 @@ input[type='datetime-local']:not(.ui-picker-native) {
 }
 
 .app-shell .nlu-box::before { display: none; }
+
+/* iOS 按压手感：按下瞬间跟手（80ms），松手时再按元素自身的弹簧时长回弹 */
+button:active,
+a:active,
+[role='button']:active,
+.medication-list-row:active,
+.inventory-row-main:active,
+.today-medication-row:active,
+.inventory-card-item:active,
+.history-stat-card:active,
+.tool-card:active,
+.quick-card:active {
+  transition-duration: 80ms;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -753,6 +767,45 @@ input[type='datetime-local']:not(.ui-picker-native) {
 
 /* ============ Modal Dialog & Toast Motion System ============ */
 
+/* 退场克隆体（playOverlayExit）：遮罩淡出、面板顺势下沉，比入场更快更干脆。
+   克隆节点会重新触发子树上的一切 CSS 动画（向导升起、列表淡入…），并且页面级
+   `.bottom-sheet-overlay:has(.med-wizard-host)` 的特异性更高，所以这里用 !important 兜底。 */
+.bottom-sheet-overlay.is-leaving,
+.overlay.is-leaving {
+  animation: overlayFadeOut 0.28s ease forwards !important;
+}
+.bottom-sheet-overlay.is-leaving .bottom-sheet {
+  animation: sheetSlideDown 0.3s var(--ease-exit) forwards !important;
+}
+.overlay.is-leaving > * {
+  animation: dialogFadeOut 0.2s ease forwards !important;
+}
+.bottom-sheet-overlay.is-leaving .bottom-sheet *,
+.overlay.is-leaving > * * {
+  animation: none !important;
+  transition: none !important;
+}
+@media (min-width: 768px) {
+  .bottom-sheet-overlay.is-leaving .bottom-sheet {
+    animation: dialogFadeOut 0.2s ease forwards !important;
+  }
+}
+
+@keyframes overlayFadeOut {
+  to { opacity: 0; }
+}
+
+@keyframes sheetSlideDown {
+  to { transform: translateY(100%); }
+}
+
+@keyframes dialogFadeOut {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
 /* 全局居中弹窗 Dialog */
 .overlay {
   animation: overlayFadeIn var(--duration-fast) var(--ease-smooth) forwards;
@@ -761,7 +814,7 @@ input[type='datetime-local']:not(.ui-picker-native) {
 }
 
 .overlay > * {
-  animation: dialogSpringIn var(--duration-normal) var(--ease-spring) forwards;
+  animation: dialogSpringIn 0.36s var(--ease-spring) forwards;
   transform-origin: center center;
 }
 
@@ -791,8 +844,8 @@ input[type='datetime-local']:not(.ui-picker-native) {
   -webkit-backdrop-filter: blur(16px);
   pointer-events: none;
   opacity: 0;
-  transform: translateY(12px) scale(0.94);
-  transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1), transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(12px) scale(0.96);
+  transition: opacity 240ms ease, transform 420ms var(--ease-spring);
   box-sizing: border-box;
 }
 
@@ -803,14 +856,15 @@ input[type='datetime-local']:not(.ui-picker-native) {
 
 .toast.hide {
   opacity: 0;
-  transform: translateY(-8px) scale(0.96);
+  transform: translateY(4px) scale(0.98);
+  transition: opacity 200ms ease, transform 240ms var(--ease-exit);
 }
 
 /* 卡片与列表项触控反馈 */
 .medication-list-row,
 .inventory-row,
 .today-medication-row {
-  transition: transform var(--duration-fast) var(--ease-spring), box-shadow var(--duration-fast) ease, background var(--duration-fast) ease;
+  transition: transform 0.36s var(--ease-spring), box-shadow var(--duration-fast) ease, background var(--duration-fast) ease;
 }
 
 .medication-list-row:active,
@@ -828,7 +882,7 @@ input[type='datetime-local']:not(.ui-picker-native) {
 @keyframes dialogSpringIn {
   from {
     opacity: 0;
-    transform: scale(0.92) translateY(12px);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
@@ -868,16 +922,13 @@ input[type='datetime-local']:not(.ui-picker-native) {
   }
 }
 
-/* 打卡对勾果冻微弹 (Spring Pop) */
+/* 打卡对勾落定：由弹簧曲线收尾，不做果冻式放大回缩 */
 @keyframes checkmarkPop {
-  0% {
-    transform: scale(0.6);
+  from {
+    transform: scale(0.7);
     opacity: 0;
   }
-  65% {
-    transform: scale(1.15);
-  }
-  100% {
+  to {
     transform: scale(1);
     opacity: 1;
   }
@@ -905,42 +956,30 @@ input[type='datetime-local']:not(.ui-picker-native) {
 
 /* 按钮微光涟漪扩散 (Pulse Ripple) */
 @keyframes pulseRipple {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 42%, transparent);
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 30%, transparent);
   }
-  60% {
-    box-shadow: 0 0 0 8px transparent;
-  }
-  100% {
-    box-shadow: 0 0 0 0 transparent;
+  to {
+    box-shadow: 0 0 0 10px transparent;
   }
 }
 
-/* 满格与完成欢庆光晕 (Celebrate Pulse) */
+/* 满格与完成：只放一圈淡光晕，不缩放整张卡 */
 @keyframes celebratePulse {
-  0% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 36%, transparent);
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 24%, transparent);
   }
-  45% {
-    transform: scale(1.04);
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-primary) 12%, transparent);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 transparent;
+  to {
+    box-shadow: 0 0 0 12px transparent;
   }
 }
 
-/* 标签与选项灵动弹跳选中 (Select Pop) */
+/* 选中态落定：从按压尺寸平滑回到 1，不再放大过冲 */
 @keyframes selectPop {
-  0% {
-    transform: scale(0.93);
+  from {
+    transform: scale(0.96);
   }
-  50% {
-    transform: scale(1.05);
-  }
-  100% {
+  to {
     transform: scale(1);
   }
 }
@@ -949,7 +988,7 @@ input[type='datetime-local']:not(.ui-picker-native) {
 @keyframes dockSlideUp {
   from {
     opacity: 0;
-    transform: translateY(28px) scale(0.96);
+    transform: translateY(16px);
   }
   to {
     opacity: 1;
@@ -957,43 +996,7 @@ input[type='datetime-local']:not(.ui-picker-native) {
   }
 }
 
-/* 3D 拟物与悬浮资产治愈呼吸浮动 (Gentle Float) */
-@keyframes floatGentle {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
-
-/* 指示点与提示徽标轻柔呼吸 (Dot Pulse) */
-@keyframes dotPulse {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.3);
-    opacity: 0.85;
-  }
-}
-
-/* 底栏图标弹性回弹 (Tab Icon Spring) */
-@keyframes tabIconSpring {
-  0% {
-    transform: scale(0.85);
-  }
-  45% {
-    transform: scale(1.2);
-  }
-  75% {
-    transform: scale(0.96);
-  }
-  100% {
-    transform: scale(1.06);
-  }
-}
+/* 插画静置不动：iOS 不会让静态元素无限漂浮/呼吸，已移除 floatGentle、dotPulse、tabIconSpring 等循环动效 */
 
 /* 条码取景框扫描激光线平滑往返 (Scanner Sweep) */
 @keyframes scannerSweep {
@@ -1011,7 +1014,7 @@ input[type='datetime-local']:not(.ui-picker-native) {
 @keyframes aiMsgIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -1076,18 +1079,19 @@ input[type='datetime-local']:not(.ui-picker-native) {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  animation: overlayFadeIn 0.25s ease forwards;
+  animation: overlayFadeIn 0.3s ease forwards;
 }
 
 .take-med-overlay.closing {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.22s ease;
+  transition: opacity 0.24s ease;
 }
 
 .take-med-overlay.closing .take-med-sheet {
+  animation: none;
   transform: translateY(100%);
-  transition: transform 0.24s cubic-bezier(0.4, 0, 1, 1);
+  transition: transform 0.24s var(--ease-exit);
 }
 
 .take-med-sheet {
@@ -1101,7 +1105,7 @@ input[type='datetime-local']:not(.ui-picker-native) {
   max-block-size: min(90dvh, 720px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  animation: sheetSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: sheetSlideUp 0.46s var(--ease-out) forwards;
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.12);
 }
 
@@ -1185,12 +1189,6 @@ input[type='datetime-local']:not(.ui-picker-native) {
   z-index: 0;
   pointer-events: none;
   opacity: 0.9;
-  animation: takeMedPulseGlow 3.5s ease-in-out infinite alternate;
-}
-
-@keyframes takeMedPulseGlow {
-  0% { transform: scale(0.95); opacity: 0.75; }
-  100% { transform: scale(1.12); opacity: 1; }
 }
 
 .take-med-pill-img {
@@ -1203,12 +1201,6 @@ input[type='datetime-local']:not(.ui-picker-native) {
   position: relative;
   z-index: 1;
   filter: drop-shadow(0 8px 18px rgba(16, 185, 129, 0.32));
-  animation: floatSubtle 3.5s ease-in-out infinite;
-}
-
-@keyframes floatSubtle {
-  0%, 100% { transform: translateY(0px) rotate(0deg); }
-  50% { transform: translateY(-6px) rotate(2deg); }
 }
 
 .take-med-card {

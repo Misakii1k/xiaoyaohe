@@ -2,7 +2,7 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-23
+Updated: 2026-09-25
 Status: active
 Latest version: `1.1.9` (Android `versionCode: 67`)
 
@@ -1397,3 +1397,16 @@ Latest version: `1.1.9` (Android `versionCode: 67`)
    - 将 `workspace/claude` 合并推送至 `main` 分支，触发 Cloudflare Pages 重新构建部署新版边缘函数；
    - `check-release-endpoints.mjs` 冒烟 4/4 项全部 PASS。
 
+
+### 69. 动效系统重做：对齐 iOS，去 PPT 式弹跳 (workspace/claude, 未发版)
+
+1. **动效曲线（`tokens.css` / `legacy.css`）**：
+   - 废除过冲 56% 的 `--ease-spring: cubic-bezier(0.34, 1.56, …)` 与 `--ease-bounce` / `--ease-spring-snappy`；
+   - `--ease-spring` 改为真实临界阻尼弹簧 `linear(…)`（ζ≈0.82，过冲约 1%，`@supports` 守卫，旧 WebView 回退到 UIKit 曲线 `cubic-bezier(0.32, 0.72, 0, 1)`）；
+   - 新增 `--ease-exit: cubic-bezier(0.4, 0, 0.7, 0.2)` 专供退场；`legacy.css` 的 `--ease-spring` 同步改为无过冲。
+2. **移除循环动效**：盒宝/盾牌/胶囊插画的 `floatGentle`、`floatSubtle`、`scanBannerFloat`、`takeMedPulseGlow`，今日小绿点 `dotPulse`，Tab 图标 `tabIconSpring`，主按钮 hover 扫光。iOS 不会让静态元素无限漂浮。
+3. **关键帧收敛**：`selectPop` / `chip-pop` / `checkmarkPop` / `tab-icon-pop` 全部改为「从 0.9x 落定到 1x」，不再 1.05~1.28 放大再回缩；`fab-enter` 去掉 `rotate(-20deg)`+`scale(0.4)`；`celebratePulse` 只放光晕不缩放卡片；`stepShake` 改为幅度衰减的 iOS 密码错误式抖动；列表/面板入场 stagger 间隔 60→25ms。
+4. **弹层生命周期**：`.bottom-sheet` / `.take-med-sheet` 入场 0.46s UIKit 曲线；居中 Dialog 只 `scale(0.96)` 淡入不再位移。新增 `playOverlayExit()`（`components.ts`）：真实节点仍同步移除（焦点 / inert / 监听器生命周期与测试契约全部不变），另插一个 `aria-hidden + inert` 的幽灵克隆播放 `.is-leaving` 退场（遮罩淡出 + 面板下沉 0.3s），400ms 后自删；无 WAAPI / reduced-motion 时直接跳过。克隆体子树 `animation/transition: none !important`，防止向导升起等入场动画被重播。
+5. **按压手感**：`button/a/[role=button]` 及列表卡 `:active` 时 `transition-duration: 80ms`（跟手），松手按元素自身弹簧回弹；按压缩放收敛到 0.92~0.97（原 0.85/0.86/0.88）。
+6. **分药向导**：页切换改为 iOS 导航式视差（新卡 40% 推入、旧卡退 30% 变淡），页码点由放大改为拉长成胶囊。
+7. 验证：`tsc` 0 错误、Vitest 584/584、Playwright 100/100；浏览器实测 `linear()` 生效、bottom-sheet 开合后无残留节点、`#app` inert 正确恢复、无控制台错误。
