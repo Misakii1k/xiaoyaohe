@@ -47,7 +47,7 @@ export function renderDiagnosticsPanel(
 
       const description = el('div', {
         class: 'muted settings-subcard-desc',
-        text: '仅保留最近 50 条脱敏后的后台失败摘要，不包含密钥、令牌或完整药品正文。',
+        text: '最近 50 条出错记录，不含密钥和药品内容。',
       });
       const output = el('pre', { class: 'diagnostics-log', tabIndex: 0 });
       const copyButton = el('button', { class: 'btn tonal', type: 'button', text: '复制' });

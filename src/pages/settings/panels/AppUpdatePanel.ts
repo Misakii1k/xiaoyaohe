@@ -181,7 +181,7 @@ export function buildAppUpdateBody(
 
   if (!available) {
     body.append(el('div', { class: 'banner info mt-3' }, [
-      el('span', { html: '应用更新仅在 Android App 中可用。当前为网页端，无需单独安装更新。' }),
+      el('span', { html: '网页版自动保持最新，无需更新。' }),
     ]));
     return;
   }
@@ -189,14 +189,14 @@ export function buildAppUpdateBody(
   const update = getAvailableUpdate();
   if (!update) {
     body.append(el('div', { class: 'settings-hint mt-2' }, [
-      el('span', { html: '支持自动聚合检查 GitHub 官方发布与同局域网 Wi-Fi 设备新版本。' }),
+      el('span', { html: '同时检查网上和同一 Wi-Fi 下的设备。' }),
     ]));
 
     // 本机为 Android 原生端时展示局域网分发服务状态
     const servingBadge = el('div', { class: 'app-update-serving-badge mt-2' });
     servingBadge.append(
       el('span', { class: 'app-update-serving-dot' }),
-      el('span', { text: '本机局域网分发服务已就绪（服务端口 38473）' }),
+      el('span', { text: '可为同一 Wi-Fi 下的设备提供更新' }),
     );
     body.append(servingBadge);
 

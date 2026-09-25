@@ -77,7 +77,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
 
     const desc = el('div', {
       class: 'muted',
-      text: '在「编辑药品」拍照后，后台生成高清纯白底药盒图。同时支持 /images/edits（原图修图高保真）与 /images/generations（文生商业大图）双接口与自动平滑回退。',
+      text: '拍药盒照片后，自动生成干净的白底图。',
     });
 
     // 1. 开关行
@@ -87,7 +87,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
       el('div', { class: 'settings-toggle-title', text: '启用药盒照片增强' }),
       el('div', {
         class: 'settings-toggle-desc',
-        text: '拍照后自动排队增强照片；增强后可在原照片与增强图之间随时切换。',
+        text: '可随时切回原照片',
       }),
     );
     const toggleSwitch = el('input', {
@@ -108,7 +108,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     const card = el('div', { class: 'settings-subcard' });
     const cardHead = el('div', { class: 'settings-subcard-header' });
     const titleWrap = el('div', { class: 'settings-subcard-title-wrap' });
-    titleWrap.append(el('div', { class: 'settings-subcard-title', text: '药盒照片增强配置' }));
+    titleWrap.append(el('div', { class: 'settings-subcard-title', text: '药盒照片增强' }));
     const cardBadge = el('span', {
       class: 'settings-subcard-badge',
       style: current.enabled
@@ -130,7 +130,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
 
     // BaseURL
     const urlField = el('div', { class: 'field' });
-    const urlLabel = el('label', { text: '生图 API 地址（Base URL）' });
+    const urlLabel = el('label', { text: '接口地址' });
     const urlInput = el('input', {
       type: 'url',
       class: 'input',
@@ -139,13 +139,13 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     }) as HTMLInputElement;
     const urlHint = el('div', {
       class: 'muted text-xs mt-1',
-      text: '留空时自动复用「AI 服务商」的地址。支持 OpenAI 格式及各类中转生图接口。',
+      text: '留空则使用「AI 服务商」的地址',
     });
     urlField.append(urlLabel, urlInput, urlHint);
 
     // API Key
     const keyField = el('div', { class: 'field mt-2' });
-    const keyLabel = el('label', { text: '生图 API 密钥（API Key）' });
+    const keyLabel = el('label', { text: '密钥' });
     const keyInput = el('input', {
       type: 'text',
       class: 'input secret-input',
@@ -157,13 +157,13 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     }) as HTMLInputElement;
     const keyHint = el('div', {
       class: 'muted text-xs mt-1',
-      text: '留空时自动复用主 AI 服务商的密钥；若使用专用生图网关，可单独填写。',
+      text: '留空则使用「AI 服务商」的密钥',
     });
     keyField.append(keyLabel, keyInput, keyHint);
 
     // 生图模型名
     const modelField = el('div', { class: 'field mt-2' });
-    const modelLabel = el('label', { text: '生图模型名称（Image Model）' });
+    const modelLabel = el('label', { text: '模型' });
     const modelInput = el('input', {
       type: 'text',
       class: 'input',
@@ -174,24 +174,24 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
 
     // 接口模式选项：auto / edits / generations
     const modeField = el('div', { class: 'field mt-2' });
-    const modeLabel = el('label', { text: '生图接口模式' });
+    const modeLabel = el('label', { text: '生成方式' });
     const modeSelect = el('select', { class: 'input' }) as HTMLSelectElement;
 
     const modes: Array<{ value: ImageGenEndpointMode; label: string; desc: string }> = [
       {
         value: 'auto',
-        label: '自动推荐（有图优先修图，不支持自动转文生图）',
-        desc: '有拍摄照片时优先调用修图/图生图接口；若服务商不支持则平滑回退至文生大图。',
+        label: '自动（推荐）',
+        desc: '优先在原照片上修图，不支持时改为重新生成。',
       },
       {
         value: 'edits',
-        label: '仅原图修图（/images/edits）',
-        desc: '严格使用图片编辑接口对原照片进行白底化与清晰度增强，100% 保真原图文字。',
+        label: '只在原照片上修图',
+        desc: '保留药盒上的原文字。',
       },
       {
         value: 'generations',
-        label: '仅文生大图（/images/generations）',
-        desc: '严格使用标准文生图接口生成商业展台大图，兼容几乎所有 OpenAI 格式生图服务商。',
+        label: '重新生成图片',
+        desc: '兼容的服务商更多。',
       },
     ];
 
@@ -213,13 +213,13 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     };
 
     modeField.append(modeLabel, modeSelect, modeHint);
-    const modeControl = enhanceSelect(modeSelect, { ariaLabel: '生图接口模式' });
+    const modeControl = enhanceSelect(modeSelect, { ariaLabel: '生成方式' });
 
     // 已保存自定义配置列表区
     const profilesField = el('div', { class: 'field mt-2' });
     const profilesLabel = el('div', {
       class: 'muted text-xs mb-1 font-medium',
-      text: '已保存的生图配置（点击快速载入）：',
+      text: '已保存的配置（点击载入）',
     });
     const profilesChips = el('div', { class: 'chips', style: 'flex-wrap: wrap; gap: 6px;' });
     profilesField.append(profilesLabel, profilesChips);
@@ -231,7 +231,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
         profilesChips.append(
           el('span', {
             class: 'muted text-xs',
-            text: '暂无已保存配置。填写好表单后点击下方「存为新配置」即可保存。',
+            text: '暂无，填好后点「存为新配置」',
           }),
         );
         return;

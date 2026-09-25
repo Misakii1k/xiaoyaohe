@@ -1,7 +1,6 @@
 import { confirmDialog, el, toast } from '../../../ui/components';
 import { openLlmProviderEditor } from '../../../ui/llmProviderEditor';
 import {
-  DEFAULT_LLM_CONFIG,
   getLlmHealth,
   getLlmProviderSet,
   isUsingDefaultKey,
@@ -56,7 +55,7 @@ export function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) =
   body.append(
     el('div', {
       class: 'muted',
-      html: '在「编辑药品」里用一句话描述，AI 自动填写药名、规格、用量、时段、提醒时间。可以保存多家服务商，当前一家连不上时按列表顺序自动换下一家。',
+      html: '一句话描述药品，AI 帮你填好。可添加多家，连不上时自动换下一家。',
     }),
   );
 
@@ -66,8 +65,8 @@ export function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) =
       el('div', { class: 'banner info mt-3' }, [
         el('span', {
           html: isNativeSecretStore()
-            ? '还没填 AI 密钥。手机 App 会把它存进系统安全存储替您保管。'
-            : '还没填 AI 密钥。网页版只能把它明文存在这台电脑的浏览器里，请看下方的保存方式说明。',
+            ? '还没填 AI 密钥。'
+            : '还没填 AI 密钥，网页版会明文保存在浏览器里。',
         }),
       ]),
     );
@@ -78,7 +77,7 @@ export function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) =
     const webSecretCard = el('div', { class: 'settings-subcard' });
     const secHead = el('div', { class: 'settings-subcard-header' });
     secHead.append(
-      el('div', { class: 'settings-subcard-title', text: '网页端密钥存储方式' }),
+      el('div', { class: 'settings-subcard-title', text: '密钥保存方式' }),
       el('span', {
         class: 'settings-subcard-badge',
         style: 'background: rgba(245, 158, 11, 0.15); color: #b45309;',
@@ -98,11 +97,11 @@ export function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) =
   const providerCard = el('div', { class: 'settings-subcard' });
   const cardHead = el('div', { class: 'settings-subcard-header' });
   const titleWrap = el('div', { class: 'settings-subcard-title-wrap' });
-  titleWrap.append(el('div', { class: 'settings-subcard-title', text: 'AI 服务商管理' }));
+  titleWrap.append(el('div', { class: 'settings-subcard-title', text: '服务商列表' }));
   const countBadge = el('span', {
     class: 'settings-subcard-badge',
     style: 'background: var(--tone-info-bg, #eaeafb); color: var(--tone-info-fg, #4348a8);',
-    text: '智能容灾调度',
+    text: '自动切换',
   });
   cardHead.append(titleWrap, countBadge);
   providerCard.append(cardHead);
@@ -266,7 +265,7 @@ export function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) =
       el('div', { class: 'settings-toggle-title', text: '自动切换服务商' }),
       el('div', {
         class: 'settings-toggle-desc',
-        text: '当前服务商连不上（超时、服务端错误、限流）时，按列表顺序自动试下一家；切换会在界面提示。',
+        text: '当前一家连不上时，自动换下一家',
       }),
     ]),
     failoverToggle,
@@ -277,13 +276,9 @@ export function buildLlmBody(body: HTMLElement, onHealthChange: (h: LlmHealth) =
   body.append(
     el('div', {
       class: 'settings-hint',
-      html:
-        '· 支持 DeepSeek、智谱等主流 AI 服务商；\n' +
-        `· 最多可添加 ${MAX_LLM_PROVIDERS} 家服务商，自动按列表顺序智能故障转移；\n` +
-        `· 当前推荐模型 ${DEFAULT_LLM_CONFIG.model}；\n` +
-        (isNativeSecretStore()
-          ? '· 密钥保存在这台手机的系统安全存储中。'
-          : '· 网页版没有系统安全存储可用，密钥在浏览器里是明文保存的。'),
+      text: isNativeSecretStore()
+        ? '密钥保存在这台手机的系统安全存储中。'
+        : '网页版没有系统安全存储，密钥在浏览器里是明文保存的。',
     }),
   );
 }
@@ -386,7 +381,7 @@ export function renderAiConsentPanel(): HTMLElement {
         head,
         el('div', {
           class: 'muted settings-subcard-desc',
-          text: '药盒、药单和用药信息会按“健康”类别授权；小助手对话和联网搜索按“助手”类别授权。同一服务商同一类别只会首次询问。',
+          text: '每家服务商第一次发送数据前会询问你，之后可在这里撤销。',
         }),
         renderAiConsentControls(() => setChip(panelElement, aiConsentChip())),
       );

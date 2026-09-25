@@ -71,11 +71,11 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   body.hidden = true;
   body.setAttribute('inert', '');
   const info = el('div', { class: 'banner info' }, [
-    el('span', { text: '两台手机连着同一个 Wi-Fi 时，可以直接互相传。药品、提醒和服药记录不会经过网上的服务器。' }),
+    el('span', { text: '两台手机连着同一个 Wi-Fi 时，可以直接互相传。数据不经过网上的服务器。' }),
   ]);
   const inventoryNote = el('p', {
     class: 'muted lan-sync-note',
-    text: '连接后可对比两边数据更新时间并选择覆盖或合并。库存数字仍各自保留在本机，避免同时服药时算错。',
+    text: '连接后可选合并或覆盖，库存各自保留。',
   });
   const nameInput = el('input', {
     class: 'lan-sync-device-input',
@@ -103,7 +103,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     allowOverwrite,
     el('div', { class: 'lan-sync-toggle-copy' }, [
       el('strong', { text: '允许多设备整库覆盖' }),
-      el('span', { text: '对方选择「用对方数据覆盖」时，本机数据会被替换（局域网内多台设备同步时需要打开）' }),
+      el('span', { text: '对方选择覆盖时，本机数据会被替换' }),
     ]),
   ]);
 
@@ -126,7 +126,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     autoSyncToggle,
     el('div', { class: 'lan-sync-toggle-copy' }, [
       el('strong', { text: '每 30 分钟自动同步' }),
-      el('span', { text: '在同一 Wi‑Fi 下后台轮询已配对设备。需先扫码配对一次；两台都开启效果更好。依赖「设置 → 后台保活与防杀」。' }),
+      el('span', { text: '需先扫码配对一次，两台都开启效果更好' }),
     ]),
   ]);
 
@@ -136,7 +136,7 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   });
   silentToggle.checked = isLanAutoSyncSilent();
   const silentHint = el('span', {
-    text: '开启后用推荐策略（合并或整库覆盖）直接同步；关闭后遇到整库覆盖会跳过本次，留给手动同步确认。',
+    text: '关闭时，需要覆盖的同步会留给你手动确认。',
   });
   silentToggle.onchange = () => {
     setLanAutoSyncSilent(silentToggle.checked);

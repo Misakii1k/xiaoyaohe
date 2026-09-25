@@ -133,12 +133,12 @@ export function renderBackupCard(
       if (counts) {
         card.append(el('div', {
           class: 'muted settings-backup-summary',
-          text: `本机现有 ${counts.meds} 种药品、${counts.rules} 条提醒规则、${counts.logs} 条服药记录。`,
+          text: `${counts.meds} 种药品 · ${counts.rules} 条提醒 · ${counts.logs} 条记录`,
         }));
       }
       card.append(el('div', {
         class: 'muted settings-backup-note',
-        text: '备份会完整包含以上数据。导入时按 ID 与更新时间合并，不会清空本地数据。',
+        text: '导入只合并，不会清空本机数据。',
       }));
 
       exportBtn = el('button', { class: 'btn tonal', type: 'button', text: '导出备份文件' });

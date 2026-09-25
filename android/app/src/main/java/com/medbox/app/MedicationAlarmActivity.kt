@@ -475,7 +475,6 @@ class MedicationAlarmActivity : ComponentActivity() {
                 MedicationAlarmContract.allExpectedTokens(payload)
             }
         }
-        val mode = payload.optString("mode", "strong")
         val data = payload.optJSONObject("data")
         val isGroup = data != null && "reminder-group" == data.optString("kind")
 
@@ -572,6 +571,20 @@ class MedicationAlarmActivity : ComponentActivity() {
         // 每秒跳动排序放在内容之前初始化，供 footer 引用
 
         val backdrop = rememberLayerBackdrop()
+        val occurrenceCount = data?.optJSONArray("occurrences")?.length() ?: 0
+
+        val openScanner: (Boolean) -> Unit = { emergency ->
+            scanFeedback.value = null
+            if (emergency) vibrateUnlock()
+            scannerEmergencyMode.value = emergency
+            showScanner.value = true
+            if (!cameraPermissionGranted.value &&
+                ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestCameraPermissionSafely()
+            }
+        }
 
         Box(
             Modifier
@@ -584,145 +597,70 @@ class MedicationAlarmActivity : ComponentActivity() {
                     .layerBackdrop(backdrop)
             )
 
+            // 布局：上方可滚动的「时间 + 药品清单」，下方固定的操作区。
+            // 滑块、扫码入口、服药按钮始终出现在同一个拇指热区，解锁前后位置不跳。
             Column(
                 Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp)
             ) {
-                Spacer(Modifier.height(20.dp))
-                HeaderBlock(mode = mode, payload = payload, locked = locked)
-
-                Spacer(Modifier.height(18.dp))
-                if (locked || autoResolved.value) {
-                    FooterActions(
-                        payload = payload,
-                        expectedTokens = expectedTokens,
-                        backdrop = backdrop,
-                        groupPayload = isGroup,
-                        locked = locked,
-                        resolved = autoResolved.value,
-                        scanFeedback = scanFeedback.value,
-                        secondsLeft = -1,
-                        onStartScan = {
-                            scanFeedback.value = null
-                            scannerEmergencyMode.value = false
-                            showScanner.value = true
-                            if (!cameraPermissionGranted.value &&
-                                ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
-                                != PackageManager.PERMISSION_GRANTED
-                            ) {
-                                requestCameraPermissionSafely()
-                            }
-                        },
-                        onEmergencyTriggered = {
-                            scanFeedback.value = null
-                            vibrateUnlock()
-                            scannerEmergencyMode.value = true
-                            showScanner.value = true
-                            if (!cameraPermissionGranted.value &&
-                                ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
-                                != PackageManager.PERMISSION_GRANTED
-                            ) {
-                                requestCameraPermissionSafely()
-                            }
-                        },
-                        onDismissAll = {
-                            finishAllAlarms(this@MedicationAlarmActivity)
-                        },
-                    )
-
-                    Spacer(Modifier.height(20.dp))
-                    if (isGroup && data != null) {
-                        GroupBody(data, backdrop, locked = true, canAct = false)
-                    } else {
-                        LegacyBody(payload, data)
-                    }
-                } else {
-                    if (isGroup && data != null) {
-                        GroupBody(data, backdrop, locked = false, canAct = slideUnlockedState.value)
-                    } else {
-                        LegacyBody(payload, data)
-                    }
-
-                    if (slideUnlockedState.value) {
-                        Spacer(Modifier.height(24.dp))
-                        FooterActions(
-                            payload = payload,
-                            expectedTokens = expectedTokens,
-                            backdrop = backdrop,
-                            groupPayload = isGroup,
-                            locked = locked,
-                            resolved = autoResolved.value,
-                            scanFeedback = scanFeedback.value,
-                            secondsLeft = -1,
-                            onStartScan = {
-                                scanFeedback.value = null
-                                scannerEmergencyMode.value = false
-                                showScanner.value = true
-                                if (!cameraPermissionGranted.value &&
-                                    ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
-                                    != PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    requestCameraPermissionSafely()
-                                }
-                            },
-                            onEmergencyTriggered = {
-                                scanFeedback.value = null
-                                vibrateUnlock()
-                                scannerEmergencyMode.value = true
-                                showScanner.value = true
-                                if (!cameraPermissionGranted.value &&
-                                    ContextCompat.checkSelfPermission(this@MedicationAlarmActivity, Manifest.permission.CAMERA)
-                                    != PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    requestCameraPermissionSafely()
-                                }
-                            },
-                            onDismissAll = {
-                                finishAllAlarms(this@MedicationAlarmActivity)
-                            },
-                        )
-                    } else {
-                        // 解锁滑块固定在屏幕底部，滚动内容预留底部空间防止被遮挡
-                        Spacer(Modifier.height(96.dp))
-                    }
-                }
-                Spacer(Modifier.height(28.dp))
-            }
-
-            // 未滑动解锁：滑块固定在屏幕底部，不随内容滚动，贴近拇指操作热区
-            if (!locked && !autoResolved.value && !slideUnlockedState.value) {
                 Column(
                     Modifier
-                        .align(Alignment.BottomCenter)
+                        .weight(1f)
                         .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                0.30f to Background.copy(alpha = 0.80f),
-                                1f to Background,
-                            )
-                        )
-                        .navigationBarsPadding()
+                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 24.dp)
-                        .padding(top = 24.dp, bottom = 16.dp)
                 ) {
-                    SlideToUnlockBar(
-                        onUnlock = {
-                            slideUnlockedState.value = true
-                            silenceAlert()
-                            triggerHapticBypass()
+                    Spacer(Modifier.height(28.dp))
+                    HeaderBlock(payload = payload, data = data, isGroup = isGroup)
+                    Spacer(Modifier.height(28.dp))
+                    if (isGroup && data != null) {
+                        GroupBody(
+                            data,
+                            backdrop,
+                            canAct = !locked && !autoResolved.value && slideUnlockedState.value && occurrenceCount >= 2,
+                        )
+                    } else {
+                        LegacyBody(data)
+                    }
+                    Spacer(Modifier.height(20.dp))
+                }
+
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 8.dp, bottom = 20.dp)
+                ) {
+                    when {
+                        autoResolved.value -> ResolvedPanel(onDismissAll = { finishAllAlarms(this@MedicationAlarmActivity) })
+                        locked -> ScanLockedPanel(
+                            scanFeedback = scanFeedback.value,
+                            onStartScan = { openScanner(false) },
+                            onEmergencyTriggered = { openScanner(true) },
+                        )
+                        !slideUnlockedState.value -> {
+                            SlideToUnlockBar(
+                                onUnlock = {
+                                    slideUnlockedState.value = true
+                                    silenceAlert()
+                                    triggerHapticBypass()
+                                }
+                            )
+                            if (!scanFeedback.value.isNullOrEmpty()) {
+                                Spacer(Modifier.height(10.dp))
+                                BasicText(
+                                    scanFeedback.value.orEmpty(),
+                                    style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Red, textAlign = TextAlign.Center),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
                         }
-                    )
-                    if (!scanFeedback.value.isNullOrEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        BasicText(
-                            scanFeedback.value.orEmpty(),
-                            style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Red, textAlign = TextAlign.Center),
-                            modifier = Modifier.fillMaxWidth(),
+                        else -> ActionButtons(
+                            groupPayload = isGroup,
+                            occurrenceCount = occurrenceCount,
+                            backdrop = backdrop,
                         )
                     }
                 }
@@ -815,15 +753,20 @@ class MedicationAlarmActivity : ComponentActivity() {
         }
     }
 
-    // ------------------------------ 头部：呼吸点 + 实时时钟 ------------------------------
+    // ------------------------------ 头部：大号时间 + 一句标题 ------------------------------
 
+    /**
+     * 参考系统闹钟：最醒目的是「几点的药」，其次是一句标题，其余信息都往下放。
+     * 组提醒显示计划时间；旧单药载荷没有计划时间，显示当前时间。
+     */
     @Composable
-    private fun HeaderBlock(mode: String, payload: JSONObject, locked: Boolean) {
+    private fun HeaderBlock(payload: JSONObject, data: JSONObject?, isGroup: Boolean) {
         val clock = remember { mutableStateOf("") }
-        LaunchedEffect(Unit) {
+        val dueAt = data?.optLong("dueAt", 0L) ?: 0L
+        LaunchedEffect(dueAt) {
             val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
             while (true) {
-                clock.value = fmt.format(Date())
+                clock.value = fmt.format(Date(if (isGroup && dueAt > 0L) dueAt else System.currentTimeMillis()))
                 delay(15_000)
             }
         }
@@ -834,56 +777,75 @@ class MedicationAlarmActivity : ComponentActivity() {
             animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
             label = "dot",
         )
+        val title = if (isGroup && data != null) {
+            MedicationAlarmContract.buildGroupTitle(data)
+        } else {
+            payload.optString("title", "该吃药了").removePrefix("⏰").trim().ifEmpty { "该吃药了" }
+        }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Canvas(Modifier.size(9.dp).graphicsLayer { alpha = dotAlpha }) {
-                drawCircle(GreenBright)
-            }
-            Spacer(Modifier.width(8.dp))
-            BasicText(
-                ALARM_EYEBROW,
-                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = GreenDeep),
-            )
-            Spacer(Modifier.weight(1f))
-            if (!locked && clock.value.isNotEmpty()) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Canvas(Modifier.size(8.dp).graphicsLayer { alpha = dotAlpha }) {
+                    drawCircle(GreenBright)
+                }
+                Spacer(Modifier.width(8.dp))
                 BasicText(
-                    clock.value,
-                    style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = InkSoft.copy(alpha = 0.85f)),
+                    ALARM_EYEBROW,
+                    style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = GreenDeep),
                 )
             }
+            Spacer(Modifier.height(10.dp))
+            BasicText(
+                clock.value,
+                style = TextStyle(
+                    fontSize = 76.sp,
+                    fontWeight = FontWeight.Light,
+                    color = Ink,
+                    letterSpacing = (-1).sp,
+                    textAlign = TextAlign.Center,
+                ),
+            )
+            Spacer(Modifier.height(4.dp))
+            GlassText(
+                title,
+                22.sp, FontWeight.SemiBold, Ink,
+                modifier = Modifier.fillMaxWidth(),
+                align = TextAlign.Center,
+            )
         }
     }
 
 
-    // ------------------------------ 主体内容 ------------------------------
+    // ------------------------------ 主体：药品清单 ------------------------------
 
-    /** 组载荷（V2）：头部时段+时间，中部每药一行，操作在底部统一。 */
+    /** 组载荷：一张卡片列出本时段所有药，行间细线分隔；多种药时每行可单独「已服 / 跳过」。 */
     @Composable
-    private fun GroupBody(data: JSONObject, backdrop: Backdrop, locked: Boolean, canAct: Boolean = !locked) {
-        GlassText(
-            MedicationAlarmContract.buildGroupTitle(data),
-            30.sp, FontWeight.Bold, Ink,
-        )
-        Spacer(Modifier.height(6.dp))
-        GlassText(
-            "${MedicationAlarmContract.slotLabel(data.optString("slot"))} · " +
-                formatTime(data.optLong("dueAt", 0L)),
-            16.sp, FontWeight.Medium, InkSoft.copy(alpha = 0.9f),
-        )
-        Spacer(Modifier.height(20.dp))
-
+    private fun GroupBody(data: JSONObject, backdrop: Backdrop, canAct: Boolean) {
         val occurrences = data.optJSONArray("occurrences")
         val count = occurrences?.length() ?: 0
-        for (index in 0 until count) {
-            occurrences?.optJSONObject(index)?.let { occurrence ->
-                MedicationRow(occurrence, backdrop, locked, canAct)
-                Spacer(Modifier.height(10.dp))
+        if (count == 0) return
+
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color.White.copy(alpha = 0.82f))
+                .padding(horizontal = 18.dp, vertical = 6.dp)
+        ) {
+            var first = true
+            for (index in 0 until count) {
+                val occurrence = occurrences?.optJSONObject(index) ?: continue
+                if (!first) {
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.copy(alpha = 0.07f)))
+                }
+                first = false
+                MedicationRow(occurrence, backdrop, canAct)
             }
         }
     }
 
     @Composable
-    private fun MedicationRow(occurrence: JSONObject, backdrop: Backdrop, locked: Boolean, canAct: Boolean = !locked) {
+    private fun MedicationRow(occurrence: JSONObject, backdrop: Backdrop, canAct: Boolean) {
         val name = occurrence.optString("medName")
         val dose = occurrence.optString("dose")
         val occurrenceId = occurrence.optString("occurrenceId")
@@ -892,14 +854,13 @@ class MedicationAlarmActivity : ComponentActivity() {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(Color.White.copy(alpha = 0.86f))
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                GlassText(name.ifEmpty { "用药" }, 19.sp, FontWeight.SemiBold, Ink)
+                GlassText(name.ifEmpty { "用药" }, 18.sp, FontWeight.SemiBold, Ink)
                 if (dose.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
                     GlassText(dose, 14.sp, FontWeight.Normal, InkSoft)
                 }
             }
@@ -912,57 +873,31 @@ class MedicationAlarmActivity : ComponentActivity() {
                 PillAction(label = "跳过", fg = Red, backdrop = backdrop) {
                     queueOccurrence(MedicationAlarmContract.ACTION_SKIP, occurrenceId)
                 }
-            } else if (!canAct) {
-                Spacer(Modifier.width(10.dp))
-                LockBadge(label = if (locked) "待扫码" else "待解锁")
             }
         }
     }
 
-    /** 锁定态行内徽标：提示该行需扫码或滑动解锁后才能操作 */
+    /** 旧单药载荷：药名 + 剂量放在同款卡片里，与组提醒视觉一致。 */
     @Composable
-    private fun LockBadge(label: String = "待解锁") {
-        Box(
-            Modifier
-                .clip(Capsule())
-                .background(GreenDeep.copy(alpha = 0.08f))
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            BasicText(
-                label,
-                style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = GreenDeep),
-            )
-        }
-    }
-
-    /** 旧单药载荷布局：超大标题 + 剂量信息，居中聚焦。 */
-    @Composable
-    private fun LegacyBody(payload: JSONObject, data: JSONObject?) {
+    private fun LegacyBody(data: JSONObject?) {
         val dose = data?.optString("medicationDose").orEmpty()
         val medName = data?.optString("medicationName").orEmpty()
+        if (medName.isEmpty() && dose.isEmpty()) return
 
-        Spacer(Modifier.height(28.dp))
-        GlassText(
-            payload.optString("title", "该吃药了"),
-            34.sp, FontWeight.ExtraBold, Ink,
-            modifier = Modifier.fillMaxWidth(),
-            align = TextAlign.Center,
-        )
-        if (medName.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            GlassText(medName, 22.sp, FontWeight.SemiBold, InkSoft,
-                modifier = Modifier.fillMaxWidth(), align = TextAlign.Center)
-        }
-        if (dose.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                BasicText(
-                    dose,
-                    style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = GreenDeep),
-                )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color.White.copy(alpha = 0.82f))
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (medName.isNotEmpty()) {
+                GlassText(medName, 20.sp, FontWeight.SemiBold, Ink, align = TextAlign.Center)
+            }
+            if (dose.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                GlassText(dose, 15.sp, FontWeight.Medium, GreenDeep, align = TextAlign.Center)
             }
         }
     }
@@ -1093,104 +1028,68 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     // ------------------------------ 底部操作区 ------------------------------
 
+    /** 解锁后的操作：一个主按钮 + 并排两个次要按钮，三个动作一屏可见。 */
     @Composable
-    private fun FooterActions(
-        payload: JSONObject,
-        expectedTokens: List<String>,
-        backdrop: Backdrop,
-        groupPayload: Boolean,
-        locked: Boolean,
-        resolved: Boolean = false,
-        scanFeedback: String? = null,
-        secondsLeft: Int,
-        onStartScan: () -> Unit,
-        onEmergencyTriggered: () -> Unit = {},
-        onDismissAll: () -> Unit = {},
-    ) {
-        if (resolved) {
-            // 扫码已自动记录：成功态替代操作按钮，提供显式完成按钮并支持点击即退，伴随 1.5s 自动退出。
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(GreenDeep.copy(alpha = 0.12f))
-                        .clickable { onDismissAll() }
-                        .padding(vertical = 18.dp, horizontal = 16.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        GlassText("✓ 已扫码 · 已记录为已服用", 17.sp, FontWeight.SemiBold, GreenDeep)
-                        Spacer(Modifier.height(4.dp))
-                        BasicText(
-                            "1.5 秒后自动返回原应用",
-                            style = TextStyle(fontSize = 12.sp, color = GreenDeep.copy(alpha = 0.7f)),
-                        )
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
-                PrimaryGradientButton(
-                    label = "完成并返回",
-                    onClick = onDismissAll
-                )
-            }
-            return
+    private fun ActionButtons(groupPayload: Boolean, occurrenceCount: Int, backdrop: Backdrop) {
+        val multi = groupPayload && occurrenceCount >= 2
+        PrimaryGradientButton(label = if (multi) "全部已服用" else "已服用") {
+            act(if (groupPayload) MedicationAlarmContract.ACTION_ALL_TAKEN else MedicationAlarmContract.ACTION_TAKEN)
         }
-
-        if (locked) {
-            ScanLockedCard(expectedTokens, scanFeedback, onStartScan, onEmergencyTriggered)
-            return
-        }
-
-        if (groupPayload) {
-            PrimaryGradientButton(label = "全部已服用") { act(MedicationAlarmContract.ACTION_ALL_TAKEN) }
-            Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth()) {
             GlassButton(
                 label = "10 分钟后提醒",
                 container = Color.White.copy(alpha = 0.30f),
                 contentColor = GreenDeep,
                 onClick = { act(MedicationAlarmContract.ACTION_SNOOZE) },
                 backdrop = backdrop,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.weight(1.4f),
             )
-        } else {
-            PrimaryGradientButton(label = "已服用") { act(MedicationAlarmContract.ACTION_TAKEN) }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.width(12.dp))
             GlassButton(
-                label = "10 分钟后提醒",
+                label = if (multi) "全部跳过" else "跳过",
                 container = Color.White.copy(alpha = 0.30f),
-                contentColor = GreenDeep,
-                onClick = { act(MedicationAlarmContract.ACTION_SNOOZE) },
+                contentColor = Red,
+                onClick = {
+                    act(if (groupPayload) MedicationAlarmContract.ACTION_ALL_SKIPPED else MedicationAlarmContract.ACTION_SKIP)
+                },
                 backdrop = backdrop,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(10.dp))
-            GhostButton(label = "跳过本次", contentColor = Red) { act(MedicationAlarmContract.ACTION_SKIP) }
-        }
-
-        if (secondsLeft >= 0) {
-            Spacer(Modifier.height(16.dp))
-            BasicText(
-                "${secondsLeft} 秒后自动收起",
-                style = TextStyle(fontSize = 13.sp, color = InkSoft.copy(alpha = 0.55f), textAlign = TextAlign.Center),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
             )
         }
     }
 
-    /** 锁定态卡片：锁定说明 + 扫码主 CTA（渐变填充） */
+    /** 扫码已记录：一行结果 + 完成按钮（1.5 秒后也会自动关闭）。 */
+    @Composable
+    private fun ResolvedPanel(onDismissAll: () -> Unit) {
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = 14.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(26.dp).clip(CircleShape).background(GreenBright),
+                contentAlignment = Alignment.Center,
+            ) {
+                BasicText("✓", style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White))
+            }
+            Spacer(Modifier.width(10.dp))
+            GlassText("已记录为已服用", 18.sp, FontWeight.SemiBold, GreenDeep)
+        }
+        PrimaryGradientButton(label = "完成", onClick = onDismissAll)
+    }
+
+    /**
+     * 扫码锁定：二维码图标 + 一句标题 + 扫码按钮。
+     * 暗门保留：长按二维码图标触发应急解除（震动后进入带「应急解除」的扫码页）。
+     */
     @OptIn(ExperimentalFoundationApi::class)
     @Composable
-    private fun ScanLockedCard(
-        expectedTokens: List<String>,
+    private fun ScanLockedPanel(
         scanFeedback: String?,
         onStartScan: () -> Unit,
         onEmergencyTriggered: () -> Unit,
     ) {
-        val isCustom = expectedTokens.any { it.isNotEmpty() && !it.startsWith(TOKEN_PREFIX) }
         val interactionSource = remember { MutableInteractionSource() }
         val isPressed by interactionSource.collectIsPressedAsState()
         val scale by animateFloatAsState(
@@ -1199,24 +1098,17 @@ class MedicationAlarmActivity : ComponentActivity() {
             label = "qrScale"
         )
 
-        Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
-                .background(Color.White.copy(alpha = 0.72f))
-                .padding(horizontal = 20.dp, vertical = 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // 暗门：长按二维码图标触发应急解除（基于 Compose 原生 combinedClickable，长按触发震动并进入带应急解除的扫码页）
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 Modifier
-                    .size(96.dp)
+                    .size(72.dp)
                     .scale(scale)
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White.copy(alpha = 0.82f))
                     .combinedClickable(
                         interactionSource = interactionSource,
                         indication = null,
-                        onClick = {
-                            onStartScan()
-                        },
+                        onClick = { onStartScan() },
                         onLongClick = {
                             try {
                                 triggerHapticBypass()
@@ -1226,31 +1118,22 @@ class MedicationAlarmActivity : ComponentActivity() {
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                QrGlyph(Modifier.size(68.dp))
+                QrGlyph(Modifier.size(44.dp))
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
             BasicText(
-                "扫码确认服药",
-                style = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink),
-            )
-            Spacer(Modifier.height(6.dp))
-            BasicText(
-                if (isCustom) "请扫描已绑定的药盒、条形码或二维码，完成本次服药确认"
-                else "请扫描已绑定的专属二维码或药盒条码，完成本次服药确认",
-                style = TextStyle(fontSize = 14.sp, color = InkSoft, textAlign = TextAlign.Center, lineHeight = 21.sp),
+                "扫码后才能关闭提醒",
+                style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = InkSoft),
             )
             if (!scanFeedback.isNullOrEmpty()) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(6.dp))
                 BasicText(
                     scanFeedback,
                     style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Red, textAlign = TextAlign.Center),
                 )
             }
-            Spacer(Modifier.height(18.dp))
-            PrimaryGradientButton(
-                label = "立即扫码验证",
-                onClick = onStartScan
-            )
+            Spacer(Modifier.height(16.dp))
+            PrimaryGradientButton(label = "扫码", onClick = onStartScan)
         }
     }
 
@@ -1284,7 +1167,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 BasicText(
-                    "紧急解除用药提醒",
+                    "紧急关闭提醒",
                     style = TextStyle(
                         fontSize = 19.sp,
                         fontWeight = FontWeight.Bold,
@@ -1294,7 +1177,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 )
                 Spacer(Modifier.height(8.dp))
                 BasicText(
-                    "已触发应急暗门。如遇条码遗失或无法扫描等情况，可选择以下方式解除当前提醒：",
+                    "扫不了码时，可以用下面的方式关闭。",
                     style = TextStyle(
                         fontSize = 14.sp,
                         color = InkSoft,
@@ -1309,13 +1192,13 @@ class MedicationAlarmActivity : ComponentActivity() {
                 )
                 Spacer(Modifier.height(10.dp))
                 GhostButton(
-                    label = if (groupPayload) "跳过本组服药" else "跳过本次服药",
+                    label = if (groupPayload) "跳过这一次" else "跳过这次",
                     contentColor = InkSoft,
                     onClick = onSkip
                 )
                 Spacer(Modifier.height(10.dp))
                 GhostButton(
-                    label = "强行停止提醒",
+                    label = "停止提醒",
                     contentColor = Red,
                     onClick = onForceStop
                 )
@@ -1363,7 +1246,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 CameraScanner(
                     expectedTokens = expectedTokens,
                     onMismatch = {
-                        scanFeedback.value = "这不是配对的解锁码或药盒条码"
+                        scanFeedback.value = "不是绑定的码，请换一个"
                     },
                     onMatched = onMatched,
                     modifier = Modifier.matchParentSize(),
@@ -1401,7 +1284,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                     )
                     Spacer(Modifier.height(8.dp))
                     BasicText(
-                        "需要使用相机扫描解锁二维码或药盒条码",
+                        "扫码需要使用相机",
                         style = TextStyle(fontSize = 14.sp, color = Color.White.copy(alpha = 0.85f)),
                     )
                     Spacer(Modifier.height(20.dp))
@@ -1422,7 +1305,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                     Spacer(Modifier.height(18.dp))
                     val isCustom = expectedTokens.any { it.isNotEmpty() && !it.startsWith(TOKEN_PREFIX) }
                     BasicText(
-                        scanFeedback.value ?: if (isCustom) "请对准已绑定的条形码或二维码" else "请对准贴好的解锁二维码或药盒条码",
+                        scanFeedback.value ?: if (isCustom) "对准已绑定的码" else "对准解锁二维码或药盒条码",
                         style = TextStyle(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -1443,7 +1326,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                             .padding(horizontal = 24.dp, vertical = 13.dp)
                     ) {
                         BasicText(
-                            "返回提醒页",
+                            "返回",
                             style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White),
                         )
                     }

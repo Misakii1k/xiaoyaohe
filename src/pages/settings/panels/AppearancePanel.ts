@@ -40,10 +40,6 @@ export function renderAppearancePanel(): HTMLElement {
       });
       themeHeader.append(themeTitleWrap, themeBadge);
 
-      const themeDesc = el('div', {
-        class: 'settings-subcard-desc',
-        text: '选择小药盒的主题风格。选择“跟随系统”将自动配合手机深色模式昼夜自适应。',
-      });
 
       const control = createSegmentedControl<ThemePreference>(
         '配色方案',
@@ -61,14 +57,14 @@ export function renderAppearancePanel(): HTMLElement {
           toast(`已切换为${THEME_PREFERENCE_LABEL[value]}`);
         },
       );
-      themeCard.append(themeHeader, themeDesc, control);
+      themeCard.append(themeHeader, control);
 
       // 2. 界面动效与材质微卡片
       const liquidEnabled = getLiquidGlassPreference() === 'on';
       const glassCard = el('div', { class: 'settings-subcard' });
       const glassHeader = el('div', { class: 'settings-subcard-header' });
       const glassTitleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
-        el('span', { class: 'settings-subcard-title', text: '界面动效与材质' }),
+        el('span', { class: 'settings-subcard-title', text: '界面材质' }),
       ]);
       const glassBadge = el('span', {
         class: `chip-pill ${liquidEnabled ? 'chip-primary' : ''}`,
@@ -82,9 +78,7 @@ export function renderAppearancePanel(): HTMLElement {
         el('div', { class: 'settings-toggle-title', text: '液态玻璃效果' }),
         el('div', {
           class: 'settings-toggle-desc',
-          text: liquidEnabled
-            ? '底栏与弹层带折射高光的玻璃质感，更具通透立体感'
-            : '已关闭：使用普通毛玻璃材质，功耗更低更省电',
+          text: liquidEnabled ? '通透的玻璃质感' : '已关闭，更省电',
         }),
       );
       const liquidToggle = el('input', {
@@ -102,9 +96,7 @@ export function renderAppearancePanel(): HTMLElement {
         toast(on ? '液态玻璃已开启' : '液态玻璃已关闭');
         const desc = liquidCopy.querySelector<HTMLElement>('.settings-toggle-desc');
         if (desc) {
-          desc.textContent = on
-            ? '底栏与弹层带折射高光的玻璃质感，更具通透立体感'
-            : '已关闭：使用普通毛玻璃材质，功耗更低更省电';
+          desc.textContent = on ? '通透的玻璃质感' : '已关闭，更省电';
         }
       };
       liquidRow.append(liquidCopy, liquidToggle);

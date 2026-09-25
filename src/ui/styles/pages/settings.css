@@ -2631,3 +2631,44 @@ body.lan-sync-panel-active .ai-launcher {
 }
 .period-editor-body > .field { margin: 0; }
 .period-editor-body > .btn-row { margin-block-start: var(--space-2); }
+
+/* ---------- 设置页层级压平（参考 iOS / 微信设置） ----------
+ * 以前：分组卡 → 面板 → 微卡片 → 开关行，四层各带底色 / 边框，文字被一圈圈框住。
+ * 现在：面板内的微卡片只保留一层白底分组，里面的开关行、状态卡去掉底色和内边距，
+ * 行与行之间用细分隔线区分，和系统设置页一样是「分组列表」。 */
+.settings-page :is(.settings-subcard, .settings-scan-card, .settings-ringtone-card) {
+  gap: 0;
+  padding: 4px 14px;
+  box-shadow: none;
+}
+.settings-page :is(.settings-subcard, .settings-scan-card, .settings-ringtone-card) > * {
+  padding-block: 10px;
+}
+.settings-page :is(.settings-subcard, .settings-scan-card, .settings-ringtone-card) > * + * {
+  border-block-start: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+/* 标题行与紧随其后的内容视为一组，不画分隔线 */
+.settings-page :is(.settings-subcard-header, .settings-scan-card-header) + * {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+.settings-page :is(.settings-subcard, .settings-scan-card, .settings-ringtone-card) .settings-toggle-row {
+  margin: 0;
+  padding: 10px 0;
+  border-radius: 0;
+  background: transparent;
+}
+.settings-page :is(.settings-subcard, .settings-scan-card) .banner {
+  margin: 6px 0;
+  padding: 8px 10px;
+  font-size: var(--fs-footnote);
+}
+.settings-page :is(.settings-subcard, .settings-scan-card, .settings-ringtone-card) :is(.btn-row, .settings-scan-grid, .settings-test-grid) {
+  margin-block: 0;
+}
+.settings-page .settings-toggle-title { font-weight: 600; }
+.settings-page .settings-toggle-desc { margin-block-start: 2px; line-height: 1.4; }
+.settings-page .settings-subcard-title { font-size: var(--fs-footnote); color: var(--color-text-muted); font-weight: 600; }
+.settings-page .settings-hint { margin-block-start: var(--space-2); font-size: 13px; }
+/* 面板内容区纵向节奏统一 */
+.settings-page .panel.open .panel-body { gap: 10px; }

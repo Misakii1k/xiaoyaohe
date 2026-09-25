@@ -23,13 +23,13 @@ export function renderCacheStoragePanel(signal?: AbortSignal): SettingsRenderPar
 
       const noteEl = el('div', {
         class: 'muted settings-cache-note',
-        text: '仅清理历史安装包、增量包解压残留与页面临时缓存。所有药品档案、服药记录与闹钟提醒均安全保留在本地数据库中，绝不丢失。',
+        text: '只清理安装包和临时文件，药品和记录不受影响。',
       });
 
       clearBtn = el('button', {
         class: 'btn tonal btn-full settings-cache-clear-btn',
         type: 'button',
-        text: '一键清理缓存',
+        text: '清理缓存',
       }) as HTMLButtonElement;
 
       clearBtn.onclick = async () => {

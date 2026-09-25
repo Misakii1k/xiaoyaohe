@@ -290,8 +290,8 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
   const intro = el('div', {
     class: 'settings-hint',
     text: isNative
-      ? 'Android 系统会对后台应用进行休眠和清理。完成以下设置后，可确保按时收到用药全屏提醒与自动同步。'
-      : '网页端提醒依赖浏览器前台活动。如需最可靠的准时提醒与无障碍守护，建议安装 Android 原生 App。',
+      ? '完成以下设置，防止提醒被系统清理。'
+      : '网页端需保持页面打开才能准时提醒，建议装手机 App。',
   });
   body.append(intro);
 
@@ -308,17 +308,17 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
         style: accEnabled
           ? 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(23, 96, 63, 0.12); color: var(--color-primary, #17603f);'
           : 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
-        text: accEnabled ? '已开启' : '未开启（建议开启）',
+        text: accEnabled ? '已开启' : '未开启',
       }),
     );
     const accDesc = el('div', {
       class: 'keepalive-card-desc',
-      text: '开启后由无障碍服务守护全屏提醒窗口，在未完成扫码前阻止误切桌面；同时显著提升系统后台保活优先级。',
+      text: '扫码前防止切回桌面，也更不容易被系统清理。',
     });
     const accBtn = el('button', {
       class: 'btn tonal mt-2',
       style: 'font-size: 13px; width: 100%;',
-      text: accEnabled ? '管理系统无障碍设置' : '前往开启无障碍服务',
+      text: accEnabled ? '管理' : '去开启',
     });
     accBtn.onclick = async () => {
       await openAccessibilityGuardSettings();
@@ -337,16 +337,16 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
         style: ignoring
           ? 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(23, 96, 63, 0.12); color: var(--color-primary, #17603f);'
           : 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
-        text: ignoring ? '已允许' : '需授权（建议允许）',
+        text: ignoring ? '已允许' : '未允许',
       }),
     );
     const battDesc = el('div', {
       class: 'keepalive-card-desc',
-      text: '允许应用在后台持续运行，避免手机长时间熄屏或处于省电模式时遗漏提醒与定时同步。',
+      text: '熄屏或省电模式下也能按时提醒。',
     });
     const battBtnRow = el('div', { class: 'btn-row mt-2' });
     if (!ignoring) {
-      const allowBtn = el('button', { class: 'btn', style: 'font-size: 13px;', text: '申请加入白名单' });
+      const allowBtn = el('button', { class: 'btn', style: 'font-size: 13px;', text: '允许' });
       allowBtn.onclick = async () => {
         const ok = await requestIgnoreBatteryOptimizations();
         toast(ok ? '已加入电池优化白名单' : '未加入，可稍后再试');
@@ -354,7 +354,7 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
       };
       battBtnRow.append(allowBtn);
     }
-    const appSettingsBtn = el('button', { class: 'btn tonal', style: 'font-size: 13px;', text: '打开应用系统设置' });
+    const appSettingsBtn = el('button', { class: 'btn tonal', style: 'font-size: 13px;', text: '应用设置' });
     appSettingsBtn.onclick = () => void openAppSettings();
     battBtnRow.append(appSettingsBtn);
     battItem.append(battHead, battDesc, battBtnRow);
@@ -373,7 +373,7 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     );
     const lockDesc = el('div', {
       class: 'keepalive-card-desc',
-      text: '呼出手机多任务（最近应用）列表，在小药盒卡片上向下拉动或长按，点击「小锁」图标加锁，防止被系统「一键清理」关闭。',
+      text: '在最近任务里给小药盒加锁，防止一键清理。',
     });
     lockItem.append(lockHead, lockDesc);
     list.append(lockItem);
@@ -400,8 +400,8 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
       }),
     );
     const brandDesc = isDetectedOem
-      ? `已检测到当前设备为【${detectedName}】。请开启自启动并允许后台无限制活动，防止熄屏后定时任务被系统休眠。`
-      : '部分手机厂商（小米、华为、OPPO、vivo 等）默认限制后台自启动，请在手机管家或权限管理中将小药盒设为允许自启动与后台活动。';
+      ? `${detectedName}：请允许自启动和后台运行。`
+      : '在手机管家里允许小药盒自启动和后台运行。';
     const autoDesc = el('div', {
       class: 'keepalive-card-desc',
       text: brandDesc,
@@ -424,7 +424,7 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     const guideBtn = el('button', {
       class: 'btn tonal',
       style: 'font-size: 13px;',
-      text: '查看防杀指南',
+      text: '防杀指南',
     });
     guideBtn.onclick = () => openKeepAliveGuideModal(deviceInfo.matchedOem);
     autoBtnRow.append(guideBtn);
@@ -435,7 +435,7 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
   } else {
     // 网页端
     const battBtnRow = el('div', { class: 'btn-row mt-3' });
-    const openBtn = el('button', { class: 'btn tonal', text: '查看防杀设置指南' });
+    const openBtn = el('button', { class: 'btn tonal', text: '防杀指南' });
     openBtn.onclick = () => openKeepAliveGuideModal();
     battBtnRow.append(openBtn);
     body.append(battBtnRow);
