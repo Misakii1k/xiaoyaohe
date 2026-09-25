@@ -1451,3 +1451,10 @@ Latest version: `1.1.10` (Android `versionCode: 68`)
    - 底栏选中项恢复为独立玻璃泡（`a.active::before`，`lgBubbleIn` 液态涨开，深色 / 平板侧栏各有变体）；顶栏 `.topbar-pill` 纳入玻璃规则；Toast 保持黑曜石深底白字（架构契约测试改为断言深色填充层）。
    - `prefers-reduced-transparency` / `prefers-reduced-motion` 退回普通毛玻璃。
 5. 门禁：tsc 0 错误；Vitest 95 文件 / 624 项 PASS；Playwright 100/100 PASS。截图在本环境超时，玻璃效果需真机确认（Android WebView 对 `backdrop-filter: url()` 支持取决于系统 WebView 版本，不支持时自动退回普通模糊）。
+
+### 74. v1.1.12 发版 (v1.1.12, versionCode 70, workspace/claude & main)
+
+- 版本递增 1.1.11/69 → 1.1.12/70（package.json / lock / build.gradle / `VERSION_CODE_BY_VERSION` / `functions/version.json.ts` 镜像表），新增 `docs/releases/1.1.12.md`（黑话 lint PASS）。
+- 测试夹具「更新的假版本」从 1.2.2/70 上推到 1.2.3/71（本机已是 70）；`tests/release-utils.test.ts` 补 1.1.12 断言。
+- 两遍出包：APK 20968100 B，sha256 `567d1c42…fa35f8`；Web Bundle 8337018 B，sha256 `0ac5379f…cea3fa`；`publishReleaseArtifacts` 校验 111 个 dist 文件字节一致（新增 2 个透镜位移图）。
+- 门禁：tsc 0 错误；Vitest 95 文件 / 624 项 PASS；Playwright 100/100（第 73 节同一代码）。
