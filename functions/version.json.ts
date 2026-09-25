@@ -47,7 +47,7 @@ const VERSION_CODE_BY_VERSION: Record<string, number> = {
   '1.1.6': 64,
   '1.1.7': 65,
   '1.1.8': 66,
-  '1.1.9': 67,
+  '1.1.9': 67, '1.1.10': 68,
 };
 
 /**

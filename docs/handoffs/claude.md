@@ -4,7 +4,7 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-25
 Status: active
-Latest version: `1.1.9` (Android `versionCode: 67`)
+Latest version: `1.1.10` (Android `versionCode: 68`)
 
 ## Summary of Accomplished Work
 
@@ -1410,3 +1410,11 @@ Latest version: `1.1.9` (Android `versionCode: 67`)
 5. **按压手感**：`button/a/[role=button]` 及列表卡 `:active` 时 `transition-duration: 80ms`（跟手），松手按元素自身弹簧回弹；按压缩放收敛到 0.92~0.97（原 0.85/0.86/0.88）。
 6. **分药向导**：页切换改为 iOS 导航式视差（新卡 40% 推入、旧卡退 30% 变淡），页码点由放大改为拉长成胶囊。
 7. 验证：`tsc` 0 错误、Vitest 584/584、Playwright 100/100；浏览器实测 `linear()` 生效、bottom-sheet 开合后无残留节点、`#app` inert 正确恢复、无控制台错误。
+
+### 70. v1.1.10 发版：动效重做正式出包 (v1.1.10, versionCode 68, workspace/claude)
+
+- 版本递增：package.json / package-lock.json / build.gradle / `VERSION_CODE_BY_VERSION` / `functions/version.json.ts` 镜像表 → 1.1.10 / 68；新增 `docs/releases/1.1.10.md`。
+- 测试夹具里的「更新的假版本」从 1.2.0/68 上推到 1.2.1/69（本机 `LOCAL_APP_VERSION_CODE` 已是 68，否则更新判定夹具全部失效）。
+- 出包走两遍（gen-version 需要已存在的 APK 才能写入 fileSize/sha256）：第一遍产 APK → 复制到 `release/` → gen-version → cap sync → 第二遍 assembleRelease → `publishReleaseArtifacts` 校验 109 个 dist 文件字节一致。
+- 产物：`xiaoyaohe-1.1.10-android-release.apk` 20928601 B，sha256 `01a650c8…29f90a`；`web-bundle.zip` 8297360 B，sha256 `6ba6b66d…94d4a`；`minNativeVersionCode: 58`。
+- 门禁：tsc 0 错误、Vitest 584/584；Playwright 100/100（动效重做那轮跑过，本轮仅改版本号与夹具）。
