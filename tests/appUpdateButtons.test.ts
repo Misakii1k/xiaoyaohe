@@ -56,4 +56,45 @@ describe('软件更新操作按钮展示策略 (用户规则验证)', () => {
     expect(buttons).toContain('一键秒级更新');
     expect(buttons).toContain('下载完整包');
   });
+
+  it('只能完整安装时，推荐行指向「下载并安装」并给出一句大白话理由', () => {
+    saveAvailableUpdate({
+      version: '1.2.1',
+      versionCode: 69,
+      source: 'cloud',
+      updateType: 'full',
+      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.2.1',
+      fileSize: 20 * 1024 * 1024,
+      discoveredAt: Date.now(),
+    });
+    buildAppUpdateBody(body, panelEl, true);
+
+    const rec = body.querySelector('.app-update-recommend') as HTMLElement;
+    expect(rec).not.toBeNull();
+    expect(rec.dataset.recommend).toBe('full');
+    expect(rec.textContent).toContain('推荐');
+    expect(rec.textContent).toContain('下载并安装');
+    expect(rec.textContent).not.toMatch(/增量|底座|versionCode|热更新/);
+    const recommendedBtn = body.querySelector('button[data-recommended="true"]');
+    expect(recommendedBtn?.textContent).toBe('下载并安装');
+  });
+
+  it('展示的更新说明剥掉注释元数据与黑话行', () => {
+    saveAvailableUpdate({
+      version: '1.2.1',
+      versionCode: 69,
+      source: 'cloud',
+      updateType: 'full',
+      downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.2.1',
+      releaseNotes: '# 小药盒 v1.2.1 更新说明\n\n1. 打卡更顺手。\n2. 优化 DOM 渲染。\n\n<!-- versionCode: 69 -->',
+      discoveredAt: Date.now(),
+    });
+    buildAppUpdateBody(body, panelEl, true);
+
+    const notes = body.querySelector('.app-update-release-notes')?.textContent ?? '';
+    expect(notes).toContain('打卡更顺手');
+    expect(notes).not.toContain('DOM');
+    expect(notes).not.toContain('versionCode');
+    expect(notes).not.toContain('<!--');
+  });
 });

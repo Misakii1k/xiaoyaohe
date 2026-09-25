@@ -343,7 +343,9 @@ export function mountGlobalAssistant(): void {
   }));
 
   const attachPreview = el('div', { class: 'ai-attach-preview', hidden: true } as any);
-  const input = el('input', { class: 'ai-input', type: 'text', placeholder: '跟我说点什么…' }) as HTMLInputElement;
+  // 多行输入：长问题/粘贴清单时自动长高（最多约 5 行），回车发送、Shift+回车换行
+  const input = el('textarea', { class: 'ai-input', placeholder: '跟我说点什么…' }) as HTMLTextAreaElement;
+  input.rows = 1;
   input.enterKeyHint = 'send';
   input.setAttribute('aria-label', '想对小助手说的话');
   const attachBtn = el('button', { class: 'ai-tool-btn', type: 'button' }, [icon('plus')]);
@@ -511,6 +513,53 @@ export function mountGlobalAssistant(): void {
 
   let busy: AbortController | null = null;
 
+  // ---- 输入框自动长高 + 发送键空态 ----
+  function syncInput(): void {
+    input.style.blockSize = 'auto';
+    const next = Math.min(input.scrollHeight + 2, 132);
+    input.style.blockSize = `${Math.max(next, 44)}px`;
+    input.style.overflowY = input.scrollHeight + 2 > 132 ? 'auto' : 'hidden';
+    sendBtn.classList.toggle('is-empty', !busy && !input.value.trim() && !pendingAttachment);
+  }
+  input.addEventListener('input', syncInput);
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    form.requestSubmit();
+  });
+
+  // ---- 滚动：只有用户本来就停在底部附近时才自动追底，往上翻看历史时不被拽回去 ----
+  let stickToBottom = true;
+  log.addEventListener('scroll', () => {
+    stickToBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 72;
+  }, { passive: true });
+  function scrollToBottom(force = false): void {
+    if (!force && !stickToBottom) return;
+    log.scrollTop = log.scrollHeight;
+    stickToBottom = true;
+  }
+
+  // ---- 键盘避让：Android 原生 adjustResize 会直接缩视口（此时差值为 0）；
+  // iOS / 浏览器 PWA 下键盘只盖住 visualViewport，需要把面板抬到键盘上方 ----
+  const vv = window.visualViewport;
+  // adjustResize 下判断键盘靠「视口比无键盘时矮了一截」；旋转/调窗时随最大值更新基准
+  let baseViewportHeight = window.innerHeight;
+  function syncKeyboard(): void {
+    const isOpen = root.classList.contains('is-open');
+    if (document.activeElement !== input) baseViewportHeight = Math.max(window.innerHeight, vv?.height ?? 0);
+    const covered = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+    const lifted = covered > 80 && isOpen;
+    const shrunk = document.activeElement === input && window.innerHeight < baseViewportHeight * 0.8;
+    root.style.setProperty('--ai-kb', lifted ? `${covered}px` : '0px');
+    root.classList.toggle('is-keyboard', isOpen && (lifted || shrunk));
+    if (lifted || shrunk) scrollToBottom();
+  }
+  vv?.addEventListener('resize', syncKeyboard);
+  vv?.addEventListener('scroll', syncKeyboard);
+  window.addEventListener('resize', syncKeyboard);
+  input.addEventListener('focus', () => { syncKeyboard(); window.setTimeout(() => scrollToBottom(), 300); });
+  input.addEventListener('blur', () => window.setTimeout(syncKeyboard, 50));
+
   function seedGreeting(): void {
     addMsg('bot', GREETING);
     const cfg = getLlmConfig();
@@ -526,6 +575,9 @@ export function mountGlobalAssistant(): void {
     root.classList.add('is-open');
     refreshPrefControls();
     if (log.childElementCount === 0 && historyLoaded) seedGreeting();
+    syncInput();
+    // 打开时总是落到最新一条，而不是停在上次翻到的位置
+    requestAnimationFrame(() => scrollToBottom(true));
     setTimeout(() => input.focus(), 320);
   }
 
@@ -572,6 +624,7 @@ export function mountGlobalAssistant(): void {
     pendingAttachment = null;
     attachPreview.hidden = true;
     attachPreview.replaceChildren();
+    syncInput();
   }
 
   function showAttachment(att: AssistantAttachment): void {
@@ -591,6 +644,7 @@ export function mountGlobalAssistant(): void {
     remove.onclick = () => clearAttachment();
     chip.append(remove);
     attachPreview.append(chip);
+    syncInput();
   }
 
   async function pickFile(source: 'camera' | 'album' | 'file'): Promise<void> {
@@ -708,6 +762,7 @@ export function mountGlobalAssistant(): void {
     input.placeholder = '跟我说点什么…';
     const att = pendingAttachment;
     clearAttachment();
+    syncInput();
     void send(text, att ?? undefined);
   };
 
@@ -723,7 +778,7 @@ export function mountGlobalAssistant(): void {
     if (text) bubble.append(role === 'bot' ? renderAssistantMarkdown(text) : el('span', { text }));
     const msg = el('div', { class: `ai-msg is-${role}` }, [bubble]);
     log.append(msg);
-    log.scrollTop = log.scrollHeight;
+    scrollToBottom();
     return msg;
   }
 
@@ -772,7 +827,7 @@ export function mountGlobalAssistant(): void {
       msg.append(cards);
     }
     log.append(msg);
-    log.scrollTop = log.scrollHeight;
+    scrollToBottom();
     return msg;
   }
 
@@ -783,7 +838,7 @@ export function mountGlobalAssistant(): void {
       el('div', { class: 'ai-bubble' }, [el('span', { text }), goBtn]),
     ]);
     log.append(msg);
-    log.scrollTop = log.scrollHeight;
+    scrollToBottom();
   }
 
   function addStatus(text: string): { update: (t: string) => void; remove: () => void } {
@@ -792,7 +847,7 @@ export function mountGlobalAssistant(): void {
       el('div', { class: 'ai-bubble' }, [label, el('span', { class: 'ai-dots' }, [el('i'), el('i'), el('i')])]),
     ]);
     log.append(msg);
-    log.scrollTop = log.scrollHeight;
+    scrollToBottom();
     return {
       update: (t: string) => { label.textContent = t; },
       remove: () => msg.remove(),
@@ -806,6 +861,7 @@ export function mountGlobalAssistant(): void {
     sendBtn.type = on ? 'button' : 'submit';
     sendBtn.onclick = on ? () => busy?.abort() : null;
     attachBtn.disabled = on;
+    syncInput();
   }
 
   async function send(text: string, attachment?: AssistantAttachment): Promise<void> {
@@ -815,6 +871,7 @@ export function mountGlobalAssistant(): void {
     if (!displayText && !attachment) return;
     quick.hidden = true;
     addMsg('user', text.trim(), attachment);
+    scrollToBottom(true);
     history.push({ role: 'user', content: displayText });
     const status = addStatus(attachment?.kind === 'image' ? '正在看图' : '正在想');
     busy = new AbortController();
@@ -831,7 +888,7 @@ export function mountGlobalAssistant(): void {
       bubble.replaceChildren(renderAssistantMarkdown(streamedText));
       bubble.append(el('span', { class: 'ai-caret', 'aria-hidden': 'true' }));
       streamPlain = null;
-      log.scrollTop = log.scrollHeight;
+      scrollToBottom();
     }
 
     function scheduleStreamRender(): void {
@@ -869,7 +926,7 @@ export function mountGlobalAssistant(): void {
             streamPlain.append(document.createTextNode(delta));
             scheduleStreamRender();
           }
-          log.scrollTop = log.scrollHeight;
+          scrollToBottom();
         },
       });
       history.push({ role: 'assistant', content: reply.markdown });
@@ -884,11 +941,11 @@ export function mountGlobalAssistant(): void {
       if (e instanceof AssistantError) {
         if (e.kind === 'unconfigured') addSettingsHint(e.message);
         else if (e.kind === 'cancelled') addMsg('bot', '好，先不查了。想起来再叫我。');
-        else addMsg('bot', e.message);
+        else addMsg('bot', e.message).classList.add('is-error');
       } else if (e instanceof Error && e.message.includes('已取消')) {
         addMsg('bot', '好的，先不发了。想用的时候再点我。');
       } else {
-        addMsg('bot', `出了点小状况：${e instanceof Error ? e.message : String(e)}`);
+        addMsg('bot', `出了点小状况：${e instanceof Error ? e.message : String(e)}`).classList.add('is-error');
       }
     } finally {
       if (streamRenderTimer) {

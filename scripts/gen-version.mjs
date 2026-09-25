@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getVersionCode, MIN_NATIVE_BUNDLE_VERSION_CODE } from './lib/release-utils.mjs';
+import { assertPlainReleaseNotes, stripHtmlComments } from './lib/release-notes-lint.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -67,10 +68,18 @@ export function readBundleManifest(rootDir, version) {
   return null;
 }
 
-function readReleaseNotes(rootDir, version) {
+/**
+ * 读取面向用户的更新说明并写入 version.json。
+ * - 先做黑话校验：命中技术黑话 / 代码标记 / 英文技术标识直接抛错，阻断出包；
+ * - 再剥掉 `<!-- versionCode: 68 -->` 这类 HTML 注释元数据（versionCode 已是独立字段），
+ *   它们不算黑话，但也绝不能展示给用户。
+ */
+export function readReleaseNotes(rootDir, version) {
   const doc = join(rootDir, 'docs', 'releases', `${version}.md`);
   if (!existsSync(doc)) return `小药盒 v${version} 发布`;
-  const notes = readFileSync(doc, 'utf8').replace(/^﻿/, '').trim();
+  const raw = readFileSync(doc, 'utf8').replace(/^﻿/, '');
+  assertPlainReleaseNotes(raw, `docs/releases/${version}.md`);
+  const notes = stripHtmlComments(raw).replace(/\n{3,}/g, '\n\n').trim();
   return notes.length > 500 ? `${notes.slice(0, 480)}...` : notes;
 }
 

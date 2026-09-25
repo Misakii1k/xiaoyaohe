@@ -11,14 +11,29 @@
 /* display 规则会盖掉 UA 的 [hidden]，向导内统一补回 */
 .med-wizard-host [hidden] { display: none; }
 
-/* 覆写 .bottom-sheet 的默认留白与高度，让向导更贴底、可用空间更高 */
-.bottom-sheet.med-wizard-host {
+/* 覆写 .bottom-sheet 的默认留白与高度，让向导更贴底、可用空间更高。
+   外壳只做透明容器：面板底色、阴影、把手全部由内层 .med-wizard 负责，
+   否则会出现「外壳 ::before 把手 + 外壳玻璃底 + 内层把手 + 内层白底」的双层弹层。
+   选择器带上 overlay 前缀（0,3,0）才能压过液态玻璃的
+   `:root[data-liquid='on'] .bottom-sheet`（0,2,1）给外壳刷的玻璃底与投影。 */
+.bottom-sheet-overlay > .bottom-sheet.med-wizard-host {
   padding: 0;
   max-block-size: min(88dvh, 760px);
+  border: 0;
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: transparent;
   box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   overflow: visible;
+  /* 入场由内层 med-wizard-rise 负责，外壳再滑一次会叠成两段位移 */
+  animation: none;
+}
+
+/* 外壳的通用拖拽把手去掉，只保留内层 .med-wizard-grabber 一条 */
+.bottom-sheet-overlay > .bottom-sheet.med-wizard-host::before {
+  content: none;
+  display: none;
 }
 
 .med-wizard {

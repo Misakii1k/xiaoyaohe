@@ -155,7 +155,9 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
     }
 
     if (typeof release.body === 'string' && release.body.trim()) {
-      manifest.releaseNotes = release.body.trim();
+      // versionCode 已在上面从正文注释里解析过；`<!-- versionCode: 68 -->` 这类元数据不展示给用户
+      const notes = release.body.replace(/<!--[\s\S]*?-->/g, '').replace(/\n{3,}/g, '\n\n').trim();
+      if (notes) manifest.releaseNotes = notes;
     }
 
     return jsonResponse(manifest, 200, cacheHeaders);

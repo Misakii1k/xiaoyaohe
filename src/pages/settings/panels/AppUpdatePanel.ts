@@ -8,9 +8,59 @@ import {
   installApk,
   isApkDistributionAvailable,
   LOCAL_APP_VERSION,
+  LOCAL_APP_VERSION_CODE,
+  DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE,
+  type AvailableUpdate,
 } from '../../../sync/lan/apkTransport';
+import {
+  formatUpdateSizeMb,
+  recommendUpdateChannel,
+  type UpdateRecommendation,
+} from '../../../sync/lan/updateRecommendation';
+import { sanitizeReleaseNotesForDisplay } from '../../../sync/lan/releaseNotesText';
 import type { PanelChip, SettingsRenderPart } from '../types';
 import { panel, setChip } from '../components/panelPrimitives';
+
+/** 本次运行中秒级更新失败过的版本：重新渲染后改推荐完整包（两个按钮仍保留）。 */
+const incrementalFailedVersions = new Set<string>();
+
+function markIncrementalFailed(version: string): void {
+  incrementalFailedVersions.add(version);
+}
+
+/** 测试用：清空秒级更新失败记录。 */
+export function resetIncrementalFailures(): void {
+  incrementalFailedVersions.clear();
+}
+
+export function recommendForUpdate(
+  update: AvailableUpdate,
+  localNativeVersionCode: number = LOCAL_APP_VERSION_CODE,
+): UpdateRecommendation {
+  return recommendUpdateChannel({
+    localNativeVersionCode,
+    source: update.source,
+    bundleUrl: update.bundleUrl,
+    bundleSize: update.bundleSize,
+    fileSize: update.fileSize,
+    downloadUrl: update.downloadUrl,
+    minNativeVersionCode: update.minNativeVersionCode,
+    defaultMinNativeVersionCode: DEFAULT_MIN_NATIVE_BUNDLE_VERSION_CODE,
+    incrementalFailed: incrementalFailedVersions.has(update.version),
+  });
+}
+
+/**
+ * 检查阶段已判定为只能完整安装、但推荐函数认为秒级可用的少见情况
+ * （例如元数据缺秒级资源校验信息被降级）：统一给出「只提供完整安装包」的说法。
+ */
+function fullOnlyCode(rec: UpdateRecommendation): string {
+  return rec.incrementalAvailable ? 'no-bundle' : rec.code;
+}
+
+function fullOnlyReason(rec: UpdateRecommendation): string {
+  return rec.incrementalAvailable ? '这次更新需要安装完整安装包，下载后按提示安装即可。' : rec.reason;
+}
 
 export function renderAppUpdatePanel(): SettingsRenderPart {
   const update = getAvailableUpdate();
@@ -181,7 +231,7 @@ export function buildAppUpdateBody(
     return;
   }
 
-  // 发现可用更新：显示版本、来源、更新说明、操作按钮与进度条
+  // 发现可用更新：显示版本、来源、推荐方式、更新说明、操作按钮与进度条
   const updateCard = el('div', { class: 'app-update-card mt-3' });
 
   const updateHeader = el('div', { class: 'app-update-header' });
@@ -189,39 +239,51 @@ export function buildAppUpdateBody(
   const title = el('div', { class: 'app-update-title' });
   title.append(icon('sparkles'), '发现新版本 ', el('strong', { text: `v${update.version}` }));
 
-  const isIncremental = update.updateType === 'incremental' && Boolean(update.bundleUrl);
-  const badge = el('span', { class: 'app-update-badge', text: isIncremental ? '轻量热更新' : '新版本' });
+  const recommendation = recommendForUpdate(update);
+  // 检查阶段已判定为只能完整安装（updateType === 'full'）时，不展示秒级按钮
+  const isIncremental = update.updateType === 'incremental' && recommendation.incrementalAvailable;
+  const recommendFull = !isIncremental || recommendation.recommended === 'full';
+  const badge = el('span', { class: 'app-update-badge', text: isIncremental ? '支持秒级更新' : '新版本' });
   titleRow.append(title, badge);
 
-  let sourceDesc = '';
-  if (isIncremental) {
-    const sizeText = update.bundleSize ? ` · 大小：${(update.bundleSize / (1024 * 1024)).toFixed(1)} MB` : '';
-    sourceDesc = `方式：秒级增量更新${sizeText}（无需重新安装）`;
-  } else if (update.source === 'cloud') {
-    sourceDesc = `来源：云端极速通道${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`;
+  const bundleMb = formatUpdateSizeMb(update.bundleSize);
+  const fullMb = formatUpdateSizeMb(update.fileSize);
+  const metaParts: string[] = [];
+  if (update.source === 'lan') {
+    metaParts.push(`来源：同一 Wi-Fi 下的设备 ${update.peerHost ?? ''}`.trim());
   } else if (update.source === 'github') {
-    sourceDesc = `来源：GitHub 官方发布${update.fileSize ? ` · 大小：${(update.fileSize / (1024 * 1024)).toFixed(1)} MB` : ''}`;
+    metaParts.push('来源：GitHub 官方发布');
   } else {
-    sourceDesc = `来源：局域网设备 ${update.peerHost ?? ''}`;
+    metaParts.push('来源：官方更新服务');
   }
+  if (isIncremental && bundleMb) metaParts.push(`秒级更新约 ${bundleMb} MB`);
+  if (fullMb) metaParts.push(`完整安装包约 ${fullMb} MB`);
   const updateMeta = el('div', {
     class: 'app-update-meta',
-    text: sourceDesc,
+    text: metaParts.join(' · '),
   });
 
-  updateHeader.append(titleRow, updateMeta);
-  if (!isIncremental) {
-    const notice = el('div', {
-      class: 'app-update-meta mt-1',
-      style: 'color: #b45309; font-weight: 500;',
-      text: '提示：本次更新包含底层系统功能升级，增量热更新无法落实，需安装完整安装包。',
-    });
-    updateHeader.append(notice);
-  }
+  // 推荐方式 + 一句大白话理由
+  const recommendRow = el('div', {
+    class: `app-update-recommend ${recommendFull ? 'is-full' : 'is-incremental'}`,
+    'data-recommend': recommendFull ? 'full' : 'incremental',
+    'data-reason-code': isIncremental ? recommendation.code : fullOnlyCode(recommendation),
+  });
+  recommendRow.append(
+    el('span', { class: 'app-update-recommend-tag', text: '推荐' }),
+    el('span', {
+      class: 'app-update-recommend-text',
+      text: `${recommendFull ? (isIncremental ? '下载完整包' : '下载并安装') : '一键秒级更新'}：${
+        isIncremental ? recommendation.reason : fullOnlyReason(recommendation)
+      }`,
+    }),
+  );
+
+  updateHeader.append(titleRow, updateMeta, recommendRow);
   updateCard.append(updateHeader);
 
   if (update.releaseNotes) {
-    const notesBox = renderFormattedReleaseNotes(update.releaseNotes);
+    const notesBox = renderFormattedReleaseNotes(sanitizeReleaseNotesForDisplay(update.releaseNotes));
     updateCard.append(notesBox);
   }
   body.append(updateCard);
@@ -289,7 +351,7 @@ export function buildAppUpdateBody(
     progressFill.style.width = '100%';
     progressDetail.textContent = '下载中';
     triggerBtn.textContent = '正在下载更新...';
-    progressText.textContent = '正在下载增量热更新包...';
+    progressText.textContent = '正在下载更新内容...';
 
     try {
       await downloadAndApplyWebBundle(update, (status) => {
@@ -302,8 +364,9 @@ export function buildAppUpdateBody(
       }, 800);
     } catch (error) {
       const msg = error instanceof Error ? error.message : '未知错误';
-      toast(`增量更新失败：${msg}，已切换为完整安装包`, 4200);
-      update.updateType = 'full';
+      toast(`秒级更新没有成功（${msg}），已为你改为推荐下载完整包`, 4200);
+      // 记住本版本秒级更新失败：重新渲染后推荐完整包，两个按钮仍都保留
+      markIncrementalFailed(update.version);
       buildAppUpdateBody(body, panelEl, available);
     } finally {
       triggerBtn.removeAttribute('aria-busy');
@@ -313,30 +376,40 @@ export function buildAppUpdateBody(
     }
   };
 
-  // 需求准则：若更新内容通过增量更新无法落实（isIncremental 为 false），只提供全量更新按钮；反之则两个按钮都提供。
+  // 双通道固定保留：秒级更新可用时两个按钮都提供，推荐的那个排在前面并用主按钮样式；
+  // 秒级更新不可用（底座过旧 / 没有秒级资源 / 局域网来源）时只提供完整安装。
   if (isIncremental) {
     const incrementalBtn = el('button', {
-      class: 'btn',
+      class: recommendFull ? 'btn tonal' : 'btn',
       text: '一键秒级更新',
     }) as HTMLButtonElement;
     incrementalBtn.onclick = () => executeIncrementalInstall(incrementalBtn);
     allActionButtons.push(incrementalBtn);
-    row.append(incrementalBtn);
 
+    let fullBtn: HTMLButtonElement | null = null;
     if (update.downloadUrl) {
-      const fullBtn = el('button', {
-        class: 'btn tonal',
+      fullBtn = el('button', {
+        class: recommendFull ? 'btn' : 'btn tonal',
         text: '下载完整包',
       }) as HTMLButtonElement;
-      fullBtn.onclick = () => executeFullInstall(fullBtn);
-      allActionButtons.push(fullBtn);
-      row.append(fullBtn);
+      const btn = fullBtn;
+      btn.onclick = () => executeFullInstall(btn);
+      allActionButtons.push(btn);
+    }
+    const recommendedBtn = recommendFull && fullBtn ? fullBtn : incrementalBtn;
+    recommendedBtn.dataset.recommended = 'true';
+    recommendedBtn.setAttribute('aria-description', '推荐');
+    if (recommendFull && fullBtn) {
+      row.append(fullBtn, incrementalBtn);
+    } else {
+      row.append(incrementalBtn, ...(fullBtn ? [fullBtn] : []));
     }
   } else {
     const fullOnlyBtn = el('button', {
       class: 'btn',
       text: '下载并安装',
     }) as HTMLButtonElement;
+    fullOnlyBtn.dataset.recommended = 'true';
     fullOnlyBtn.onclick = () => executeFullInstall(fullOnlyBtn);
     allActionButtons.push(fullOnlyBtn);
     row.append(fullOnlyBtn);

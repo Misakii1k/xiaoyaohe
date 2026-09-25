@@ -134,6 +134,8 @@ git branch --show-current
 - 在 `docs/releases/` 目录下新增 `1.0.x.md`。
 - **强制遵循 `oil-tone` 规范并减少专业术语**：面向普通用户平铺直叙，陈述客观改动和实际体验变化，严禁出现 DOM、CSS 类名、FAB、操作坞、微拟物、径向渐变、JNI、API 等晦涩技术黑话；成稿必须通过 `py C:\Users\87850\.gemini\config\skills\oil-tone\scripts\tone_lint.py docs/releases/1.0.x.md` 校验。
 - 示例参考：`docs/releases/1.0.7.md`。
+- **自动黑话阻断**：`scripts/lib/release-notes-lint.mjs` 在 `node scripts/gen-version.mjs` 与 `npm run release` 发布校验时自动检查当前版本说明，命中黑话词表（DOM、CSS、API、WebView、底座、增量包、重构、versionCode、SHA 等）、反引号代码标记、网页标签或英文技术标识（驼峰、下划线、文件名、接口路径）即报错阻断；`tests/releaseNotesJargon.test.ts` 会扫描全部 `docs/releases/*.md`。文末 `<!-- versionCode: N -->` 注释元数据允许保留，写入 `version.json` 前会被剥离，不会展示给用户。
+- 客户端展示前还会经过 `src/sync/lan/releaseNotesText.ts` 兜底过滤（HTML 注释、代码标记、含黑话或英文技术标识的整行），两处词表由测试保证一致。
 
 ### 步骤 4：更新多工具交接文档 (Handoff)
 - 更新 `docs/handoffs/CURRENT.md`：更新顶部 `Product version: 1.0.x`，增加本次改动的完成条目。

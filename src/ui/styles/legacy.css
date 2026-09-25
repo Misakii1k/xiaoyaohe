@@ -904,6 +904,11 @@ textarea {
   animation: ringSweep 450ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* 打卡后从上次位置延伸到新进度，而不是从 0 重扫 */
+.progress-ring .ring-fg.ring-fg-grow {
+  animation: ringGrow 450ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .progress-ring .ring-label {
   position: absolute;
   inset: 0;

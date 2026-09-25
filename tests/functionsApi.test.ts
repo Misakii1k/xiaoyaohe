@@ -252,6 +252,17 @@ describe('version.json 动态元数据', () => {
     expect(body.versionCode).toBe(123);
   });
 
+  it('正文注释里的 versionCode 被解析，但注释元数据不进入展示用的更新说明', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse(
+      versionFixture('v9.9.9', '# 小药盒 v9.9.9 更新说明\n\n1. 打卡更顺手。\n\n<!-- versionCode: 124 -->', [apkAsset('9.9.9')]),
+    )) as unknown as typeof fetch;
+
+    const res = await versionGet({ request: request('/version.json'), env: { GITHUB_TOKEN: TOKEN } });
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.versionCode).toBe(124);
+    expect(body.releaseNotes).toBe('# 小药盒 v9.9.9 更新说明\n\n1. 打卡更顺手。');
+  });
+
   it('未登记且无法推断时省略 versionCode，而不是编造数字', async () => {
     globalThis.fetch = vi.fn(async () => jsonResponse(
       versionFixture('v2.5.0', '# 未登记版本', [apkAsset('2.5.0')]),

@@ -12,6 +12,7 @@ import {
 import { createHash } from 'node:crypto';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
+import { assertPlainReleaseNotes } from './release-notes-lint.mjs';
 
 export const VERSION_CODE_BY_VERSION = Object.freeze({
   '0.4.1': 4,
@@ -189,6 +190,8 @@ export function readAndValidateReleaseConfig(root) {
     existsSync(releaseNotesFile),
     `Plain-language release notes not found for ${version.version}: ${releaseNotesFile}`,
   );
+  // 更新说明会原样出现在用户的更新弹窗与 GitHub Release 正文里：含技术黑话直接阻断发布。
+  assertPlainReleaseNotes(readFileSync(releaseNotesFile, 'utf8'), `docs/releases/${version.version}.md`);
 
   return { name: packageJson.name, ...version, releaseNotesFile };
 }

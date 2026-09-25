@@ -11,6 +11,15 @@
 .scan-workbench [hidden],
 #scan-mode-panel[hidden] { display: none; }
 
+/* 首屏容器：横幅 / 行动卡 / 快捷操作 / 今日记录 之间统一区块间距，
+   之前是普通块级流，横幅与「开始分药」卡贴在一起分不清层次 */
+.scan-home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-inline-size: 0;
+}
+
 /* 顶部 3D 插画横幅 */
 .scan-banner-card {
   background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%);
@@ -255,7 +264,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin-top: var(--space-1);
+  /* 区块间距由 .scan-home 的 gap 统一给出 */
 }
 
 .scan-section-title {
@@ -328,7 +337,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin-top: var(--space-1);
+  /* 区块间距由 .scan-home 的 gap 统一给出 */
 }
 
 .scan-record-card {

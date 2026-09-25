@@ -522,13 +522,17 @@ export function animateCountUp(
   targetValue: number,
   durationMs = 400,
   suffix = '',
+  startVal = 0,
 ): void {
-  if (typeof window === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+  if (
+    typeof window === 'undefined'
+    || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    || document.visibilityState === 'hidden' // 后台时 rAF 暂停，避免数字停在起始值
+  ) {
     targetEl.textContent = `${targetValue}${suffix}`;
     return;
   }
   const startTime = performance.now();
-  const startVal = 0;
   const update = (now: number) => {
     const elapsed = now - startTime;
     const progress = Math.min(1, elapsed / durationMs);
@@ -544,13 +548,19 @@ export function animateCountUp(
   requestAnimationFrame(update);
 }
 
-/** ---------- 进度环（大百分比仪表盘） ---------- */
-export function progressRing(value: number, total: number): HTMLElement {
+/**
+ * ---------- 进度环（大百分比仪表盘） ----------
+ * fromPercent：上一次展示的百分比。传入时进度弧与数字从该位置延伸到新值，
+ * 而不是每次重渲染都从 0 重新扫一遍。
+ */
+export function progressRing(value: number, total: number, fromPercent?: number): HTMLElement {
   const safeTotal = Math.max(0, total);
   const safeValue = Math.max(0, Math.min(value, safeTotal || value));
   const ratio = safeTotal > 0 ? Math.min(1, safeValue / safeTotal) : 0;
   const percent = Math.round(ratio * 100);
   const isFull = percent >= 100;
+  const hasFrom = typeof fromPercent === 'number' && Number.isFinite(fromPercent);
+  const from = hasFrom ? Math.max(0, Math.min(100, Math.round(fromPercent))) : 0;
   const wrap = el('div', {
     class:
       'progress-ring'
@@ -582,7 +592,14 @@ export function progressRing(value: number, total: number): HTMLElement {
   // 活跃前景进度弧
   if (percent > 0) {
     const fg = document.createElementNS(ns, 'circle');
-    fg.setAttribute('class', 'ring-fg ring-fg-animated');
+    if (!hasFrom) {
+      fg.setAttribute('class', 'ring-fg ring-fg-animated');
+    } else if (from !== percent) {
+      fg.setAttribute('class', 'ring-fg ring-fg-grow');
+      fg.style.setProperty('--ring-from', `${from} 100`);
+    } else {
+      fg.setAttribute('class', 'ring-fg');
+    }
     fg.setAttribute('cx', '50');
     fg.setAttribute('cy', '50');
     fg.setAttribute('r', '40');
@@ -610,8 +627,11 @@ export function progressRing(value: number, total: number): HTMLElement {
       el('span', { class: 'ring-unit' + (isFull ? ' is-full' : ''), text: '%' })
     );
     label.append(group);
-    if (percent > 0) {
+    if (!hasFrom && percent > 0) {
       animateCountUp(numEl, percent, 450);
+    } else if (hasFrom && from !== percent) {
+      numEl.textContent = String(from);
+      animateCountUp(numEl, percent, 450, '', from);
     }
   }
 

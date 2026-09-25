@@ -2301,6 +2301,55 @@ body.lan-sync-panel-active .ai-launcher {
   line-height: 1.4;
 }
 
+/* 推荐更新方式：一个「推荐」小标签 + 一句大白话理由 */
+.app-update-recommend {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md, 12px);
+  background: rgba(16, 185, 129, 0.08);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.app-update-recommend.is-full {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.app-update-recommend-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #10b981;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: max-content;
+}
+
+.app-update-recommend.is-full .app-update-recommend-tag {
+  background: #3b82f6;
+}
+
+.app-update-recommend-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+[data-theme='dark'] .app-update-recommend {
+  background: rgba(16, 185, 129, 0.16);
+}
+
+[data-theme='dark'] .app-update-recommend.is-full {
+  background: rgba(59, 130, 246, 0.18);
+}
+
 .app-update-release-notes {
   margin-top: 2px;
   padding: 12px 14px;

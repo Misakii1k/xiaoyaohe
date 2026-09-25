@@ -290,16 +290,16 @@ export const checkAppUpdate: AssistantTool = {
       badge: update ? `可更新` : '最新',
       body: update
         ? (update.source === 'cloud'
-          ? '来源：云端极速通道（Cloudflare 官方发布）。'
+          ? '来源：小药盒官方发布。'
           : update.source === 'github'
-          ? '来源：GitHub 官方发布。'
-          : `来源：${update.peerHost ?? '局域网设备'}（局域网内已升级设备）。`)
+          ? '来源：小药盒官方发布。'
+          : `来源：${update.peerHost ?? '同一 Wi-Fi 下的设备'}（已升级的其他设备）。`)
         : (canSelfUpdate
-          ? '本机已是当前最新版本，其他设备会通过局域网同步发现。'
-          : '应用更新仅在 Android App 中可用；当前环境无法直接安装 APK。'),
+          ? '本机已是当前最新版本。'
+          : '应用更新仅在手机 App 中可用，当前环境无法直接安装。'),
       facts: [
-        { label: '当前版本', value: `v${LOCAL_APP_VERSION}（${LOCAL_APP_VERSION_CODE}）` },
-        { label: '可用更新', value: update ? `v${update.version}（${update.versionCode}）` : '无' },
+        { label: '当前版本', value: `v${LOCAL_APP_VERSION}` },
+        { label: '可用更新', value: update ? `v${update.version}` : '无' },
       ],
     };
     return {
@@ -323,12 +323,10 @@ export const downloadAndInstallUpdate: AssistantTool = {
   confirm() {
     const update = getAvailableUpdate();
     if (!update) return '当前没有可用更新，仍要继续吗？';
-    const origin = update.source === 'cloud'
-      ? '云端极速通道'
-      : update.source === 'github'
-      ? 'GitHub 官方'
-      : (update.peerHost ? `${update.peerHost}` : '网络源');
-    return `即将从 ${origin} 下载 v${update.version}（versionCode ${update.versionCode}）的 APK 并调起安装器。\n安装器启动后应用可能重启，请确认当前对话已保存。`;
+    const origin = update.source === 'cloud' || update.source === 'github'
+      ? '小药盒官方'
+      : (update.peerHost ? `${update.peerHost}` : '已升级的其他设备');
+    return `即将从${origin}下载 v${update.version} 安装包并打开安装界面。\n安装时应用可能会重启，请先确认当前对话已保存。`;
   },
   async run() {
     if (!isApkDistributionAvailable()) {

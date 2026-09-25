@@ -954,6 +954,13 @@ a:active,
   }
 }
 
+/* 环形进度条从上次进度延伸 (Ring Grow)：终点取元素自身 stroke-dasharray */
+@keyframes ringGrow {
+  from {
+    stroke-dasharray: var(--ring-from, 0 100);
+  }
+}
+
 /* 按钮微光涟漪扩散 (Pulse Ripple) */
 @keyframes pulseRipple {
   from {

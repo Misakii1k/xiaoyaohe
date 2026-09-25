@@ -59,6 +59,8 @@ interface SlotGroup {
 let activeSlotFilter: 'all' | 'morning' | 'noon' | 'evening' = 'all';
 let selectedWeekOffset = 0;
 let selectedScheduleDate: LocalDate | null = null;
+/** 进度环上次展示的状态：同一次页面挂载、同一天内重渲染时从旧位置延伸，而不是从 0 重扫 */
+let lastRingState: { root: HTMLElement; signal?: AbortSignal; date: LocalDate; percent: number } | null = null;
 
 const todayPageCleanupByRoot = new WeakMap<HTMLElement, () => void>();
 
@@ -270,7 +272,11 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   summaryLeft.append(countLarge, el('p', { text: encourageText }));
 
   const ringWrap = el('div', { class: 'today-summary-progress today-progress-ring-wrap ring' });
-  ringWrap.append(progressRing(taken, total));
+  const sameMount = lastRingState?.root === root && lastRingState.signal === signal && lastRingState.date === currentViewDate;
+  const ringFrom = sameMount ? lastRingState!.percent : undefined;
+  const ring = progressRing(taken, total, ringFrom);
+  lastRingState = { root, signal, date: currentViewDate, percent: Number(ring.dataset.percent ?? 0) };
+  ringWrap.append(ring);
 
   progressCard.append(summaryLeft, ringWrap);
   content.append(progressCard);

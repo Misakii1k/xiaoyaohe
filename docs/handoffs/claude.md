@@ -1418,3 +1418,12 @@ Latest version: `1.1.10` (Android `versionCode: 68`)
 - 出包走两遍（gen-version 需要已存在的 APK 才能写入 fileSize/sha256）：第一遍产 APK → 复制到 `release/` → gen-version → cap sync → 第二遍 assembleRelease → `publishReleaseArtifacts` 校验 109 个 dist 文件字节一致。
 - 产物：`xiaoyaohe-1.1.10-android-release.apk` 20928601 B，sha256 `01a650c8…29f90a`；`web-bundle.zip` 8297360 B，sha256 `6ba6b66d…94d4a`；`minNativeVersionCode: 58`。
 - 门禁：tsc 0 错误、Vitest 584/584；Playwright 100/100（动效重做那轮跑过，本轮仅改版本号与夹具）。
+
+### 71. 打卡进度环 / 分药页 / 更新推荐 / 更新说明去黑话 / AI 助手页优化 (workspace/claude, 未发版)
+
+1. **进度环从旧位置延伸**：`progressRing(value, total, fromPercent?)` 新增上次百分比参数；有值时用 `ringGrow` 关键帧从 `--ring-from` 延伸到新值，数字从旧值滚动（`animateCountUp` 新增 `startVal`，后台标签页直接落终值）。`Today.ts` 以 `root + signal + 日期` 记忆上次百分比，同一次挂载内打卡才延续；首次挂载与切换日期仍整圈扫入。测试 `tests/progressRing.test.ts`。
+2. **分药页**：`.scan-home` 纵向 `gap: var(--space-5)`，横幅与「开始分药」卡间距 20px。分药向导“两层”根因：`.bottom-sheet` 外壳（液态玻璃背景 + 通用把手 + 上滑动画）与 `.med-wizard` 面板各画一套外观，旧覆写优先级不足。改为 `.bottom-sheet-overlay > .bottom-sheet.med-wizard-host` 清空外壳并去掉 `::before` 把手（`med-wizard.css`，认药向导同样受益）。
+3. **更新方式推荐**：纯函数 `src/sync/lan/updateRecommendation.ts`（局域网/本机版本未知/无秒级资源/底座低于门槛/秒级失败过/体积不占优 → 完整包，否则秒级），面板显示「推荐」标签 + 一句理由；双通道保留，秒级失败后改为推荐完整包并保留重试。测试 `tests/updateRecommendation.test.ts`。
+4. **更新说明去黑话**：发布侧 `scripts/lib/release-notes-lint.mjs`（移植 tone_lint 硬规则 + 词表 + 英文技术标识检测），接入 `gen-version.mjs` 与 `release-utils.mjs` 命中即阻断；HTML 注释元数据先剥离不下发。客户端 `src/sync/lan/releaseNotesText.ts` 展示前过滤。18 份历史 `docs/releases/*.md` 改写为大白话。AI「检查更新」卡片去掉 Cloudflare / versionCode / APK 等字样。测试 `tests/releaseNotesJargon.test.ts`（词表两端一致性 + 全量扫描）。
+5. **AI 助手页**（`assistant.css` / `AiAssistant.ts` 仅 UI）：墨绿配色统一、深色白块修复、去掉 `prefers-color-scheme` 分支改走 `data-theme`、头部按钮 36px、多行自增输入框（回车发送 / Shift+回车换行 / 输入法组词不误发）、visualViewport 键盘避让、近底才追底、错误消息样式、加载点去跳动、按压缩放 0.95~0.97。
+6. 门禁：tsc 0 错误；Vitest 94 文件 / 619 项 PASS；Playwright 100/100 PASS。截图读取在本环境超时，视觉效果待真机确认。
