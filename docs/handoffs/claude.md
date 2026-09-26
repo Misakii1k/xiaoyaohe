@@ -1482,3 +1482,12 @@ Latest version: `1.1.10` (Android `versionCode: 68`)
    - 扫码锁定：72dp 二维码图标（长按暗门保留）+「扫码后才能关闭提醒」+「扫码」按钮；扫码成功：✓ + 「已记录为已服用」+「完成」。
    - 应急对话框、取景器文案全部缩短。
 4. 门禁：tsc 0 错误；Vitest 624/624；Android `compileDebugKotlin` + `testDebugUnitTest` 通过；Playwright 108/108。截图与读图在本环境均超时，全屏提醒页需真机目检。
+
+### 77. v1.1.13 发版 (v1.1.13, versionCode 71, workspace/claude & main)
+
+- 版本递增 1.1.12/70 → 1.1.13/71（package.json / lock / build.gradle / `VERSION_CODE_BY_VERSION` / `functions/version.json.ts` 镜像表），新增 `docs/releases/1.1.13.md`（黑话 lint PASS）。发布内容为第 75、76 节：添加药品表单对齐、设置页文案精简与层级压平、全屏提醒页重排。
+- 测试夹具「更新的假版本」从 1.2.3/71 上推到 1.2.4/72（本机已是 71）；`tests/release-utils.test.ts` 补 1.1.13 断言。
+- **注意**：`tone_lint.py` 在本仓库并不存在（AGENTS.md / GUIDE.md 仍指向 `~/.gemini/config/skills/oil-tone/scripts/tone_lint.py`，本机无此文件）。实际把关的是仓库内置的 `scripts/lib/release-notes-lint.mjs` 与 `tests/releaseNotesJargon.test.ts`（14 项 PASS）。
+- 两遍出包：第一遍 APK sha256 `4095f652…7e7e17`；补 `gen-version` 后第二遍最终 APK 20965548 B，sha256 `24e85f1e…3fd8e5`（两遍哈希必然不同，`public/version.json` 已刷新为最终值）；Web Bundle 8334130 B，sha256 `ccd3b0cc…bc05db`；`publishReleaseArtifacts` 校验 111 个 dist 文件字节一致，聚合哈希 `dc45544c…09e8221`。
+- 门禁：tsc 0 错误；Vitest 95 文件 / 624 项 PASS；Playwright `--workers=2` 108/108 PASS。
+- **Playwright 并行抖动（已定位，非回归）**：默认并行度下每轮固定 1~2 项失败，但失败的是各 worker 的**首个**用例且每轮不同（实测三轮分别是 `medication-form-alignment/desktop`+`medication-batch/phone-390`、`fullscreen/phone-320`），单独重跑全部通过。根因同第 30 节记录的预算问题：冷启动首个用例要等 Vite 现场转译懒加载分块，单跑约 20s，并行下打满超时预算。`--workers=2` 稳定 108/108。后续若要彻底消除，应提高首屏用例超时预算或在 `webServer` 里预热。
