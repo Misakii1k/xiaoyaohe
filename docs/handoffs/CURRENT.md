@@ -3,7 +3,7 @@
 Updated: 2026-09-26
 Integration branch: `main` (同步自 `workspace/claude`)
 Product version: `1.1.13` (versionCode 71)
-Latest integration commit: `release: v1.1.13 (versionCode 71)`
+Latest integration commit: `fix(release): 推送成功只认退出码或 ls-remote 实证` (`8066cf2`)
 
 ## Release v1.1.13 (versionCode 71, workspace/claude)
 
@@ -11,8 +11,9 @@ Latest integration commit: `release: v1.1.13 (versionCode 71)`
   - 添加药品表单的输入框、选择器与步进器统一等高、不再挤出字段，日期不折行；
   - 设置页文案精简（正文约 1970 → 1590 字）、面板内层级压平为 iOS 分组列表样式；
   - 全屏提醒页重排：大号时间、多药合并一张清单、底部固定操作区、组提醒新增「全部跳过」；
-  - 液态玻璃对齐 Apple Liquid Glass 与自绘控件统一（v1.1.12 已发，含在同一分支线）。
-- **质量门禁**：见 `docs/handoffs/claude.md` 第 75/76/77 节。
+  - 液态玻璃对齐 Apple Liquid Glass 与自绘控件统一（v1.1.12 已发，含在同一分支线）；
+  - 发版流程自动化三步脚本收纳（`release:bump`、`release:build`、`release:publish`）与网络重试判空加固。
+- **质量门禁**：见 `docs/handoffs/claude.md` 第 75/76/77/78 节。
 
 ## Release v1.1.11 (versionCode 69, workspace/claude)
 

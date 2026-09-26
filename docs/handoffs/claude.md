@@ -2,9 +2,9 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-09-25
+Updated: 2026-09-26
 Status: active
-Latest version: `1.1.10` (Android `versionCode: 68`)
+Latest version: `1.1.13` (Android `versionCode: 71`)
 
 ## Summary of Accomplished Work
 
@@ -1499,4 +1499,5 @@ Latest version: `1.1.10` (Android `versionCode: 68`)
 - **bump**：夹具定位靠不变式「夹具 versionCode = 本机最高码 + 1」。不能按「大于本机」找——`apkUpdateVerification.test.ts` 里还有 `0.9.99/99` 跨源比较夹具（不随发版推位）和 `0.9.4`/`0.0.0` 旧版本夹具；也不能全局替换 `toBe(数字)`——同文件有 `toBe(38473)` 端口、`toBe(44)` 底座门槛和多处字节数。版本锁锚在 `name: 'xiaoyaohe',` 下一行，否则会命中历史断言把上一版期望值改坏（试跑时实测踩到）。已实测：bump 到 1.1.14 → tsc 0 错误、6 个版本相关测试文件除 `versionManifest`（要等 build 刷新清单）外全绿，随后回滚。
 - **build**：两遍出包后再跑一次 gen-version，并断言 `public/version.json` 的 sha256 等于最终 APK（两遍哈希必然不同）。Playwright 固定 `--workers=2`（第 77 节的冷启动抖动）。
 - **publish**：每步先判断是否已完成，断网后原样重跑续上；只 `git add` 发版相关路径（首版用了 `add -A`，把未跟踪的脚本卷进了 release 提交，已改）；`ls-remote` 失败时抛错而不是返回 null（首版把 null 当「远端无此分支」，列出 249 个历史提交逐个推）；non-fast-forward 立即停止不重试；`sleep` 改用 `Atomics.wait` 子进程（`setTimeout` 空回调的子进程会立即退出，退避形同虚设）。
-- **v1.1.13 推送状态（截至本节）**：`6c1d850` 已在远端 `workspace/claude`；tag `v1.1.13`、快进 `main`、GitHub Release、冒烟尚未完成——GitHub 从本机持续不可达（`github.com` / `api.github.com` 超时，Pages 与国内站点正常）。后台循环在跑 `release-publish --resume`，网络恢复会自动续完。若本节之后没有更新，手动执行 `npm run release:publish`。
+- **v1.1.13 发布与推送结果**：`v1.1.13` 标签已推送到远端；GitHub Release `v1.1.13` 已成功发布（附 APK 20,965,548 字节、Web Bundle 8,334,130 字节与 SHA256SUMS）；`origin/main` 已同步到 `8066cf2`；Cloudflare Pages 边缘端点冒烟 `check-release-endpoints.mjs` 4/4 项全部 PASS。提交 `8066cf2` 修复了 `release-publish.mjs` 中网络抖动重试时的退出码与 ls-remote 判定。
+
