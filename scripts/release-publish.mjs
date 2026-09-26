@@ -115,7 +115,7 @@ export function runPublish({ resume = false, merge = true } = {}) {
       console.log('  working tree clean, nothing to commit');
       return;
     }
-    const paths = dirty.split('\n').map((line) => line.slice(3).replace(/^"|"$/g, ''));
+    const paths = dirty.split('\n').map((line) => line.trimStart().replace(/^[AMDCRU?!\s]+\s/, '').replace(/^"|"$/g, ''));
 
     // 防呆：绝不提交密钥与构建产物
     const offenders = paths.filter((path) => /(^|\/)\.env$|^release\//.test(path));
