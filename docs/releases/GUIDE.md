@@ -101,6 +101,22 @@
 > 2. **严禁向用户个人电脑桌面复制任何构建产物**：所有安装包、增量包、校验和一律且仅存放在 `release/` 目录与云端 GitHub Releases，严禁污染用户电脑桌面。
 > 3. **每次向云端（远程仓库）推送前必须将版本号向上加一**。
 
+### 快速通道：三条命令（推荐）
+
+下方 11 步已收成三个脚本，日常发版只需：
+
+```bash
+npm run release:bump                  # 1. 版本 +1：6 处版本号 + 3 份更新判定夹具一次改完
+# 2. 手写 docs/releases/X.Y.Z.md（2~3 条大白话，末尾 <!-- versionCode: N -->），更新 handoff
+npm run release:build                 # 3. 门禁 + 两遍出包 + 内嵌资源校验 + 清单哈希自洽检查
+npm run release:publish               # 4. 提交 / tag / 推送 / 快进 main / GitHub Release / 线上冒烟
+```
+
+- `release:bump` 可带版本号（`npm run release:bump -- 1.2.0`）或 `--dry-run` 预览。
+- `release:build` 已单独跑过门禁时可加 `-- --skip-gates` 省去约 4 分钟。
+- `release:publish` 每一步先判断是否已完成，**断网中断后原样重跑即可续上**（`-- --resume`）。推送逐个 commit、失败退避重试；遇到 non-fast-forward 会立即停下提示 rebase，不会白等。只提交发版相关文件，工作区里其他未完成的改动不会被卷进去。
+- 需要看每一步在做什么、或脚本出问题需要手工兜底时，参考下面的完整步骤。
+
 按以下步骤顺序执行：
 
 ### 步骤 1：确认分支与工作区状态

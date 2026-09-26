@@ -17,6 +17,21 @@ description: >-
 
 ---
 
+## 快速通道（优先使用）
+
+下面的检查单已自动化为三条命令，逐步手工执行只在脚本出错需要兜底时使用：
+
+```bash
+npm run release:bump        # 版本 +1（6 处版本号 + 3 份更新判定夹具）
+# 手写 docs/releases/X.Y.Z.md（2~3 条大白话 + 末尾 <!-- versionCode: N -->），更新 handoff
+npm run release:build       # 门禁 + 两遍出包 + 校验（门禁已跑过可加 -- --skip-gates）
+npm run release:publish     # 提交/tag/推送/快进 main/GitHub Release/冒烟；断网后原样重跑即续上
+```
+
+`release:publish` 只提交发版相关文件（版本号文件、夹具、本版说明、handoff），其余改动留在工作区。GitHub 连不上时脚本会报「网络不可用」退出，网络恢复后重跑同一条命令。
+
+---
+
 ## 发布步骤检查单
 
 ### 1. 确认工作区与分支状态

@@ -1491,3 +1491,12 @@ Latest version: `1.1.10` (Android `versionCode: 68`)
 - 两遍出包：第一遍 APK sha256 `4095f652…7e7e17`；补 `gen-version` 后第二遍最终 APK 20965548 B，sha256 `24e85f1e…3fd8e5`（两遍哈希必然不同，`public/version.json` 已刷新为最终值）；Web Bundle 8334130 B，sha256 `ccd3b0cc…bc05db`；`publishReleaseArtifacts` 校验 111 个 dist 文件字节一致，聚合哈希 `dc45544c…09e8221`。
 - 门禁：tsc 0 错误；Vitest 95 文件 / 624 项 PASS；Playwright `--workers=2` 108/108 PASS。
 - **Playwright 并行抖动（已定位，非回归）**：默认并行度下每轮固定 1~2 项失败，但失败的是各 worker 的**首个**用例且每轮不同（实测三轮分别是 `medication-form-alignment/desktop`+`medication-batch/phone-390`、`fullscreen/phone-320`），单独重跑全部通过。根因同第 30 节记录的预算问题：冷启动首个用例要等 Vite 现场转译懒加载分块，单跑约 20s，并行下打满超时预算。`--workers=2` 稳定 108/108。后续若要彻底消除，应提高首屏用例超时预算或在 `webServer` 里预热。
+
+### 78. 发版流程自动化：11 步收成三条命令 (workspace/claude)
+
+- 起因：用户反馈每次推送步骤太长。手工 SOP 要改 6 处版本号 + 3 份夹具、两遍出包、手工 cp / gen-version、逐个 commit 推送重试、建 Release、冒烟。
+- 新增 `scripts/release-bump.mjs` / `release-build.mjs` / `release-publish.mjs`，对应 `npm run release:bump|build|publish`；`GUIDE.md` 与 `.agents/skills/medbox-release/SKILL.md` 加「快速通道」。旧的 `scripts/release.mjs`（门禁 + 单遍出包 + 模拟器插桩）保留不动。
+- **bump**：夹具定位靠不变式「夹具 versionCode = 本机最高码 + 1」。不能按「大于本机」找——`apkUpdateVerification.test.ts` 里还有 `0.9.99/99` 跨源比较夹具（不随发版推位）和 `0.9.4`/`0.0.0` 旧版本夹具；也不能全局替换 `toBe(数字)`——同文件有 `toBe(38473)` 端口、`toBe(44)` 底座门槛和多处字节数。版本锁锚在 `name: 'xiaoyaohe',` 下一行，否则会命中历史断言把上一版期望值改坏（试跑时实测踩到）。已实测：bump 到 1.1.14 → tsc 0 错误、6 个版本相关测试文件除 `versionManifest`（要等 build 刷新清单）外全绿，随后回滚。
+- **build**：两遍出包后再跑一次 gen-version，并断言 `public/version.json` 的 sha256 等于最终 APK（两遍哈希必然不同）。Playwright 固定 `--workers=2`（第 77 节的冷启动抖动）。
+- **publish**：每步先判断是否已完成，断网后原样重跑续上；只 `git add` 发版相关路径（首版用了 `add -A`，把未跟踪的脚本卷进了 release 提交，已改）；`ls-remote` 失败时抛错而不是返回 null（首版把 null 当「远端无此分支」，列出 249 个历史提交逐个推）；non-fast-forward 立即停止不重试；`sleep` 改用 `Atomics.wait` 子进程（`setTimeout` 空回调的子进程会立即退出，退避形同虚设）。
+- **v1.1.13 推送状态（截至本节）**：`6c1d850` 已在远端 `workspace/claude`；tag `v1.1.13`、快进 `main`、GitHub Release、冒烟尚未完成——GitHub 从本机持续不可达（`github.com` / `api.github.com` 超时，Pages 与国内站点正常）。后台循环在跑 `release-publish --resume`，网络恢复会自动续完。若本节之后没有更新，手动执行 `npm run release:publish`。
