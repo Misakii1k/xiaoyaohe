@@ -2,8 +2,16 @@
 
 Updated: 2026-09-26
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.1.13` (versionCode 71)
-Latest integration commit: `fix(release): 推送成功只认退出码或 ls-remote 实证` (`8066cf2`)
+Product version: `1.1.14` (versionCode 72)
+Latest integration commit: `release: v1.1.14 (versionCode 72)`
+
+## Release v1.1.14 (versionCode 72, workspace/claude)
+
+- **集成内容**：
+  - 发版流程自动化三步脚本实操验证（`npm run release:bump` / `release:build` / `release:publish`）；
+  - 修复发布推送过程中的网络重试与退出码/ls-remote 校验逻辑；
+  - 完整闭环分支对齐与版本发布。
+- **质量门禁**：见 `docs/handoffs/claude.md` 第 79 节。
 
 ## Release v1.1.13 (versionCode 71, workspace/claude)
 

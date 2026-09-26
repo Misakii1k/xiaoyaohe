@@ -47,6 +47,10 @@ export function runBuild({ skipGates = false } = {}) {
     throw new Error(`docs/releases/${config.version}.md 不存在 —— 先写发布说明再出包。`);
   }
 
+  // 先刷新一份初步清单（version / releaseNotes），否则 Vitest 的 versionManifest.test.ts
+  // 会断言 public/version.json.version == package.json.version 失败
+  run('Refresh version manifest (preliminary)', 'node', ['scripts/gen-version.mjs']);
+
   if (!skipGates) {
     run('Type-check', npm, ['run', 'typecheck']);
     run('Vitest', npm, ['test']);

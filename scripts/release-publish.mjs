@@ -128,6 +128,8 @@ export function runPublish({ resume = false, merge = true } = {}) {
       'package-lock.json',
       'android/app/build.gradle',
       'scripts/lib/release-utils.mjs',
+      'scripts/release-build.mjs',
+      'scripts/release-publish.mjs',
       'functions/version.json.ts',
       'tests/release-utils.test.ts',
       'tests/apkUpdateVerification.test.ts',

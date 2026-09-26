@@ -4,7 +4,7 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-09-26
 Status: active
-Latest version: `1.1.13` (Android `versionCode: 71`)
+Latest version: `1.1.14` (Android `versionCode: 72`)
 
 ## Summary of Accomplished Work
 
@@ -1500,4 +1500,15 @@ Latest version: `1.1.13` (Android `versionCode: 71`)
 - **build**：两遍出包后再跑一次 gen-version，并断言 `public/version.json` 的 sha256 等于最终 APK（两遍哈希必然不同）。Playwright 固定 `--workers=2`（第 77 节的冷启动抖动）。
 - **publish**：每步先判断是否已完成，断网后原样重跑续上；只 `git add` 发版相关路径（首版用了 `add -A`，把未跟踪的脚本卷进了 release 提交，已改）；`ls-remote` 失败时抛错而不是返回 null（首版把 null 当「远端无此分支」，列出 249 个历史提交逐个推）；non-fast-forward 立即停止不重试；`sleep` 改用 `Atomics.wait` 子进程（`setTimeout` 空回调的子进程会立即退出，退避形同虚设）。
 - **v1.1.13 发布与推送结果**：`v1.1.13` 标签已推送到远端；GitHub Release `v1.1.13` 已成功发布（附 APK 20,965,548 字节、Web Bundle 8,334,130 字节与 SHA256SUMS）；`origin/main` 已同步到 `8066cf2`；Cloudflare Pages 边缘端点冒烟 `check-release-endpoints.mjs` 4/4 项全部 PASS。提交 `8066cf2` 修复了 `release-publish.mjs` 中网络抖动重试时的退出码与 ls-remote 判定。
+
+### 79. v1.1.14 发版：发版自动化三步脚本实战验证 (v1.1.14, versionCode 72, workspace/claude & main)
+
+- **版本递增**：使用 `npm run release:bump` 自动从 1.1.13/71 递增至 1.1.14/72（一次性修改 package.json / lock / build.gradle / `VERSION_CODE_BY_VERSION` / `functions/version.json.ts` 镜像表及 3 份测试夹具）。
+- **新增发布说明**：创建 `docs/releases/1.1.14.md`，黑话 lint 与 `tests/releaseNotesJargon.test.ts` 校验全部通过。
+- **发布内容**：
+  - 集成发版流程自动化三步脚本（`release-bump.mjs`、`release-build.mjs`、`release-publish.mjs`），大幅简化发版操作；
+  - 修复发布推送过程中的网络重试与退出码/ls-remote 校验逻辑；
+  - 完整跑通 `release:bump` -> `release:build` -> `release:publish` 全流程，分支状态与云端 Releases 深度对齐。
+- **门禁验证**：`tsc --noEmit` 0 错误；Vitest 95 套件 624 项测试通过；Playwright `--workers=2` 108/108 PASS；Gradle `assembleRelease` 两遍构建完成并由 `publishReleaseArtifacts` 校验内嵌资源与清单哈希自洽。
+
 
