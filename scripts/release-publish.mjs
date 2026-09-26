@@ -45,10 +45,14 @@ function sleep(ms) {
 /**
  * 逐个 commit 推送 + 退避重试。小包比大包成功率高得多。
  *
+ * 成功只认两种证据：push 退出码 0，或 ls-remote 读到远端 ref 已指向目标提交。
+ * 不能靠匹配输出里的 "already exists" / "up-to-date" 文字判断——网络抖动时
+ * 实测出现过推送失败却被文字匹配判成「已在远端」，直接跳到下一步。
+ *
  * non-fast-forward 不重试：那是本地落后于远端，重试一万次也不会变好，
  * 必须先 fetch/rebase。把它和网络故障区分开，否则会白等十几分钟。
  */
-function pushWithRetry(refspec, label) {
+function pushWithRetry(refspec, label, remoteRef, expectedSha) {
   for (let attempt = 1; attempt <= PUSH_ATTEMPTS; attempt += 1) {
     const result = git(['push', 'origin', refspec], { allowFailure: true });
     const output = `${result.err}\n${result.out}`;
@@ -56,14 +60,15 @@ function pushWithRetry(refspec, label) {
       console.log(`  ${label}: pushed (attempt ${attempt})`);
       return true;
     }
-    if (/Everything up-to-date|already exists/.test(output)) {
-      console.log(`  ${label}: already on remote`);
-      return true;
-    }
     if (/non-fast-forward|fetch first|Note about fast-forwards/.test(output)) {
       throw new Error(
         `${label}: 远端已领先本地（non-fast-forward）。先 git fetch origin 再 rebase，不是网络问题。`,
       );
+    }
+    const probe = git(['ls-remote', 'origin', remoteRef], { allowFailure: true });
+    if (probe.ok && probe.out.split(/\s+/)[0] === expectedSha) {
+      console.log(`  ${label}: 远端已指向 ${expectedSha.slice(0, 7)}（ls-remote 确认）`);
+      return true;
     }
     const wait = Math.min(15000 * attempt, 90000);
     console.log(`  ${label}: attempt ${attempt}/${PUSH_ATTEMPTS} failed (${result.err.split('\n').pop()}); retry in ${wait / 1000}s`);
@@ -172,7 +177,7 @@ export function runPublish({ resume = false, merge = true } = {}) {
     }
     console.log(`  ${pending.length} commit(s) to push, one at a time`);
     for (const sha of pending) {
-      pushWithRetry(`${sha}:refs/heads/${WORK_BRANCH}`, git(['rev-parse', '--short', sha]).out);
+      pushWithRetry(`${sha}:refs/heads/${WORK_BRANCH}`, git(['rev-parse', '--short', sha]).out, `refs/heads/${WORK_BRANCH}`, sha);
     }
   });
 
@@ -182,7 +187,8 @@ export function runPublish({ resume = false, merge = true } = {}) {
       console.log('  tag already on remote');
       return;
     }
-    pushWithRetry(`refs/tags/${tag}`, tag);
+    // 轻量 tag 的 ls-remote 结果就是它指向的提交
+    pushWithRetry(`refs/tags/${tag}`, tag, `refs/tags/${tag}`, git(['rev-parse', `${tag}^{commit}`]).out);
   });
 
   // 5) 快进 main（Cloudflare Pages 的生产分支，不推就不会重新部署边缘函数）
@@ -193,7 +199,7 @@ export function runPublish({ resume = false, merge = true } = {}) {
         console.log('  already up to date');
         return;
       }
-      pushWithRetry(`HEAD:refs/heads/${MAIN_BRANCH}`, MAIN_BRANCH);
+      pushWithRetry(`HEAD:refs/heads/${MAIN_BRANCH}`, MAIN_BRANCH, `refs/heads/${MAIN_BRANCH}`, head);
     });
   }
 
