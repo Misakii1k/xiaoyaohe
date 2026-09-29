@@ -8,6 +8,34 @@ Latest version: `1.1.14` (Android `versionCode: 72`)
 
 ## Summary of Accomplished Work
 
+### 68. AI 助手「盒宝伙伴 × 水凝玻璃」(B+C) 落地实施 (v1.1.14, versionCode 72, workspace/claude)
+
+1. **需求与背景**：用户在 `design/assistant-redesign/` 三方案原型中选定 B+C 融合方向（盒宝人格化 + 水凝玻璃材质），要求实施到真实应用。
+2. **改动清单**：
+   - **`src/ui/AiAssistant.ts`**：
+     - 头部立像换为吉祥物「盒宝」（`getUserAvatarImg('hebao_mascot')`，图片加载失败回退 sparkles 图标）+ 右下角在线小绿点；标题改「盒宝 · 用药小助手」，副标题「在线 · 吃药和库存都可以问我」；
+     - 头部减负：模型/推理偏好与清空记录收进「更多」底部弹层（复用 `openBottomSheet` + `ai-pref-sheet-option` 语言），头部只留 更多 / 展开 / 收起三钮（`展开面板` 按钮保留在头部，e2e 契约不破）；
+     - 首次打开为 hero 渐变欢迎卡（按时段问候「早上好/中午好/下午好/晚上好/夜深了，我是盒宝」）+ 探身盒宝呼吸浮动，取代一行文字问候；
+     - 每条助手消息左侧 28px 盒宝小头像（`ai-msg-avatar` + `ai-msg-body` 列，文字气泡与结构化卡片同列对齐）；状态胶囊同步带小头像；
+     - 快捷问题胶囊配主色小图标（calendar/pill/scan/timer/box/list）。
+   - **`src/ui/styles/pages/assistant.css`**：
+     - 面板整板水凝玻璃：四周留边 10px、圆角 32px、半透明磨砂 `blur(24px) saturate(150%)`、高光描边 + 柔和投影，透出下层页面；对话区顶部两团静态青绿环境光晕（无动画）；
+     - 助手气泡/结构化卡片白磨砂玻璃，用户气泡主色渐变玻璃（`--color-primary-gradient`），统计格/快捷胶囊同为半透明实色；
+     - 输入区为悬浮玻璃胶囊（脱离底边、第二处也是最后一处 backdrop-filter），加号透明、发送键渐变圆形；
+     - 全屏形态回归实色背景（摘掉模糊与描边）保证长文可读与性能；`prefers-reduced-transparency: reduce` 时玻璃退化为近实色；
+     - 浅色遮罩调轻（55% scrim）；保留 `.ai-launcher` 触控契约与全屏头部安全区 padding 契约；移除不再使用的 `--ai-log-bg` 与 `.ai-panel-clear` 死样式。
+   - **`design/design.md` 5.3 节**：改写为「盒宝伙伴 × 水凝玻璃」规范（面板挂载、盒宝人格化、气泡材质、性能铁律），保留 Markdown 与极光功耗条款。
+3. **验证与门禁**：
+   - `npm run typecheck`：0 错误；
+   - `npm test`：95 文件 / 624 项全绿通过；
+   - `npm run build:web`：生产构建正常，Web Bundle 生成；
+   - `npx playwright test e2e/assistant-cards.spec.ts`：8/8 通过（卡片不溢出 + 全屏安全区，四视口）；
+   - 无头浏览器真机视口截图逐项目检：浅色/深色/桌面悬浮/hero 欢迎卡/更多菜单全部正常；
+   - 版本号不变（未发版）。
+4. **环境备注**：
+   - 修复本机 `node_modules` 中 `@esbuild/win32-x64`（0.28.2）与 `esbuild`（0.25.12）版本错配导致的测试启动失败（`npm i --no-save` 对齐到 0.25.12，未动依赖清单）；
+   - 发现工作区残留未跟踪删除：`src/assets/images3d/nature-header-bokeh.png` 被删但 `assets3d.ts` 仍引用（4 个测试套件因此全红），已从 git 恢复原文件——若该删除是有意为之，需连 `assets3d.ts` 的引用一并移除。
+
 ### 67. AI 助手重设计三方案高保真原型（待用户确认方向，workspace/claude，commit `3094f84`）
 
 1. **需求与背景**：用户反馈当前 AI 助手面板与整体「清爽秩序」风格割裂，要求先出设计 HTML 方案供确认后再实施。

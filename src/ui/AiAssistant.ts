@@ -22,6 +22,8 @@ import { appendAssistantMessage, clearAssistantMessages, listRecentAssistantMess
 import { createButton } from './primitives/Button';
 import { openBottomSheet, type BottomSheetHandle } from './primitives/BottomSheet';
 import { compressBoxPhoto } from '../features/medPhotos';
+import { getUserAvatarImg } from './avatars';
+import type { AppIconName } from './icons/iconRegistry';
 
 type AssistantContentModule = typeof import('./assistantContent');
 let assistantContentModule: AssistantContentModule | null = null;
@@ -51,15 +53,43 @@ function renderAssistantMarkdown(text: string): HTMLElement {
   return fallback;
 }
 
-const GREETING = '这里是 AI 用药助手。你可以询问今天的服药计划、近期的用药记录或药品库存，也可以直接发送处方图片或清单文件。';
-const QUICK_PROMPTS = [
-  '今天有哪些用药安排？',
-  '检查当前药品的相互作用与禁忌',
-  '根据处方单或清单录入药品',
-  '查看最近一周的服药记录',
-  '查看库存不足的药品',
-  '查看全部药品库存',
+const GREETING = '你可以询问今天的服药计划、近期的用药记录或药品库存，也可以直接发送处方图片或清单文件给我。';
+const QUICK_PROMPTS: { text: string; icon: AppIconName }[] = [
+  { text: '今天有哪些用药安排？', icon: 'calendar' },
+  { text: '检查当前药品的相互作用与禁忌', icon: 'pill' },
+  { text: '根据处方单或清单录入药品', icon: 'scan' },
+  { text: '查看最近一周的服药记录', icon: 'timer' },
+  { text: '查看库存不足的药品', icon: 'box' },
+  { text: '查看全部药品库存', icon: 'list' },
 ];
+
+/** 吉祥物「盒宝」头像图（Vite 打包资产，与头像库同源） */
+const HEBAO_IMG = getUserAvatarImg('hebao_mascot');
+
+/** 盒宝头像节点：图片加载失败时回退为 sparkles 图标，不让空破图破坏版面 */
+function hebaoAvatar(className: string): HTMLElement {
+  const wrap = el('span', { class: className });
+  wrap.setAttribute('aria-hidden', 'true');
+  const img = el('img', { alt: '' } as any) as HTMLImageElement;
+  img.src = HEBAO_IMG;
+  img.onerror = () => {
+    img.remove();
+    wrap.classList.add('is-fallback');
+    wrap.append(icon('sparkles'));
+  };
+  wrap.append(img);
+  return wrap;
+}
+
+/** 欢迎语按时段切换，与「今日」页问候同节奏 */
+function heroGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return '夜深了，我是盒宝';
+  if (hour < 11) return '早上好，我是盒宝';
+  if (hour < 14) return '中午好，我是盒宝';
+  if (hour < 18) return '下午好，我是盒宝';
+  return '晚上好，我是盒宝';
+}
 
 /** 文本附件最多带入模型的字数，避免一次塞整本书 */
 const MAX_TEXT_EXCERPT = 12_000;
@@ -194,27 +224,27 @@ export function mountGlobalAssistant(): void {
   const backdrop = el('div', { class: 'ai-panel-backdrop' });
   backdrop.setAttribute('aria-hidden', 'true');
 
-  const clearBtn = el('button', { class: 'ai-panel-clear', type: 'button' }, [icon('trash')]);
-  clearBtn.setAttribute('aria-label', '清空对话记录');
-  clearBtn.title = '清空对话记录';
   const closeBtn = el('button', { class: 'ai-panel-close', type: 'button' }, [icon('close')]);
   closeBtn.setAttribute('aria-label', '收起小助手');
   const expandBtn = el('button', { class: 'ai-panel-expand', type: 'button' }, [icon('expand')]);
   expandBtn.setAttribute('aria-label', '展开面板');
   expandBtn.title = '点一下铺满全屏，再点一下还原';
-  // 模型/推理偏好默认收起，避免头部堆满控件挤占对话空间；点齿轮展开
-  const prefsToggleBtn = el('button', { class: 'ai-panel-prefs-toggle', type: 'button' }, [icon('gear')]);
-  prefsToggleBtn.setAttribute('aria-label', '对话偏好设置');
-  prefsToggleBtn.setAttribute('aria-expanded', 'false');
-  prefsToggleBtn.title = '选择模型与推理强度';
+  // 低频动作（模型偏好 / 清空记录）收进「更多」菜单，头部只留 更多 + 展开 + 收起
+  const moreBtn = el('button', { class: 'ai-panel-more', type: 'button' }, [icon('dots')]);
+  moreBtn.setAttribute('aria-label', '更多操作');
+  moreBtn.setAttribute('aria-haspopup', 'dialog');
+  moreBtn.title = '模型偏好、清空记录等更多操作';
+  // 头部立像：吉祥物「盒宝」+ 在线状态点，与打卡弹窗/空状态的盒宝体系闭环
+  const badge = el('span', { class: 'ai-panel-badge' });
+  badge.setAttribute('aria-hidden', 'true');
+  badge.append(hebaoAvatar('ai-panel-badge-img'), el('i', { class: 'ai-panel-badge-on' }));
   const header = el('div', { class: 'ai-panel-header' }, [
-    el('span', { class: 'ai-panel-badge' }, [icon('sparkles')]),
+    badge,
     el('div', { class: 'ai-panel-titles' }, [
-      el('h2', { class: 'ai-panel-title', text: '小助手' }),
-      el('p', { class: 'ai-panel-subtitle', text: '吃药、药品和库存都可以问我' }),
+      el('h2', { class: 'ai-panel-title', text: '盒宝 · 用药小助手' }),
+      el('p', { class: 'ai-panel-subtitle', text: '在线 · 吃药和库存都可以问我' }),
     ]),
-    prefsToggleBtn,
-    clearBtn,
+    moreBtn,
     expandBtn,
     closeBtn,
   ]);
@@ -236,12 +266,34 @@ export function mountGlobalAssistant(): void {
   refreshModelsBtn.title = '从服务商拉取最新模型列表';
   const prefsRow = el('div', { class: 'ai-prefs-row' }, [modelSelect, effortSelect, refreshModelsBtn]);
   prefsRow.hidden = true;
-  prefsToggleBtn.onclick = () => {
-    const open = prefsRow.hidden;
-    prefsRow.hidden = !open;
-    prefsToggleBtn.setAttribute('aria-expanded', String(open));
-    prefsToggleBtn.classList.toggle('is-active', open);
-  };
+  function togglePrefs(): void {
+    prefsRow.hidden = !prefsRow.hidden;
+  }
+
+  /** 「更多」菜单：模型偏好 + 清空记录，与应用内其它底部弹层同语言 */
+  function openMoreMenu(): void {
+    let sheet: BottomSheetHandle | undefined;
+    const list = el('div', { class: 'ai-pref-sheet-options' });
+    const mkRow = (label: string, iconName: AppIconName, onPick: () => void): HTMLButtonElement => {
+      const row = el('button', { class: 'ai-pref-sheet-option', type: 'button' }) as HTMLButtonElement;
+      row.append(el('span', { class: 'ai-pref-sheet-option-label', text: label }), icon(iconName));
+      row.onclick = () => {
+        sheet?.close();
+        onPick();
+      };
+      return row;
+    };
+    list.append(
+      mkRow(prefsRow.hidden ? '模型与推理偏好' : '收起模型与推理偏好', 'gear', togglePrefs),
+      mkRow('清空对话记录', 'trash', () => void clearHistory()),
+    );
+    sheet = openBottomSheet({
+      label: '小助手更多操作',
+      content: [el('h2', { class: 'ai-pref-sheet-title', text: '更多操作' }), list],
+      className: 'ai-pref-sheet',
+    });
+  }
+  moreBtn.onclick = openMoreMenu;
 
   function effortLabel(effort: AssistantReasoningEffort): string {
     return effort === 'low' ? '低' : effort === 'medium' ? '中' : '高';
@@ -337,8 +389,11 @@ export function mountGlobalAssistant(): void {
   refreshPrefControls();
   onAssistantPrefsChange(() => refreshPrefControls());
   const quick = el('div', { class: 'ai-quick' }, QUICK_PROMPTS.map((prompt) => {
-    const chip = el('button', { class: 'ai-quick-chip', type: 'button', text: prompt });
-    chip.onclick = () => { void send(prompt); };
+    const chip = el('button', { class: 'ai-quick-chip', type: 'button' }, [
+      icon(prompt.icon),
+      el('span', { text: prompt.text }),
+    ]);
+    chip.onclick = () => { void send(prompt.text); };
     return chip;
   }));
 
@@ -561,7 +616,16 @@ export function mountGlobalAssistant(): void {
   input.addEventListener('blur', () => window.setTimeout(syncKeyboard, 50));
 
   function seedGreeting(): void {
-    addMsg('bot', GREETING);
+    // 欢迎区：hero 渐变卡 + 盒宝探身（沿用空状态插画的呼吸浮动），取代一行干巴巴的文字
+    const hero = el('div', { class: 'ai-hero' }, [
+      el('div', { class: 'ai-hero-copy' }, [
+        el('h3', { class: 'ai-hero-title', text: heroGreeting() }),
+        el('p', { class: 'ai-hero-text', text: GREETING }),
+      ]),
+      hebaoAvatar('ai-hero-img'),
+    ]);
+    log.append(hero);
+    scrollToBottom();
     const cfg = getLlmConfig();
     if (!cfg.baseUrl || !cfg.apiKey) {
       addSettingsHint('不过现在还没连上 AI 服务，先去设置里填好服务地址和密钥，我就能开工了。');
@@ -731,9 +795,9 @@ export function mountGlobalAssistant(): void {
     }
     openPanel();
   };
-  clearBtn.onclick = async () => {
+  async function clearHistory(): Promise<void> {
     if (log.childElementCount <= 1 && history.length === 0) return;
-    const confirmed = await confirmDialog('确定清空与小助手的对话记录吗？清空后所有设备上的本机记录都会删除。', '清空记录');
+    const confirmed = await confirmDialog('确定清空与盒宝的对话记录吗？清空后所有设备上的本机记录都会删除。', '清空记录');
     if (!confirmed) return;
     history.length = 0;
     log.replaceChildren();
@@ -741,7 +805,7 @@ export function mountGlobalAssistant(): void {
     void clearAssistantMessages().catch(() => { /* 清库失败不影响界面清空 */ });
     quick.hidden = false;
     toast('对话已清空');
-  };
+  }
   closeBtn.onclick = closePanel;
   backdrop.onclick = closePanel;
   expandBtn.onclick = () => {
@@ -776,14 +840,19 @@ export function mountGlobalAssistant(): void {
       bubble.append(el('div', { class: 'ai-bubble-file', text: `附件：${attachment.name}` }));
     }
     if (text) bubble.append(role === 'bot' ? renderAssistantMarkdown(text) : el('span', { text }));
-    const msg = el('div', { class: `ai-msg is-${role}` }, [bubble]);
+    // 盒宝消息左侧带小头像，一眼分清“谁在说”
+    const msg = role === 'bot'
+      ? el('div', { class: 'ai-msg is-bot' }, [hebaoAvatar('ai-msg-avatar'), bubble])
+      : el('div', { class: 'ai-msg is-user' }, [bubble]);
     log.append(msg);
     scrollToBottom();
     return msg;
   }
 
   function addAssistantReply(reply: AssistantTurnResult): HTMLElement {
-    const msg = el('div', { class: 'ai-msg is-bot' });
+    const msg = el('div', { class: 'ai-msg is-bot' }, [hebaoAvatar('ai-msg-avatar')]);
+    // 头像列之后的内容体：文字气泡与结构化卡片同属一列，与头像对齐
+    const body = el('div', { class: 'ai-msg-body' });
     if (reply.markdown) {
       const bubble = el('div', { class: 'ai-bubble' });
       bubble.append(renderAssistantMarkdown(reply.markdown));
@@ -805,7 +874,7 @@ export function mountGlobalAssistant(): void {
       };
       footer.append(copyBtn);
       bubble.append(footer);
-      msg.append(bubble);
+      body.append(bubble);
     }
     if (reply.blocks.length) {
       const cards = el('div', { class: 'ai-cards' });
@@ -824,8 +893,9 @@ export function mountGlobalAssistant(): void {
             if (slot.isConnected) slot.textContent = `${block.title}（内容加载失败，请稍后重试）`;
           });
       }
-      msg.append(cards);
+      body.append(cards);
     }
+    msg.append(body);
     log.append(msg);
     scrollToBottom();
     return msg;
@@ -835,6 +905,7 @@ export function mountGlobalAssistant(): void {
     const goBtn = el('button', { class: 'ai-bubble-action', type: 'button', text: '去设置连一下' });
     goBtn.onclick = () => { closePanel(); navigate('/settings'); };
     const msg = el('div', { class: 'ai-msg is-bot' }, [
+      hebaoAvatar('ai-msg-avatar'),
       el('div', { class: 'ai-bubble' }, [el('span', { text }), goBtn]),
     ]);
     log.append(msg);
@@ -844,6 +915,7 @@ export function mountGlobalAssistant(): void {
   function addStatus(text: string): { update: (t: string) => void; remove: () => void } {
     const label = el('span', { text });
     const msg = el('div', { class: 'ai-msg is-bot is-status' }, [
+      hebaoAvatar('ai-msg-avatar'),
       el('div', { class: 'ai-bubble' }, [label, el('span', { class: 'ai-dots' }, [el('i'), el('i'), el('i')])]),
     ]);
     log.append(msg);
