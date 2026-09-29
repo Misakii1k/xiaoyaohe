@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小助手重设计 · 方案对比</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'MiSans', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #e9eeeb;
+  color: #202e2b;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1240px; margin: 0 auto; padding: 48px 24px 72px; }
+h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+.sub { margin-top: 10px; color: #64706b; font-size: 14.5px; line-height: 1.8; max-width: 720px; }
+.grid {
+  margin-top: 36px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+}
+.card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #dfe6e2;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(23,34,30,.05);
+  transition: transform .2s cubic-bezier(.32,.72,0,1), box-shadow .2s ease;
+}
+.card:hover { transform: translateY(-4px); box-shadow: 0 14px 34px rgba(23,34,30,.12); }
+.preview {
+  position: relative;
+  height: 420px;
+  overflow: hidden;
+  background: #dfe7e3;
+}
+.preview iframe {
+  width: 1240px;
+  height: 1744px;
+  border: 0;
+  transform: scale(0.34);
+  transform-origin: top left;
+  pointer-events: none;
+}
+.body { padding: 20px 22px 24px; }
+.body h2 { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+.body h2 small {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #e3ede6;
+  color: #236a55;
+  font-size: 12px; font-weight: 700;
+  white-space: nowrap;
+}
+.body p { margin-top: 8px; font-size: 13.5px; line-height: 1.75; color: #64706b; }
+.tags { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px; }
+.tags span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #e1e8e4;
+  background: #f6f8f7;
+  font-size: 12px; font-weight: 600; color: #236a55;
+  white-space: nowrap;
+}
+.foot {
+  margin-top: 40px;
+  padding: 18px 22px;
+  border: 1px dashed #c9d4ce;
+  border-radius: 16px;
+  color: #64706b;
+  font-size: 13px; line-height: 1.8;
+}
+.foot b { color: #236a55; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>小助手重设计 · 三个方向</h1>
+  <p class="sub">现状问题：助手面板是「白色聊天气泡窗」，与应用整体的冰白底 + 微卡片 + 青绿体系是两套语言。以下三个方案共用同一套设计令牌与内容数据，仅视觉方向不同。点卡片打开完整原型，每个原型右上角可切换深色预览。</p>
+
+  <div class="grid">
+    <a class="card" href="option-a.html">
+      <div class="preview"><iframe src="option-a.html" loading="lazy" title="方案 A 预览"></iframe></div>
+      <div class="body">
+        <h2>方案 A · 秩序文档 <small>改动最小</small></h2>
+        <p>去掉聊天软件外壳：助手回复以文档流直接落在冰白底上，头部、卡片、输入条全部复用页面语言。克制、工具感、零割裂。</p>
+        <div class="tags"><span>去气泡</span><span>文档流</span><span>风险最低</span></div>
+      </div>
+    </a>
+
+    <a class="card" href="option-b.html">
+      <div class="preview"><iframe src="option-b.html" loading="lazy" title="方案 B 预览"></iframe></div>
+      <div class="body">
+        <h2>方案 B · 盒宝伙伴 <small>人格化</small></h2>
+        <p>吉祥物「盒宝」成为助手的人格载体：头部立像、欢迎 hero 卡、每条回复带小头像，与打卡弹窗、空状态的盒宝插画体系闭环。</p>
+        <div class="tags"><span>盒宝立像</span><span>欢迎卡</span><span>温暖陪伴</span></div>
+      </div>
+    </a>
+
+    <a class="card" href="option-c.html">
+      <div class="preview"><iframe src="option-c.html" loading="lazy" title="方案 C 预览"></iframe></div>
+      <div class="body">
+        <h2>方案 C · 水凝玻璃 <small>材质感</small></h2>
+        <p>助手是浮在应用之上的一层玻璃：面板、气泡、输入条统一半透明磨砂，透出背后的今日页，与底栏、弹层同一材质语言。</p>
+        <div class="tags"><span>半透明磨砂</span><span>悬浮输入条</span><span>轻盈高级</span></div>
+      </div>
+    </a>
+  </div>
+
+  <div class="foot">
+    <b>三个方案共享的底线</b>：全部走 tokens.css 设计令牌（浅色/深色自动适配）；触控热区 ≥ 44px；时段/状态胶囊防折行；动效遵守 prefers-reduced-motion；结构化卡片（统计格、药品清单行）三方案完全一致，只是承载材质不同。确认方向后，也可混搭（如 A 的文档流 + B 的盒宝头像）。
+  </div>
+</div>
+</body>
+</html>

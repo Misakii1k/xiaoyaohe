@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 A · 秩序文档 — 小助手重设计</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+/* ================= 方案 A：秩序文档 =================
+   核心主张：AI 助手不是“外来的聊天窗”，而是应用里的一张文档页。
+   去气泡化、去聊天感，全面复用页面的冰白底与微卡片语言。 */
+
+.panel {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 88%;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.panel::before {
+  content: '';
+  position: absolute;
+  top: 6px; left: 50%;
+  width: 36px; height: 4px;
+  margin-left: -18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-muted) 35%, transparent);
+}
+
+/* 头部 = 页面顶栏语言：大标题左置，动作右侧圆钮 */
+.ph {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 12px 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+.ph .badge {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+.ph .badge svg { width: 18px; height: 18px; }
+.ph .tt { flex: 1 1 auto; min-width: 0; }
+.ph .tt h2 { font-size: var(--fs-headline); font-weight: 700; line-height: 1.25; color: var(--color-text); }
+.ph .tt p { margin-top: 2px; font-size: var(--fs-caption-sm); color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph .icb {
+  width: 36px; height: 36px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.ph .icb svg { width: 18px; height: 18px; }
+
+/* 偏好行（点齿轮展开）：与设置页微卡片同语言 */
+.prefs {
+  display: flex; gap: 8px; align-items: center;
+  padding: 8px 16px;
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+.prefs .sel {
+  flex: 1 1 auto; min-width: 0;
+  height: 34px;
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--fs-footnote);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.prefs .sel::after {
+  content: ''; margin-left: auto; flex: 0 0 auto;
+  width: 6px; height: 6px;
+  border-right: 1.5px solid var(--color-text-muted);
+  border-bottom: 1.5px solid var(--color-text-muted);
+  transform: translateY(-2px) rotate(45deg);
+}
+.prefs .rf {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border: 0; border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-text-muted);
+}
+.prefs .rf svg { width: 16px; height: 16px; }
+
+/* 对话区：直接落在冰白底上，无独立“聊天背景” */
+.log {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 20px 16px 20px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+/* 助手消息：无气泡文档流 */
+.msg-bot { color: var(--color-text); }
+.msg-bot .who {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  color: var(--color-text-muted);
+}
+.msg-bot .who svg { width: 13px; height: 13px; color: var(--color-primary); }
+
+/* 用户消息：唯一保留的“气泡”，右对齐主色胶囊 */
+.msg-user { display: flex; justify-content: flex-end; }
+.msg-user .u {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  border-bottom-right-radius: 6px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--fs-body); line-height: 1.5;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
+/* 快捷入口：2 列功能卡片（与首页卡片同构） */
+.quick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.qc {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--fs-footnote); font-weight: 600; color: var(--color-text);
+  text-align: left; cursor: pointer;
+}
+.qc i {
+  width: 30px; height: 30px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 9px;
+}
+.qc i svg { width: 16px; height: 16px; }
+.qc .t-green  { background: var(--tint-green-bg);  color: var(--tint-green-fg); }
+.qc .t-blue   { background: var(--tint-blue-bg);   color: var(--tint-blue-fg); }
+.qc .t-pink   { background: var(--tint-pink-bg);   color: var(--tint-pink-fg); }
+.qc .t-orange { background: var(--tint-orange-bg); color: var(--tint-orange-fg); }
+
+/* 结构化卡片：与白卡页面完全同构 */
+.card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-solid);
+  box-shadow: var(--shadow-sm);
+  padding: 14px 16px;
+}
+.card .hd { display: flex; align-items: center; gap: 10px; }
+.card .hd .ic {
+  width: 36px; height: 36px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  background: var(--color-primary-soft); color: var(--color-primary);
+}
+.card .hd .ic svg { width: 18px; height: 18px; }
+.card .hd .tt { flex: 1 1 auto; min-width: 0; }
+.card .hd .tt small { display: block; color: var(--color-text-muted); font-size: var(--fs-caption); font-weight: 650; }
+.card .hd .tt b { font-size: var(--fs-subheadline); color: var(--color-text); }
+.card .hd .bdg {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--tone-warn-border);
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+  font-size: var(--fs-caption); font-weight: 750; line-height: 1.1;
+  white-space: nowrap;
+}
+.card .hd .bdg.ok { border-color: var(--tone-ok-border); background: var(--tone-ok-bg); color: var(--tone-ok-fg); }
+
+/* 状态行：纯文字，无胶囊 */
+.status {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+}
+
+/* 输入区：顶部细线 + 白底输入条 */
+.composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  padding: 12px 16px calc(12px + var(--safe-bottom));
+}
+.composer .row { display: flex; align-items: flex-end; gap: 8px; }
+.composer .plus {
+  width: 40px; height: 40px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.composer .plus svg { width: 20px; height: 20px; }
+.composer .field {
+  flex: 1 1 auto; min-width: 0;
+  min-height: 40px;
+  display: flex; align-items: center;
+  padding: 9px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-solid);
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+}
+.composer .send {
+  width: 40px; height: 40px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: var(--color-primary-gradient);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+.composer .send svg { width: 18px; height: 18px; }
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <div>
+    <h1>方案 A · 秩序文档 <small>改动最小</small></h1>
+    <p>去掉“聊天软件”外壳：助手回复不再包气泡，直接以文档流落在冰白底上；头部、卡片、输入条全部复用今日页/药品页同一套白卡语言。像翻开应用里的另一页，而不是打开一个异质窗口。</p>
+  </div>
+  <button class="theme-toggle" type="button"><span>深色预览</span> ⇄</button>
+</header>
+
+<main class="stage">
+  <div class="phone" data-theme="light">
+    <div class="screen">
+      <div class="scrim-layer"></div>
+
+      <section class="panel">
+        <header class="ph">
+          <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span>
+          <div class="tt">
+            <h2>小助手</h2>
+            <p>吃药、药品和库存都可以问我</p>
+          </div>
+          <button class="icb" title="对话偏好"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+          <button class="icb" title="清空记录"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+          <button class="icb" title="展开面板"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg></button>
+          <button class="icb" title="收起"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg></button>
+        </header>
+
+        <div class="prefs">
+          <button class="sel" type="button">默认模型（deepseek-chat）</button>
+          <button class="sel" type="button">推理：默认</button>
+          <button class="rf" type="button" title="刷新模型列表"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
+        </div>
+
+        <div class="log">
+          <div class="msg msg-bot">
+            <div class="who"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>小助手</div>
+            <div class="md"><p>下午好。今天的药吃了两次，晚上还有一次。想查安排、看记录、盘点库存，或者拍张处方给我录入，都可以。</p></div>
+          </div>
+
+          <div class="quick">
+            <button class="qc" type="button"><i class="t-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></i>今天的安排</button>
+            <button class="qc" type="button"><i class="t-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 20.5L3.5 13.5a4.95 4.95 0 1 1 7-7l7 7a4.95 4.95 0 1 1-7 7z"/><path d="M8.5 8.5l7 7"/></svg></i>查相互作用</button>
+            <button class="qc" type="button"><i class="t-pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></i>拍处方录药</button>
+            <button class="qc" type="button"><i class="t-orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></i>库存不足的药</button>
+          </div>
+
+          <div class="msg msg-user"><div class="u">今天有哪些用药安排？</div></div>
+
+          <div class="msg msg-bot">
+            <div class="who"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>小助手</div>
+            <div class="md">
+              <p>今天共 <strong>3 次</strong> 安排，已服 2 次：</p>
+              <ul>
+                <li><strong>08:00</strong> 阿司匹林 · 1 片 · 已服</li>
+                <li><strong>12:30</strong> 维生素 C · 1 片 · 已服</li>
+                <li><strong>21:30</strong> 瑞舒伐他汀 · 1 片 · 待服</li>
+              </ul>
+              <blockquote><p>阿司匹林建议饭后服用，不要空腹。</p></blockquote>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="hd">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 20.5L3.5 13.5a4.95 4.95 0 1 1 7-7l7 7a4.95 4.95 0 1 1-7 7z"/><path d="M8.5 8.5l7 7"/></svg></span>
+              <div class="tt"><small>今天 · 还有 1 项</small><b>用药安排</b></div>
+              <span class="bdg">待处理</span>
+            </div>
+            <div class="items">
+              <div class="item ok"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span><div><b>阿司匹林</b><small>08:00 · 每次 1 片 · 饭后</small></div><span class="st ok">已服</span></div>
+              <div class="item ok"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span><div><b>维生素 C</b><small>12:30 · 每次 1 片</small></div><span class="st ok">已服</span></div>
+              <div class="item warn"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span><div><b>瑞舒伐他汀</b><small>21:30 · 每次 1 片</small></div><span class="st warn">待服</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="hd">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>
+              <div class="tt"><small>近 7 天</small><b>按时服药情况</b></div>
+              <span class="bdg ok">表现不错</span>
+            </div>
+            <dl class="facts">
+              <div><dt>按时率</dt><dd>91%</dd></div>
+              <div><dt>已服</dt><dd>19 次</dd></div>
+              <div><dt>漏服</dt><dd>1 次</dd></div>
+              <div><dt>跳过</dt><dd>1 次</dd></div>
+            </dl>
+          </div>
+
+          <div class="status">正在整理库存不足的药品 <span class="dots"><i></i><i></i><i></i></span></div>
+        </div>
+
+        <form class="composer">
+          <div class="row">
+            <button class="plus" type="button" title="添加图片或文件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
+            <div class="field">跟我说点什么…</div>
+            <button class="send" type="button" title="发送"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg></button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <h3>设计要点</h3>
+    <p class="sub">「去聊天化」：助手 = 应用内的一张文档页</p>
+    <ol>
+      <li><b>去气泡</b>：助手回复不再包白卡气泡，直接以 16px / 1.75 文档流落在冰白底上，与今日页正文同一质感；仅用户消息保留右对齐主色胶囊作区分。</li>
+      <li><b>头部即顶栏</b>：标题 + 四个圆形图标按钮，与全站顶栏控件同一语言；齿轮展开的偏好行保持现状。</li>
+      <li><b>快捷入口卡片化</b>：文字胶囊改为 2 列功能卡片（彩色浅底图标 + 短标签），与首页/扫码页卡片同构。</li>
+      <li><b>结构化卡片原样复用</b>：统计格、药品清单行沿用现有卡片规范，零新增视觉语言。</li>
+      <li><b>改动量最小</b>：主要是 assistant.css 重写，DOM 结构基本不动，风险最低。</li>
+    </ol>
+    <div class="meta">气质：克制、工具感、零割裂。<br>适合：希望助手「隐入」应用、不抢戏的方向。</div>
+  </aside>
+</main>
+
+<script src="shared.js"></script>
+</body>
+</html>

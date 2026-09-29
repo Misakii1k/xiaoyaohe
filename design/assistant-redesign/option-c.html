@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 C · 水凝玻璃 — 小助手重设计</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+/* ================= 方案 C：水凝玻璃 =================
+   核心主张：助手是悬浮在应用之上的一层“玻璃”——
+   面板、气泡、输入条统一为半透明磨砂材质，与底栏、弹层的
+   Liquid Glass 语言同源，透出背后的今日页，天然属于这个应用。 */
+
+/* 轻遮罩：只压暗一点点，让玻璃有内容可透 */
+.scrim-layer { background: color-mix(in srgb, var(--scrim) 55%, transparent); }
+
+.panel {
+  position: absolute;
+  inset-inline: 10px;
+  bottom: calc(10px + var(--safe-bottom));
+  height: 84%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 32px;
+  overflow: hidden;
+  /* 玻璃体 */
+  background: color-mix(in srgb, var(--color-surface-solid) 62%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid color-mix(in srgb, #ffffff 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--shadow-lg);
+}
+.phone[data-theme='dark'] .panel {
+  background: color-mix(in srgb, var(--color-surface-solid) 66%, transparent);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), var(--shadow-lg);
+}
+
+/* 面板内的环境光晕：静态径向渐变，不动画（性能铁律） */
+.panel::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(at 12% 0%, color-mix(in srgb, var(--color-primary) 14%, transparent) 0px, transparent 46%),
+    radial-gradient(at 92% 18%, color-mix(in srgb, var(--color-accent-mint) 12%, transparent) 0px, transparent 42%);
+  pointer-events: none;
+}
+.panel > * { position: relative; }
+
+/* 头部悬浮：无分割线，控件为玻璃圆钮 */
+.ph {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 14px 10px 18px;
+}
+.ph .badge {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--color-primary-gradient);
+  color: var(--color-on-primary);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--color-primary) 32%, transparent);
+}
+.ph .badge svg { width: 18px; height: 18px; }
+.ph .tt { flex: 1 1 auto; min-width: 0; }
+.ph .tt h2 { font-size: var(--fs-headline); font-weight: 700; line-height: 1.25; color: var(--color-text); }
+.ph .tt p { margin-top: 2px; font-size: var(--fs-caption-sm); color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph .icb {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border: 1px solid color-mix(in srgb, #ffffff 50%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-surface-solid) 52%, transparent);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.phone[data-theme='dark'] .ph .icb { border-color: rgba(255,255,255,.12); }
+.ph .icb svg { width: 17px; height: 17px; }
+
+.log {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px 14px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+/* 助手气泡：磨砂玻璃卡 */
+.msg-bot .b {
+  padding: 12px 14px;
+  border-radius: 22px;
+  border-top-left-radius: 8px;
+  background: color-mix(in srgb, var(--color-surface-solid) 68%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 50%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 2px 10px rgba(23,34,30,.06);
+  color: var(--color-text);
+}
+.phone[data-theme='dark'] .msg-bot .b {
+  border-color: rgba(255,255,255,.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 2px 10px rgba(0,0,0,.3);
+}
+
+/* 用户气泡：主色渐变玻璃 */
+.msg-user { display: flex; justify-content: flex-end; }
+.msg-user .u {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 22px;
+  border-bottom-right-radius: 8px;
+  background: var(--color-primary-gradient);
+  color: var(--color-on-primary);
+  font-size: var(--fs-body); line-height: 1.5;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+/* 快捷胶囊：玻璃片横滑 */
+.sugg {
+  display: flex; gap: 8px;
+  margin: 0 -14px;
+  padding: 2px 14px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sugg::-webkit-scrollbar { display: none; }
+.sugg button {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #ffffff 55%, transparent);
+  background: color-mix(in srgb, var(--color-surface-solid) 55%, transparent);
+  color: var(--color-text);
+  font-size: var(--fs-caption-sm); font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
+}
+.phone[data-theme='dark'] .sugg button { border-color: rgba(255,255,255,.12); box-shadow: none; }
+.sugg button svg { width: 14px; height: 14px; color: var(--color-primary); }
+
+/* 结构化卡片：玻璃卡，内容承载不变 */
+.card {
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, #ffffff 50%, transparent);
+  background: color-mix(in srgb, var(--color-surface-solid) 72%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 2px 10px rgba(23,34,30,.06);
+  padding: 14px 16px;
+}
+.phone[data-theme='dark'] .card { border-color: rgba(255,255,255,.10); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+.card .hd { display: flex; align-items: center; gap: 10px; }
+.card .hd .ic {
+  width: 36px; height: 36px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  background: var(--color-primary-soft); color: var(--color-primary);
+}
+.card .hd .ic svg { width: 18px; height: 18px; }
+.card .hd .tt { flex: 1 1 auto; min-width: 0; }
+.card .hd .tt small { display: block; color: var(--color-text-muted); font-size: var(--fs-caption); font-weight: 650; }
+.card .hd .tt b { font-size: var(--fs-subheadline); color: var(--color-text); }
+.card .hd .bdg {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--tone-warn-border);
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+  font-size: var(--fs-caption); font-weight: 750; line-height: 1.1;
+  white-space: nowrap;
+}
+.card .hd .bdg.ok { border-color: var(--tone-ok-border); background: var(--tone-ok-bg); color: var(--tone-ok-fg); }
+/* 玻璃卡内的 facts/items 底板改为半透，避免白块叠白块 */
+.card .facts { border-color: color-mix(in srgb, var(--color-border) 70%, transparent); background: color-mix(in srgb, var(--color-border) 70%, transparent); }
+.card .facts > div { background: color-mix(in srgb, var(--color-surface-solid) 55%, transparent); }
+.card .items, .card .item + .item { border-color: color-mix(in srgb, var(--color-border) 70%, transparent); }
+
+.status {
+  display: inline-flex; align-items: center; gap: 8px;
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #ffffff 50%, transparent);
+  background: color-mix(in srgb, var(--color-surface-solid) 45%, transparent);
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+}
+.phone[data-theme='dark'] .status { border-color: rgba(255,255,255,.10); }
+
+/* 输入条：悬浮玻璃胶囊，脱离面板底边 */
+.composer {
+  flex: 0 0 auto;
+  padding: 10px 12px 12px;
+}
+.composer .row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 5px 5px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface-solid) 66%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 60%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 6px 18px rgba(23,34,30,.10);
+}
+.phone[data-theme='dark'] .composer .row {
+  border-color: rgba(255,255,255,.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 6px 18px rgba(0,0,0,.4);
+}
+.composer .plus {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.composer .plus svg { width: 20px; height: 20px; }
+.composer .field {
+  flex: 1 1 auto; min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-body);
+}
+.composer .send {
+  width: 38px; height: 38px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: var(--color-primary-gradient);
+  color: var(--color-on-primary);
+  cursor: pointer;
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--color-primary) 32%, transparent);
+}
+.composer .send svg { width: 17px; height: 17px; }
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <div>
+    <h1>方案 C · 水凝玻璃 <small>材质感</small></h1>
+    <p>助手是浮在应用之上的一层玻璃：面板、气泡、输入条统一半透明磨砂，透出背后的今日页，与底栏、弹层的 Liquid Glass 材质同源。四周留边、全圆角，像一片托起对话的玻璃板。</p>
+  </div>
+  <button class="theme-toggle" type="button"><span>深色预览</span> ⇄</button>
+</header>
+
+<main class="stage">
+  <div class="phone" data-theme="light">
+    <div class="screen">
+      <div class="scrim-layer"></div>
+
+      <section class="panel">
+        <header class="ph">
+          <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span>
+          <div class="tt">
+            <h2>小助手</h2>
+            <p>吃药、药品和库存都可以问我</p>
+          </div>
+          <button class="icb" title="对话偏好"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+          <button class="icb" title="清空记录"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+          <button class="icb" title="展开面板"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg></button>
+          <button class="icb" title="收起"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg></button>
+        </header>
+
+        <div class="log">
+          <div class="sugg">
+            <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>今天的安排</button>
+            <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 20.5L3.5 13.5a4.95 4.95 0 1 1 7-7l7 7a4.95 4.95 0 1 1-7 7z"/><path d="M8.5 8.5l7 7"/></svg>查相互作用</button>
+            <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>拍处方录药</button>
+            <button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>库存不足的药</button>
+          </div>
+
+          <div class="msg msg-bot">
+            <div class="b">
+              <div class="md"><p>下午好。今天的药吃了两次，晚上还有一次。想查安排、看记录、盘点库存，或者拍张处方给我录入，都可以。</p></div>
+            </div>
+          </div>
+
+          <div class="msg msg-user"><div class="u">今天有哪些用药安排？</div></div>
+
+          <div class="msg msg-bot">
+            <div class="b">
+              <div class="md">
+                <p>今天共 <strong>3 次</strong> 安排，已服 2 次：</p>
+                <ul>
+                  <li><strong>08:00</strong> 阿司匹林 · 1 片 · 已服</li>
+                  <li><strong>12:30</strong> 维生素 C · 1 片 · 已服</li>
+                  <li><strong>21:30</strong> 瑞舒伐他汀 · 1 片 · 待服</li>
+                </ul>
+                <blockquote><p>阿司匹林建议饭后服用，不要空腹。</p></blockquote>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="hd">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 20.5L3.5 13.5a4.95 4.95 0 1 1 7-7l7 7a4.95 4.95 0 1 1-7 7z"/><path d="M8.5 8.5l7 7"/></svg></span>
+              <div class="tt"><small>今天 · 还有 1 项</small><b>用药安排</b></div>
+              <span class="bdg">待处理</span>
+            </div>
+            <div class="items">
+              <div class="item ok"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span><div><b>阿司匹林</b><small>08:00 · 每次 1 片 · 饭后</small></div><span class="st ok">已服</span></div>
+              <div class="item ok"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span><div><b>维生素 C</b><small>12:30 · 每次 1 片</small></div><span class="st ok">已服</span></div>
+              <div class="item warn"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span><div><b>瑞舒伐他汀</b><small>21:30 · 每次 1 片</small></div><span class="st warn">待服</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="hd">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>
+              <div class="tt"><small>近 7 天</small><b>按时服药情况</b></div>
+              <span class="bdg ok">表现不错</span>
+            </div>
+            <dl class="facts">
+              <div><dt>按时率</dt><dd>91%</dd></div>
+              <div><dt>已服</dt><dd>19 次</dd></div>
+              <div><dt>漏服</dt><dd>1 次</dd></div>
+              <div><dt>跳过</dt><dd>1 次</dd></div>
+            </dl>
+          </div>
+
+          <div class="status">正在整理库存不足的药品 <span class="dots"><i></i><i></i><i></i></span></div>
+        </div>
+
+        <form class="composer">
+          <div class="row">
+            <button class="plus" type="button" title="添加图片或文件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
+            <div class="field">跟我说点什么…</div>
+            <button class="send" type="button" title="发送"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg></button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <h3>设计要点</h3>
+    <p class="sub">「材质化」：浮在应用之上的一层玻璃</p>
+    <ol>
+      <li><b>整板玻璃</b>：面板四边留 10px 悬浮，半透明磨砂 + 顶部高光描边，透出背后的今日页，与底栏、弹层同一材质语言。</li>
+      <li><b>气泡分级</b>：用户气泡用主色渐变玻璃、助手气泡用白磨砂玻璃，层次分明但都属同一材质家族。</li>
+      <li><b>悬浮输入条</b>：输入区脱离面板底边，成为独立的玻璃胶囊，是面板上唯一的“硬”元素。</li>
+      <li><b>环境光晕</b>：面板内顶部两团静态青绿光晕，呼应 tokens 里的 hero 渐变；不做动画，遵守性能铁律。</li>
+      <li><b>性能约束</b>：同屏 backdrop-filter 严格 ≤ 2 层（面板 + 输入条）；低端机/减弱透明度时降级为近实色。</li>
+    </ol>
+    <div class="meta">气质：轻盈、现代、有质感。<br>适合：希望助手「轻若无物」又高级的方向；需注意低端机降级方案。</div>
+  </aside>
+</main>
+
+<script src="shared.js"></script>
+</body>
+</html>
