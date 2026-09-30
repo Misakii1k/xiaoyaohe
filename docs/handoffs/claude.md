@@ -31,8 +31,13 @@ Latest version: `1.1.15` (Android `versionCode: 73`)
    - `npm run build:web`：生产构建正常，Web Bundle 生成；
    - `npx playwright test e2e/assistant-cards.spec.ts`：8/8 通过（卡片不溢出 + 全屏安全区，四视口）；
    - 无头浏览器真机视口截图逐项目检：浅色/深色/桌面悬浮/hero 欢迎卡/更多菜单全部正常；
-   - 版本号不变（未发版）。
-4. **环境备注**：
+   - 推送远端前版本号单调递增至 1.1.15 / versionCode 73（`release-utils.mjs` 与 `functions/version.json.ts` 镜像表登记映射，测试候选 mock 升至 74）。
+4. **发版交付（v1.1.15，已上线）**：
+   - `docs/releases/1.1.15.md` 发布说明通过 `tone_lint.py`；`docs/handoffs/CURRENT.md` 同步；
+   - `assembleRelease` BUILD SUCCESSFUL，APK 20,967,458 字节（约 20MB，与上版相当），SHA256SUMS 与 `public/version.json`（APK + Web Bundle 真实体积哈希）已同步；
+   - GitHub Release `v1.1.15` 已创建并上传 APK / Web 增量包 / 校验和三附件；`check-release-endpoints.mjs` 线上冒烟 **4/4 通过**（version.json 正确、releases 识别 APK、非法 tag 拒 400、download 200 无 403）；
+   - 纯前端改动，已装 1.0.9+ 底座的设备走秒级增量热更新即可收到。
+5. **环境备注**：
    - 修复本机 `node_modules` 中 `@esbuild/win32-x64`（0.28.2）与 `esbuild`（0.25.12）版本错配导致的测试启动失败（`npm i --no-save` 对齐到 0.25.12，未动依赖清单）；
    - 发现工作区残留未跟踪删除：`src/assets/images3d/nature-header-bokeh.png` 被删但 `assets3d.ts` 仍引用（4 个测试套件因此全红），已从 git 恢复原文件——若该删除是有意为之，需连 `assets3d.ts` 的引用一并移除。
 
