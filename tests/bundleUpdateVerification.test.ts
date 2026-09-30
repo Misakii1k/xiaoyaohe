@@ -56,7 +56,7 @@ describe('Web 增量热更新机制与判断逻辑', () => {
       ok: true,
       json: async () => ({
         version: '1.2.5',
-        versionCode: 74,
+        versionCode: 75,
         downloadUrl: '/api/download?tag=v1.2.5',
         fileSize: 18000000,
         bundleUrl: '/api/download?tag=v1.2.5&asset=bundle',
@@ -70,7 +70,7 @@ describe('Web 增量热更新机制与判断逻辑', () => {
     const update = await checkFastCloudVersion();
     expect(update).not.toBeNull();
     expect(update?.version).toBe('1.2.5');
-    expect(update?.versionCode).toBe(74);
+    expect(update?.versionCode).toBe(75);
     expect(update?.updateType).toBe('incremental');
     expect(update?.bundleUrl).toBe('https://xiaoyaohe.pages.dev/api/download?tag=v1.2.5&asset=bundle');
     expect(update?.bundleSize).toBe(1800000);
@@ -83,7 +83,7 @@ describe('Web 增量热更新机制与判断逻辑', () => {
       ok: true,
       json: async () => ({
         version: '1.2.5',
-        versionCode: 74,
+        versionCode: 75,
         downloadUrl: '/api/download?tag=v1.2.5',
         fileSize: 18000000,
         bundleUrl: '/api/download?tag=v1.2.5&asset=bundle',
@@ -186,7 +186,7 @@ describe('Web 增量热更新机制与判断逻辑', () => {
   it('getAvailableUpdate 从 localStorage 还原时保留增量包元数据与 incremental 类型（回归：此前被丢弃导致永远全量下载）', () => {
     saveAvailableUpdate({
       version: '1.2.5',
-      versionCode: 74,
+      versionCode: 75,
       source: 'cloud',
       updateType: 'incremental',
       downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.2.5',
@@ -209,7 +209,7 @@ describe('Web 增量热更新机制与判断逻辑', () => {
   it('getAvailableUpdate 还原时若本机底座低于最低要求，则降级为 full', () => {
     saveAvailableUpdate({
       version: '1.2.5',
-      versionCode: 74,
+      versionCode: 75,
       source: 'cloud',
       updateType: 'incremental',
       downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.2.5',

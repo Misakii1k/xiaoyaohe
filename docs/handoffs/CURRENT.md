@@ -1,9 +1,17 @@
 # Current Integration State
 
-Updated: 2026-09-30
+Updated: 2026-10-01
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.1.15` (versionCode 73)
-Latest integration commit: `release: v1.1.15 (versionCode 73)`
+Product version: `1.1.16` (versionCode 74)
+Latest integration commit: `release: v1.1.16 (versionCode 74)`
+
+## Release v1.1.16 (versionCode 74, workspace/claude)
+
+- **集成内容**：
+  - 修复深色模式下小助手输入框发白、输入框与两侧按钮不对齐的问题；
+  - 小助手全屏态保留水凝玻璃质感，删除全部全屏实色覆写；
+  - 新增头部上下拖拽手势：面板跟随手指在悬浮与全屏之间连续渐变，松手自动吸附；展开按钮同步改为平滑形变动画。
+- **质量门禁**：见 `docs/handoffs/claude.md` 第 69 节。
 
 ## Release v1.1.15 (versionCode 73, workspace/claude)
 
