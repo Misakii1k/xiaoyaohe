@@ -1,9 +1,17 @@
 # Current Integration State
 
-Updated: 2026-09-26
+Updated: 2026-09-30
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.1.14` (versionCode 72)
-Latest integration commit: `release: v1.1.14 (versionCode 72)`
+Product version: `1.1.15` (versionCode 73)
+Latest integration commit: `release: v1.1.15 (versionCode 73)`
+
+## Release v1.1.15 (versionCode 73, workspace/claude)
+
+- **集成内容**：
+  - AI 助手「盒宝伙伴 × 水凝玻璃」重设计落地：盒宝立像与欢迎卡、回复带小头像、整板悬浮玻璃面板与玻璃输入条，浅色/深色/桌面三端自适应；
+  - 头部动作减负：模型偏好与清空记录收进「更多」底部弹层；
+  - 设计规范 design.md 5.3 节同步改写，三方案高保真原型归档于 `design/assistant-redesign/`。
+- **质量门禁**：见 `docs/handoffs/claude.md` 第 68 节。
 
 ## Release v1.1.14 (versionCode 72, workspace/claude)
 
