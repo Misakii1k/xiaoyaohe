@@ -8,6 +8,28 @@ Latest version: `1.1.15` (Android `versionCode: 73`)
 
 ## Summary of Accomplished Work
 
+### 69. 小助手暗色输入框修复、全屏保留水凝玻璃、头部拖拽渐变全屏 (workspace/claude，未发版)
+
+1. **需求与背景**：用户反馈三处小助手面板问题——暗色模式下输入框纯白且与左右按钮不对齐、全屏态丢失非全屏的毛玻璃质感、希望支持手指上下滑动在浮动与全屏之间连续渐变。
+2. **改动清单**：
+   - **`src/ui/styles/pages/assistant.css`**：
+     - 暗色输入框纯白根因：`legacy.css` 全局裸标签规则 `textarea:focus { background: rgba(255,255,255,0.88) }` 特异性 (0,1,1) 压过 `.ai-input` 的透明底；面板打开自动聚焦即触发。修复：`.ai-input` 规则扩为 `.ai-input, .ai-input:focus, .ai-input:focus-visible` 并显式复位 `background/box-shadow/border/backdrop-filter`；
+     - 全屏保留水凝玻璃：`.ai-panel.is-fullscreen` 删除实色背景与 `backdrop-filter: none`（沿用 62% 半透明 + blur(24px)），并删除 8 处全屏实色覆写（偏好行/头部圆钮/助手气泡/状态胶囊/结构化卡片/统计格/快捷胶囊/输入条）；保留头部安全区 padding 与输入区 safe-bottom 布局契约；
+     - 顶部抓手条改为浮动/全屏两态常驻（全屏态提示可下滑还原）；
+     - 新增手势态样式：`.ai-panel-header { touch-action: none; cursor: grab; user-select: none }`、`.ai-root.is-gesturing .ai-panel`（关过渡、归位左上原点，由 JS 写 transform/宽高驱动几何）、`.ai-root.is-snapping .ai-panel`（transform/inline-size/block-size/border-radius 260ms 回弹过渡）、`.ai-panel.is-probing`（同帧隐藏测量用探针）。
+   - **`src/ui/AiAssistant.ts`**：
+     - `syncInput()` 单行高度 44px → 精确 38px（去掉 `scrollHeight + 2` 余量并 `Math.round`），与左右 38px 圆形按钮同行齐平，按钮恢复垂直居中；
+     - 抽出 `setFullscreen(on)` 统一切换类名 + 展开按钮图标/aria，`closePanel` 复用；
+     - 新增头部垂直拖拽手势：`pointerdown` 命中按钮跳过；`measurePanelRects()` 探针法同帧量出浮动/全屏两态矩形（移动端居中卡与桌面右下悬浮卡几何自适应）；跟手按高度差行程插值 x/y/宽/高/圆角；松手按最近 120ms 速度（>0.6 progress/s 按方向）或进度过半吸附；`transitionend` + 340ms 兜底清内联样式落类；`pointercancel`/窗口 `resize` 回弹原态；展开按钮点击也走同一套形变动画（`animateToFullscreen`）；
+     - 无新增 backdrop-filter 层，性能铁律不破。
+   - **`e2e/assistant-cards.spec.ts`**：新增「按住头部拖拽在浮动与全屏之间渐变」用例（上拖进全屏、下拖还原）。
+3. **验证与门禁**：
+   - `npm run typecheck`：0 错误；
+   - `npm test`：95 文件 / 624 项全绿通过；
+   - `npx playwright test e2e/assistant-cards.spec.ts`：12/12 通过（四视口 × 3 用例）；
+   - 无头浏览器截图目检：暗色聚焦输入条（深色玻璃、无白底）、暗色全屏毛玻璃、拖拽中间态（圆角渐变跟随）、浅色回归均正常；截图存于 `test-results/assistant-verify/`（不入库）。
+4. **遗留**：全屏玻璃浓度与非全屏一致（62%），若真机长文可读性不足可单点微调；真机 Android WebView 暗色与手势跟手待用户验证；未发版、未推送，版本号保持 1.1.15 / 73。
+
 ### 68. AI 助手「盒宝伙伴 × 水凝玻璃」(B+C) 落地实施 (v1.1.15, versionCode 73, workspace/claude)
 
 1. **需求与背景**：用户在 `design/assistant-redesign/` 三方案原型中选定 B+C 融合方向（盒宝人格化 + 水凝玻璃材质），要求实施到真实应用。

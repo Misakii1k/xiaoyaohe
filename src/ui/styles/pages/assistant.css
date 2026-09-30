@@ -121,7 +121,8 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   transition: transform 320ms cubic-bezier(0.32, 0.72, 0.28, 1);
 }
 
-/* 全屏形态：铺满整个视口，常用于长对话或看卡片；此时回归实色背景保证可读性 */
+/* 全屏形态：铺满整个视口，常用于长对话或看卡片；
+   保留水凝玻璃材质（模糊 + 半透明），只摘掉圆角与描边，不再回归实色 */
 .ai-panel.is-fullscreen {
   inset: 0;
   inline-size: 100%;
@@ -130,10 +131,6 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   margin-inline: 0;
   border-radius: 0;
   border: 0;
-  background: var(--color-bg);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  box-shadow: none;
 }
 
 .ai-panel.is-fullscreen .ai-panel-header {
@@ -158,8 +155,8 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   min-inline-size: 36px;
 }
 
-/* 面板顶部抓手条，和应用内其它底部弹层一致 */
-.ai-panel:not(.is-fullscreen)::before {
+/* 面板顶部抓手条，浮动/全屏两态常驻（全屏态提示可下滑还原），和应用内其它底部弹层一致 */
+.ai-panel::before {
   content: '';
   position: absolute;
   z-index: 2;
@@ -227,8 +224,49 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   background: color-mix(in srgb, var(--color-surface-muted) 70%, transparent);
   border-block-end: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
 }
-.ai-panel.is-fullscreen .ai-prefs-row { background: var(--color-surface-muted); }
 .ai-prefs-row[hidden] { display: none; }
+
+/* 手势态：拖拽跟手（关过渡、归位左上原点，由 JS 写 transform/宽高驱动几何） */
+.ai-root.is-gesturing .ai-panel {
+  transition: none !important;
+  inset: auto;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  margin-inline: 0;
+  max-inline-size: none;
+  max-block-size: none;
+  will-change: transform, inline-size, block-size;
+}
+
+/* 松手吸附：几何回弹动画，播完后清内联样式落定 */
+.ai-root.is-snapping .ai-panel {
+  transition:
+    transform 260ms var(--ease-out),
+    inline-size 260ms var(--ease-out),
+    block-size 260ms var(--ease-out),
+    border-radius 260ms var(--ease-out) !important;
+  inset: auto;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  margin-inline: 0;
+  max-inline-size: none;
+  max-block-size: none;
+}
+
+/* 探针：同帧隐藏测量另一形态矩形，无可见闪烁 */
+.ai-panel.is-probing {
+  visibility: hidden !important;
+  transition: none !important;
+}
+
+/* 头部即拖拽区：整行可上下拖动在浮动/全屏间渐变 */
+.ai-panel-header {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ai-root.is-gesturing .ai-panel-header { cursor: grabbing; }
 
 /* 头部操作圆钮：玻璃小圆片，与面板同一材质家族 */
 .ai-panel-more,
@@ -249,13 +287,6 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 :root[data-theme='dark'] .ai-panel-expand,
 :root[data-theme='dark'] .ai-panel-close {
   border-color: rgba(255, 255, 255, 0.12);
-}
-/* 全屏实色形态下回到普通浅底圆钮 */
-.ai-panel.is-fullscreen .ai-panel-more,
-.ai-panel.is-fullscreen .ai-panel-expand,
-.ai-panel.is-fullscreen .ai-panel-close {
-  border-color: transparent;
-  background: var(--color-surface-muted);
 }
 .ai-panel-more:hover,
 .ai-panel-more.is-active { color: var(--color-primary); background: var(--color-primary-soft); }
@@ -523,11 +554,6 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   border-color: rgba(255, 255, 255, 0.10);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 10px rgba(0, 0, 0, 0.3);
 }
-/* 全屏实色形态下回到不透明卡片 */
-.ai-panel.is-fullscreen .ai-msg.is-bot .ai-bubble {
-  background: var(--ai-bot-bg);
-  border-color: var(--ai-bot-border);
-}
 
 /* 出错提示：危险色浅底 + 左侧色条，与正常回复区分 */
 .ai-msg.is-error .ai-bubble {
@@ -551,7 +577,6 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   font-size: var(--fs-footnote);
 }
 :root[data-theme='dark'] .ai-msg.is-status .ai-bubble { border-color: rgba(255, 255, 255, 0.10); }
-.ai-panel.is-fullscreen .ai-msg.is-status .ai-bubble { background: var(--color-surface-muted); border-color: transparent; }
 
 .ai-msg.is-user .ai-bubble {
   align-self: flex-end;
@@ -905,12 +930,6 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   border-color: rgba(255, 255, 255, 0.10);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
-/* 全屏实色形态下回到不透明卡片 */
-.ai-panel.is-fullscreen .ai-content-card,
-.ai-panel.is-fullscreen .ai-navigation-card {
-  background: var(--ai-bot-bg);
-  border-color: var(--color-border);
-}
 
 .ai-content-card {
   position: relative;
@@ -1090,7 +1109,6 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   background: var(--color-border);
 }
 .ai-card-facts > div { min-inline-size: 0; min-block-size: 52px; padding: 9px 10px; background: color-mix(in srgb, var(--color-surface-solid) 55%, transparent); }
-.ai-panel.is-fullscreen .ai-card-facts > div { background: var(--ai-bot-bg); }
 .ai-card-facts dt { color: var(--color-text-muted); font-size: var(--fs-caption); }
 .ai-card-facts dd { margin: 2px 0 0; font-weight: 750; overflow-wrap: anywhere; }
 .ai-content-card.is-medication .ai-card-facts > div:nth-child(odd),
@@ -1219,11 +1237,6 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow: none;
 }
-.ai-panel.is-fullscreen .ai-quick-chip {
-  background: var(--color-surface-solid);
-  border-color: var(--color-border);
-  box-shadow: var(--shadow-sm);
-}
 .ai-quick-chip svg {
   inline-size: 15px;
   block-size: 15px;
@@ -1319,11 +1332,6 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.4);
 }
-.ai-panel.is-fullscreen .ai-input-row {
-  background: var(--color-surface-solid);
-  border-color: var(--color-border);
-  box-shadow: var(--shadow-sm);
-}
 
 .ai-tool-btn {
   display: grid;
@@ -1372,7 +1380,11 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   box-shadow: var(--shadow-lg);
 }
 
-.ai-input {
+/* 聚焦态一并复位：legacy.css 的全局 textarea:focus 白底/蓝环特异性更高，
+   不复位的话暗色模式下输入框一聚焦就变成纯白 */
+.ai-input,
+.ai-input:focus,
+.ai-input:focus-visible {
   flex: 1 1 auto;
   min-inline-size: 0;
   block-size: 38px;
@@ -1383,6 +1395,9 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   border: 0;
   border-radius: 0;
   background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
   color: var(--color-text);
   font: inherit;
   font-size: var(--fs-body);
@@ -1390,10 +1405,10 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   resize: none;
   overflow-y: hidden;
   scrollbar-width: none;
+  outline: none;
 }
 
 .ai-input::placeholder { color: var(--color-text-muted); }
-.ai-input:focus { outline: none; }
 
 .ai-send {
   display: grid;

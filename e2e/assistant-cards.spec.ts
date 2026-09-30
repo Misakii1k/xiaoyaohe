@@ -82,3 +82,32 @@ test('keeps the full-screen assistant inside injected system safe areas', async 
   expect(layout.right).toBe(layout.viewportWidth);
   expect(layout.bodyWidth).toBeLessThanOrEqual(layout.viewportWidth);
 });
+
+test('drags the panel header to morph between floating and full-screen', async ({ page }) => {
+  await page.goto('/?assistant-preview=1#/settings');
+  const panel = page.locator('.ai-panel');
+  await expect(page.locator('.ai-root.is-open .ai-panel')).toBeVisible({ timeout: PANEL_BOOT_TIMEOUT });
+  await expect(panel).not.toHaveClass(/is-fullscreen/);
+
+  const dragHeaderBy = async (dy: number): Promise<void> => {
+    const header = panel.locator('.ai-panel-header');
+    const box = await header.boundingBox();
+    if (!box) throw new Error('panel header not measurable');
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx, cy + dy, { steps: 12 });
+    await page.mouse.up();
+  };
+
+  // 按住头部向上拖：浮动面板渐变进全屏
+  await dragHeaderBy(-300);
+  await expect(panel).toHaveClass(/is-fullscreen/);
+  await expect(page.getByRole('button', { name: '收起面板' })).toBeVisible();
+
+  // 全屏态按住头部向下拖：渐变还原回浮动面板
+  await dragHeaderBy(300);
+  await expect(panel).not.toHaveClass(/is-fullscreen/);
+  await expect(page.getByRole('button', { name: '展开面板' })).toBeVisible();
+});

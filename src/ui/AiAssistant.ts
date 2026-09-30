@@ -571,9 +571,10 @@ export function mountGlobalAssistant(): void {
   // ---- 输入框自动长高 + 发送键空态 ----
   function syncInput(): void {
     input.style.blockSize = 'auto';
-    const next = Math.min(input.scrollHeight + 2, 132);
-    input.style.blockSize = `${Math.max(next, 44)}px`;
-    input.style.overflowY = input.scrollHeight + 2 > 132 ? 'auto' : 'hidden';
+    // 单行精确 38px，与左右两侧 38px 圆形按钮同高齐平；此前最小值 44px 会把按钮顶得失衡
+    const next = Math.min(Math.round(input.scrollHeight), 132);
+    input.style.blockSize = `${Math.max(next, 38)}px`;
+    input.style.overflowY = input.scrollHeight > 132 ? 'auto' : 'hidden';
     sendBtn.classList.toggle('is-empty', !busy && !input.value.trim() && !pendingAttachment);
   }
   input.addEventListener('input', syncInput);
@@ -614,6 +615,188 @@ export function mountGlobalAssistant(): void {
   window.addEventListener('resize', syncKeyboard);
   input.addEventListener('focus', () => { syncKeyboard(); window.setTimeout(() => scrollToBottom(), 300); });
   input.addEventListener('blur', () => window.setTimeout(syncKeyboard, 50));
+
+  // ---- 全屏形态切换 + 头部拖拽手势：跟随手指在浮动面板与全屏之间连续渐变 ----
+  interface PanelRect {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    r: number;
+  }
+
+  interface PanelGesture {
+    pointerId: number;
+    startY: number;
+    startProgress: number; // 0 = 浮动面板，1 = 全屏
+    lastProgress: number;
+    moved: boolean;
+    floatRect: PanelRect;
+    fullRect: PanelRect;
+    samples: { t: number; p: number }[];
+  }
+
+  let panelGesture: PanelGesture | null = null;
+  let snapCleanup: (() => void) | null = null;
+
+  function setFullscreen(on: boolean): void {
+    panel.classList.toggle('is-fullscreen', on);
+    expandBtn.setAttribute('aria-label', on ? '收起面板' : '展开面板');
+    expandBtn.replaceChildren(icon(on ? 'contract' : 'expand'));
+  }
+
+  /** 探针法量出两种形态的矩形：同帧隐藏切换读布局再还原，无可见闪烁，移动端/桌面几何都自适应 */
+  function measurePanelRects(): { floatRect: PanelRect; fullRect: PanelRect } {
+    const wasFullscreen = panel.classList.contains('is-fullscreen');
+    panel.classList.add('is-probing');
+    const read = (fullscreen: boolean): PanelRect => {
+      panel.classList.toggle('is-fullscreen', fullscreen);
+      const rect = panel.getBoundingClientRect();
+      const radius = Number.parseFloat(getComputedStyle(panel).borderTopLeftRadius) || 0;
+      return { x: rect.left, y: rect.top, w: rect.width, h: rect.height, r: radius };
+    };
+    const fullRect = read(true);
+    const floatRect = read(false);
+    panel.classList.toggle('is-fullscreen', wasFullscreen);
+    panel.classList.remove('is-probing');
+    return { floatRect, fullRect };
+  }
+
+  function applyGestureGeometry(g: { floatRect: PanelRect; fullRect: PanelRect }, p: number): void {
+    const { floatRect: f, fullRect: z } = g;
+    const x = f.x + (z.x - f.x) * p;
+    const y = f.y + (z.y - f.y) * p;
+    const w = f.w + (z.w - f.w) * p;
+    const h = f.h + (z.h - f.h) * p;
+    const r = f.r + (z.r - f.r) * p;
+    panel.style.transform = `translate(${x}px, ${y}px)`;
+    panel.style.inlineSize = `${w}px`;
+    panel.style.blockSize = `${h}px`;
+    panel.style.borderRadius = `${r}px`;
+  }
+
+  /** 清掉手势/吸附留在面板上的内联几何与状态类，回到纯 CSS 驱动 */
+  function clearGestureVisuals(): void {
+    snapCleanup?.();
+    snapCleanup = null;
+    panelGesture = null;
+    root.classList.remove('is-gesturing', 'is-snapping');
+    panel.style.transform = '';
+    panel.style.inlineSize = '';
+    panel.style.blockSize = '';
+    panel.style.borderRadius = '';
+  }
+
+  /** 松手吸附：从当前几何动画到目标形态，播完清内联样式并落定 is-fullscreen */
+  function snapToState(g: { floatRect: PanelRect; fullRect: PanelRect }, fullscreen: boolean): void {
+    root.classList.remove('is-gesturing');
+    root.classList.add('is-snapping');
+    applyGestureGeometry(g, fullscreen ? 1 : 0);
+    const finish = (): void => {
+      if (snapCleanup !== finish) return;
+      snapCleanup = null;
+      window.clearTimeout(fallbackTimer);
+      panel.removeEventListener('transitionend', onEnd);
+      root.classList.remove('is-snapping');
+      panel.style.transform = '';
+      panel.style.inlineSize = '';
+      panel.style.blockSize = '';
+      panel.style.borderRadius = '';
+      setFullscreen(fullscreen);
+    };
+    function onEnd(e: TransitionEvent): void {
+      if (e.target === panel) finish();
+    }
+    panel.addEventListener('transitionend', onEnd);
+    // 兜底：reduced-motion 下过渡时长近零，transitionend 可能不触发
+    const fallbackTimer = window.setTimeout(finish, 340);
+    snapCleanup = finish;
+  }
+
+  /** 展开按钮也走同一套形变动画：量出两态矩形，从当前形态播到目标形态 */
+  function animateToFullscreen(fullscreen: boolean): void {
+    if (!root.classList.contains('is-open')) {
+      setFullscreen(fullscreen);
+      return;
+    }
+    const rects = measurePanelRects();
+    root.classList.add('is-gesturing');
+    applyGestureGeometry(rects, fullscreen ? 0 : 1);
+    void panel.offsetHeight; // 强制回流，让起点先绘制
+    snapToState(rects, fullscreen);
+  }
+
+  header.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary || panelGesture) return;
+    if (!root.classList.contains('is-open')) return;
+    // 头部按钮（更多/展开/收起）保持点击语义，不参与拖拽
+    if (e.target instanceof HTMLElement && e.target.closest('button')) return;
+    const { floatRect, fullRect } = measurePanelRects();
+    const startProgress = panel.classList.contains('is-fullscreen') ? 1 : 0;
+    panelGesture = {
+      pointerId: e.pointerId,
+      startY: e.clientY,
+      startProgress,
+      lastProgress: startProgress,
+      moved: false,
+      floatRect,
+      fullRect,
+      samples: [{ t: performance.now(), p: startProgress }],
+    };
+  });
+
+  header.addEventListener('pointermove', (e) => {
+    const g = panelGesture;
+    if (!g || e.pointerId !== g.pointerId) return;
+    if (!g.moved) {
+      if (Math.abs(e.clientY - g.startY) < 6) return;
+      g.moved = true;
+      try {
+        header.setPointerCapture(e.pointerId);
+      } catch {
+        /* 个别环境拿不到指针捕获，不影响拖动本身 */
+      }
+      root.classList.add('is-gesturing');
+    }
+    // 上滑进度增大（趋向全屏），下滑减小；行程取两态高度差
+    const travel = Math.max(g.fullRect.h - g.floatRect.h, 240);
+    const p = Math.min(Math.max(g.startProgress + (g.startY - e.clientY) / travel, 0), 1);
+    g.lastProgress = p;
+    applyGestureGeometry(g, p);
+    g.samples.push({ t: performance.now(), p });
+    if (g.samples.length > 8) g.samples.shift();
+  });
+
+  const endPanelGesture = (e: PointerEvent, cancelled = false): void => {
+    const g = panelGesture;
+    if (!g || e.pointerId !== g.pointerId) return;
+    panelGesture = null;
+    if (!g.moved) return;
+    if (cancelled) {
+      snapToState(g, g.startProgress === 1);
+      return;
+    }
+    // 最近 120ms 的采样估算速度：快甩按方向落点，慢拖过半进全屏
+    const now = performance.now();
+    const window_ = g.samples.filter((s) => now - s.t <= 120);
+    const first = window_[0] ?? g.samples[0]!;
+    const velocity = window_.length >= 2 && now > first.t
+      ? (g.lastProgress - first.p) / ((now - first.t) / 1000)
+      : 0;
+    const target = Math.abs(velocity) > 0.6 ? velocity > 0 : g.lastProgress >= 0.5;
+    snapToState(g, target);
+  };
+  header.addEventListener('pointerup', (e) => endPanelGesture(e));
+  header.addEventListener('pointercancel', (e) => endPanelGesture(e, true));
+
+  // 手势途中窗口尺寸变了（转屏/键盘），几何基准失效，直接回弹原态
+  window.addEventListener('resize', () => {
+    const g = panelGesture;
+    if (g?.moved) {
+      panelGesture = null;
+      snapToState(g, g.startProgress === 1);
+    }
+  });
 
   function seedGreeting(): void {
     // 欢迎区：hero 渐变卡 + 盒宝探身（沿用空状态插画的呼吸浮动），取代一行干巴巴的文字
@@ -677,9 +860,8 @@ export function mountGlobalAssistant(): void {
   function closePanel(): void {
     busy?.abort();
     closeAttachMenu();
-    panel.classList.remove('is-fullscreen');
-    expandBtn.replaceChildren(icon('expand'));
-    expandBtn.setAttribute('aria-label', '展开面板');
+    clearGestureVisuals();
+    setFullscreen(false);
     root.classList.remove('is-open');
     launcher.focus({ preventScroll: true });
   }
@@ -809,9 +991,9 @@ export function mountGlobalAssistant(): void {
   closeBtn.onclick = closePanel;
   backdrop.onclick = closePanel;
   expandBtn.onclick = () => {
-    const fullscreen = panel.classList.toggle('is-fullscreen');
-    expandBtn.setAttribute('aria-label', fullscreen ? '收起面板' : '展开面板');
-    expandBtn.replaceChildren(icon(fullscreen ? 'contract' : 'expand'));
+    // 手势或吸附动画进行中不响应，避免状态打架
+    if (panelGesture || snapCleanup) return;
+    animateToFullscreen(!panel.classList.contains('is-fullscreen'));
   };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && root.classList.contains('is-open')) closePanel();
