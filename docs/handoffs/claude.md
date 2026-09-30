@@ -8,7 +8,7 @@ Latest version: `1.1.16` (Android `versionCode: 74`)
 
 ## Summary of Accomplished Work
 
-### 69. 小助手暗色输入框修复、全屏保留水凝玻璃、头部拖拽渐变全屏 (workspace/claude，未发版)
+### 69. 小助手暗色输入框修复、全屏保留水凝玻璃、头部拖拽渐变全屏 (v1.1.16, versionCode 74, workspace/claude，已上线)
 
 1. **需求与背景**：用户反馈三处小助手面板问题——暗色模式下输入框纯白且与左右按钮不对齐、全屏态丢失非全屏的毛玻璃质感、希望支持手指上下滑动在浮动与全屏之间连续渐变。
 2. **改动清单**：
@@ -28,7 +28,13 @@ Latest version: `1.1.16` (Android `versionCode: 74`)
    - `npm test`：95 文件 / 624 项全绿通过；
    - `npx playwright test e2e/assistant-cards.spec.ts`：12/12 通过（四视口 × 3 用例）；
    - 无头浏览器截图目检：暗色聚焦输入条（深色玻璃、无白底）、暗色全屏毛玻璃、拖拽中间态（圆角渐变跟随）、浅色回归均正常；截图存于 `test-results/assistant-verify/`（不入库）。
-4. **遗留**：全屏玻璃浓度与非全屏一致（62%），若真机长文可读性不足可单点微调；真机 Android WebView 暗色与手势跟手待用户验证；未发版、未推送，版本号保持 1.1.15 / 73。
+4. **发版交付（v1.1.16，已上线）**：
+   - `docs/releases/1.1.16.md` 通过 `tone_lint.py`；`docs/handoffs/CURRENT.md` 同步；测试候选 mock 升至 75；
+   - `assembleRelease` BUILD SUCCESSFUL，APK 20,968,354 字节（与上版 20,967,458 相当）；Web Bundle 8,337,113 字节；SHA256SUMS 与 `public/version.json` 已同步；
+   - GitHub Release `v1.1.16` 已创建并上传 APK / Web 增量包 / 校验和三附件；推送期间 GitHub 连接多次超时，经 `release-publish.mjs --resume` 重试完成；线上冒烟 **4/4 通过**（version.json v1.1.16/74、releases 识别 APK、非法 tag 拒 400、download 200）；
+   - 纯前端改动，已装底座的设备走秒级增量热更新即可收到。
+5. **遗留**：全屏玻璃浓度与非全屏一致（62%），若真机长文可读性不足可单点微调；真机 Android WebView 暗色与手势跟手待用户验证。
+6. **教训**：不要用 PowerShell `Set-Content` 批量改写测试文件（默认编码把文件写成非 UTF-8，esbuild 报 Unterminated string literal）；批量替换走 node 脚本 `fs.writeFileSync(..., 'utf8')`。
 
 ### 68. AI 助手「盒宝伙伴 × 水凝玻璃」(B+C) 落地实施 (v1.1.15, versionCode 73, workspace/claude)
 
