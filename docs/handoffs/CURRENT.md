@@ -12,7 +12,7 @@ Latest integration commit: `release: v1.1.17 (versionCode 75)`
   - 液态玻璃全面升级：移除外部 SVG 位图置换滤镜覆盖，采用纯 GPU 硬件加速管线，解耦底栏双层嵌套滤镜冲突；
   - 全站文字单行排版防挤压折行守则落地：全局标签胶囊与今日、设置、历史各处单行截断防御；
   - 全站界面系统性深度优化：消灭残余手写控件，库存管理接入自绘步进器，药品列表首屏减法与【我的】页面全面打磨。
-- **质量门禁**：见 `docs/handoffs/claude.md` 第 70 节。
+- **质量门禁与发布状态**：全流程门禁（类型检查、单元测试、E2E 测试、两遍 Release APK 构建与 Web 增量包构建）100% 通过，GitHub Release [v1.1.17](https://github.com/Misakii1k/xiaoyaohe/releases/tag/v1.1.17) 上线，线上 4/4 冒烟全绿，详见 `docs/handoffs/claude.md` 第 70 节。
 
 ## Release v1.1.16 (versionCode 74, workspace/claude)
 

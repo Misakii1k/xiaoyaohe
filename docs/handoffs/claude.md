@@ -8,7 +8,7 @@ Latest version: `1.1.17` (Android `versionCode: 75`)
 
 ## Summary of Accomplished Work
 
-### 70. 全站前端系统性深度优化、液态玻璃优化与小助手流式防跳治理 (workspace/claude)
+### 70. 全站前端系统性深度优化、液态玻璃优化与小助手流式防跳治理 (v1.1.17, versionCode 75, workspace/claude，已上线)
 
 1. **需求与背景**：用户反馈三处关键体验问题——小助手流式输出时页面反复跳动抽搐、液态玻璃效果优化、以及界面部分文字超出单行被挤压换行的问题。
 2. **改动清单**：
@@ -28,7 +28,11 @@ Latest version: `1.1.17` (Android `versionCode: 75`)
 3. **验证与门禁**：
    - `npm run typecheck`：0 错误；
    - `npm test`：95 文件 / 624 项测试 100% PASS；
-   - `npm run build:web`：生产构建正常，Web Bundle 生成成功。
+   - `npm run build:web`：生产构建正常，Web Bundle 生成成功；
+   - Playwright E2E 全量通过（包含步进器契约修复）；
+   - Release 构建：APK（20,967,424 字节，sha256: `d762638f...`）、Web 增量包（8,336,022 字节，sha256: `b1ba5482...`）；
+   - GitHub Release：[v1.1.17](https://github.com/Misakii1k/xiaoyaohe/releases/tag/v1.1.17) 成功发布；
+   - 线上端点冒烟 `check-release-endpoints.mjs`：4/4 全绿通过（version.json, /api/releases, 校验非法 tag, /api/download APK 下载）。
 
 ### 69. 小助手暗色输入框修复、全屏保留水凝玻璃、头部拖拽渐变全屏 (v1.1.16, versionCode 74, workspace/claude，已上线)
 
