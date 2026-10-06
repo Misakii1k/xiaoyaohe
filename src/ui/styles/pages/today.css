@@ -2,9 +2,9 @@
 .today-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4, 16px);
-  padding-top: var(--space-2, 8px);
-  padding-block-start: var(--space-2, 8px);
+  gap: var(--space-3, 12px);
+  padding-top: 0;
+  padding-block-start: 0;
   padding-block-end: calc(var(--space-8, 32px) + var(--safe-bottom));
   padding-inline: var(--space-4, 16px);
   position: relative;
@@ -143,7 +143,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: var(--space-2, 8px);
+  margin-bottom: 2px;
 }
 
 .week-nav-bar {
@@ -270,17 +270,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 20px;
+  padding: 14px 18px;
   background: var(--color-surface);
-  border-radius: 20px;
+  border-radius: 18px;
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
-  gap: var(--space-4, 16px);
+  gap: var(--space-3, 12px);
 }
 
 .today-summary .today-progress-ring-wrap {
-  width: 78px;
-  height: 78px;
+  width: 74px;
+  height: 74px;
   flex-shrink: 0;
 }
 
@@ -319,7 +319,7 @@
 }
 
 .summary .large {
-  font-size: 36px;
+  font-size: 32px;
   line-height: 1.1;
   letter-spacing: -1px;
   font-weight: 600;
@@ -355,6 +355,7 @@
   font-size: var(--fs-subheadline, 14px);
   font-weight: 600;
   color: var(--color-text);
+  white-space: nowrap;
 }
 
 .time-label .tag {
@@ -374,11 +375,11 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg, 16px);
-  padding: 18px;
+  padding: 16px;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .dose-info {
@@ -449,6 +450,9 @@
   color: var(--color-text-muted);
   margin: 0;
   line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dose-bottom {
@@ -465,6 +469,10 @@
   font-size: var(--fs-caption, 12px);
   color: var(--color-text-muted);
   line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-inline-size: 0;
 }
 
 .primary.today-primary-btn {
@@ -739,6 +747,9 @@
 .today-card-meta {
   font-size: var(--fs-caption, 11px);
   color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .today-card-badges {

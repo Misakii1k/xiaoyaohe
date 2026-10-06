@@ -36,6 +36,7 @@ import { createButton } from '../ui/primitives/Button';
 import { createActionDock } from '../ui/primitives/ActionDock';
 import { createIconButton } from '../ui/primitives/IconButton';
 import { createDateControl, enhanceSelect } from '../ui/primitives/Pickers';
+import { createStepper } from '../ui/primitives/Stepper';
 import {
   toLocalDate,
   getMedicationExpiryLocalDate,
@@ -583,44 +584,19 @@ function openInventoryAddSheet(
   const form = el('div', { class: 'inventory-add-form' });
   const quantityLabel = el('label', { class: 'inventory-sheet-number' });
   quantityLabel.append(el('span', { text: '本次新增数量' }));
-  const initialQty = '';
 
-  const stepperWrap = el('div', { class: 'inventory-stepper-wrap' });
-  const minusBtn = el('button', {
-    type: 'button',
-    class: 'inventory-stepper-btn',
-    text: '−',
-    'aria-label': '减少1',
-  });
-  const quantity = el('input', {
-    type: 'number',
-    min: '0',
-    step: '0.1',
+  const stepper = createStepper({
+    value: null,
+    min: 0,
+    step: 1,
+    allowEmpty: true,
     inputMode: 'decimal',
-    class: 'inventory-stepper-input',
-    value: initialQty,
+    ariaLabel: '本次新增数量',
     placeholder: med.inventory?.packageQuantity ? `例如 ${med.inventory.packageQuantity}` : '例如 20',
-  } as any) as HTMLInputElement;
-  const plusBtn = el('button', {
-    type: 'button',
-    class: 'inventory-stepper-btn',
-    text: '+',
-    'aria-label': '增加1',
   });
-
-  minusBtn.onclick = () => {
-    const val = Math.max(0, roundStock((Number(quantity.value) || 0) - 1));
-    quantity.value = val > 0 ? String(val) : '';
-    updatePreview();
-  };
-  plusBtn.onclick = () => {
-    const val = roundStock((Number(quantity.value) || 0) + 1);
-    quantity.value = String(val);
-    updatePreview();
-  };
-
-  stepperWrap.append(minusBtn, quantity, plusBtn);
-  quantityLabel.append(stepperWrap);
+  const quantity = stepper.input;
+  quantity.classList.add('inventory-stepper-input');
+  quantityLabel.append(stepper.root);
 
   // 快捷预设按钮组：+1盒, +10, +20, +30
   const presetsRow = el('div', { class: 'inventory-presets-row' });
@@ -743,6 +719,7 @@ function openInventoryAddSheet(
   };
 
   quantity.addEventListener('input', updatePreview);
+  quantity.addEventListener('change', updatePreview);
   unit.addEventListener('input', updatePreview);
   expiryControl.input.addEventListener('change', updatePreview);
   expiryControl.input.addEventListener('input', updatePreview);
@@ -919,33 +896,15 @@ function openInventoryActions(
   adjustCard.append(el('div', { class: 'inventory-adjust-title', text: `校准剩余数量（${med.inventory.unit}）` }));
   const adjustControls = el('div', { class: 'inventory-adjust-controls' });
 
-  const adjustMinus = el('button', {
-    type: 'button',
-    class: 'inventory-stepper-btn',
-    text: '−',
-    'aria-label': '减少1',
-  });
-  const numberInput = el('input', {
-    type: 'number',
-    min: '0',
-    step: '0.1',
+  const adjustStepper = createStepper({
+    value: med.inventory.remaining,
+    min: 0,
+    step: 1,
     inputMode: 'decimal',
-    value: String(med.inventory.remaining),
-  } as any) as HTMLInputElement;
-  const adjustPlus = el('button', {
-    type: 'button',
-    class: 'inventory-stepper-btn',
-    text: '+',
-    'aria-label': '增加1',
+    ariaLabel: `校准剩余数量（${med.inventory.unit}）`,
   });
-  adjustMinus.onclick = () => {
-    const val = Math.max(0, roundStock((Number(numberInput.value) || 0) - 1));
-    numberInput.value = String(val);
-  };
-  adjustPlus.onclick = () => {
-    const val = roundStock((Number(numberInput.value) || 0) + 1);
-    numberInput.value = String(val);
-  };
+  const numberInput = adjustStepper.input;
+  numberInput.classList.add('inventory-stepper-input');
 
   const saveAdjustBtn = createButton({
     label: '保存',
@@ -962,7 +921,7 @@ function openInventoryActions(
   });
   saveAdjustBtn.classList.add('inventory-adjust-save-btn');
 
-  adjustControls.append(adjustMinus, numberInput, adjustPlus, saveAdjustBtn);
+  adjustControls.append(adjustStepper.root, saveAdjustBtn);
   adjustCard.append(adjustControls);
   content.push(adjustCard);
 

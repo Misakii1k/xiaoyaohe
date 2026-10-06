@@ -205,7 +205,15 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   border: 2px solid var(--color-surface-solid);
 }
 .ai-panel-titles { flex: 1 1 auto; min-inline-size: 0; }
-.ai-panel-title { margin: 0; font-size: var(--fs-headline); font-weight: 700; line-height: 1.25; white-space: nowrap; }
+.ai-panel-title {
+  margin: 0;
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .ai-panel-subtitle {
   margin: 2px 0 0;
   color: var(--color-text-muted);
@@ -568,6 +576,11 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   inline-size: auto;
   max-inline-size: 86%;
   align-self: flex-start;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  white-space: nowrap !important;
+  gap: 6px;
   padding: 8px 14px;
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--color-surface-solid) 45%, transparent);
@@ -577,6 +590,10 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   font-size: var(--fs-footnote);
 }
 :root[data-theme='dark'] .ai-msg.is-status .ai-bubble { border-color: rgba(255, 255, 255, 0.10); }
+
+.ai-msg.is-status .ai-bubble > span {
+  white-space: nowrap;
+}
 
 .ai-msg.is-user .ai-bubble {
   align-self: flex-end;

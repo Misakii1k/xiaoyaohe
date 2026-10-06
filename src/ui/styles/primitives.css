@@ -1542,3 +1542,23 @@ a:active,
   .ui-stepper-unit { display: none; }
   .ui-stepper .ui-stepper-input { font-size: var(--fs-headline, 16px); }
 }
+
+/* ---------- 移动端排版准则：标签徽章与操作胶囊防折行守则 ----------
+ * 杜绝小屏手机上中文字符被弹性容器挤压竖排断行（如 早\n上、未\n服、第\n1\n天 等） */
+.tag,
+.badge,
+.pill,
+.chip,
+.topbar-pill,
+.btn-pill,
+.status-pill,
+.status-badge,
+.ui-tag,
+.ui-badge,
+.today-stock-tag,
+.today-time-status-pill,
+.med-stock-pill {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  min-width: max-content !important;
+}

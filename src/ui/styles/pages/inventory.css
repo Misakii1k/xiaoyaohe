@@ -82,7 +82,7 @@
 .inventory-stats-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 6px;
   text-align: center;
   padding-top: 14px;
   border-top: 1px solid var(--color-border);
@@ -93,12 +93,14 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  min-inline-size: 0;
 }
 
 .inventory-stat-label {
   font-size: 12px;
   color: var(--color-text-muted);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .inventory-stat-val {
@@ -763,6 +765,11 @@
   align-items: center;
   gap: var(--space-2);
   inline-size: 100%;
+}
+
+.inventory-stepper-wrap .ui-stepper {
+  inline-size: 100%;
+  justify-content: space-between;
 }
 
 .inventory-stepper-btn {

@@ -587,7 +587,7 @@ export function mountGlobalAssistant(): void {
   // ---- 滚动：只有用户本来就停在底部附近时才自动追底，往上翻看历史时不被拽回去 ----
   let stickToBottom = true;
   log.addEventListener('scroll', () => {
-    stickToBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 72;
+    stickToBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 96;
   }, { passive: true });
   function scrollToBottom(force = false): void {
     if (!force && !stickToBottom) return;
@@ -1132,25 +1132,29 @@ export function mountGlobalAssistant(): void {
     setBusy(true);
     let streamedMessage: HTMLElement | null = null;
     let streamedText = '';
-    let streamPlain: HTMLElement | null = null;
-    let streamRenderTimer = 0;
+    let streamRafId = 0;
+    let lastRenderedText = '';
 
-    function renderStreamedMarkdown(): void {
-      if (!streamedMessage) return;
+    function flushStreamRender(forceScroll = false): void {
+      if (!streamedMessage || streamedText === lastRenderedText) {
+        if (forceScroll) scrollToBottom();
+        return;
+      }
       const bubble = streamedMessage.querySelector<HTMLElement>('.ai-bubble');
       if (!bubble) return;
-      bubble.replaceChildren(renderAssistantMarkdown(streamedText));
-      bubble.append(el('span', { class: 'ai-caret', 'aria-hidden': 'true' }));
-      streamPlain = null;
+      lastRenderedText = streamedText;
+      const mdContent = renderAssistantMarkdown(streamedText);
+      const caret = el('span', { class: 'ai-caret', 'aria-hidden': 'true' });
+      bubble.replaceChildren(mdContent, caret);
       scrollToBottom();
     }
 
     function scheduleStreamRender(): void {
-      if (streamRenderTimer) return;
-      streamRenderTimer = window.setTimeout(() => {
-        streamRenderTimer = 0;
-        renderStreamedMarkdown();
-      }, 250);
+      if (streamRafId) return;
+      streamRafId = window.requestAnimationFrame(() => {
+        streamRafId = 0;
+        flushStreamRender();
+      });
     }
 
     try {
@@ -1171,23 +1175,65 @@ export function mountGlobalAssistant(): void {
             status.remove();
             streamedMessage = addMsg('bot', '');
           }
-          const bubble = streamedMessage.querySelector<HTMLElement>('.ai-bubble');
-          if (bubble) {
-            if (!streamPlain || !streamPlain.isConnected) {
-              streamPlain = el('span', { class: 'ai-stream-plain' });
-              bubble.replaceChildren(streamPlain);
-            }
-            streamPlain.append(document.createTextNode(delta));
-            scheduleStreamRender();
-          }
-          scrollToBottom();
+          scheduleStreamRender();
         },
       });
+      if (streamRafId) {
+        window.cancelAnimationFrame(streamRafId);
+        streamRafId = 0;
+      }
       history.push({ role: 'assistant', content: reply.markdown });
       status.remove();
-      const liveMessage = streamedMessage as HTMLElement | null;
-      if (liveMessage !== null) liveMessage.remove();
-      addAssistantReply(reply);
+
+      // 无感接缝就地转化：保留原有 DOM，杜绝 remove() 塌陷导致的剧烈页面上下跳动
+      const activeStreamMsg = streamedMessage as HTMLElement | null;
+      if (activeStreamMsg) {
+        const bubble = activeStreamMsg.querySelector<HTMLElement>('.ai-bubble');
+        if (bubble) {
+          bubble.replaceChildren(renderAssistantMarkdown(reply.markdown));
+          const footer = el('div', { class: 'ai-bubble-footer' });
+          const copyBtn = el('button', {
+            class: 'ai-bubble-copy-btn',
+            type: 'button',
+            'aria-label': '复制回复内容',
+            title: '复制回复内容',
+          });
+          copyBtn.append(icon('copy'), el('span', { text: '复制' }));
+          copyBtn.onclick = async () => {
+            try {
+              await navigator.clipboard.writeText(reply.markdown);
+              toast('已复制到剪贴板');
+            } catch {
+              toast('复制失败');
+            }
+          };
+          footer.append(copyBtn);
+          bubble.append(footer);
+        }
+        if (reply.blocks.length) {
+          const body = activeStreamMsg.querySelector<HTMLElement>('.ai-msg-body') ?? activeStreamMsg;
+          const cards = el('div', { class: 'ai-cards' });
+          const onNavigate = (path: string): void => {
+            closePanel();
+            navigate(path);
+          };
+          for (const block of reply.blocks) {
+            const slot = el('div', { class: 'ai-card-slot', text: `${block.title}（内容加载中）` });
+            cards.append(slot);
+            void loadAssistantContent()
+              .then((module) => {
+                if (slot.isConnected) slot.replaceWith(module.renderAssistantBlock(block, onNavigate));
+              })
+              .catch(() => {
+                if (slot.isConnected) slot.textContent = `${block.title}（内容加载失败，请稍后重试）`;
+              });
+          }
+          body.append(cards);
+        }
+        scrollToBottom();
+      } else {
+        addAssistantReply(reply);
+      }
       persistExchange(displayText, reply);
     } catch (e) {
       status.remove();
@@ -1202,11 +1248,10 @@ export function mountGlobalAssistant(): void {
         addMsg('bot', `出了点小状况：${e instanceof Error ? e.message : String(e)}`).classList.add('is-error');
       }
     } finally {
-      if (streamRenderTimer) {
-        window.clearTimeout(streamRenderTimer);
-        streamRenderTimer = 0;
+      if (streamRafId) {
+        window.cancelAnimationFrame(streamRafId);
+        streamRafId = 0;
       }
-      streamPlain = null;
       log.setAttribute('aria-live', 'polite');
       busy = null;
       setBusy(false);

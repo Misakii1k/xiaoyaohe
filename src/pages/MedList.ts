@@ -73,36 +73,6 @@ export function renderBPackageSvg(m: { id: string; name: string; dosageText?: st
   </svg>`;
 }
 
-function getFeatureBottleSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="feature-art" viewBox="0 0 160 180" aria-hidden="true">
-    <defs>
-      <linearGradient id="heroBottle" x1="0" x2="1">
-        <stop stop-color="#e9ede7"/>
-        <stop offset=".3" stop-color="#fff"/>
-        <stop offset=".74" stop-color="#f5f6f0"/>
-        <stop offset="1" stop-color="#d4dcd2"/>
-      </linearGradient>
-      <filter id="featureShadow" x="-15%" y="-15%" width="130%" height="130%">
-        <feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#345641" flood-opacity=".15"/>
-      </filter>
-    </defs>
-    <ellipse cx="84" cy="160" rx="48" ry="7" fill="#acc0ae" opacity=".25"/>
-    <g filter="url(#featureShadow)" transform="rotate(-12 78 90)">
-      <path d="M46 47q-10 7-10 19v78q0 11 12 11h58q12 0 12-11V66q0-12-10-19" fill="url(#heroBottle)"/>
-      <rect x="45" y="22" width="64" height="29" rx="6" fill="#fafbf5"/>
-      <path d="M49 26v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20m5-20v20" fill="none" stroke="#d7ddd1"/>
-      <path d="M36 79h82v48H36" fill="#769b7e"/>
-      <text x="77" y="98" font-size="8" fill="#edf4e9" text-anchor="middle" letter-spacing="1.5">DAILY CARE</text>
-      <text x="77" y="118" font-family="Georgia,serif" font-size="20" fill="white" text-anchor="middle">Vitamin</text>
-      <text x="77" y="141" font-size="6" fill="#849381" text-anchor="middle" letter-spacing="2">60 TABLETS</text>
-    </g>
-    <g transform="rotate(28 123 140)">
-      <rect x="117" y="125" width="14" height="29" rx="7" fill="#fafaf2"/>
-      <path d="M117 140h14v7a7 7 0 0 1-14 0Z" fill="#bbd0b7"/>
-    </g>
-  </svg>`;
-}
-
 let activeCategory: 'all' | 'daily' | 'reserve' = 'all';
 let searchQuery = '';
 
@@ -180,32 +150,7 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
   });
   content.append(filtersContainer);
 
-  // 4. Feature 卡片 (查看库存)
-  const featureCard = el('button', {
-    id: 'stockFeature',
-    class: 'feature med-feature-card',
-    type: 'button',
-    'aria-label': '查看药品库存',
-  });
-  const featureText = el('div', { class: 'feature-text' });
-  const featureH3 = el('h3');
-  featureH3.append('照顾好自己，', el('br'), '从一件小事开始。');
-  const featureLink = el('span', { class: 'feature-link' }, [
-    document.createTextNode('查看库存 '),
-    el('span', { text: '↗' }),
-  ]);
-  featureText.append(
-    el('span', { class: 'eyebrow', text: 'A LITTLE CARE, EVERY DAY' }),
-    featureH3,
-    el('p', { text: '检查药箱，让安心有备而来。' }),
-    featureLink
-  );
-  const featureSvgWrap = el('div', { class: 'feature-art-wrap' }, [parseSvg(getFeatureBottleSvg())]);
-  featureCard.append(featureText, featureSvgWrap);
-  featureCard.onclick = () => navigate('/meds/inventory');
-  content.append(featureCard);
-
-  // 5. 分区标题
+  // 4. 分区标题
   const sectionLabel = el('div', { class: 'section-label' });
   const labelSpan = el('span', { text: '药箱里的日常' });
   const countSmall = el('small', { id: 'medCount', text: `${meds.length} 种药品` });
