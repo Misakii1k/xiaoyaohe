@@ -2,11 +2,33 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-10-01
+Updated: 2026-10-06
 Status: active
-Latest version: `1.1.16` (Android `versionCode: 74`)
+Latest version: `1.1.17` (Android `versionCode: 75`)
 
 ## Summary of Accomplished Work
+
+### 70. 全站前端系统性深度优化、液态玻璃优化与小助手流式防跳治理 (workspace/claude)
+
+1. **需求与背景**：用户反馈三处关键体验问题——小助手流式输出时页面反复跳动抽搐、液态玻璃效果优化、以及界面部分文字超出单行被挤压换行的问题。
+2. **改动清单**：
+   - **小助手流式防跳与无缝接缝**：
+     - `src/ui/AiAssistant.ts`：重构流式渲染逻辑，消除了每 250ms 在“纯文本 span 丢字”与“Markdown 解析”之间来回颠倒替换造成的剧烈高度震荡；改为 `requestAnimationFrame` 驱动平滑稳定增量 Markdown 渲染；
+     - 彻底消除流式结束瞬间 `liveMessage.remove()` 导致的整块 DOM 塌陷与重新追加的抽搐跳跃，改为就地无缝接缝转化；吸底判定由 72 提升至 96 并在 RAF 中顺滑追底；
+     - `src/ui/styles/pages/assistant.css`：优化小助手状态胶囊（`ai-msg.is-status .ai-bubble`）为单行对齐并禁止折行；`.ai-panel-title` 增加窄屏防折行截断。
+   - **液态玻璃渲染升级与解耦**：
+     - `src/ui/styles/liquid-glass.css`：移除对外部 SVG 位图位移滤镜 `url('#medbox-lens*')` 的强制覆盖，采用纯 GPU 硬件加速的超高清通透滤镜链（`blur` + `saturate` + `contrast` + `brightness`），彻底根除黑块、闪白与掉帧；
+     - 移除底栏选中胶囊 `a.active::before` 重复的 `backdrop-filter`，彻底解决双层嵌套滤镜冲突与脏色发灰问题；
+     - 抽屉与弹层底色厚度微调至 0.82，模糊半径收敛至 20px，保证表单文字极致可读性。
+   - **部分文字超出单行换行治理**：
+     - `src/ui/styles/primitives.css`：新增移动端排版准则，全局 `.tag, .badge, .pill, .chip, .topbar-pill, .status-pill` 等强制 `white-space: nowrap !important; flex-shrink: 0 !important; min-width: max-content !important;`；
+     - `src/ui/styles/pages/today.css`：`.time-label`、`.dose-meta p`（服用嘱咐）、`.dose-bottom small`、`.today-card-meta` 统一增加单行截断与防折行防御；
+     - `src/ui/styles/pages/settings.css`：`.profile-user-name`、`.profile-user-sub`、`.panel-title` 增加单行截断与防折行防御；
+     - `src/ui/styles/pages/med-history.css`：`.history-stat-title` 增加 `white-space: nowrap`。
+3. **验证与门禁**：
+   - `npm run typecheck`：0 错误；
+   - `npm test`：95 文件 / 624 项测试 100% PASS；
+   - `npm run build:web`：生产构建正常，Web Bundle 生成成功。
 
 ### 69. 小助手暗色输入框修复、全屏保留水凝玻璃、头部拖拽渐变全屏 (v1.1.16, versionCode 74, workspace/claude，已上线)
 
