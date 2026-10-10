@@ -1,9 +1,17 @@
 # Current Integration State
 
-Updated: 2026-10-06
+Updated: 2026-10-10
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.1.17` (versionCode 75)
-Latest integration commit: `release: v1.1.17 (versionCode 75)`
+Product version: `1.1.18` (versionCode 76)
+Latest integration commit: `release: v1.1.18 (versionCode 76)`
+
+## Release v1.1.18 (versionCode 76, workspace/claude)
+
+- **集成内容**：
+  - AI 助手结构化卡片全新规划与设计（oil-ui 规范）：用药安排卡支持原位微型「已服」打卡与撤销闭环、服药统计卡采用大数字核心达成率与紧凑横向分布条、库存卡防折行与预警胶囊、搜索参考卡轻量流式胶囊排版；
+  - 全局彻底下线液态玻璃系统（Liquid Glass）：彻底移除相关样式、SVG 滤镜与设置项，消除全站及小助手面板重度模糊，全面回归纯净实色微质感；
+  - 设计规范 `design/design.md` 全面更新：对齐最新规范，移除水凝玻璃描述，融入自绘控件优先铁律与移动端排版防御准则。
+- **质量门禁与发布状态**：95 个测试套件（630 项测试）与静态类型检查 100% 通过。
 
 ## Release v1.1.17 (versionCode 75, workspace/claude)
 

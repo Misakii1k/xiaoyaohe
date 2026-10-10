@@ -2,11 +2,37 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-10-06
+Updated: 2026-10-10
 Status: active
-Latest version: `1.1.17` (Android `versionCode: 75`)
+Latest version: `1.1.18` (Android `versionCode: 76`)
 
 ## Summary of Accomplished Work
+
+### 71. AI 助手卡片全新规划重构、全局彻底下线液态玻璃与设计规范升级 (v1.1.18, versionCode 76, workspace/claude)
+
+1. **需求与背景**：用户反馈 AI 助手内部卡片设计依然存在问题，要求重新规划设计卡片、彻底摘除液态玻璃系统（全局范围），并更新过期的 `design/design.md` 文件到最新规范。
+2. **改动清单**：
+   - **全局彻底下线液态玻璃（Liquid Glass）**：
+     - 安全删除 `src/ui/styles/liquid-glass.css` 与 `src/ui/liquidGlass.ts`；
+     - 在 `src/ui/styles.css` 中解绑导入，在 `src/main.ts` 中移除 `initLiquidGlass()`；
+     - 在 `src/pages/settings/panels/AppearancePanel.ts` 中彻底移除液态玻璃外观开关；
+     - 在 `index.html` 中移除 `#liquid-glass-svg-filters` 凸透镜位移滤镜与相关标记；
+     - 在 `src/ui/styles/pages/assistant.css` 中移除面板、输入条、气泡上的 `backdrop-filter: blur(...)`，全面回归纯净实色底板。
+   - **AI 助手结构化卡片全新规划设计（oil-ui 规范）**：
+     - `src/ui/assistantContent.ts` 与 `src/ui/styles/pages/assistant.css`：全面重构卡片体系为现代实色微质感（`var(--color-surface-solid)` + 1px 物理微边框 + 浅微阴影）；
+     - **用药安排卡**：针对「待服」药物条目直接提供原位微型「已服」打卡操作（`.ai-item-take-btn`），点击原地切为已服态，自动同步关闭系统推送通知，并触发 5 秒可撤销居中 Toast；
+     - **服药统计卡**：主角突出——大数字核心达成率（如「82% 良好」）+ 横向紧凑状态分布条（已服 · 漏服 · 跳过），彻底摒弃拥挤笨重的双列灰色方格；
+     - **药品库存卡**：清晰区分正常与需补充状态，标签徽章严格防折行（`white-space: nowrap; flex-shrink: 0; min-width: max-content;`）；
+     - **搜索参考卡**：轻量来源小胶囊或链接行，移除繁重多层 blockquote；
+     - **快捷导航卡**：精致扁平卡片，带有规范尺寸的触控热区（`min-block-size: var(--tap)`）。
+   - **设计规范 `design/design.md` 全面更新**：
+     - 彻底剔除陈旧水凝玻璃表述，确立现代实色微质感与 oil-ui 规范；
+     - 融入自绘控件优先铁律（`src/ui/primitives/`）与移动端排版防御准则（防折行、列向容器子按钮尺寸防御等）；
+     - 归纳 AI 助手卡片交互契约与原位打卡闭环规范。
+3. **验证与门禁**：
+   - `npm run typecheck`：0 错误；
+   - `npm test`：95 测试套件 / 630 项测试 100% PASS；
+   - `npm run build:web`：Web 生产打包成功。
 
 ### 70. 全站前端系统性深度优化、液态玻璃优化与小助手流式防跳治理 (v1.1.17, versionCode 75, workspace/claude，已上线)
 
