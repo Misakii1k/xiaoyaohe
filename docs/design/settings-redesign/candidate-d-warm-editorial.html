@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 D - 温情健康生活志</title>
+<style>
+:root {
+  --color-bg: #f9f7f2;
+  --color-surface: #ffffff;
+  --color-surface-warm: #f4efe6;
+  --color-text: #2c2925;
+  --color-text-muted: #797369;
+  --color-accent-sage: #4a6b5d;
+  --color-accent-sage-light: #eaf1ed;
+  --color-accent-terracotta: #c2694d;
+  --color-accent-terracotta-light: #faece7;
+  --color-border: #ede7dc;
+  --font-serif: 'Songti SC', 'Source Han Serif SC', 'Noto Serif SC', STSong, 'SimSun', serif;
+  --font-sans: 'MiSans', 'HarmonyOS Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  --radius-lg: 22px;
+  --radius-md: 16px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  padding: 16px 16px 84px;
+  max-width: 440px;
+  margin: 0 auto;
+  -webkit-font-smoothing: antialiased;
+}
+.journal-header {
+  padding: 12px 4px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.journal-title {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--color-text);
+}
+.journal-date {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+/* 封面故事卡片 */
+.editorial-hero {
+  background: linear-gradient(145deg, #fdfbf7 0%, #f4eee2 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 24px 20px;
+  margin-bottom: 20px;
+  position: relative;
+  box-shadow: 0 4px 18px rgba(135, 115, 85, 0.06);
+}
+.editorial-hero-quote {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  line-height: 1.6;
+  color: #3b352e;
+  margin-bottom: 16px;
+}
+.editorial-hero-quote span {
+  color: var(--color-accent-terracotta);
+  font-weight: 700;
+}
+.editorial-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid rgba(194, 105, 77, 0.12);
+}
+.editorial-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.editorial-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--color-accent-sage);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 700;
+}
+.editorial-author-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.editorial-author-sub {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.editorial-badge {
+  background: var(--color-accent-sage-light);
+  color: var(--color-accent-sage);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+/* 杂志大卡片：我的药匣 */
+.journal-section-title {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 12px;
+  padding-left: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.journal-section-more {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-accent-sage);
+  font-weight: 600;
+}
+
+.journal-pills-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+}
+.pills-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.pills-summary-stat {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.pills-summary-stat strong {
+  font-size: 17px;
+  color: var(--color-text);
+}
+.pills-tag-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pill-chip {
+  background: var(--color-surface-warm);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pill-chip.take-today {
+  background: var(--color-accent-sage-light);
+  border-color: rgba(74, 107, 93, 0.25);
+  color: var(--color-accent-sage);
+  font-weight: 600;
+}
+
+/* 偏好与守护手账行 */
+.journal-settings-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+.journal-row {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.journal-row:last-child {
+  border-bottom: none;
+}
+.journal-row:active {
+  background: #fbf9f5;
+}
+.journal-row-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.journal-row-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.journal-row-desc {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.journal-row-tail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.journal-row-state {
+  font-size: 12px;
+  color: var(--color-accent-sage);
+  font-weight: 600;
+}
+.journal-row-arrow {
+  color: #b5ad9e;
+  font-size: 16px;
+}
+
+/* 底部静思与致谢 */
+.journal-footer {
+  text-align: center;
+  padding: 16px 12px 10px;
+}
+.journal-footer-art {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  color: #635c52;
+  font-style: italic;
+  margin-bottom: 6px;
+}
+.journal-footer-sub {
+  font-size: 11px;
+  color: #9c9486;
+}
+</style>
+</head>
+<body>
+  <div class="journal-header">
+    <div class="journal-title">我的用药志</div>
+    <div class="journal-date">10月8日 · 守护中</div>
+  </div>
+
+  <!-- 封面寄语 -->
+  <div class="editorial-hero">
+    <div class="editorial-hero-quote">
+      “规律与适度，是给身体最温和的良药。今天已按时服药 <span>3 次</span>，安心入眠。”
+    </div>
+    <div class="editorial-meta-row">
+      <div class="editorial-author">
+        <div class="editorial-avatar">药</div>
+        <div>
+          <div class="editorial-author-name">科学生活家</div>
+          <div class="editorial-author-sub">第 42 天 · 128 次准时服药</div>
+        </div>
+      </div>
+      <span class="editorial-badge">打卡连续 14 天</span>
+    </div>
+  </div>
+
+  <!-- 药匣概览 -->
+  <div class="journal-section-title">
+    <span>常备药匣</span>
+    <span class="journal-section-more">整理药箱 ›</span>
+  </div>
+  <div class="journal-pills-card">
+    <div class="pills-summary-row">
+      <div class="pills-summary-stat">在库管理 <strong>12</strong> 种常用药</div>
+      <div class="pills-summary-stat">今日待服 <strong>4</strong> 次</div>
+    </div>
+    <div class="pills-tag-flow">
+      <span class="pill-chip take-today">● 降压舒缓胶囊 (已服)</span>
+      <span class="pill-chip take-today">● 复合维生素片 (已服)</span>
+      <span class="pill-chip">清咽含片 (备用)</span>
+      <span class="pill-chip">儿童益生菌 (常备)</span>
+    </div>
+  </div>
+
+  <!-- 偏好与守护清单 -->
+  <div class="journal-section-title">
+    <span>声音与生活偏好</span>
+  </div>
+  <div class="journal-settings-group">
+    <div class="journal-row">
+      <div class="journal-row-lead">
+        <span class="journal-row-title">服药提醒与声音时钟</span>
+        <span class="journal-row-desc">早中晚适时铃音，温和唤醒</span>
+      </div>
+      <div class="journal-row-tail">
+        <span class="journal-row-state">已设定</span>
+        <span class="journal-row-arrow">›</span>
+      </div>
+    </div>
+    <div class="journal-row">
+      <div class="journal-row-lead">
+        <span class="journal-row-title">家庭面对面互传</span>
+        <span class="journal-row-desc">免流量就近同步家庭成员用药</span>
+      </div>
+      <div class="journal-row-tail">
+        <span class="journal-row-state">局域网就绪</span>
+        <span class="journal-row-arrow">›</span>
+      </div>
+    </div>
+    <div class="journal-row">
+      <div class="journal-row-lead">
+        <span class="journal-row-title">AI 用药说明书咨询</span>
+        <span class="journal-row-desc">DeepSeek 智能说明书助手与用药常识</span>
+      </div>
+      <div class="journal-row-tail">
+        <span class="journal-row-state">随时可用</span>
+        <span class="journal-row-arrow">›</span>
+      </div>
+    </div>
+    <div class="journal-row">
+      <div class="journal-row-lead">
+        <span class="journal-row-title">数据安心备份与更新</span>
+        <span class="journal-row-desc">纯本地存储，随时导出快照 · v1.0.7</span>
+      </div>
+      <div class="journal-row-tail">
+        <span class="journal-row-state">已备份</span>
+        <span class="journal-row-arrow">›</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部手账寄语 -->
+  <div class="journal-footer">
+    <div class="journal-footer-art">— 小药盒 · 把健康收进生活里 —</div>
+    <div class="journal-footer-sub">无需账号 · 纯本地私密存储</div>
+  </div>
+</body>
+</html>

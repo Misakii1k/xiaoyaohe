@@ -111,13 +111,31 @@ export function topbarAiPill(onClick?: () => void): HTMLButtonElement {
 
 /** ---------- Snackbar ---------- */
 const toastTimers = new Map<HTMLElement, number[]>();
-export function toast(msg: string, ms = 2200): void {
+export interface ToastAction {
+  text: string;
+  onClick: () => void | Promise<void>;
+}
+
+export function toast(msg: string, ms = 2200, action?: ToastAction): void {
   for (const timers of toastTimers.values()) {
     for (const timer of timers) clearTimeout(timer);
   }
   toastTimers.clear();
   document.querySelectorAll('.toast').forEach((t) => t.remove());
   const t = el('div', { class: 'toast', text: msg });
+  if (action) {
+    const actionBtn = el('button', {
+      class: 'toast-action-btn',
+      type: 'button',
+      text: action.text,
+    });
+    actionBtn.onclick = (e) => {
+      e.stopPropagation();
+      void action.onClick();
+      t.remove();
+    };
+    t.append(actionBtn);
+  }
   t.setAttribute('role', 'status');
   t.setAttribute('aria-live', 'polite');
   t.setAttribute('aria-atomic', 'true');

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "project": "小药盒 - 设置/我的页面打磨精进",
+  "brief": "基于方案 02（微卡片）与 03（紧凑排印）深度打磨，严格融合小药盒 Design Tokens 与自绘控件语言",
+  "round": "03",
+  "candidates": [
+    {
+      "id": "baseline",
+      "name": "现状旧版对照",
+      "concept": "手风琴折叠面板列表：彩色图标底托，单页长手风琴堆叠",
+      "typography": "MiSans / PingFang SC",
+      "palette": ["#f6f8f7", "#236a55", "#202e2b"],
+      "traits": ["彩色底托", "手风琴展开跳动", "冗长副标文字"],
+      "kind": "html",
+      "source": "candidate-baseline.html",
+      "baseline": true
+    },
+    {
+      "id": "refine-01",
+      "name": "精进 1：小药盒微卡片版",
+      "concept": "深度融合小药盒 Design 的微卡片：顶部 3 列墨绿大数字 + 2x2 常用微卡片 + 整合偏好盒",
+      "typography": "MiSans / PingFang SC，小药盒官方字阶",
+      "palette": ["#f6f8f7", "#236a55", "#202e2b"],
+      "traits": ["小药盒冰白底", "2x2 常用微卡片", "同色墨绿单色图标", "极简状态胶囊"],
+      "kind": "html",
+      "source": "candidate-refine-01-microcards.html"
+    },
+    {
+      "id": "refine-02",
+      "name": "精进 2：小药盒紧凑排印版",
+      "concept": "小药盒瑞士排印风：大字阶“我的” + 纯排印三列高对比墨绿数字 + 2 个 Inset 圆角紧凑分组",
+      "typography": "MiSans / SF Pro Display，纯粹排印美学",
+      "palette": ["#f6f8f7", "#236a55", "#202e2b"],
+      "traits": ["高对比墨绿大数字", "2 组 Inset 圆角列表", "同色墨绿细线图标", "极高信息密度"],
+      "kind": "html",
+      "source": "candidate-refine-02-typography.html"
+    },
+    {
+      "id": "refine-03",
+      "name": "精进 3：双剑合璧融合版",
+      "concept": "融 02 直达感知与 03 纯粹排印于一体：大字看板 + 2 枚核心高频微磁贴 + 紧凑系统设置组",
+      "typography": "MiSans / HarmonyOS Sans SC",
+      "palette": ["#f6f8f7", "#236a55", "#202e2b"],
+      "traits": ["排印看板大数字", "2 枚高频快捷磁贴", "紧凑设置组", "同色墨绿统一图标"],
+      "kind": "html",
+      "source": "candidate-refine-03-hybrid.html"
+    }
+  ]
+}

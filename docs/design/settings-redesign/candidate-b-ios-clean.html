@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 B - 极简系统偏好</title>
+<style>
+:root {
+  --color-bg: #f2f4f6;
+  --color-surface: #ffffff;
+  --color-text: #191f1d;
+  --color-text-muted: #707b77;
+  --color-border: #e6eae8;
+  --color-primary: #1b6852;
+  --color-primary-light: #e6f2ee;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'MiSans', 'PingFang SC', sans-serif;
+  --radius-group: 16px;
+  --radius-icon: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.45;
+  padding: 14px 16px 80px;
+  max-width: 440px;
+  margin: 0 auto;
+  -webkit-font-smoothing: antialiased;
+}
+.ios-header {
+  padding: 12px 4px 16px;
+}
+.ios-header-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  color: var(--color-text);
+}
+
+/* 顶部账号轻名片 */
+.ios-profile-bar {
+  background: var(--color-surface);
+  border-radius: var(--radius-group);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+.ios-profile-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ios-profile-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #236a55;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 20px;
+}
+.ios-profile-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.ios-profile-sub {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.ios-profile-chevron {
+  color: #c0c8c4;
+  font-size: 18px;
+}
+
+/* 顶部快捷小徽标栏 */
+.ios-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.ios-summary-item {
+  background: var(--color-surface);
+  border-radius: 12px;
+  padding: 10px 8px;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+}
+.ios-summary-val {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+.ios-summary-label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+/* 分组标题与 Inset 列表 */
+.ios-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin: 18px 4px 6px;
+  letter-spacing: 0.3px;
+}
+.ios-inset-group {
+  background: var(--color-surface);
+  border-radius: var(--radius-group);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+.ios-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  position: relative;
+  cursor: pointer;
+  background: #ffffff;
+  transition: background 0.15s;
+}
+.ios-row:active {
+  background: #f7f9f8;
+}
+.ios-row::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 54px;
+  right: 0;
+  height: 1px;
+  background: var(--color-border);
+}
+.ios-row:last-child::after {
+  display: none;
+}
+.ios-row-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ios-icon-box {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-icon);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.icon-alarm { background: #e06c38; }
+.icon-period { background: #3d8bfd; }
+.icon-keepalive { background: #199e6b; }
+.icon-theme { background: #5c62d6; }
+.icon-sync { background: #0ea5e9; }
+.icon-backup { background: #10b981; }
+.icon-storage { background: #8b5cf6; }
+.icon-ai { background: #a855f7; }
+.icon-vision { background: #ec4899; }
+.icon-diag { background: #64748b; }
+.icon-update { background: #1f705b; }
+.icon-about { background: #475569; }
+
+.ios-row-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+.ios-row-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ios-row-value {
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+.ios-row-chevron {
+  color: #c4cdc9;
+  font-size: 16px;
+}
+
+/* 底部轻量信息 */
+.ios-footer-note {
+  text-align: center;
+  font-size: 12px;
+  color: #94a39e;
+  margin-top: 26px;
+  padding-bottom: 10px;
+}
+</style>
+</head>
+<body>
+  <div class="ios-header">
+    <h1 class="ios-header-title">偏好设置</h1>
+  </div>
+
+  <!-- 个人账号轻量行 -->
+  <div class="ios-profile-bar">
+    <div class="ios-profile-main">
+      <div class="ios-profile-avatar">药</div>
+      <div>
+        <div class="ios-profile-name">小药盒主账号</div>
+        <div class="ios-profile-sub">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1b6852" stroke-width="2.5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <span>本地加密 · 第 42 天</span>
+        </div>
+      </div>
+    </div>
+    <div class="ios-profile-chevron">›</div>
+  </div>
+
+  <!-- 3 条快捷胶囊 -->
+  <div class="ios-summary-strip">
+    <div class="ios-summary-item">
+      <div class="ios-summary-val">12</div>
+      <div class="ios-summary-label">全部药品</div>
+    </div>
+    <div class="ios-summary-item">
+      <div class="ios-summary-val">4</div>
+      <div class="ios-summary-label">用药计划</div>
+    </div>
+    <div class="ios-summary-item">
+      <div class="ios-summary-val">128</div>
+      <div class="ios-summary-label">已服记录</div>
+    </div>
+  </div>
+
+  <!-- 分组一：用药与通知提醒 -->
+  <div class="ios-group-title">用药与通知</div>
+  <div class="ios-inset-group">
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-alarm">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+        </div>
+        <span class="ios-row-title">服药提醒方式</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">响铃与振动</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-period">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </div>
+        <span class="ios-row-title">时段划分设定</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">早中晚睡前 4 段</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-keepalive">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        </div>
+        <span class="ios-row-title">后台保活与电池白名单</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">已设免死</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-theme">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line></svg>
+        </div>
+        <span class="ios-row-title">外观显示</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">跟随系统</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分组二：互联与数据安全 -->
+  <div class="ios-group-title">互联与数据</div>
+  <div class="ios-inset-group">
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-sync">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+        </div>
+        <span class="ios-row-title">局域网面对面互传</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">就绪</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-backup">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </div>
+        <span class="ios-row-title">本地加密备份与恢复</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">自动备份已开</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-storage">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+        </div>
+        <span class="ios-row-title">存储空间与缓存清理</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">2.4 MB</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分组三：智能助手与实验室 -->
+  <div class="ios-group-title">智能与实验室</div>
+  <div class="ios-inset-group">
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-ai">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
+        </div>
+        <span class="ios-row-title">大模型助手密钥配置</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">DeepSeek-R1</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-vision">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+        </div>
+        <span class="ios-row-title">药箱生图与视觉设定</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">已开启</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-diag">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+        </div>
+        <span class="ios-row-title">系统健康诊断与日志</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">良好</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分组四：关于软件 -->
+  <div class="ios-group-title">关于与更新</div>
+  <div class="ios-inset-group">
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-update">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </div>
+        <span class="ios-row-title">检查新版本</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-value">v1.0.7 (最新版)</span>
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+    <div class="ios-row">
+      <div class="ios-row-left">
+        <div class="ios-icon-box icon-about">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        </div>
+        <span class="ios-row-title">关于小药盒与免责声明</span>
+      </div>
+      <div class="ios-row-right">
+        <span class="ios-row-chevron">›</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="ios-footer-note">
+    小药盒 · 家庭纯净健康工具箱 · 无广告无追踪
+  </div>
+</body>
+</html>

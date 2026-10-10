@@ -22,64 +22,6 @@
     <title>小药盒</title>
   </head>
   <body>
-    <!--
-      液态玻璃折射滤镜（供 backdrop-filter: url(#…) 引用）。
-      对齐 Apple Liquid Glass：不再用随机噪点抖动，而是用预生成的「凸透镜位移图」——
-      中心区域中性灰不位移，越靠边缘越把背景往内弯折，形成真实的透镜边缘折射，
-      中心始终清晰可读。位移图由 scripts/gen-lens-maps.py 生成为 256×256 PNG（public/icons/lens-*.png）。
-      静态内联、零尺寸、不遮挡布局；display:none 会破坏部分引擎的滤镜引用，
-      因此用绝对定位 + 0 尺寸隐藏。
-    -->
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      style="position: absolute; inline-size: 0; block-size: 0; overflow: hidden"
-    >
-      <defs>
-        <!-- 小面积控件（顶栏圆钮 / 悬浮按钮 / Toast）：整面透镜 -->
-        <filter
-          id="medbox-lens"
-          x="-8%"
-          y="-8%"
-          width="116%"
-          height="116%"
-          color-interpolation-filters="sRGB"
-          primitiveUnits="objectBoundingBox"
-        >
-          <feImage href="/icons/lens-full.png" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map" />
-          <feGaussianBlur in="map" stdDeviation="0.012" result="soft" />
-          <feDisplacementMap in="SourceGraphic" in2="soft" scale="0.10" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-        <!-- 大面积条（底栏 / 操作坞 / 抽屉）：只在边缘一圈弯折 -->
-        <filter
-          id="medbox-lens-edge"
-          x="-4%"
-          y="-4%"
-          width="108%"
-          height="108%"
-          color-interpolation-filters="sRGB"
-          primitiveUnits="objectBoundingBox"
-        >
-          <feImage href="/icons/lens-edge.png" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map" />
-          <feGaussianBlur in="map" stdDeviation="0.008" result="soft" />
-          <feDisplacementMap in="SourceGraphic" in2="soft" scale="0.05" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-        <!-- 选中泡：更强的边缘弯折 -->
-        <filter
-          id="medbox-lens-bubble"
-          x="-12%"
-          y="-12%"
-          width="124%"
-          height="124%"
-          color-interpolation-filters="sRGB"
-          primitiveUnits="objectBoundingBox"
-        >
-          <feImage href="/icons/lens-full.png" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map" />
-          <feGaussianBlur in="map" stdDeviation="0.02" result="soft" />
-          <feDisplacementMap in="SourceGraphic" in2="soft" scale="0.16" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-      </defs>
-    </svg>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

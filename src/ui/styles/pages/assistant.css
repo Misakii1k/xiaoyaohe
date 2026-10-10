@@ -81,8 +81,8 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   --color-table-row-alt: color-mix(in srgb, #fff 3%, var(--ai-bot-bg));
 }
 
-/* 聊天面板：悬浮在页面之上的一整板水凝玻璃（低于 .overlay 的 200，确认弹窗能压在上面）
-   性能铁律：同屏 backdrop-filter 仅此处 + 输入条两处，气泡/卡片只用半透明实色 */
+/* 聊天面板：现代实色微质感（低于 .overlay 的 200，确认弹窗能压在上面）
+   做减法：实色底板、1px微边框、浅层物理微阴影，彻底剔除模糊滤镜与液态玻璃 */
 .ai-panel {
   position: fixed;
   z-index: 130;
@@ -94,25 +94,19 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   overflow: hidden;
   margin-inline: auto;
   max-inline-size: 560px;
-  border-radius: 32px;
-  background: color-mix(in srgb, var(--color-surface-solid) 62%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  backdrop-filter: blur(24px) saturate(150%);
-  border: 1px solid color-mix(in srgb, #ffffff 55%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--shadow-lg);
+  border-radius: 20px;
+  background: var(--color-surface-solid);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
   visibility: hidden;
   transform: translateY(calc(100% + 32px));
   transition: transform 320ms cubic-bezier(0.32, 0.72, 0.28, 1), visibility 0s 320ms;
 }
 
 :root[data-theme='dark'] .ai-panel {
-  background: color-mix(in srgb, var(--color-surface-solid) 66%, transparent);
-  border-color: rgba(255, 255, 255, 0.14);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.10),
-    var(--shadow-lg);
+  background: var(--color-surface-solid);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-lg);
 }
 
 .ai-root.is-open .ai-panel {
@@ -121,8 +115,7 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   transition: transform 320ms cubic-bezier(0.32, 0.72, 0.28, 1);
 }
 
-/* 全屏形态：铺满整个视口，常用于长对话或看卡片；
-   保留水凝玻璃材质（模糊 + 半透明），只摘掉圆角与描边，不再回归实色 */
+/* 全屏形态：铺满整个视口，常用于长对话或看卡片 */
 .ai-panel.is-fullscreen {
   inset: 0;
   inline-size: 100%;
@@ -276,7 +269,7 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 }
 .ai-root.is-gesturing .ai-panel-header { cursor: grabbing; }
 
-/* 头部操作圆钮：玻璃小圆片，与面板同一材质家族 */
+/* 头部操作圆钮：实色微质感圆钮 */
 .ai-panel-more,
 .ai-panel-expand,
 .ai-panel-close {
@@ -284,9 +277,9 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   place-items: center;
   inline-size: 36px;
   block-size: 36px;
-  border: 1px solid color-mix(in srgb, #ffffff 50%, transparent);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-surface-solid) 52%, transparent);
+  background: var(--color-surface-muted);
   color: var(--color-text-muted);
   cursor: pointer;
   transition: transform var(--duration-fast) var(--ease-spring), color var(--duration-fast) ease, background var(--duration-fast) ease;
@@ -294,7 +287,8 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 :root[data-theme='dark'] .ai-panel-more,
 :root[data-theme='dark'] .ai-panel-expand,
 :root[data-theme='dark'] .ai-panel-close {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
 }
 .ai-panel-more:hover,
 .ai-panel-more.is-active { color: var(--color-primary); background: var(--color-primary-soft); }
@@ -549,18 +543,18 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   max-inline-size: 100%;
   margin-inline: 0;
   padding: 14px 16px 10px;
-  border-radius: 22px;
-  border-start-start-radius: 8px;
-  /* 白磨砂玻璃卡：半透明实色，模糊由面板统一承担 */
-  background: color-mix(in srgb, var(--color-surface-solid) 68%, transparent);
+  border-radius: 18px;
+  border-start-start-radius: 6px;
+  background: var(--color-surface-muted);
   color: var(--color-text);
-  border: 1px solid color-mix(in srgb, #ffffff 50%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 2px 10px rgba(23, 34, 30, 0.06);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
   white-space: normal;
 }
 :root[data-theme='dark'] .ai-msg.is-bot .ai-bubble {
-  border-color: rgba(255, 255, 255, 0.10);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 10px rgba(0, 0, 0, 0.3);
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 出错提示：危险色浅底 + 左侧色条，与正常回复区分 */
@@ -931,39 +925,78 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 /* 已移除：`.ai-msg.is-user .ai-markdown a` 为死代码，永不匹配 ——
    AiAssistant 的 user 消息走纯文本 span，只有 bot 路径会渲染 .ai-markdown。 */
 
+/* AI 助手结构化卡片与导航卡（现代实色微质感 · oil-ui 规范）
+   做减法：纯净实色底板、1px精细低饱和微边框、16px圆角、精致极浅微投影（无blur）、极高阅读对比度 */
 .ai-content-card,
 .ai-navigation-card {
   inline-size: 100%;
   margin-block-start: 0;
-  border: 1px solid color-mix(in srgb, #ffffff 50%, transparent);
-  border-radius: 22px;
-  /* 玻璃卡：半透明实色，模糊由面板统一承担 */
-  background: color-mix(in srgb, var(--color-surface-solid) 72%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface-solid);
   color: var(--color-text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 2px 10px rgba(23, 34, 30, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
+
 :root[data-theme='dark'] .ai-content-card,
 :root[data-theme='dark'] .ai-navigation-card {
-  border-color: rgba(255, 255, 255, 0.10);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: var(--color-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
 .ai-content-card {
   position: relative;
   overflow: hidden;
   padding: 14px 16px;
-  border-inline-start-width: 4px;
+  border-inline-start-width: 1px;
 }
-.ai-content-card.is-summary { border-inline-start-color: var(--color-primary); }
-.ai-content-card.is-medication { border-inline-start-color: var(--color-accent-coral); }
-.ai-content-card.is-stats { border-inline-start-color: var(--color-accent-mint); }
-.ai-content-card.is-search { border-inline-start-color: var(--color-primary); }
-.ai-content-card.is-notice { border-inline-start-color: var(--color-warning); }
-.ai-content-card.is-success { border-color: var(--tone-ok-border); }
-.ai-content-card.is-warning { border-color: var(--tone-warn-border); }
-.ai-card-heading { display: flex; align-items: center; gap: 10px; min-inline-size: 0; }
-.ai-card-title-group { min-inline-size: 0; flex: 1 1 auto; }
-.ai-card-heading h3 { margin: 0; font-size: var(--fs-subheadline); line-height: 1.3; }
+
+.ai-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+}
+
+.ai-card-title-group {
+  min-inline-size: 0;
+  flex: 1 1 auto;
+}
+
+.ai-card-heading h3 {
+  margin: 0;
+  font-size: var(--fs-subheadline);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.ai-card-head-jump {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  inline-size: 28px;
+  block-size: 28px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: transform var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.ai-card-head-jump:hover {
+  color: var(--color-primary);
+}
+
+.ai-card-head-jump:active {
+  transform: scale(0.92);
+}
+
+.ai-card-head-jump svg {
+  inline-size: 14px;
+  block-size: 14px;
+}
+
 .ai-card-icon,
 .ai-navigation-icon {
   display: grid;
@@ -975,14 +1008,21 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   background: var(--color-primary-soft);
   color: var(--color-primary);
 }
+
 .ai-card-icon svg,
-.ai-navigation-icon svg { inline-size: 18px; block-size: 18px; }
+.ai-navigation-icon svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
 .ai-content-card.is-success .ai-card-icon { background: var(--tone-ok-bg); color: var(--tone-ok-fg); }
 .ai-content-card.is-warning .ai-card-icon { background: var(--tone-warn-bg); color: var(--tone-warn-fg); }
 .ai-content-card.is-medication .ai-card-icon { background: var(--tint-pink-bg); color: var(--tint-pink-fg); }
 .ai-content-card.is-stats .ai-card-icon { background: var(--tint-blue-bg); color: var(--tint-blue-fg); }
+.ai-content-card.is-inventory .ai-card-icon { background: var(--tint-blue-bg); color: var(--tint-blue-fg); }
 .ai-content-card.is-search .ai-card-icon { background: var(--color-primary-soft); color: var(--color-primary); }
 .ai-content-card.is-notice .ai-card-icon { background: var(--tint-orange-bg); color: var(--tint-orange-fg); }
+
 .ai-card-eyebrow {
   display: block;
   margin-block-end: 2px;
@@ -990,11 +1030,14 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   font-size: var(--fs-caption);
   font-weight: 650;
 }
+
+/* 标签徽章防折行守则 */
 .ai-card-badge {
   flex: 0 0 auto;
-  max-inline-size: 90px;
-  overflow: hidden;
-  padding: 5px 8px;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  min-width: max-content !important;
+  padding: 4px 8px;
   border: 1px solid var(--tone-info-border);
   border-radius: var(--radius-full);
   background: var(--tone-info-bg);
@@ -1002,49 +1045,181 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   font-size: var(--fs-caption);
   font-weight: 750;
   line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+
 .ai-content-card.is-medication .ai-card-badge { border-color: var(--tone-warn-border); background: var(--tone-warn-bg); color: var(--tone-warn-fg); }
 .ai-content-card.is-success .ai-card-badge { border-color: var(--tone-ok-border); background: var(--tone-ok-bg); color: var(--tone-ok-fg); }
 .ai-content-card.is-warning .ai-card-badge { border-color: var(--tone-warn-border); background: var(--tone-warn-bg); color: var(--tone-warn-fg); }
-.ai-content-card > .ai-markdown { margin-block-start: var(--space-3); color: var(--color-text-muted); }
-.ai-content-card.is-medication > .ai-markdown,
-.ai-content-card.is-stats > .ai-markdown { color: var(--color-text); }
-.ai-content-card.is-search > .ai-markdown blockquote {
-  border-inline-start-color: var(--color-primary);
-  background: var(--tone-info-bg);
-  color: var(--tone-info-fg);
-  font-size: var(--fs-caption);
+.ai-content-card.is-inventory .ai-card-badge { border-color: var(--tone-info-border); background: var(--tone-info-bg); color: var(--tone-info-fg); }
+.ai-content-card.is-inventory.is-warning .ai-card-badge { border-color: var(--tone-warn-border); background: var(--tone-warn-bg); color: var(--tone-warn-fg); }
+
+.ai-content-card > .ai-markdown {
+  margin-block-start: var(--space-3);
+  color: var(--color-text);
 }
+
+/* 搜索卡（search）：轻量来源小胶囊或链接行，移除繁重的多层嵌套 blockquote */
+.ai-content-card.is-search > .ai-markdown blockquote {
+  margin: var(--space-2) 0;
+  padding: 8px 12px;
+  border-inline-start: 3px solid var(--color-primary);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: var(--fs-footnote);
+}
+
+.ai-content-card.is-search > .ai-markdown ol,
+.ai-content-card.is-search > .ai-markdown ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-inline-start: 0;
+  list-style: none;
+  margin: var(--space-2) 0;
+}
+
+.ai-content-card.is-search > .ai-markdown ol > li,
+.ai-content-card.is-search > .ai-markdown ul > li {
+  list-style: none;
+  margin: 0;
+}
+
 .ai-content-card.is-search > .ai-markdown a {
   display: inline-flex;
   align-items: center;
-  min-block-size: 30px;
+  gap: 4px;
+  min-block-size: 26px;
   margin: 2px 4px 2px 0;
-  padding: 4px 8px;
-  border: 1px solid var(--tone-info-border);
+  padding: 2px 10px;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: var(--tone-info-bg);
+  background: var(--color-surface-muted);
+  color: var(--color-primary);
   font-size: var(--fs-caption);
+  font-weight: 600;
   text-decoration: none;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  min-width: max-content !important;
 }
+
+/* 服药统计卡（stats）：主角突出——大数字达成率 + 横向紧凑状态分布条 */
+.ai-stats-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-block-start: var(--space-3);
+  padding: 4px 0 2px;
+}
+
+.ai-stats-value {
+  font-size: 32px;
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-stats-label {
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ai-stats-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-block-start: 8px;
+}
+
+.ai-stats-bar {
+  display: flex;
+  inline-size: 100%;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+  gap: 2px;
+}
+
+.ai-stats-bar-seg {
+  block-size: 100%;
+  border-radius: 4px;
+  min-inline-size: 4px;
+  transition: flex-grow 300ms var(--ease-out);
+}
+
+.ai-stats-bar-seg.is-taken {
+  background: var(--tone-ok-fg);
+}
+
+.ai-stats-bar-seg.is-missed {
+  background: var(--color-danger);
+}
+
+.ai-stats-bar-seg.is-skipped {
+  background: color-mix(in srgb, var(--color-text-muted) 50%, transparent);
+}
+
+.ai-stats-bar-seg.is-empty {
+  background: var(--color-surface-muted);
+}
+
+.ai-stats-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+}
+
+.ai-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  min-width: max-content !important;
+}
+
+.ai-legend-dot {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: var(--radius-full);
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.ai-legend-dot.is-taken { background: var(--tone-ok-fg); }
+.ai-legend-dot.is-missed { background: var(--color-danger); }
+.ai-legend-dot.is-skipped { background: var(--color-text-muted); }
+
+/* 卡片列表项容器 */
 .ai-card-items {
   display: grid;
   margin-block-start: var(--space-3);
   overflow: hidden;
   border-block-start: 1px solid var(--color-border);
 }
+
 .ai-card-item {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) auto;
-  gap: 9px;
+  gap: 10px;
   align-items: center;
-  min-block-size: 58px;
+  min-block-size: 54px;
   padding: 8px 0;
   background: transparent;
 }
-.ai-card-item + .ai-card-item { border-block-start: 1px solid var(--color-border); }
+
+.ai-card-item + .ai-card-item {
+  border-block-start: 1px solid var(--color-border);
+}
+
 .ai-card-item-icon {
   display: grid;
   place-items: center;
@@ -1054,15 +1229,25 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   background: var(--color-primary-soft);
   color: var(--color-primary);
 }
-.ai-card-item-icon svg { inline-size: 16px; block-size: 16px; }
-.ai-card-item-copy { min-inline-size: 0; }
+
+.ai-card-item-icon svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.ai-card-item-copy {
+  min-inline-size: 0;
+}
+
 .ai-card-item-copy strong {
   display: block;
   overflow: hidden;
   font-size: var(--fs-footnote);
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .ai-card-item-copy span {
   display: block;
   margin-block-start: 2px;
@@ -1072,27 +1257,31 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .ai-card-item-meta {
   display: flex;
   min-inline-size: 0;
-  max-inline-size: 96px;
   flex-direction: column;
   align-items: flex-end;
-  gap: 3px;
+  gap: 4px;
 }
+
 .ai-card-item-meta:empty { display: none; }
+
 .ai-card-item-value {
-  max-inline-size: 96px;
-  overflow: hidden;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  min-width: max-content !important;
   color: var(--color-text-muted);
   font-size: var(--fs-caption);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+
+/* 状态胶囊严格防折行守则 */
 .ai-card-item-status {
-  max-inline-size: 84px;
-  overflow: hidden;
-  padding: 3px 6px;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  min-width: max-content !important;
+  padding: 3px 8px;
   border: 1px solid var(--tone-info-border);
   border-radius: var(--radius-full);
   background: var(--tone-info-bg);
@@ -1100,53 +1289,150 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   font-size: 11px;
   font-weight: 700;
   line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.ai-card-item-status.is-success { border-color: var(--tone-ok-border); background: var(--tone-ok-bg); color: var(--tone-ok-fg); }
-.ai-card-item-status.is-warning { border-color: var(--tone-warn-border); background: var(--tone-warn-bg); color: var(--tone-warn-fg); }
-.ai-card-item-status.is-skipped { border-color: var(--color-border); background: var(--color-surface-muted); color: var(--color-text-muted); }
-.ai-card-item.is-success .ai-card-item-icon { background: var(--tone-ok-bg); color: var(--tone-ok-fg); }
-.ai-card-item.is-warning .ai-card-item-icon { background: var(--tone-warn-bg); color: var(--tone-warn-fg); }
-.ai-card-item.is-skipped .ai-card-item-icon { background: var(--color-surface-muted); color: var(--color-text-muted); }
-.ai-content-card.is-inventory { border-inline-start-color: var(--color-accent-mint); }
-.ai-content-card.is-inventory .ai-card-icon { background: var(--tint-blue-bg); color: var(--tint-blue-fg); }
-.ai-content-card.is-inventory .ai-card-item { background: transparent; }
-.ai-content-card.is-inventory .ai-card-item-icon { background: var(--tint-pink-bg); color: var(--tint-pink-fg); }
-.ai-content-card.is-inventory .ai-card-badge { border-color: var(--tone-info-border); background: var(--tone-info-bg); color: var(--tone-info-fg); }
-.ai-content-card.is-inventory.is-warning .ai-card-badge { border-color: var(--tone-warn-border); background: var(--tone-warn-bg); color: var(--tone-warn-fg); }
+
+.ai-card-item-status.is-success {
+  border-color: var(--tone-ok-border);
+  background: var(--tone-ok-bg);
+  color: var(--tone-ok-fg);
+}
+
+.ai-card-item-status.is-warning {
+  border-color: var(--tone-warn-border);
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+}
+
+.ai-card-item-status.is-skipped {
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.ai-card-item.is-success .ai-card-item-icon {
+  background: var(--tone-ok-bg);
+  color: var(--tone-ok-fg);
+}
+
+.ai-card-item.is-warning .ai-card-item-icon {
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+}
+
+.ai-card-item.is-skipped .ai-card-item-icon {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+/* 用药安排卡：针对「待服」药物条目直接提供原位微型「已服」打卡操作 */
+.ai-item-take-btn {
+  flex: 0 0 auto;
+  min-block-size: 28px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  min-width: max-content !important;
+  cursor: pointer;
+  transition: transform var(--duration-fast) ease, background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.ai-item-take-btn:active {
+  transform: scale(0.92);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.ai-item-take-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 事实微数据卡片（非统计卡） */
 .ai-card-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
+  gap: 8px;
   margin: var(--space-3) 0 0;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-border);
 }
-.ai-card-facts > div { min-inline-size: 0; min-block-size: 52px; padding: 9px 10px; background: color-mix(in srgb, var(--color-surface-solid) 55%, transparent); }
-.ai-card-facts dt { color: var(--color-text-muted); font-size: var(--fs-caption); }
-.ai-card-facts dd { margin: 2px 0 0; font-weight: 750; overflow-wrap: anywhere; }
-.ai-content-card.is-medication .ai-card-facts > div:nth-child(odd),
-.ai-content-card.is-stats .ai-card-facts > div:nth-child(odd) { background: var(--ai-subtle-bg); }
 
+.ai-card-facts > div {
+  min-inline-size: 0;
+  padding: 8px 10px;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.ai-card-facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+}
+
+.ai-card-facts dd {
+  margin: 2px 0 0;
+  font-size: var(--fs-footnote);
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+/* 导航卡（navigation）：精致扁平卡，微图标 + 标题 + 说明 + 箭头 */
 .ai-navigation-card {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
-  padding: 10px;
+  padding: 12px 14px;
   font: inherit;
   text-align: start;
   cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-spring), border-color var(--duration-fast) ease;
 }
-.ai-navigation-card:active { transform: scale(0.97); }
-.ai-navigation-copy { display: flex; min-inline-size: 0; flex-direction: column; gap: 2px; }
-.ai-navigation-copy strong { font-size: var(--fs-subheadline); }
-.ai-navigation-action { display: inline-flex; align-items: center; gap: 2px; color: var(--color-primary); font-size: var(--fs-footnote); font-weight: 700; white-space: nowrap; }
-.ai-navigation-action svg { inline-size: 16px; block-size: 16px; }
 
+.ai-navigation-card:active {
+  transform: scale(0.98);
+}
+
+.ai-navigation-copy {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-navigation-copy strong {
+  font-size: var(--fs-subheadline);
+  font-weight: 700;
+}
+
+.ai-navigation-copy span {
+  font-size: var(--fs-caption);
+  color: var(--color-text-muted);
+}
+
+.ai-navigation-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-primary);
+  font-size: var(--fs-footnote);
+  font-weight: 650;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  min-width: max-content !important;
+}
+
+.ai-navigation-action svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+/* 列向容器子按钮尺寸防御：flex: 0 0 auto; min-block-size: var(--tap); */
 .ai-card-action-btn {
   display: flex;
   align-items: center;
@@ -1154,7 +1440,7 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   inline-size: 100%;
   margin-block-start: var(--space-3);
   padding: 8px 12px;
-  border: 0;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
   color: var(--color-primary);
@@ -1162,12 +1448,16 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   font-size: var(--fs-footnote);
   font-weight: 600;
   cursor: pointer;
+  flex: 0 0 auto;
+  min-block-size: var(--tap);
   transition: transform var(--duration-fast) var(--ease-spring), background var(--duration-fast) ease;
 }
+
 .ai-card-action-btn:active {
-  transform: scale(0.97);
+  transform: scale(0.98);
   background: var(--color-primary-soft);
 }
+
 .ai-card-action-btn svg {
   inline-size: 16px;
   block-size: 16px;
@@ -1181,6 +1471,7 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   border: 1px solid var(--color-border);
   -webkit-overflow-scrolling: touch;
 }
+
 .ai-table-wrap .ai-table {
   margin: 0;
   border: 0;
@@ -1332,22 +1623,21 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
 /* 全屏形态贴回屏幕底边，输入区重新垫安全区 */
 .ai-panel.is-fullscreen .ai-composer { padding-block-end: calc(var(--space-2) + var(--safe-bottom)); }
 
-/* 玻璃胶囊输入条：面板之上唯一的“硬”元素 */
+/* 实色胶囊输入条：现代实色微质感 */
 .ai-input-row {
   display: flex;
   gap: 6px;
   align-items: flex-end;
   padding: 5px 5px 5px 8px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-surface-solid) 66%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  backdrop-filter: blur(16px) saturate(140%);
-  border: 1px solid color-mix(in srgb, #ffffff 60%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 6px 18px rgba(23, 34, 30, 0.10);
+  background: var(--color-surface-solid);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
 }
 :root[data-theme='dark'] .ai-input-row {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.4);
+  background: var(--color-surface-solid);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-md);
 }
 
 .ai-tool-btn {

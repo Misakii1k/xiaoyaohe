@@ -1059,6 +1059,31 @@ a:active,
   transition: opacity 200ms ease, transform 240ms var(--ease-exit);
 }
 
+.toast:has(.toast-action-btn) {
+  pointer-events: auto;
+  gap: 12px;
+}
+
+.toast-action-btn {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  min-inline-size: max-content;
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.18);
+  color: #a5b4fc !important;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--duration-fast) ease, background var(--duration-fast) ease;
+}
+
+.toast-action-btn:active {
+  transform: scale(0.94);
+  background: rgba(255, 255, 255, 0.28);
+}
+
 /* 卡片与列表项触控反馈 */
 .medication-list-row,
 .inventory-row,

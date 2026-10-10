@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小药盒“我的”页面打磨精进展台</title>
+<style>
+:root {
+  --bg-app: #0e1217;
+  --bg-sidebar: #161b22;
+  --bg-card: #21262d;
+  --text-main: #f0f6fc;
+  --text-sub: #8b949e;
+  --color-brand: #236a55;
+  --color-blue: #58a6ff;
+  --border-color: #30363d;
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-family);
+  background: var(--bg-app);
+  color: var(--text-main);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 顶部导航与控制栏 */
+.top-bar {
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-color);
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+  z-index: 100;
+}
+.brand-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-badge {
+  background: var(--color-brand);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+.brand-title h1 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.view-tabs {
+  display: flex;
+  background: #090d11;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  gap: 2px;
+}
+.view-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-sub);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.view-btn:hover {
+  color: var(--text-main);
+}
+.view-btn.active {
+  background: var(--bg-card);
+  color: #58a6ff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.action-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.explorer-link-btn {
+  background: rgba(88, 166, 255, 0.12);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  color: #58a6ff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.explorer-link-btn:hover {
+  background: rgba(88, 166, 255, 0.2);
+}
+
+/* 主展示区域 */
+.main-stage {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 侧边说明 */
+.info-drawer {
+  width: 330px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  padding: 24px;
+  overflow-y: auto;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.info-tag {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(35, 106, 85, 0.3);
+  color: #4ade80;
+  font-weight: 700;
+}
+.info-drawer h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 6px;
+}
+.info-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #c9d1d9;
+}
+.info-block {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color);
+}
+.info-block h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-sub);
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+.info-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: #e6edf3;
+}
+.info-list li {
+  position: relative;
+  padding-left: 14px;
+}
+.info-list li::before {
+  content: '•';
+  color: #4ade80;
+  position: absolute;
+  left: 0;
+  font-weight: bold;
+}
+.select-decision-btn {
+  margin-top: auto;
+  background: linear-gradient(135deg, #236a55 0%, #175940 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.2s;
+  box-shadow: 0 4px 12px rgba(35, 106, 85, 0.4);
+  text-align: center;
+}
+.select-decision-btn:hover {
+  opacity: 0.95;
+  transform: translateY(-1px);
+}
+
+/* 画布区域 */
+.canvas-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #090d11;
+  overflow: auto;
+}
+.phone-mockup {
+  width: 390px;
+  height: 760px;
+  max-height: calc(100vh - 120px);
+  background: #000;
+  border-radius: 46px;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 10px #1e2229, 0 0 0 11px #30363d;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.phone-notch {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 25px;
+  background: #000000;
+  border-radius: 20px;
+  z-index: 20;
+}
+.phone-screen-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #f6f8f7;
+}
+
+/* 多屏并排对比 */
+.multi-grid-mode {
+  display: none;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 20px 40px;
+  align-items: center;
+  gap: 28px;
+}
+.multi-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.multi-col-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #c9d1d9;
+}
+.phone-mockup-mini {
+  width: 340px;
+  height: 640px;
+  border-radius: 36px;
+  box-shadow: 0 15px 40px rgba(0,0,0,0.6), 0 0 0 8px #1e2229;
+}
+</style>
+</head>
+<body>
+  <header class="top-bar">
+    <div class="brand-title">
+      <span class="brand-badge">REFINED</span>
+      <h1>小药盒“我的”页面深度打磨精进展台</h1>
+    </div>
+
+    <!-- 方案切换 -->
+    <nav class="view-tabs">
+      <button class="view-btn active" onclick="switchCandidate('refine-01')">精进 1 · 小药盒微卡片版</button>
+      <button class="view-btn" onclick="switchCandidate('refine-02')">精进 2 · 小药盒紧凑排印版</button>
+      <button class="view-btn" onclick="switchCandidate('refine-03')">精进 3 · 双剑合璧融合版</button>
+      <button class="view-btn" onclick="switchCandidate('baseline')">旧版现状对照 (手风琴)</button>
+      <button class="view-btn" onclick="switchCandidate('compare-all')">⚡ 同屏对比模式</button>
+    </nav>
+
+    <div class="action-tools">
+      <a class="explorer-link-btn" href="style-explorer.html" target="_blank">打开原生对比矩阵 ↗</a>
+    </div>
+  </header>
+
+  <main class="main-stage">
+    <!-- 侧边说明 -->
+    <aside class="info-drawer" id="infoDrawer"></aside>
+
+    <!-- 单屏画布 -->
+    <section class="canvas-area" id="singleCanvas">
+      <div class="phone-mockup">
+        <div class="phone-notch"></div>
+        <iframe id="phoneFrame" class="phone-screen-iframe" src="candidate-refine-01-microcards.html"></iframe>
+      </div>
+    </section>
+
+    <!-- 多屏同屏模式 -->
+    <section class="multi-grid-mode" id="multiCanvas">
+      <div class="multi-col">
+        <div class="multi-col-title">精进 1 · 小药盒微卡片版</div>
+        <div class="phone-mockup phone-mockup-mini">
+          <iframe class="phone-screen-iframe" src="candidate-refine-01-microcards.html"></iframe>
+        </div>
+      </div>
+      <div class="multi-col">
+        <div class="multi-col-title">精进 2 · 小药盒紧凑排印版</div>
+        <div class="phone-mockup phone-mockup-mini">
+          <iframe class="phone-screen-iframe" src="candidate-refine-02-typography.html"></iframe>
+        </div>
+      </div>
+      <div class="multi-col">
+        <div class="multi-col-title">精进 3 · 双剑合璧融合版</div>
+        <div class="phone-mockup phone-mockup-mini">
+          <iframe class="phone-screen-iframe" src="candidate-refine-03-hybrid.html"></iframe>
+        </div>
+      </div>
+      <div class="multi-col">
+        <div class="multi-col-title">旧版现状对照 (手风琴)</div>
+        <div class="phone-mockup phone-mockup-mini">
+          <iframe class="phone-screen-iframe" src="candidate-baseline.html"></iframe>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const data = {
+      'refine-01': {
+        title: '精进 1：小药盒微卡片版',
+        tag: '02 进阶 · 品牌微卡片',
+        desc: '在方案 02 微卡片的基础上，全面融入小药盒 Design Tokens：清爽冰白底、纯白卡片、小药盒墨绿图标与浅绿徽章。',
+        features: [
+          '3 列小药盒墨绿大数字（药品 12 / 计划 4 / 服药 128）',
+          '2x2 常用微卡片（提醒、保活、同步、AI），一触即发',
+          '全量图标统一为小药盒标志性青绿（#236a55），零彩色底托',
+          '下部圆角收纳盒整合系统设置，右侧透出状态'
+        ],
+        target: '适合喜欢 02 微卡片的直达触感，同时追求纯正小药盒视觉血统的用户。',
+        file: 'candidate-refine-01-microcards.html'
+      },
+      'refine-02': {
+        title: '精进 2：小药盒紧凑排印版',
+        tag: '03 进阶 · 瑞士排印风骨',
+        desc: '在方案 03 紧凑排印的基础上，以小药盒石墨深色文字与高对比墨绿数字重构，纯粹留白与字阶主导。',
+        features: [
+          '瑞士排印风格大标题“我的” + 42天墨绿胶囊',
+          '高对比纯排印三列数据（12 / 4 / 100%），无卡片边框束缚',
+          '2 组标准 Inset 圆角列表（用药偏好 / 数据与关于）',
+          '同色墨绿极简单色细线图标，舒适 46px 紧凑行高'
+        ],
+        target: '适合喜欢 03 紧凑高信息密度、追求纯粹设计质感的用户。',
+        file: 'candidate-refine-02-typography.html'
+      },
+      'refine-03': {
+        title: '精进 3：双剑合璧融合版',
+        tag: '02 + 03 融合大师版 (强烈推荐)',
+        desc: '将 03 的纯粹排印大数字看板与 02 的高频微磁贴融为一体，既有大数字看板的通透，又有高频卡片的一步直达。',
+        features: [
+          '首屏大字名片 + 3 列纯排印墨绿大数字看板',
+          '中段精炼 2 枚高频快捷磁贴（【服药闹钟】与【后台保活】）',
+          '底段整合紧凑设置列表（同步、备份、外观、AI、更新、关于）',
+          '统一小药盒官方青绿主色，零冗余文字，秩序井然'
+        ],
+        target: '兼顾 02 的卡片触控便捷性与 03 的高密度排印美学。',
+        file: 'candidate-refine-03-hybrid.html'
+      },
+      'baseline': {
+        title: '旧版现状对照 (手风琴)',
+        tag: '重构前基准',
+        desc: '当前版本的实现方式。供对照差异。',
+        features: [
+          '彩色图标底托（黄/蓝/紫/绿杂乱底色）',
+          '手风琴折叠抽屉，展开后剧烈跳动',
+          '冗长副标文字占位',
+          '单页纵向过长'
+        ],
+        target: '用于对照重构前后做减法与品牌规范化的巨大差异。',
+        file: 'candidate-baseline.html'
+      }
+    };
+
+    function renderInfo(key) {
+      const item = data[key];
+      if (!item) return;
+      const drawer = document.getElementById('infoDrawer');
+      drawer.innerHTML = `
+        <div>
+          <div><span class="info-tag">${item.tag}</span></div>
+          <h2>${item.title}</h2>
+        </div>
+        <p class="info-desc">${item.desc}</p>
+        <div class="info-block">
+          <h3>设计打磨亮点</h3>
+          <ul class="info-list">
+            ${item.features.map(f => `<li>${f}</li>`).join('')}
+          </ul>
+        </div>
+        <div class="info-block">
+          <h3>设计取向</h3>
+          <p style="font-size: 13px; color: #8b949e; line-height: 1.5;">${item.target}</p>
+        </div>
+        <button class="select-decision-btn" onclick="copySelection('${item.title}')">
+          选定此打磨版 (${item.title.split('：')[0]})
+        </button>
+      `;
+    }
+
+    function switchCandidate(key) {
+      const buttons = document.querySelectorAll('.view-btn');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const single = document.getElementById('singleCanvas');
+      const multi = document.getElementById('multiCanvas');
+      const iframe = document.getElementById('phoneFrame');
+
+      if (key === 'compare-all') {
+        single.style.display = 'none';
+        multi.style.display = 'flex';
+        renderInfo('refine-03');
+      } else {
+        single.style.display = 'flex';
+        multi.style.display = 'none';
+        iframe.src = data[key].file;
+        renderInfo(key);
+      }
+    }
+
+    function copySelection(title) {
+      const text = `我选定此精进版：${title}`;
+      navigator.clipboard.writeText(text).then(() => {
+        alert(`已复制到剪贴板：\n“${text}”\n可以直接在对话中发送给我！`);
+      }).catch(() => {
+        alert(`已选定：${text}`);
+      });
+    }
+
+    // 默认展示精进 3（双剑合璧）
+    renderInfo('refine-03');
+  </script>
+</body>
+</html>

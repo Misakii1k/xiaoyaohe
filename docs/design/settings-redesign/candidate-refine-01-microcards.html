@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>精进 1 - 小药盒微卡片版</title>
+<style>
+:root {
+  /* 严格遵循小药盒官方 Design Tokens */
+  --color-bg: #f6f8f7;
+  --color-surface: #ffffff;
+  --color-surface-muted: #edf1ef;
+  --color-text: #202e2b;
+  --color-text-muted: #64706b;
+  --color-border: #e1e8e4;
+  --color-primary: #236a55;
+  --color-primary-soft: #e3ede6;
+  --color-primary-pressed: #175940;
+  --font-sans: 'MiSans', 'HarmonyOS Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-full: 999px;
+  --shadow-sm: 0 1px 3px rgba(32, 46, 43, 0.04), 0 4px 12px rgba(32, 46, 43, 0.03);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.45;
+  padding: 16px 16px 84px;
+  max-width: 440px;
+  margin: 0 auto;
+  -webkit-font-smoothing: antialiased;
+}
+.header {
+  padding: 10px 4px 16px;
+}
+.header h1 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  color: var(--color-text);
+}
+
+/* 顶部个人卡片 + 3 列小药盒墨绿大数字 */
+.profile-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.profile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+.profile-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.user-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.user-sub {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+.badge-pill {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding-top: 14px;
+  text-align: center;
+}
+.stat-box strong {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: -0.4px;
+}
+.stat-box span {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  display: block;
+}
+
+/* 2x2 小药盒微卡片：同色墨绿 icon + 纯净状态透出 */
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin: 18px 4px 8px;
+  letter-spacing: 0.3px;
+}
+.micro-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.micro-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 88px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.12s, border-color 0.15s;
+}
+.micro-card:active {
+  transform: scale(0.985);
+  border-color: var(--color-primary);
+}
+.micro-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.icon-mono {
+  width: 20px;
+  height: 20px;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.micro-val {
+  font-size: 11px;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+.micro-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-top: 10px;
+}
+
+/* 整合系统设置卡片 */
+.settings-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.row-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 18px;
+  position: relative;
+  cursor: pointer;
+  background: #ffffff;
+  transition: background 0.15s;
+}
+.row-item:active {
+  background: #f7faf8;
+}
+.row-item::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 48px;
+  right: 18px;
+  height: 1px;
+  background: var(--color-border);
+}
+.row-item:last-child::after {
+  display: none;
+}
+.row-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.row-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+.row-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.row-state {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.chevron {
+  color: #b5c2bc;
+  font-size: 15px;
+}
+
+.footer-note {
+  text-align: center;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>我的</h1>
+  </div>
+
+  <!-- 顶部轻名片 + 3 数据 -->
+  <div class="profile-card">
+    <div class="profile-top">
+      <div class="profile-user">
+        <div class="avatar">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+        </div>
+        <div>
+          <div class="user-name">小药盒主账号</div>
+          <div class="user-sub">管理第 42 天 · 本地加密</div>
+        </div>
+      </div>
+      <span class="badge-pill">纯本地</span>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <strong>12</strong>
+        <span>全部药品</span>
+      </div>
+      <div class="stat-box">
+        <strong>4</strong>
+        <span>用药计划</span>
+      </div>
+      <div class="stat-box">
+        <strong>128</strong>
+        <span>已记录服药</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 常用微卡片 (2x2) -->
+  <div class="section-label">常用功能</div>
+  <div class="micro-grid">
+    <div class="micro-card">
+      <div class="micro-top">
+        <div class="icon-mono">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+        </div>
+        <span class="micro-val">响铃+振动</span>
+      </div>
+      <div class="micro-name">服药提醒</div>
+    </div>
+
+    <div class="micro-card">
+      <div class="micro-top">
+        <div class="icon-mono">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        </div>
+        <span class="micro-val">守护中</span>
+      </div>
+      <div class="micro-name">后台保活</div>
+    </div>
+
+    <div class="micro-card">
+      <div class="micro-top">
+        <div class="icon-mono">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle></svg>
+        </div>
+        <span class="micro-val">就绪</span>
+      </div>
+      <div class="micro-name">面对面同步</div>
+    </div>
+
+    <div class="micro-card">
+      <div class="micro-top">
+        <div class="icon-mono">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
+        </div>
+        <span class="micro-val">DeepSeek</span>
+      </div>
+      <div class="micro-name">AI 助手</div>
+    </div>
+  </div>
+
+  <!-- 系统设置整合列表 -->
+  <div class="section-label">偏好与支持</div>
+  <div class="settings-group">
+    <div class="row-item">
+      <div class="row-left">
+        <div class="icon-mono">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </div>
+        <span class="row-title">时段划分</span>
+      </div>
+      <div class="row-right">
+        <span class="row-state">4 个时段</span>
+        <span class="chevron">›</span>
+      </div>
+    </div>
+
+    <div class="row-item">
+      <div class="row-left">
+        <div class="icon-mono">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </div>
+        <span class="row-title">数据备份</span>
+      </div>
+      <div class="row-right">
+        <span class="row-state">已自动备份</span>
+        <span class="chevron">›</span>
+      </div>
+    </div>
+
+    <div class="row-item">
+      <div class="row-left">
+        <div class="icon-mono">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line></svg>
+        </div>
+        <span class="row-title">外观显示</span>
+      </div>
+      <div class="row-right">
+        <span class="row-state">系统默认</span>
+        <span class="chevron">›</span>
+      </div>
+    </div>
+
+    <div class="row-item">
+      <div class="row-left">
+        <div class="icon-mono">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+        </div>
+        <span class="row-title">存储缓存</span>
+      </div>
+      <div class="row-right">
+        <span class="row-state">2.4 MB</span>
+        <span class="chevron">›</span>
+      </div>
+    </div>
+
+    <div class="row-item">
+      <div class="row-left">
+        <div class="icon-mono">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </div>
+        <span class="row-title">版本更新</span>
+      </div>
+      <div class="row-right">
+        <span class="row-state">v1.0.7 最新</span>
+        <span class="chevron">›</span>
+      </div>
+    </div>
+
+    <div class="row-item">
+      <div class="row-left">
+        <div class="icon-mono">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        </div>
+        <span class="row-title">关于小药盒</span>
+      </div>
+      <div class="row-right">
+        <span class="chevron">›</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.5">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+    </svg>
+    <span>纯本地设备离线存储 · 无追踪</span>
+  </div>
+</body>
+</html>

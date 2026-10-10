@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 A - 健康档案中心</title>
+<style>
+:root {
+  --color-bg: #f4f7f5;
+  --color-surface: #ffffff;
+  --color-surface-sub: #f0f4f2;
+  --color-text: #1d2a27;
+  --color-text-muted: #5e6d68;
+  --color-primary: #1f705b;
+  --color-primary-light: #e3efe9;
+  --color-primary-dark: #145242;
+  --color-accent: #e58f3b;
+  --color-accent-light: #fef4e8;
+  --color-border: #e0e8e4;
+  --font-sans: 'MiSans', 'HarmonyOS Sans SC', 'PingFang SC', -apple-system, system-ui, sans-serif;
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --shadow-card: 0 4px 20px rgba(31, 112, 91, 0.06), 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+  padding: 16px 16px 84px;
+  max-width: 440px;
+  margin: 0 auto;
+  -webkit-font-smoothing: antialiased;
+}
+.hub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0 16px;
+}
+.hub-title-group h1 {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.6px;
+  color: var(--color-text);
+}
+.hub-title-group p {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+.hub-header-action {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+}
+
+/* 核心健康身份卡 */
+.health-profile-card {
+  background: linear-gradient(145deg, #ffffff 0%, #f6faf8 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 18px;
+  position: relative;
+  overflow: hidden;
+}
+.health-profile-card::after {
+  content: '';
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(31, 112, 91, 0.09) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.profile-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.avatar-container {
+  position: relative;
+}
+.avatar-circle {
+  width: 62px;
+  height: 62px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #247d66 0%, #175e4b 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(36, 125, 102, 0.28);
+}
+.avatar-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-primary);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+.profile-details h2 {
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.profile-tag {
+  font-size: 11px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.profile-sub {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+
+/* 本周依从性与打卡进度 */
+.compliance-box {
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.compliance-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.radial-progress {
+  width: 52px;
+  height: 52px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.radial-progress svg {
+  transform: rotate(-90deg);
+  width: 52px;
+  height: 52px;
+}
+.radial-progress-text {
+  position: absolute;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-primary);
+}
+.compliance-info h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.compliance-info p {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+.compliance-streak-pill {
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 7天点阵打卡周历 */
+.week-dots-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+.week-dots-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.week-dots-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.week-dots-all {
+  font-size: 12px;
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+.week-dots-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  text-align: center;
+}
+.dot-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.dot-day {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.dot-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.dot-done {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border: 1.5px solid var(--color-primary);
+}
+.dot-today {
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(31, 112, 91, 0.35);
+}
+.dot-future {
+  background: var(--color-surface-sub);
+  color: #9ba7a2;
+}
+
+/* 家庭药箱多成员标签 */
+.family-section {
+  margin-bottom: 20px;
+}
+.section-caption {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  margin-bottom: 10px;
+  padding-left: 2px;
+}
+.family-chips {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.family-chip {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.family-chip.active {
+  background: #ffffff;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(31, 112, 91, 0.15);
+}
+.family-chip-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+.chip-me { background: #e3efe9; color: #1f705b; }
+.chip-dad { background: #e8effa; color: #2a6cb8; }
+.chip-baby { background: #fef0f2; color: #d05a68; }
+.family-chip-name { font-size: 13px; font-weight: 700; }
+.family-chip-count { font-size: 11px; color: var(--color-text-muted); }
+
+/* 下沉导航卡片列表（摆脱长手风琴） */
+.hub-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.hub-nav-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s;
+}
+.hub-nav-item:active {
+  transform: scale(0.985);
+  background: #fafcfb;
+}
+.hub-nav-lead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.hub-nav-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-alarm { background: #eef6f3; color: #1f705b; }
+.icon-shield { background: #e8f4fc; color: #22709e; }
+.icon-ai { background: #f5effe; color: #6f42c1; }
+.icon-gear { background: #f2f5f4; color: #4c5c56; }
+.hub-nav-text h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.hub-nav-text p {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+.hub-nav-tail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hub-nav-status {
+  font-size: 12px;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.hub-nav-arrow {
+  color: #adb9b4;
+  font-size: 18px;
+}
+
+/* 底部纯净承诺 */
+.hub-footer {
+  text-align: center;
+  padding: 12px 10px;
+}
+.hub-footer-brand {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.hub-footer-desc {
+  font-size: 11px;
+  color: #8c9b95;
+  margin-top: 4px;
+}
+</style>
+</head>
+<body>
+  <!-- 顶栏 -->
+  <div class="hub-header">
+    <div class="hub-title-group">
+      <h1>健康档案</h1>
+      <p>管理个人用药、全家档案与偏好配置</p>
+    </div>
+    <div class="hub-header-action" title="切换视图">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </div>
+  </div>
+
+  <!-- 1. 核心健康身份卡片 -->
+  <div class="health-profile-card">
+    <div class="profile-meta-row">
+      <div class="avatar-container">
+        <div class="avatar-circle">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+        </div>
+        <span class="avatar-badge">本人</span>
+      </div>
+      <div class="profile-details">
+        <h2>
+          <span>陈先生的药盒</span>
+          <span class="profile-tag">科学管理</span>
+        </h2>
+        <div class="profile-sub">坚持用药管理第 42 天 · 12 种在库药物</div>
+      </div>
+    </div>
+
+    <!-- 依从性与打卡进度 -->
+    <div class="compliance-box">
+      <div class="compliance-left">
+        <div class="radial-progress">
+          <svg viewBox="0 0 36 36">
+            <path stroke="#e3efe9" stroke-width="3.5" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+            <path stroke="#1f705b" stroke-dasharray="96, 100" stroke-width="3.5" stroke-linecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+          </svg>
+          <span class="radial-progress-text">96%</span>
+        </div>
+        <div class="compliance-info">
+          <h4>本周服药依从性</h4>
+          <p>仅遗漏 1 次打卡 · 表现极佳</p>
+        </div>
+      </div>
+      <div class="compliance-streak-pill">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+        </svg>
+        <span>连续 14 天</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. 近7天打卡点阵 -->
+  <div class="week-dots-card">
+    <div class="week-dots-head">
+      <span class="week-dots-title">近 7 天打卡轨迹</span>
+      <span class="week-dots-all">查看全部历史 ›</span>
+    </div>
+    <div class="week-dots-row">
+      <div class="dot-col">
+        <span class="dot-day">周四</span>
+        <div class="dot-circle dot-done">✓</div>
+      </div>
+      <div class="dot-col">
+        <span class="dot-day">周五</span>
+        <div class="dot-circle dot-done">✓</div>
+      </div>
+      <div class="dot-col">
+        <span class="dot-day">周六</span>
+        <div class="dot-circle dot-done">✓</div>
+      </div>
+      <div class="dot-col">
+        <span class="dot-day">周日</span>
+        <div class="dot-circle dot-done">✓</div>
+      </div>
+      <div class="dot-col">
+        <span class="dot-day">周一</span>
+        <div class="dot-circle dot-done">✓</div>
+      </div>
+      <div class="dot-col">
+        <span class="dot-day">周二</span>
+        <div class="dot-circle dot-done">✓</div>
+      </div>
+      <div class="dot-col">
+        <span class="dot-day">今天</span>
+        <div class="dot-circle dot-today">3/3</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 家庭成员药箱横滑 -->
+  <div class="family-section">
+    <div class="section-caption">家庭成员档案</div>
+    <div class="family-chips">
+      <div class="family-chip active">
+        <div class="family-chip-avatar chip-me">陈</div>
+        <div>
+          <div class="family-chip-name">本人</div>
+          <div class="family-chip-count">8 种药物 · 今日待服 3</div>
+        </div>
+      </div>
+      <div class="family-chip">
+        <div class="family-chip-avatar chip-dad">爸</div>
+        <div>
+          <div class="family-chip-name">父亲 (血压管理)</div>
+          <div class="family-chip-count">3 种药物 · 今日已全服</div>
+        </div>
+      </div>
+      <div class="family-chip">
+        <div class="family-chip-avatar chip-baby">宝</div>
+        <div>
+          <div class="family-chip-name">宝贝药箱</div>
+          <div class="family-chip-count">常备退热 · 益生菌</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 下沉功能导航卡片（告别繁杂手风琴） -->
+  <div class="section-caption">系统偏好与管理</div>
+  <div class="hub-nav-group">
+    <div class="hub-nav-item">
+      <div class="hub-nav-lead">
+        <div class="hub-nav-icon icon-alarm">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+        </div>
+        <div class="hub-nav-text">
+          <h3>提醒时钟与时段偏好</h3>
+          <p>闹钟铃声、震动、早中晚时段定义</p>
+        </div>
+      </div>
+      <div class="hub-nav-tail">
+        <span class="hub-nav-status">强力闹钟已开</span>
+        <span class="hub-nav-arrow">›</span>
+      </div>
+    </div>
+
+    <div class="hub-nav-item">
+      <div class="hub-nav-lead">
+        <div class="hub-nav-icon icon-shield">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+        </div>
+        <div class="hub-nav-text">
+          <h3>面对面同步与数据备份</h3>
+          <p>局域网家庭互传、本地备份快照恢复</p>
+        </div>
+      </div>
+      <div class="hub-nav-tail">
+        <span class="hub-nav-status">就绪</span>
+        <span class="hub-nav-arrow">›</span>
+      </div>
+    </div>
+
+    <div class="hub-nav-item">
+      <div class="hub-nav-lead">
+        <div class="hub-nav-icon icon-ai">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
+          </svg>
+        </div>
+        <div class="hub-nav-text">
+          <h3>AI 药箱助手与智能识图</h3>
+          <p>说明书问答、药盒识别与大模型配置</p>
+        </div>
+      </div>
+      <div class="hub-nav-tail">
+        <span class="hub-nav-status">已接入 DeepSeek</span>
+        <span class="hub-nav-arrow">›</span>
+      </div>
+    </div>
+
+    <div class="hub-nav-item">
+      <div class="hub-nav-lead">
+        <div class="hub-nav-icon icon-gear">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </div>
+        <div class="hub-nav-text">
+          <h3>通用、外观与版本更新</h3>
+          <p>高对比外观、免死保活、v1.0.7 正式版</p>
+        </div>
+      </div>
+      <div class="hub-nav-tail">
+        <span class="hub-nav-status">最新</span>
+        <span class="hub-nav-arrow">›</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部说明 -->
+  <div class="hub-footer">
+    <div class="hub-footer-brand">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1f705b" stroke-width="2">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+      <span>小药盒 · 纯净本地数据保护</span>
+    </div>
+    <div class="hub-footer-desc">零云端依赖 · 数据完全由你掌控</div>
+  </div>
+</body>
+</html>

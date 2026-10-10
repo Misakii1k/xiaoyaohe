@@ -288,7 +288,6 @@ async function injectSafeAreaAndTheme(page, profile) {
     document.documentElement.style.setProperty('--safe-area-inset-left', `${safeLeft}px`);
     document.documentElement.style.setProperty('--safe-area-inset-right', `${safeRight}px`);
     document.documentElement.setAttribute('data-theme', theme);
-    document.documentElement.setAttribute('data-liquid', 'on');
   }, profile);
 }
 
@@ -315,7 +314,6 @@ async function runVisualAudit() {
         document.documentElement.style.setProperty('--safe-area-inset-left', `${safeLeft}px`);
         document.documentElement.style.setProperty('--safe-area-inset-right', `${safeRight}px`);
         document.documentElement.setAttribute('data-theme', theme);
-        document.documentElement.setAttribute('data-liquid', 'on');
       }, profile);
 
       const page = await context.newPage();

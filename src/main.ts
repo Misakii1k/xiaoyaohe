@@ -26,8 +26,6 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
   await import('./ui/styles.css');
   const { initTheme } = await import('./ui/theme');
   initTheme();
-  const { initLiquidGlass } = await import('./ui/liquidGlass');
-  initLiquidGlass();
   const [
     router,
     { appModuleRoutes },

@@ -1,11 +1,6 @@
 import { el, toast } from '../../../ui/components';
 import { createSegmentedControl } from '../../../ui/primitives/SegmentedControl';
 import { getThemePreference, setThemePreference, type ThemePreference } from '../../../ui/theme';
-import {
-  getLiquidGlassPreference,
-  setLiquidGlassPreference,
-  type LiquidGlassPreference,
-} from '../../../ui/liquidGlass';
 import type { PanelChip } from '../types';
 import { panel, setChip } from '../components/panelPrimitives';
 
@@ -28,7 +23,7 @@ export function renderAppearancePanel(): HTMLElement {
     chip: appearancePanelChip(),
     defaultOpen: false,
     renderBody: (body) => {
-      // 1. 配色方案微卡片
+      // 配色方案微卡片
       const themeCard = el('div', { class: 'settings-subcard' });
       const themeHeader = el('div', { class: 'settings-subcard-header' });
       const themeTitleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
@@ -39,7 +34,6 @@ export function renderAppearancePanel(): HTMLElement {
         text: THEME_PREFERENCE_LABEL[getThemePreference()],
       });
       themeHeader.append(themeTitleWrap, themeBadge);
-
 
       const control = createSegmentedControl<ThemePreference>(
         '配色方案',
@@ -59,50 +53,7 @@ export function renderAppearancePanel(): HTMLElement {
       );
       themeCard.append(themeHeader, control);
 
-      // 2. 界面动效与材质微卡片
-      const liquidEnabled = getLiquidGlassPreference() === 'on';
-      const glassCard = el('div', { class: 'settings-subcard' });
-      const glassHeader = el('div', { class: 'settings-subcard-header' });
-      const glassTitleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
-        el('span', { class: 'settings-subcard-title', text: '界面材质' }),
-      ]);
-      const glassBadge = el('span', {
-        class: `chip-pill ${liquidEnabled ? 'chip-primary' : ''}`,
-        text: liquidEnabled ? '高光质感' : '省电模式',
-      });
-      glassHeader.append(glassTitleWrap, glassBadge);
-
-      const liquidRow = el('label', { class: 'settings-toggle-row' });
-      const liquidCopy = el('div', { class: 'settings-toggle-copy' });
-      liquidCopy.append(
-        el('div', { class: 'settings-toggle-title', text: '液态玻璃效果' }),
-        el('div', {
-          class: 'settings-toggle-desc',
-          text: liquidEnabled ? '通透的玻璃质感' : '已关闭，更省电',
-        }),
-      );
-      const liquidToggle = el('input', {
-        type: 'checkbox',
-        role: 'switch',
-        'aria-label': '液态玻璃效果',
-      });
-      liquidToggle.checked = liquidEnabled;
-      liquidToggle.onchange = () => {
-        const next: LiquidGlassPreference = liquidToggle.checked ? 'on' : 'off';
-        setLiquidGlassPreference(next);
-        const on = liquidToggle.checked;
-        glassBadge.className = `chip-pill ${on ? 'chip-primary' : ''}`;
-        glassBadge.textContent = on ? '高光质感' : '省电模式';
-        toast(on ? '液态玻璃已开启' : '液态玻璃已关闭');
-        const desc = liquidCopy.querySelector<HTMLElement>('.settings-toggle-desc');
-        if (desc) {
-          desc.textContent = on ? '通透的玻璃质感' : '已关闭，更省电';
-        }
-      };
-      liquidRow.append(liquidCopy, liquidToggle);
-      glassCard.append(glassHeader, liquidRow);
-
-      body.append(themeCard, glassCard);
+      body.append(themeCard);
     },
   });
 }

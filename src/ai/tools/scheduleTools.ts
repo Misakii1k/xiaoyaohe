@@ -56,6 +56,9 @@ export const getTodayPlan: AssistantTool = {
       const med = medById.get(p.revision.medId)!;
       const log = p.occurrence ? findLogForOccurrence(p.occurrence, logs) : undefined;
       return {
+        projection: p,
+        occurrence: p.occurrence,
+        slot: p.revision.slot,
         药名: med.name,
         时段: SLOT_LABEL[p.revision.slot],
         时间: p.revision.timeLocal,
@@ -66,7 +69,7 @@ export const getTodayPlan: AssistantTool = {
     });
     const active = items.filter((i) => i.状态 !== '停药期');
     const pending = active.filter((i) => i.状态 === '还没吃');
-    const medicationItems: AssistantCardItem[] = active.slice(0, 6).map((item) => {
+    const medicationItems: AssistantCardItem[] = active.slice(0, 8).map((item) => {
       const status: AssistantCardItemStatus = item.状态 === '已吃'
         ? 'success'
         : item.状态 === '已跳过'
@@ -80,6 +83,9 @@ export const getTodayPlan: AssistantTool = {
         status,
         statusLabel: item.状态,
         icon: 'pill',
+        occurrence: item.occurrence,
+        slot: item.slot,
+        medName: item.药名,
       };
     });
     const next = pending[0];

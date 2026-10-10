@@ -5,6 +5,7 @@ import { getLlmConfig, getLlmRouteCandidates, normalizeAndValidateBaseUrl, type 
 import { assistantTools, findAssistantTool } from './assistantTools';
 import { isLlmAttemptError, type LlmAttemptError } from './llmRouting';
 import type { AssistantReasoningEffort } from './assistantPrefs';
+import type { MedicationOccurrence, Slot } from '../db/schema';
 
 export type AssistantErrorKind = 'unconfigured' | 'cancelled' | 'service';
 
@@ -63,6 +64,9 @@ export interface AssistantCardItem {
   status?: AssistantCardItemStatus;
   statusLabel?: string;
   icon?: AssistantCardIcon;
+  occurrence?: MedicationOccurrence;
+  slot?: Slot;
+  medName?: string;
 }
 
 export interface AssistantCardBlock {
