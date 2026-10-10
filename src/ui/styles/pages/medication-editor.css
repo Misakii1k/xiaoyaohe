@@ -787,7 +787,7 @@
 }
 
 .med-section-card input[type='text'],
-.med-section-card input[type='number'],
+.med-section-card input[type='number']:not(.ui-stepper-input),
 .med-section-card textarea {
   inline-size: 100%;
   box-sizing: border-box;
@@ -801,7 +801,7 @@
 }
 
 .med-section-card input[type='text']:focus,
-.med-section-card input[type='number']:focus,
+.med-section-card input[type='number']:not(.ui-stepper-input):focus,
 .med-section-card textarea:focus {
   outline: none;
   border-color: var(--color-primary);
@@ -944,7 +944,7 @@
 .med-danger-zone {
   display: flex;
   justify-content: center;
-  padding-block: var(--space-6) var(--space-2);
+  padding-block: var(--space-6) calc(var(--safe-bottom) + 88px);
 }
 
 .med-danger-zone .ui-button {
@@ -963,7 +963,7 @@
 }
 
 [data-theme='dark'] .med-section-card input[type='text'],
-[data-theme='dark'] .med-section-card input[type='number'],
+[data-theme='dark'] .med-section-card input[type='number']:not(.ui-stepper-input),
 [data-theme='dark'] .med-section-card textarea {
   background: var(--color-surface-muted);
   border-color: var(--color-border);

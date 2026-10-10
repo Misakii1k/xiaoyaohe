@@ -324,8 +324,8 @@ describe('refactor integrity and modularity contracts', () => {
     cleanups.forEach((fn) => fn());
   });
 
-  it('src/ai/assistantTools.ts preserves all 22 tools and barrel exports', () => {
-    expect(assistantTools.length).toBe(22);
+  it('src/ai/assistantTools.ts preserves all 23 tools and barrel exports', () => {
+    expect(assistantTools.length).toBe(23);
     expect(OPEN_PAGE_TOOL_NAME).toBe('open_page');
 
     const canonicalToolNames = [
@@ -351,6 +351,7 @@ describe('refactor integrity and modularity contracts', () => {
       'batch_deduct_inventory',
       'check_drug_interactions',
       'batch_import_medications',
+      'count_pills',
     ];
 
     canonicalToolNames.forEach((toolName) => {

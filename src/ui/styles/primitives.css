@@ -595,20 +595,25 @@ input[type='number']::-webkit-outer-spin-button {
   min-inline-size: 2ch;
   max-inline-size: 6ch;
   min-block-size: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  box-shadow: none;
+  box-shadow: none !important;
+  outline: none !important;
   color: var(--color-text);
   font-size: var(--fs-title3, 20px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
-.ui-stepper .ui-stepper-input:focus { box-shadow: none; }
+.ui-stepper .ui-stepper-input:focus {
+  box-shadow: none !important;
+  outline: none !important;
+  border: 0 !important;
+}
 .ui-stepper:focus-within {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-soft);

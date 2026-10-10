@@ -174,7 +174,12 @@ export function resetLlmConfig(): Promise<void> {
 }
 
 export function normalizeAndValidateBaseUrl(value: string): string {
-  const url = new URL(value.trim());
+  let raw = value.trim();
+  // 手机端复制可能带有包裹引号或首尾空格
+  raw = raw.replace(/^["']|["']$/g, '').trim();
+  // 智能剥离用户直接粘贴的完整调用端点后缀（如 /chat/completions 或 /models），保留通用 Base URL
+  raw = raw.replace(/\/(?:chat\/completions|models)\/?$/i, '');
+  const url = new URL(raw);
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
   if (url.protocol !== 'https:' && !(import.meta.env.DEV && local)) {
     throw new Error('生产环境只允许 HTTPS AI 地址');
@@ -182,6 +187,9 @@ export function normalizeAndValidateBaseUrl(value: string): string {
   if (url.username || url.password || url.search || url.hash) {
     throw new Error('AI 地址不能包含账号密码、查询参数或片段');
   }
+  let path = url.pathname.replace(/\/+$/, '');
+  path = path.replace(/\/(?:chat\/completions|models)$/i, '');
+  url.pathname = path;
   return url.toString().replace(/\/$/, '');
 }
 

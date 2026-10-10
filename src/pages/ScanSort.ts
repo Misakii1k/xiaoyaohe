@@ -56,6 +56,7 @@ import { openSortWizard, type SortWizardEntry, type SortWizardItem } from '../ui
 import { isMedicationExpiredOn, projectScheduleDate, toLocalDate, localDayBounds } from '../domain/medicationSchedule';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { applyExplicitDose, createMedicationDraft } from '../domain/medicationDraft';
+import { openPillCounterSheet } from '../features/pillCounter';
 
 type ScanMode = 'code' | 'smart' | 'sheet';
 
@@ -150,10 +151,30 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
   const codeFile = fileInput('从相册识别条码');
   const smartFile = fileInput('上传药盒照片');
   const sheetFile = fileInput('上传药单照片');
+  const pillFile = fileInput('拍照数药片');
 
   panel.append(reader, hint, resultBox);
-  content.append(home, backRow, panel, codeFile, smartFile, sheetFile);
+  content.append(home, backRow, panel, codeFile, smartFile, sheetFile, pillFile);
   backBtn.onclick = () => renderHome();
+
+  pillFile.onchange = async () => {
+    const file = pillFile.files?.[0];
+    pillFile.value = '';
+    if (!file || disposed) return;
+    try {
+      await openPillCounterSheet({
+        image: file,
+        onConfirm: (res) => {
+          toast(`已完成清点：共 ${res.count} 粒药片`);
+        },
+        onRetake: () => {
+          pillFile.click();
+        },
+      });
+    } catch (e) {
+      toast(`数药片出错：${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
 
   codeFile.onchange = async () => {
     const file = codeFile.files?.[0];
@@ -269,18 +290,18 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     sheetQuick.append(sheetIcon, sheetInfo);
     sheetQuick.onclick = () => void enterMode('sheet', () => void openSheetCamera());
 
-    const smartQuick = el('div', { class: 'scan-quick-card' });
-    const smartIcon = el('div', { class: 'scan-quick-icon blue' });
-    smartIcon.append(icon('box'));
-    const smartInfo = el('div', { class: 'scan-quick-info' });
-    smartInfo.append(
-      el('div', { class: 'scan-quick-title', text: '拍药盒识别' }),
-      el('div', { class: 'scan-quick-desc', text: '智能识别药盒' })
+    const pillCountQuick = el('div', { class: 'scan-quick-card' });
+    const pillCountIcon = el('div', { class: 'scan-quick-icon blue' });
+    pillCountIcon.append(icon('pill'));
+    const pillCountInfo = el('div', { class: 'scan-quick-info' });
+    pillCountInfo.append(
+      el('div', { class: 'scan-quick-title', text: '快速数药片' }),
+      el('div', { class: 'scan-quick-desc', text: '拍照秒级清点' })
     );
-    smartQuick.append(smartIcon, smartInfo);
-    smartQuick.onclick = () => void enterMode('smart', () => void openSmartCamera());
+    pillCountQuick.append(pillCountIcon, pillCountInfo);
+    pillCountQuick.onclick = () => pillFile.click();
 
-    quickGrid.append(sheetQuick, smartQuick);
+    quickGrid.append(sheetQuick, pillCountQuick);
     quickSection.append(quickGrid);
     home.append(quickSection);
 

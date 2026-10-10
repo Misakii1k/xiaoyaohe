@@ -172,6 +172,7 @@ const SYSTEM_PROMPT = [
   '15. 一次问句里要改多项数据（库存、药品、设置）时，尽量并行调用多个工具，用户一次确认就能全部完成。',
   '16. 你可以帮助用户记录和管理今天以及今天以前的历史服药记录（mark_medication 支持 date 参数，如 "2026-07-30"、"昨天"、"前天"）。',
   '17. 用户想要查看库存修改记录或近 3 天历史操作时调用 get_inventory_logs（支持显示操作来源）；要撤回库存修改时调用 undo_inventory_operation；要一次性预扣或批量扣减多天（如一周）库存时调用 batch_deduct_inventory（扣减前会自动展示当前库存、本次扣减、预计剩余等全方位差异对比）。',
+  '18. 用户发来散落药片照片，或询问“帮我数药片”、“这里有多少粒药”、“还剩几颗”等数药需求时，调用 count_pills 工具进行视觉清点计数；清点完毕后可用 present_card 展示数量与盘点结论，并询问用户是否需要将此数量更新到某个药品的库存。',
 ].join('\n');
 
 interface WireToolCall {
@@ -434,7 +435,10 @@ async function executeToolCall(
 
   events.onToolStart?.(tool.name, tool.label);
   try {
-    return await tool.run(args);
+    return await tool.run(args, {
+      attachment: events.attachment,
+      signal: events.signal,
+    });
   } catch (e) {
     return { ok: false, error: `执行出了点问题：${e instanceof Error ? e.message : String(e)}` };
   }

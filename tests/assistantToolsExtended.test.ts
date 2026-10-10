@@ -177,11 +177,13 @@ describe('Phase F assistant tools registration', () => {
     'batch_deduct_inventory',
     'check_drug_interactions',
     'batch_import_medications',
+    'count_pills',
   ] as const;
 
   it('registers period-reminder management alongside existing assistant tools', () => {
-    expect(assistantTools).toHaveLength(22);
+    expect(assistantTools).toHaveLength(23);
     expect(findAssistantTool('set_reminder_period_settings')).toBeDefined();
+    expect(findAssistantTool('count_pills')).toBeDefined();
     for (const name of NEW_TOOL_NAMES) {
       const tool = findAssistantTool(name);
       expect(tool, `expected ${name} to be registered`).toBeDefined();

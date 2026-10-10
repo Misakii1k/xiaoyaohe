@@ -22,6 +22,17 @@ import type {
   AssistantCardVariant,
 } from '../assistant';
 
+export interface AssistantToolContext {
+  attachment?: {
+    kind: 'image' | 'file';
+    name?: string;
+    mime?: string;
+    dataUrl?: string;
+    textExcerpt?: string;
+  };
+  signal?: AbortSignal;
+}
+
 export interface AssistantTool {
   name: string;
   /** 执行时给用户看的一句话，例如「正在看今天的吃药安排」 */
@@ -30,7 +41,7 @@ export interface AssistantTool {
   parameters: Record<string, unknown>;
   /** 返回非空字符串时，执行前需要用户确认 */
   confirm?: (args: Record<string, unknown>) => string;
-  run: (args: Record<string, unknown>) => Promise<unknown>;
+  run: (args: Record<string, unknown>, context?: AssistantToolContext) => Promise<unknown>;
 }
 
 export const SLOT_VALUES: Slot[] = ['morning', 'noon', 'evening', 'bedtime'];

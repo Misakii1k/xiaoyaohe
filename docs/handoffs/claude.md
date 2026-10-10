@@ -4,9 +4,25 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-10-10
 Status: active
-Latest version: `1.1.18` (Android `versionCode: 76`)
+Latest version: `1.2.0` (Android `versionCode: 77`)
 
 ## Summary of Accomplished Work
+
+### 72. 拍照快速数药片、编辑药品排版修复与第三方 API 宽松兼容 (v1.2.0, versionCode 77, workspace/claude)
+
+1. **需求与背景**：
+   - 增加拍照快速数药片功能（pillCounter / pillTools）；
+   - 编辑药品第 3 步（库存与备注）排版优化，解决数字步进器被全局样式污染产生内嵌边框与文字重叠问题；
+   - API 支持微信开放平台等更多第三方 OpenAI 兼容服务，允许任意 Token 格式，自动剥除 URL 尾部的 `/chat/completions` 与 `/models` 后缀，拉取模型失败时平滑切换为可自由手填模型名称；
+   - 全量更新合并并推送至最新版 1.2（即 1.2.0，versionCode 77）。
+2. **改动清单**：
+   - `src/features/pillCounter.ts` 与 `src/ai/tools/pillTools.ts`：实现药片视觉分析与数量快速清点能力；
+   - `src/ui/styles/pages/medication-editor.css` 与 `src/ui/styles/primitives.css`：排除 `.ui-stepper-input`，强化步进器输入框抗污染样式，重置 placeholder 为纯数字，加大危险操作区底部边距；
+   - `src/ai/llmConfig.ts` 与 `src/ui/llmProviderEditor.ts`：升级 `normalizeAndValidateBaseUrl` 智能剥除端点后缀，增加微信云开放平台预设，扩展模型下拉支持手动输入自定义模型。
+3. **验证与门禁**：
+   - 97 测试套件 / 636 项测试 100% 通过；
+   - 静态类型检查 0 错误；
+   - Android Release APK 与 Web 增量包打包成功。
 
 ### 71. AI 助手卡片全新规划重构、全局彻底下线液态玻璃与设计规范升级 (v1.1.18, versionCode 76, workspace/claude)
 

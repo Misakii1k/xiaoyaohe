@@ -40,6 +40,7 @@ import {
   updateAppSettings,
   OPEN_PAGE_TOOL_NAME,
 } from './tools/systemTools';
+import { countPillsTool } from './tools/pillTools';
 
 export type { AssistantTool };
 export { OPEN_PAGE_TOOL_NAME };
@@ -48,6 +49,7 @@ export * from './tools/medicationTools';
 export * from './tools/scheduleTools';
 export * from './tools/inventoryTools';
 export * from './tools/systemTools';
+export * from './tools/pillTools';
 
 export const assistantTools: readonly AssistantTool[] = [
   getTodayPlan,
@@ -72,6 +74,7 @@ export const assistantTools: readonly AssistantTool[] = [
   batchDeductInventoryTool,
   checkDrugInteractionsTool,
   batchImportMedicationsTool,
+  countPillsTool,
 ];
 
 export function findAssistantTool(name: string): AssistantTool | undefined {

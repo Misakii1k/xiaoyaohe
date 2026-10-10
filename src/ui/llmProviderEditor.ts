@@ -43,7 +43,19 @@ function populateModelControl(
     if (m === current) op.selected = true;
     sel.append(op);
   }
+  const manualOp = el('option', { value: '__manual__', html: '✎ 手动输入自定义模型…' });
+  sel.append(manualOp);
   if (!has && current) sel.value = current;
+
+  sel.onchange = () => {
+    if (sel.value === '__manual__') {
+      sel.style.display = 'none';
+      input.style.display = '';
+      label.htmlFor = input.id;
+      input.value = current === '__manual__' ? '' : current;
+      input.focus();
+    }
+  };
 }
 
 function getCurrentModel(sel: HTMLSelectElement, input: HTMLInputElement): string {
@@ -105,6 +117,14 @@ export const LLM_PRESETS: readonly LlmPresetTemplate[] = [
     hint: '本地私密运行，支持局域网或本机 Ollama 服务',
   },
   {
+    name: '微信云开放平台',
+    label: '微信云开放平台',
+    baseUrl: 'https://chatapi.weixin.qq.com/openai/v1',
+    defaultModel: 'deepseek-chat',
+    keyPlaceholder: 'bt1Pugg... 或任意 Token',
+    hint: '微信开放平台第三方 OpenAI 兼容 API',
+  },
+  {
     name: 'OpenRouter',
     label: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -125,13 +145,22 @@ export function openLlmProviderEditor(
   const labelIn = el('input', {
     type: 'text',
     value: existing?.label ?? '',
-    placeholder: '服务商名称，如 DeepSeek',
+    placeholder: '服务商名称，如 DeepSeek 或 微信开放平台',
   });
   const urlIn = el('input', {
     type: 'url',
     value: existing?.baseUrl ?? '',
     placeholder: 'OpenAI 兼容地址，如 https://api.deepseek.com/v1',
   });
+  urlIn.onblur = () => {
+    const raw = urlIn.value.trim();
+    if (!raw) return;
+    try {
+      urlIn.value = normalizeAndValidateBaseUrl(raw);
+    } catch {
+      // 格式问题留给刷新/保存时统一抛出提示
+    }
+  };
   const keyWrap = el('div', { style: 'position:relative' });
   const keyIn = el('input', {
     class: 'secret-input',
@@ -141,7 +170,7 @@ export function openLlmProviderEditor(
     autocorrect: false,
     spellcheck: false,
     value: existing?.apiKey ?? '',
-    placeholder: 'sk-...',
+    placeholder: 'sk-... 或任意第三方 Token / 访问密钥',
     style: 'padding-right:64px',
   });
   const toggleKey = el('button', { class: 'key-toggle', type: 'button', html: '显示' });
@@ -207,16 +236,25 @@ export function openLlmProviderEditor(
   refreshBtn.onclick = async () => {
     refreshBtn.setAttribute('disabled', 'true');
     refreshBtn.textContent = '检测中…';
-    const baseUrl = urlIn.value.trim();
+    const rawUrl = urlIn.value.trim();
     const apiKey = keyIn.value.trim();
     try {
-      normalizeAndValidateBaseUrl(baseUrl);
+      const baseUrl = normalizeAndValidateBaseUrl(rawUrl);
+      urlIn.value = baseUrl;
       if (!apiKey) throw new Error('请先填 API 密钥');
       const models = await listModels({ baseUrl, apiKey, model: getCurrentModel(modelSel, modelIn) || DEFAULT_LLM_CONFIG.model });
       populateModelControl(modelSel, modelIn, modelLabel, models, getCurrentModel(modelSel, modelIn));
       statusBar.replaceChildren(el('span', { class: 'banner ok', html: `已连接 · ${models.length} 个模型` }));
     } catch (e) {
-      statusBar.replaceChildren(el('span', { class: 'banner warn', html: '拉模型失败：' + (e instanceof Error ? e.message : String(e)) }));
+      // 容错：许多第三方或微信开放平台反代未开放 /models 端点，自动切换为手填模式并给出明确提示
+      const cur = getCurrentModel(modelSel, modelIn);
+      populateModelControl(modelSel, modelIn, modelLabel, [], cur);
+      statusBar.replaceChildren(
+        el('span', {
+          class: 'banner warn',
+          html: '未能拉取模型（部分第三方未开放 /models 端点，可直接手填模型名）：' + (e instanceof Error ? e.message : String(e)),
+        }),
+      );
     } finally {
       refreshBtn.removeAttribute('disabled');
       refreshBtn.textContent = '刷新';
@@ -244,11 +282,12 @@ export function openLlmProviderEditor(
   cancelBtn.onclick = close;
   saveBtn.onclick = async () => {
     const label = labelIn.value.trim();
-    const baseUrl = urlIn.value.trim();
+    const rawUrl = urlIn.value.trim();
     const apiKey = keyIn.value.trim();
     const model = getCurrentModel(modelSel, modelIn);
     try {
-      normalizeAndValidateBaseUrl(baseUrl);
+      const baseUrl = normalizeAndValidateBaseUrl(rawUrl);
+      urlIn.value = baseUrl;
       if (!label) throw new Error('请填写服务商名称');
       if (!apiKey) throw new Error('请填写 API 密钥');
       if (!model) throw new Error('请填写或选择模型');

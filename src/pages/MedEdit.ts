@@ -205,12 +205,12 @@ export async function renderMedEditPage(
   }) as HTMLInputElement;
   const packageQtyStepper = createStepper({
     value: med.inventory?.packageQuantity ?? null, min: 0, step: 1, allowEmpty: true,
-    inputMode: 'decimal', placeholder: '例如：28', ariaLabel: '一盒 / 一瓶有多少',
+    inputMode: 'decimal', placeholder: '28', ariaLabel: '一盒 / 一瓶有多少',
   });
   const packageQtyInput = packageQtyStepper.input;
   const lowThresholdStepper = createStepper({
     value: med.inventory?.lowThreshold ?? null, min: 0, step: 1, allowEmpty: true,
-    inputMode: 'decimal', placeholder: '例如：5', ariaLabel: '剩多少时提醒买药',
+    inputMode: 'decimal', placeholder: '5', ariaLabel: '剩多少时提醒买药',
   });
   const lowThresholdInput = lowThresholdStepper.input;
   const inventorySourceInput = el('textarea', {

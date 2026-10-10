@@ -2,8 +2,16 @@
 
 Updated: 2026-10-10
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.1.18` (versionCode 76)
-Latest integration commit: `release: v1.1.18 (versionCode 76)`
+Product version: `1.2.0` (versionCode 77)
+Latest integration commit: `release: v1.2.0 (versionCode 77)`
+
+## Release v1.2.0 (versionCode 77, workspace/claude)
+
+- **集成内容**：
+  - 新增「拍照快速数药片」AI 与图像识别工具：支持拍照上传散落药片照片自动圈选清点数量，无缝回填药箱库存；
+  - 编辑药品第 3 步排版优化：解决 `.ui-stepper-input` 被全局输入框样式污染导致内嵌边框挤压文字重叠的问题，步进器输入框增加多重防污染重置，placeholder 改为紧凑纯数字，优化危险操作区与底部 Dock 间距；
+  - 智能助手第三方 API 宽松兼容：`normalizeAndValidateBaseUrl` 智能剔除用户直接粘贴的 `/chat/completions` 与 `/models` 后缀，支持任意第三方访问令牌与格式，预设追加「微信云开放平台」，拉取模型失败时平滑切换为可自由输入任意模型名称。
+- **质量门禁与发布状态**：97 个测试套件（636 项测试）与静态类型检查 100% 通过。
 
 ## Release v1.1.18 (versionCode 76, workspace/claude)
 
