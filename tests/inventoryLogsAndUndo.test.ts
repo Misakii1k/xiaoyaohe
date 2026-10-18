@@ -61,8 +61,9 @@ describe('Inventory Logs, Undo & Batch Deduction Preview', () => {
 
     const med2Preview = preview.items.find((i) => i.medId === 'med2')!;
     expect(med2Preview.dailyConsumption).toBe(4); // 2片 * 2次/天
-    expect(med2Preview.deductQuantity).toBe(28);
-    expect(med2Preview.expectedRemaining).toBe(0); // 原有 10，扣 28 归零
+    // 需扣 28 但只有 10：预览只能报实际能扣的量，否则用户会以为扣了 28。
+    expect(med2Preview.deductQuantity).toBe(10);
+    expect(med2Preview.expectedRemaining).toBe(0);
     expect(med2Preview.willBeEmpty).toBe(true);
   });
 

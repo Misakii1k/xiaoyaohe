@@ -1536,18 +1536,22 @@ async function openBatchDeductSheet(root: HTMLElement, meds: Medication[], rules
 
     const diffList = el('div', { class: 'preview-diff-list' });
     for (const item of preview.items) {
+      // 已经没库存的药，标「扣后用完」会让人以为这次才用完，直接说清现状。
+      const statusTag = item.currentStock <= 0
+        ? el('span', { class: 'diff-tag tag-empty', text: '已缺药' })
+        : item.willBeEmpty
+          ? el('span', { class: 'diff-tag tag-empty', text: '扣后用完' })
+          : item.willBeLow
+            ? el('span', { class: 'diff-tag tag-low', text: '扣后偏低' })
+            : el('span', { class: 'diff-tag tag-ok', text: '库存充足' });
       const diffItem = el('div', { class: `preview-diff-item ${item.willBeEmpty ? 'is-empty' : item.willBeLow ? 'is-low' : ''}` }, [
         el('div', { class: 'diff-med-header' }, [
           el('strong', { text: item.medName }),
-          item.willBeEmpty
-            ? el('span', { class: 'diff-tag tag-empty', text: '扣后用完' })
-            : item.willBeLow
-              ? el('span', { class: 'diff-tag tag-low', text: '扣后偏低' })
-              : el('span', { class: 'diff-tag tag-ok', text: '库存充足' }),
+          statusTag,
         ]),
         el('div', { class: 'diff-values-grid' }, [
           el('div', {}, [el('span', { text: '当前剩余: ' }), el('strong', { text: `${item.currentStock}${item.unit}` })]),
-          el('div', {}, [el('span', { text: '本次需扣: ' }), el('strong', { text: `-${item.deductQuantity}${item.unit}` })]),
+          el('div', {}, [el('span', { text: '本次需扣: ' }), el('strong', { text: `${item.deductQuantity > 0 ? '-' : ''}${item.deductQuantity}${item.unit}` })]),
           el('div', {}, [el('span', { text: '预计剩余: ' }), el('strong', { text: `${item.expectedRemaining}${item.unit}`, class: 'highlight-remaining' })]),
         ]),
       ]);

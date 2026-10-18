@@ -377,7 +377,8 @@ export function calculateBatchDeductionPreview(
     const daily = estimateDailyConsumption(med, medRules);
     const unit = med.inventory.unit || '片';
     const currentStock = med.inventory.remaining;
-    const deductQuantity = roundStock(daily * days);
+    // 只能扣到现有的量：批量扣减实际按 min(现有, 需扣) 执行，预览不能报一个扣不出来的数字。
+    const deductQuantity = Math.min(roundStock(daily * days), currentStock);
     const expectedRemaining = Math.max(0, roundStock(currentStock - deductQuantity));
     const threshold = getLowStockThreshold(med);
     const daysAfter = daily > 0 ? Math.floor(expectedRemaining / daily) : null;

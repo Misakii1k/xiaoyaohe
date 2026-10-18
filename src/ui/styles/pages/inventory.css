@@ -1401,6 +1401,9 @@
 .history-time {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  /* 时间推到行尾：否则会紧贴「（现余: 58粒）」读成一串数字。 */
+  margin-inline-start: auto;
+  color: var(--color-text-muted);
 }
 
 .history-undo-btn {
