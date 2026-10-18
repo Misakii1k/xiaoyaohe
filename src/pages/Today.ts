@@ -2,6 +2,7 @@ import '../ui/styles/pages/today.css';
 import {
   listMeds,
   listLogsByDay,
+  listRules,
   listScheduleRevisions,
   setOccurrenceAction,
   setOccurrenceActions,
@@ -14,6 +15,7 @@ import {
   type Medication,
   type MedicationOccurrence,
   type MedicationScheduleRevision,
+  type ReminderRule,
   type Slot,
   SLOT_LABEL,
 } from '../db/schema';
@@ -34,6 +36,7 @@ import {
 } from '../ui/components';
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
+import { describeStock } from '../features/inventory';
 import { openTakeMedModal } from '../ui/TakeMedModal';
 import { mascotEmptyImg, parseSvg } from '../ui/assets3d';
 import { navigate } from '../router';
@@ -43,6 +46,8 @@ import { renderBPackageSvg } from './MedList';
 interface TodayItem {
   revision: MedicationScheduleRevision;
   med: Medication;
+  /** 该药启用的提醒规则：算「还够吃几天」必须用真实排程，不能用静态件数兜底。 */
+  rules: ReminderRule[];
   dueAt: number;
   occurrence?: MedicationOccurrence;
   log?: IntakeLog;
@@ -72,18 +77,26 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
   const isViewingToday = currentViewDate === realToday;
 
   const { start, end } = localDayBounds(currentViewDate);
-  const [meds, revisions, logs] = await Promise.all([
+  const [meds, revisions, logs, rules] = await Promise.all([
     listMeds(),
     listScheduleRevisions(),
     listLogsByDay(start, end),
+    listRules(),
   ]);
   if (signal?.aborted) return;
   const medById = new Map(meds.map((med) => [med.id, med]));
+  const rulesByMedId = new Map<string, ReminderRule[]>();
+  for (const rule of rules) {
+    if (rule.deleted || !rule.enabled) continue;
+    const group = rulesByMedId.get(rule.medId) ?? [];
+    group.push(rule);
+    rulesByMedId.set(rule.medId, group);
+  }
   const projections = projectScheduleDate(revisions, currentViewDate);
   const items = projections.flatMap((projection) => {
     const med = medById.get(projection.revision.medId);
     if (!med) return [];
-    return [toTodayItem(projection, med, logs)];
+    return [toTodayItem(projection, med, logs, rulesByMedId.get(med.id) ?? [])];
   });
 
   const photoMedIds = [...new Set(items.map((item) => item.med.id))].sort();
@@ -696,12 +709,13 @@ function renderSlotGroup(
     info.append(el('div', { class: 'today-card-meta', text: `${dose}${meal ? ' · ' + meal : ''} · ${freqText}` }));
 
     const badges = el('div', { class: 'today-card-badges' });
-    const stockCount = item.med.inventory?.remaining ?? 36;
-    const isLow = stockCount <= (item.med.inventory?.lowThreshold ?? 5);
-    const unit = item.med.inventory?.unit || item.med.doseUnit || '片';
+    // 未录入库存时不再编造件数：显示「未录入库存」，避免用户以为家里还有 36 片。
+    const stockInfo = describeStock(item.med, item.rules);
     const stockBadge = el('span', {
-      class: `today-stock-tag ${isLow ? 'low' : 'ok'}`,
-      text: isLow ? `库存不足 剩余${stockCount}${unit}` : `库存充足 剩余${stockCount}${unit}`,
+      class: `today-stock-tag ${stockInfo.tone === 'ok' ? 'ok' : 'low'}`,
+      text: stockInfo.remaining == null
+        ? '未录入库存'
+        : `${stockInfo.label} · ${stockInfo.short}`,
     });
     badges.append(stockBadge);
 
@@ -758,8 +772,9 @@ function renderSlotGroup(
             toast(`已完成 ${item.med.name} 服药打卡`);
           }
           onRefresh();
-        } catch {
-          toast('打卡失败');
+        } catch (error) {
+          // 单位不一致 / 用量待确认这类可修复的失败必须把原因说清楚，否则用户只会反复点「打卡」。
+          toast(error instanceof Error && error.message ? error.message : '打卡失败');
         }
       }
     };
@@ -797,10 +812,12 @@ function toTodayItem(
   projection: ScheduleDayProjection,
   med: Medication,
   logs: readonly IntakeLog[],
+  rules: ReminderRule[] = [],
 ): TodayItem {
   return {
     revision: projection.revision,
     med,
+    rules,
     dueAt: projection.dueAt,
     occurrence: projection.occurrence,
     log: projection.occurrence ? findLogForOccurrence(projection.occurrence, logs) : undefined,

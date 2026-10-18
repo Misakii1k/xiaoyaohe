@@ -102,13 +102,14 @@ export async function updateMedicationReminderModes(
 
 function inventoriesEqual(left: Medication['inventory'], right: Medication['inventory']): boolean {
   if (!left || !right) return left === right;
+  // dailyConsumption 是按排程算出来的缓存，不是用户改的库存：
+  // 把它算进比较，会让「只改了服药时段」生成一条 delta 为 0 的假库存日志。
   return left.remaining === right.remaining
     && left.unit === right.unit
     && left.packageQuantity === right.packageQuantity
     && left.lowThreshold === right.lowThreshold
     && left.sourceNote === right.sourceNote
-    && left.lastReminderAt === right.lastReminderAt
-    && left.dailyConsumption === right.dailyConsumption;
+    && left.lastReminderAt === right.lastReminderAt;
 }
 
 export interface MedicationProfileCommitResult {

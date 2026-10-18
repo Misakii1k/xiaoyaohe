@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify';
 import { marked, type RendererObject, type Tokens } from 'marked';
-import type { AssistantCardBlock, AssistantCardVariant, AssistantContentBlock } from '../ai/assistant';
+import type { AssistantCardBlock, AssistantCardItem, AssistantCardVariant, AssistantContentBlock } from '../ai/assistant';
 import { setOccurrenceAction } from '../db/local';
 import { closeNotificationsByTag } from '../features/notifier';
 import { el, icon, toast, type IconName } from './components';
@@ -90,6 +90,49 @@ export function renderAssistantMarkdown(markdown: string): HTMLElement {
     if (/^https?:/i.test(anchor.href)) anchor.target = '_blank';
   }
   return container;
+}
+
+/**
+ * 智能聚合助手卡片：多张「库存已更新」卡片聚合为一张清单卡，避免垂直堆叠多张重复卡片。
+ * 只聚合真正的更新结果卡；「库存概览 / 库存操作记录」这类同 variant 但语义不同的卡保持原样。
+ */
+const isInventoryUpdateCard = (block: AssistantContentBlock): block is AssistantCardBlock =>
+  block.type === 'card' && block.variant === 'inventory' && block.eyebrow === '库存已更新';
+
+export function aggregateAssistantBlocks(blocks: AssistantContentBlock[]): AssistantContentBlock[] {
+  const inventoryCards = blocks.filter(isInventoryUpdateCard);
+  if (inventoryCards.length <= 1) return blocks;
+
+  const aggregatedItems: AssistantCardItem[] = inventoryCards.map((card) => {
+    const qtyFact = card.facts?.find((f) => f.label === '当前剩余')?.value;
+    const actionFact = card.facts?.find((f) => f.label === '操作')?.value;
+    // AssistantCardItem 没有 badge 字段：剩余量必须写进 meta，否则合并后数量会整条消失。
+    const metaParts = [
+      qtyFact ? `当前剩余 ${qtyFact}` : '',
+      actionFact ? `操作：${actionFact}` : '',
+    ].filter(Boolean);
+    return {
+      title: card.title,
+      meta: metaParts.length > 0 ? metaParts.join(' · ') : undefined,
+      status: card.tone === 'warning' ? 'warning' : 'success',
+      statusLabel: card.tone === 'warning' ? '需留意' : '已更新',
+      icon: 'box',
+    };
+  });
+
+  const mergedCard: AssistantCardBlock = {
+    type: 'card',
+    variant: 'inventory',
+    icon: 'box',
+    eyebrow: '库存变动清单',
+    title: `已更新 ${inventoryCards.length} 种药品库存`,
+    tone: inventoryCards.some((c) => c.tone === 'warning') ? 'warning' : 'success',
+    items: aggregatedItems,
+  };
+
+  const otherBlocks = blocks.filter((b) => !isInventoryUpdateCard(b));
+
+  return [mergedCard, ...otherBlocks];
 }
 
 export function renderAssistantBlock(

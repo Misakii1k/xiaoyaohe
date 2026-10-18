@@ -258,7 +258,10 @@ export function getMedicationExpiryLocalDate(med: Medication): LocalDate | undef
   if (!Number.isFinite(med.expiryDate)) return undefined;
   // Legacy editor stored input[type=date] as UTC midnight, so UTC components
   // preserve the date the user selected regardless of the current timezone.
-  return new Date(med.expiryDate as number).toISOString().slice(0, 10) as LocalDate;
+  const legacyDate = new Date(med.expiryDate as number);
+  // 有限但超出 Date 范围的旧数据会让 toISOString() 抛 RangeError，直接拖垮整页渲染。
+  if (Number.isNaN(legacyDate.getTime())) return undefined;
+  return legacyDate.toISOString().slice(0, 10) as LocalDate;
 }
 
 export function isMedicationExpiredOn(med: Medication, date: LocalDate): boolean {

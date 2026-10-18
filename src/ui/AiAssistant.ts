@@ -1031,53 +1031,65 @@ export function mountGlobalAssistant(): void {
     return msg;
   }
 
-  function addAssistantReply(reply: AssistantTurnResult): HTMLElement {
-    const msg = el('div', { class: 'ai-msg is-bot' }, [hebaoAvatar('ai-msg-avatar')]);
-    // 头像列之后的内容体：文字气泡与结构化卡片同属一列，与头像对齐
-    const body = el('div', { class: 'ai-msg-body' });
-    if (reply.markdown) {
-      const bubble = el('div', { class: 'ai-bubble' });
-      bubble.append(renderAssistantMarkdown(reply.markdown));
-      const footer = el('div', { class: 'ai-bubble-footer' });
-      const copyBtn = el('button', {
-        class: 'ai-bubble-copy-btn',
-        type: 'button',
-        'aria-label': '复制回复内容',
-        title: '复制回复内容',
-      });
-      copyBtn.append(icon('copy'), el('span', { text: '复制' }));
-      copyBtn.onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(reply.markdown);
-          toast('已复制到剪贴板');
-        } catch {
-          toast('复制失败');
+  function createCopyFooter(markdown: string): HTMLElement {
+    const footer = el('div', { class: 'ai-bubble-footer' });
+    const copyBtn = el('button', {
+      class: 'ai-bubble-copy-btn',
+      type: 'button',
+      'aria-label': '复制回复内容',
+      title: '复制回复内容',
+    });
+    copyBtn.append(icon('copy'), el('span', { text: '复制' }));
+    copyBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(markdown);
+        toast('已复制到剪贴板');
+      } catch {
+        toast('复制失败');
+      }
+    };
+    footer.append(copyBtn);
+    return footer;
+  }
+
+  function renderCardsContainer(blocks: AssistantContentBlock[]): HTMLElement {
+    const cards = el('div', { class: 'ai-cards' });
+    const onNavigate = (path: string): void => {
+      closePanel();
+      navigate(path);
+    };
+    const placeholder = el('div', { class: 'ai-card-slot', text: '相关卡片加载中…' });
+    cards.append(placeholder);
+
+    void loadAssistantContent()
+      .then((module) => {
+        if (!cards.isConnected) return;
+        const processedBlocks = module.aggregateAssistantBlocks(blocks);
+        cards.replaceChildren();
+        for (const block of processedBlocks) {
+          cards.append(module.renderAssistantBlock(block, onNavigate));
         }
-      };
-      footer.append(copyBtn);
-      bubble.append(footer);
-      body.append(bubble);
+      })
+      .catch(() => {
+        if (cards.isConnected) {
+          cards.replaceChildren(el('div', { class: 'ai-card-slot', text: '卡片内容加载失败，请稍后重试' }));
+        }
+      });
+    return cards;
+  }
+
+  function addAssistantReply(reply: AssistantTurnResult): HTMLElement {
+    const bubble = el('div', { class: 'ai-bubble' });
+    if (reply.markdown) {
+      bubble.append(renderAssistantMarkdown(reply.markdown));
     }
     if (reply.blocks.length) {
-      const cards = el('div', { class: 'ai-cards' });
-      const onNavigate = (path: string): void => {
-        closePanel();
-        navigate(path);
-      };
-      for (const block of reply.blocks) {
-        const slot = el('div', { class: 'ai-card-slot', text: `${block.title}（内容加载中）` });
-        cards.append(slot);
-        void loadAssistantContent()
-          .then((module) => {
-            if (slot.isConnected) slot.replaceWith(module.renderAssistantBlock(block, onNavigate));
-          })
-          .catch(() => {
-            if (slot.isConnected) slot.textContent = `${block.title}（内容加载失败，请稍后重试）`;
-          });
-      }
-      body.append(cards);
+      bubble.append(renderCardsContainer(reply.blocks));
     }
-    msg.append(body);
+    if (reply.markdown) {
+      bubble.append(createCopyFooter(reply.markdown));
+    }
+    const msg = el('div', { class: 'ai-msg is-bot' }, [hebaoAvatar('ai-msg-avatar'), bubble]);
     log.append(msg);
     scrollToBottom();
     return msg;
@@ -1191,44 +1203,12 @@ export function mountGlobalAssistant(): void {
         const bubble = activeStreamMsg.querySelector<HTMLElement>('.ai-bubble');
         if (bubble) {
           bubble.replaceChildren(renderAssistantMarkdown(reply.markdown));
-          const footer = el('div', { class: 'ai-bubble-footer' });
-          const copyBtn = el('button', {
-            class: 'ai-bubble-copy-btn',
-            type: 'button',
-            'aria-label': '复制回复内容',
-            title: '复制回复内容',
-          });
-          copyBtn.append(icon('copy'), el('span', { text: '复制' }));
-          copyBtn.onclick = async () => {
-            try {
-              await navigator.clipboard.writeText(reply.markdown);
-              toast('已复制到剪贴板');
-            } catch {
-              toast('复制失败');
-            }
-          };
-          footer.append(copyBtn);
-          bubble.append(footer);
-        }
-        if (reply.blocks.length) {
-          const body = activeStreamMsg.querySelector<HTMLElement>('.ai-msg-body') ?? activeStreamMsg;
-          const cards = el('div', { class: 'ai-cards' });
-          const onNavigate = (path: string): void => {
-            closePanel();
-            navigate(path);
-          };
-          for (const block of reply.blocks) {
-            const slot = el('div', { class: 'ai-card-slot', text: `${block.title}（内容加载中）` });
-            cards.append(slot);
-            void loadAssistantContent()
-              .then((module) => {
-                if (slot.isConnected) slot.replaceWith(module.renderAssistantBlock(block, onNavigate));
-              })
-              .catch(() => {
-                if (slot.isConnected) slot.textContent = `${block.title}（内容加载失败，请稍后重试）`;
-              });
+          if (reply.blocks.length) {
+            bubble.append(renderCardsContainer(reply.blocks));
           }
-          body.append(cards);
+          if (reply.markdown) {
+            bubble.append(createCopyFooter(reply.markdown));
+          }
         }
         scrollToBottom();
       } else {

@@ -145,9 +145,9 @@ export function openTakeMedModal(options: TakeMedModalOptions): void {
       toast('服药打卡成功！');
       close();
       onDone?.();
-    } catch {
+    } catch (error) {
       takeBtn.disabled = false;
-      toast('打卡失败，请重试');
+      toast(error instanceof Error && error.message ? error.message : '打卡失败，请重试');
     }
   };
 

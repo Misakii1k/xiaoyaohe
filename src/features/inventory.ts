@@ -61,12 +61,24 @@ export type InventoryStatus = 'unset' | 'empty' | 'low' | 'ok' | 'days_low';
 
 /** Keep every inventory surface on the same explicit-or-derived threshold. */
 export function getLowStockThreshold(med: Medication): number {
-  return med.inventory?.lowThreshold
-    ?? Math.max(1, Math.ceil((med.inventory?.packageQuantity ?? 14) * 0.2));
+  // 0 / 负数 / 非数字都不是「不预警」，而是没填：一律回到包装量推算，避免预警线悄悄变成 1。
+  const explicit = med.inventory?.lowThreshold;
+  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) return explicit;
+  const packageQuantity = med.inventory?.packageQuantity;
+  const basis = typeof packageQuantity === 'number' && Number.isFinite(packageQuantity) && packageQuantity > 0
+    ? packageQuantity
+    : 14;
+  return Math.max(1, Math.ceil(basis * 0.2));
 }
 
+/**
+ * 件数是否已跌破警戒线（只看剩余件数，不看用量）。
+ * 「还够吃几天」属于另一层判断，见 `isInventoryNeedingRestock`；
+ * 二者必须分开，否则打卡后的「仅剩 N 片」提示会在库存很多时也冒出来。
+ */
 export function isLowStock(med: Medication): boolean {
-  return !!med.inventory && med.inventory.remaining <= getLowStockThreshold(med);
+  if (!med.inventory) return false;
+  return med.inventory.remaining <= getLowStockThreshold(med);
 }
 
 export function classifyInventoryStatus(
@@ -75,14 +87,112 @@ export function classifyInventoryStatus(
 ): InventoryStatus {
   if (!med.inventory) return 'unset';
   if (med.inventory.remaining <= 0) return 'empty';
-  if (isLowStock(med)) return 'low';
   const daysLeft = estimateDaysLeft(med, rules);
+  if (isLowStock(med) || (daysLeft != null && daysLeft <= 3)) return 'low';
   if (daysLeft != null && daysLeft <= 7) return 'days_low';
   return 'ok';
 }
 
+/**
+ * 判断药品是否需要备药/补货：件数跌破警戒线，或按真实排程推算的可用天数 <= 7 天。
+ * 未录入库存的药品返回 false —— 那是「未录入」而不是「需补货」，不能混进补货清单。
+ */
+export function isInventoryNeedingRestock(med: Medication, rules: ReminderRule[] = []): boolean {
+  if (!med.inventory) return false;
+  if (med.inventory.remaining <= 0) return true;
+  if (isLowStock(med)) return true;
+  const daysLeft = estimateDaysLeft(med, rules);
+  return daysLeft != null && daysLeft <= 7;
+}
+
+export type StockTone = 'ok' | 'warn' | 'danger' | 'muted';
+
+export interface StockSummary {
+  /** 未录入库存时为 null，调用方不得自行编造件数。 */
+  remaining: number | null;
+  unit: string;
+  daysLeft: number | null;
+  /** 卡片主文案，如「剩余 12片 · 约 5 天用量」。 */
+  detail: string;
+  /** 列表紧凑文案，如「余 12片」或「未录入库存」。 */
+  short: string;
+  /** 状态胶囊文案，如「充足」「剩 5 天」「已缺药」「未录入」。 */
+  label: string;
+  tone: StockTone;
+}
+
+/**
+ * 库存展示的唯一出口：剩余件数、可用天数、胶囊文案与色调都从这里派生，
+ * 避免库存页、药品列表、详情页各自算一套而互相矛盾。
+ */
+export function describeStock(med: Medication, rules: ReminderRule[] = []): StockSummary {
+  if (!med.inventory) {
+    return {
+      remaining: null,
+      unit: '',
+      daysLeft: null,
+      detail: '未录入库存',
+      short: '未录入库存',
+      label: '未录入',
+      tone: 'muted',
+    };
+  }
+  const { remaining } = med.inventory;
+  const displayUnit = med.inventory.unit?.trim() || med.doseUnit?.trim() || '';
+  // 脏数据（NaN / Infinity）绝不能渲染成「剩余 NaN 片」这种半句话。
+  if (!Number.isFinite(remaining)) {
+    return {
+      remaining: null,
+      unit: displayUnit,
+      daysLeft: null,
+      detail: '库存数据异常，请重新录入',
+      short: '库存数据异常',
+      label: '异常',
+      tone: 'muted',
+    };
+  }
+  const daysLeft = estimateDaysLeft(med, rules);
+  const amount = `${formatStockNumber(remaining)}${displayUnit}`;
+  const short = `余 ${amount}`;
+  const countLow = isLowStock(med);
+  const build = (detail: string, label: string, tone: StockTone): StockSummary => ({
+    remaining,
+    unit: displayUnit,
+    daysLeft,
+    detail,
+    short,
+    label,
+    tone,
+  });
+
+  if (remaining <= 0) return build(`剩余 0${displayUnit}`, '已缺药', 'danger');
+  if (daysLeft == null) {
+    return build(`剩余 ${amount}`, countLow ? '不足' : '充足', countLow ? 'warn' : 'ok');
+  }
+  if (daysLeft <= 0) return build(`剩余 ${amount} · 不足 1 天用量`, '不足 1 天', 'danger');
+  if (daysLeft <= 3) return build(`剩余 ${amount} · 约 ${daysLeft} 天用量`, `剩 ${daysLeft} 天`, 'danger');
+  if (daysLeft <= 7) return build(`剩余 ${amount} · 约 ${daysLeft} 天用量`, `剩 ${daysLeft} 天`, 'warn');
+  return build(`剩余 ${amount} · 约 ${daysLeft} 天用量`, countLow ? '不足' : '充足', countLow ? 'warn' : 'ok');
+}
+
+function formatStockNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(roundStock(value));
+}
+
 export function areDoseUnitsCompatible(left: string, right: string): boolean {
   return normalizeDoseUnit(left) === normalizeDoseUnit(right);
+}
+
+/**
+ * 片/粒/颗/丸 都是「按个数吃」的剂量单位：库存写 60 粒、剂量写 1 片时，
+ * 扣减的是同一堆药，不能因为用词不同就中止打卡。
+ * 只放宽扣减方向；补货、撤回仍然要求字面一致，避免把片数写进盒数。
+ */
+const COUNT_DOSE_UNITS = new Set(['片', '粒', '颗', '丸']);
+
+export function canDeductInventoryInUnit(inventoryUnit: string, doseUnit: string): boolean {
+  if (areDoseUnitsCompatible(inventoryUnit, doseUnit)) return true;
+  return COUNT_DOSE_UNITS.has(inventoryUnit.trim()) && COUNT_DOSE_UNITS.has(doseUnit.trim());
 }
 
 function normalizeDoseUnit(unit: string): string {
@@ -104,7 +214,7 @@ export function deductInventory(
     return { changed: false, low: false, reviewRequired: true, message: `${med.name} 的每次用量需要确认` };
   }
   const inventoryUnit = med.inventory.unit?.trim();
-  if (inventoryUnit && !areDoseUnitsCompatible(inventoryUnit, confirmedDose.unit)) {
+  if (inventoryUnit && !canDeductInventoryInUnit(inventoryUnit, confirmedDose.unit)) {
     return {
       changed: false,
       low: false,
@@ -152,10 +262,16 @@ export function restoreInventory(med: Medication, quantity: number): boolean {
   return true;
 }
 
-export function shouldSendLowStockReminder(med: Medication, now = Date.now()): boolean {
+export function shouldSendLowStockReminder(
+  med: Medication,
+  rules: ReminderRule[] = [],
+  now = Date.now(),
+): boolean {
   if (!med.inventory) return false;
   const threshold = getLowStockThreshold(med);
-  if (med.inventory.remaining > threshold) return false;
+  const daysLeft = estimateDaysLeft(med, rules);
+  const needsRestock = med.inventory.remaining <= threshold || (daysLeft != null && daysLeft <= 7);
+  if (!needsRestock) return false;
   const last = med.inventory.lastReminderAt ?? 0;
   return now - last >= LOW_STOCK_REMIND_GAP_MS;
 }
@@ -197,9 +313,9 @@ export function estimateDailyConsumption(med: Medication, rules: ReminderRule[])
  */
 export function estimateDaysLeft(med: Medication, rules: ReminderRule[]): number | null {
   const daily = estimateDailyConsumption(med, rules);
-  if (daily <= 0) return null;
+  if (!Number.isFinite(daily) || daily <= 0) return null;
   const remaining = med.inventory?.remaining ?? 0;
-  if (remaining <= 0) return null;
+  if (!Number.isFinite(remaining) || remaining <= 0) return null;
   return Math.floor(remaining / daily);
 }
 
@@ -262,6 +378,7 @@ export function calculateBatchDeductionPreview(
     const deductQuantity = roundStock(daily * days);
     const expectedRemaining = Math.max(0, roundStock(currentStock - deductQuantity));
     const threshold = getLowStockThreshold(med);
+    const daysAfter = daily > 0 ? Math.floor(expectedRemaining / daily) : null;
 
     items.push({
       medId: med.id,
@@ -271,11 +388,16 @@ export function calculateBatchDeductionPreview(
       dailyConsumption: daily,
       deductQuantity,
       expectedRemaining,
-      willBeEmpty: expectedRemaining <= 0,
-      willBeLow: expectedRemaining > 0 && expectedRemaining <= threshold,
+      willBeEmpty: deductQuantity > 0 && expectedRemaining <= 0,
+      willBeLow: expectedRemaining > 0
+        && (expectedRemaining <= threshold || (daysAfter != null && daysAfter <= 7)),
     });
   }
 
-  const summaryText = `一次性预扣除 ${days} 天服药库存，共 ${items.length} 种药品。`;
+  // 日用量为 0 的药（没有启用的服药计划 / 剂量未确认）实际不会被扣，不能算进「共 N 种」。
+  const deductingCount = items.filter((item) => item.deductQuantity > 0).length;
+  const summaryText = deductingCount > 0
+    ? `一次性预扣除 ${days} 天服药库存，共 ${deductingCount} 种药品。`
+    : `没有可预扣的药品：这些药还没有确认用量或没有启用的服药计划。`;
   return { days, items, summaryText };
 }

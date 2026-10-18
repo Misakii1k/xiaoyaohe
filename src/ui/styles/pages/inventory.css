@@ -6,14 +6,14 @@
 
 /* 库存概览卡片 */
 .inventory-overview-card {
-  background: var(--color-surface);
-  border-radius: 20px;
-  padding: 18px 20px;
+  background: var(--color-surface-solid);
+  border-radius: var(--radius-xl, 20px);
+  padding: var(--space-4) var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
   border: 1px solid var(--color-border);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--shadow-md);
   position: relative;
   overflow: hidden;
 }
@@ -111,9 +111,9 @@
   letter-spacing: -0.3px;
 }
 
-.inventory-stat-val.low { color: #f97316; }
-.inventory-stat-val.expiring { color: #f59e0b; }
-.inventory-stat-val.expired { color: #ef4444; }
+.inventory-stat-val.low { color: var(--tone-warn-fg); }
+.inventory-stat-val.expiring { color: var(--tone-warn-fg); }
+.inventory-stat-val.expired { color: var(--tone-danger-fg); }
 
 /* 过滤筛选 Tab */
 .inventory-filter-tabs {
@@ -128,7 +128,7 @@
 
 .inventory-filter-pill {
   border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-surface-solid);
   color: var(--color-text-muted);
   padding: 6px 14px;
   border-radius: var(--radius-full);
@@ -136,6 +136,12 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  /* 横向滚动行里默认 flex-shrink: 1，四个胶囊会被压到互相叠字 */
+  flex: 0 0 auto;
+  min-block-size: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.18s var(--ease-spring), background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -242,17 +248,36 @@
 }
 
 .inventory-status-pill {
-  font-size: 12px;
+  font-size: var(--fs-caption-sm, 13px);
   font-weight: 600;
   padding: 4px 10px;
   border-radius: 6px;
   white-space: nowrap;
+  flex-shrink: 0;
+  min-inline-size: max-content;
 }
 
-.inventory-status-pill.ok { background: #ecfdf5; color: #10b981; }
-.inventory-status-pill.low { background: #fffbeb; color: #f59e0b; }
-.inventory-status-pill.expiring { background: #fef2f2; color: #ef4444; }
-.inventory-status-pill.expired { background: #fef2f2; color: #ef4444; }
+/* 胶囊配色统一走 tone 令牌：自带深浅两套、对比度达标，
+   并让「临期（warn）」与「已过期（danger）」在颜色上真正可区分。 */
+.inventory-status-pill.tone-ok {
+  background: var(--tone-ok-bg);
+  color: var(--tone-ok-fg);
+}
+
+.inventory-status-pill.tone-warn {
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+}
+
+.inventory-status-pill.tone-danger {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+
+.inventory-status-pill.tone-muted {
+  background: var(--tone-muted-bg);
+  color: var(--tone-muted-fg);
+}
 
 .inventory-main-search-wrap {
   display: flex;
@@ -279,10 +304,10 @@
 }
 
 .inventory-filter-btn {
-  inline-size: 42px;
-  block-size: 42px;
+  inline-size: var(--tap);
+  block-size: var(--tap);
   border-radius: var(--radius-full);
-  background: var(--color-surface);
+  background: var(--color-surface-solid);
   border: 1px solid var(--color-border);
   display: grid;
   place-items: center;
@@ -1036,9 +1061,9 @@
 
 .inventory-main-search-wrap .search-clear-btn {
   position: absolute;
-  right: 10px;
-  inline-size: 24px;
-  block-size: 24px;
+  right: 6px;
+  inline-size: var(--tap);
+  block-size: var(--tap);
   border-radius: 50%;
   border: none;
   background: transparent;
@@ -1080,4 +1105,397 @@
 [data-theme='dark'] .inventory-picker-status.low {
   background: rgba(249, 115, 22, 0.15);
   color: #fb923c;
+}
+
+/* ============================================================
+ * 库存弹层：智能录入核对 / 历史操作 / 批量预扣
+ * 这三个弹层的类名此前完全没有样式，打开后是一堆紧贴的裸控件。
+ * 统一走实色微质感（surface-solid + 1px 边框 + 浅阴影），不叠模糊层。
+ * ============================================================ */
+
+.inventory-review-sheet .sheet-title,
+.inventory-history-sheet-content .sheet-title,
+.batch-deduct-sheet-content .sheet-title {
+  font-size: var(--fs-title3);
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 var(--space-1);
+}
+
+.inventory-review-sheet .sheet-subtitle,
+.inventory-history-sheet-content .sheet-subtitle,
+.batch-deduct-sheet-content .sheet-subtitle {
+  font-size: var(--fs-footnote);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-3);
+}
+
+/* ---------- 智能录入核对 ---------- */
+.inventory-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.inventory-review-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-solid);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.inventory-review-item.has-error {
+  border-color: var(--tone-danger-border);
+  box-shadow: 0 0 0 1px var(--tone-danger-border);
+}
+
+.inventory-review-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--tap);
+}
+
+.inventory-review-head input[type='checkbox'] {
+  inline-size: 22px;
+  block-size: 22px;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.inventory-review-head strong {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-review-confidence {
+  flex: 0 0 auto;
+  font-size: var(--fs-caption-sm, 13px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.inventory-review-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-caption-sm, 13px);
+  color: var(--color-text-muted);
+}
+
+.inventory-review-field > select {
+  min-block-size: var(--tap);
+  font-size: var(--fs-subheadline);
+}
+
+.inventory-review-amount {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.inventory-review-amount > input {
+  min-block-size: var(--tap);
+  padding: 0 var(--space-3);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-subheadline);
+  color: var(--color-text);
+}
+
+.inventory-review-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.inventory-review-mode .ui-button {
+  min-block-size: var(--tap);
+  font-size: var(--fs-caption-sm, 13px);
+}
+
+.inventory-review-evidence {
+  margin: 0;
+  font-size: var(--fs-caption-sm, 13px);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.inventory-review-success {
+  margin: 0;
+  font-size: var(--fs-caption-sm, 13px);
+  font-weight: 600;
+  color: var(--tone-ok-fg);
+}
+
+.inventory-review-error {
+  margin: 0;
+  font-size: var(--fs-caption-sm, 13px);
+  font-weight: 600;
+  color: var(--tone-danger-fg);
+}
+
+.inventory-review-summary {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-caption-sm, 13px);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.inventory-review-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.inventory-review-actions .ui-button {
+  flex: 0 0 auto;
+  min-block-size: var(--tap);
+}
+
+/* ---------- 历史操作记录 ---------- */
+.inventory-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.inventory-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3);
+  background: var(--color-surface-solid);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.history-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.history-med-name {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  font-size: var(--fs-subheadline);
+  font-weight: 700;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-source-badge {
+  flex: 0 0 auto;
+  font-size: var(--fs-caption-sm, 13px);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--tone-muted-bg);
+  color: var(--tone-muted-fg);
+  white-space: nowrap;
+}
+
+.inventory-source-badge.source-intake,
+.inventory-source-badge.source-wizard {
+  background: var(--tone-ok-bg);
+  color: var(--tone-ok-fg);
+}
+
+.inventory-source-badge.source-ai {
+  background: var(--tone-info-bg);
+  color: var(--tone-info-fg);
+}
+
+.inventory-source-badge.source-batch,
+.inventory-source-badge.source-manual {
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+}
+
+.inventory-source-badge.source-undo {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+
+.history-item-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-caption-sm, 13px);
+  color: var(--color-text-muted);
+}
+
+.history-delta {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.history-note {
+  font-size: var(--fs-caption-sm, 13px);
+  color: var(--color-text-muted);
+}
+
+.history-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.history-undo-btn {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* ---------- 批量预扣 ---------- */
+.batch-deduct-sheet-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.days-select-row {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-block: 2px;
+  scrollbar-width: none;
+}
+
+.days-select-row::-webkit-scrollbar {
+  display: none;
+}
+
+.days-select-row .ui-button {
+  flex: 0 0 auto;
+  min-block-size: var(--tap);
+}
+
+.batch-preview-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.preview-summary-badge {
+  align-self: flex-start;
+  font-size: var(--fs-caption-sm, 13px);
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.preview-diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.preview-diff-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-3);
+  background: var(--color-surface-solid);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.preview-diff-item.is-low {
+  border-color: var(--tone-warn-border);
+}
+
+.preview-diff-item.is-empty {
+  border-color: var(--tone-danger-border);
+}
+
+.diff-med-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.diff-med-header strong {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  font-size: var(--fs-subheadline);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-tag {
+  flex: 0 0 auto;
+  font-size: var(--fs-caption-sm, 13px);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.diff-tag.tag-ok {
+  background: var(--tone-ok-bg);
+  color: var(--tone-ok-fg);
+}
+
+.diff-tag.tag-low {
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+}
+
+.diff-tag.tag-empty {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+
+.diff-values-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  font-size: var(--fs-caption-sm, 13px);
+  color: var(--color-text-muted);
+}
+
+.diff-values-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.diff-values-grid strong {
+  font-size: var(--fs-subheadline);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-values-grid .highlight-remaining {
+  color: var(--color-primary);
 }

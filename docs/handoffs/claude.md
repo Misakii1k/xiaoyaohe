@@ -2,11 +2,41 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-10-10
+Updated: 2026-10-18
 Status: active
 Latest version: `1.2.0` (Android `versionCode: 77`)
 
 ## Summary of Accomplished Work
+
+### 73. 库存逻辑收口与库存界面审计修复（未发版，workspace/claude，待提交）
+
+1. **需求与背景**：用户要求「重点检查库存逻辑、前端等设计优化」。审计发现库存存在两套并行判定：展示层按「还够吃几天」，写入/通知层只按件数阈值；同时三处页面用 `?? 36` 编造库存件数，未录入库存被算进「需补充」却显示「充足」。
+2. **判定语义收口（单一来源）**：
+   - `src/features/inventory.ts`：新增 `describeStock(med, rules)` 作为剩余件数、天数、胶囊文案与色调的唯一来源；`isLowStock` 回归纯件数阈值（`dailyConsumption` 不再参与，避免打卡后出现「仅剩 100 片」）；`isInventoryNeedingRestock` = 已空 / 件数低 / ≤7 天，未录入库存不计入；`estimateDaysLeft` 与 `describeStock` 对 NaN 与非有限值直接返回空/异常态，不再渲染「剩余 NaN 片」；`getLowStockThreshold` 把 `lowThreshold=0`、`packageQuantity=0` 视为未填，回到包装量推算；新增 `canDeductInventoryInUnit`：片/粒/颗/丸 视为同一计数族，仅放宽扣减方向，补货与撤回仍要求字面一致。
+   - `src/db/repositories/logsRepo.ts`：预扣后的 `lowStock` 与提醒文案改用天数判定（`约剩 N 天用量`），与库存页红标一致。
+   - `src/features/inventoryReminder.ts` + `shouldSendLowStockReminder(med, rules, now)`：提醒门槛纳入 ≤7 天；发送后改为读最新记录只写 `lastReminderAt`，不再整条回写旧快照覆盖并发扣减。
+   - `src/db/repositories/medsRepo.ts`：`inventoriesEqual` 排除 `dailyConsumption` 缓存，只改服药时段不再生成 `delta:0` 的假库存日志。
+   - `src/domain/medicationSchedule.ts`：旧 `expiryDate` 超出 Date 范围时返回 `undefined`，不再因 `toISOString()` 抛错拖垮整页。
+3. **页面修复**：
+   - `src/pages/MedInventory.ts`：卡片、选择器、操作面板统一走 `describeStock`（消除「卡片剩 3 天 → 面板库存充足」）；概览风险文案改为「需补充 / 临期 / 已过期」并列，全未录入时提示「还有 N 种未录入库存」；手动入库 + 效期改为幂等（效期保存失败重试不再重复加库存）；筛选胶囊与筛选按钮补 `aria-pressed` / `aria-expanded`；卡片补 `role="button"`、`tabindex`、Enter/Space 键盘操作。
+   - `src/pages/MedList.ts`、`src/pages/Today.ts`：删除三处 `?? 36` 编造库存，改用 `describeStock`；Today 加载 `listRules()` 并按药品传入，今天页终于能显示「约 N 天」；打卡失败不再吞成「打卡失败」，改为透出具体原因。
+   - `src/pages/MedEdit.ts`：删除不可达的详情态分支（含 `remaining ?? 18`、`'2025-06-30'`、`剩余 306天` 等编造数据）与随之失效的导入。
+   - `src/ui/assistantContent.ts`：库存卡聚合只合并 `eyebrow === '库存已更新'` 的真更新卡，数量写入 `meta`（`AssistantCardItem` 无 `badge` 字段，此前合并后剩余量直接消失）。
+   - `src/ai/tools/medicationTools.ts`：库存标签天数优先（`约 N 天用量（剩 N片）`），不再用「仅剩 20片」掩盖只剩 2 天。
+4. **样式修复（oil-ui 实色微质感）**：
+   - `inventory.css`：状态胶囊改 `--fs-caption-sm` + 防折行 + tone 令牌（替换硬编码 `#ecfdf5/#10b981`）；统计数值改 tone 令牌；筛选胶囊 `--color-surface-solid` + `min-block-size: var(--tap)`；概览卡改 `--color-surface-solid` + `--shadow-md`；筛选按钮与搜索清除按钮补齐 44px 触控；补全此前完全缺失的库存复核、库存历史、批量预扣三套弹层样式。
+   - `today.css`：`.today-stock-tag` 由 10px 提升到 13px（12px 下限），low 态改 tone 令牌，徽章行允许换行。
+   - `primitives.css`：防折行白名单补入库存胶囊与筛选胶囊。
+5. **验证与门禁**：
+   - `npm run typecheck`：0 错误；
+   - `npm test`：96 文件 / 648 项 100% 通过（新增 12 项库存语义用例：天数优先、未录入不计入、NaN/超范围、批量只统计实扣、片粒互通、提醒按天数、聚合不误并概览卡）；
+   - `npx playwright test e2e/inventory-workflows.spec.ts`：4 视口 4/4 通过；`e2e/assistant-cards.spec.ts` 通过；
+   - `npm run build:web`：构建成功。
+6. **未做 / 后续**：
+   - 未做实际视觉验收——当前模型无法读取截图，只按令牌、尺寸与结构审查，真机观感待用户确认；
+   - `shouldSendLowStockReminder` 的 12 小时节流沿用旧行为；AI 工具 `set` 分支的单位换算（片↔盒）仍未实现，工具描述待同步；
+   - `med.inventory.dailyConsumption` 现已无人读取，后续可整列删除（涉及 schema 与迁移，本次只从比较中排除）。
+7. **教训**：再次踩到「PowerShell `Set-Content` 改写测试文件导致编码损坏」（见 69.6）。批量替换一律用 node 脚本 `fs.writeFileSync(..., 'utf8')`；本次通过 `git checkout -- <file>` 还原后重写恢复。
 
 ### 72. 拍照快速数药片、编辑药品排版修复与第三方 API 宽松兼容 (v1.2.0, versionCode 77, workspace/claude)
 

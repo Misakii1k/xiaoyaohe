@@ -76,4 +76,70 @@ describe('assistant structured output tools', () => {
     });
     await expect(tool!.run({ page: 'outside' })).resolves.toEqual({ ok: false, 提示: '没有这个页面' });
   });
+
+  it('aggregates multiple inventory cards into a single clean summary card', async () => {
+    const { aggregateAssistantBlocks } = await import('../src/ui/assistantContent');
+    const blocks: any[] = [
+      {
+        type: 'card',
+        variant: 'inventory',
+        eyebrow: '库存已更新',
+        title: '阿司匹林',
+        facts: [{ label: '当前剩余', value: '28片' }, { label: '操作', value: '+30片' }],
+      },
+      {
+        type: 'card',
+        variant: 'inventory',
+        eyebrow: '库存已更新',
+        title: '螺内酯片',
+        facts: [{ label: '当前剩余', value: '15片' }, { label: '操作', value: '+20片' }],
+      },
+    ];
+
+    const aggregated = aggregateAssistantBlocks(blocks);
+    expect(aggregated).toHaveLength(1);
+    expect(aggregated[0]).toMatchObject({
+      type: 'card',
+      variant: 'inventory',
+      eyebrow: '库存变动清单',
+      title: '已更新 2 种药品库存',
+      items: [
+        { title: '阿司匹林', meta: '当前剩余 28片 · 操作：+30片' },
+        { title: '螺内酯片', meta: '当前剩余 15片 · 操作：+20片' },
+      ],
+    });
+  });
+
+  it('keeps inventory cards that are not update results out of the merged card', async () => {
+    const { aggregateAssistantBlocks } = await import('../src/ui/assistantContent');
+    const blocks: any[] = [
+      {
+        type: 'card',
+        variant: 'inventory',
+        eyebrow: '库存已更新',
+        title: '阿司匹林',
+        facts: [{ label: '当前剩余', value: '28片' }, { label: '操作', value: '+30片' }],
+      },
+      {
+        type: 'card',
+        variant: 'inventory',
+        eyebrow: '库存概览',
+        title: '库存概览',
+        body: '共 6 种药品',
+      },
+      {
+        type: 'card',
+        variant: 'inventory',
+        eyebrow: '库存已更新',
+        title: '螺内酯片',
+        facts: [{ label: '当前剩余', value: '15片' }, { label: '操作', value: '+20片' }],
+      },
+    ];
+
+    const aggregated = aggregateAssistantBlocks(blocks);
+    expect(aggregated).toHaveLength(2);
+    expect(aggregated[0]).toMatchObject({ title: '已更新 2 种药品库存' });
+    // 「库存概览」不是一次更新结果，不能被并进「已更新 N 种」并丢掉正文。
+    expect(aggregated[1]).toMatchObject({ eyebrow: '库存概览', body: '共 6 种药品' });
+  });
 });

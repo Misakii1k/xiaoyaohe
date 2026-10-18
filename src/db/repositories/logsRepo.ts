@@ -10,6 +10,7 @@ import {
 import {
   areDoseUnitsCompatible,
   deductInventory,
+  estimateDaysLeft,
   getConfirmedDose,
   isLowStock,
   roundStock,
@@ -26,6 +27,7 @@ import type {
   StructuredDose,
 } from '../schema';
 import { normalizeMedication } from '../normalization';
+import { listRulesByMed } from './rulesRepo';
 import { MedicationIntakeError, type MedicationIntakeErrorCode } from '../errors';
 import {
   effectiveInventoryLogs,
@@ -604,7 +606,19 @@ export async function recordPreDeduction(
   await tx.done;
   notifyDataChanged('inventory');
 
-  const lowStock = isLowStock(latest);
+  // 展示层早就按「还够吃几天」判断需不需要补货；提醒必须用同一把尺子，
+  // 否则 20 片只够 2 天的药在库存页是红的，却永远不提醒。
+  const rules = await listRulesByMed(latest.id);
+  const daysLeft = estimateDaysLeft(latest, rules);
+  const countLow = isLowStock(latest);
+  const lowStock = countLow || latest.inventory.remaining <= 0 || (daysLeft != null && daysLeft <= 7);
+  const lowStockMessage = !lowStock
+    ? undefined
+    : latest.inventory.remaining <= 0
+      ? `${latest.name} 已无库存`
+      : !countLow && daysLeft != null
+        ? `${latest.name} 约剩 ${daysLeft} 天用量`
+        : `${latest.name} 仅剩 ${latest.inventory.remaining}${doseUnit}`;
   return {
     med: latest,
     deducted: totalDose,
@@ -613,10 +627,6 @@ export async function recordPreDeduction(
     remaining: latest.inventory.remaining,
     skipped: false,
     lowStock,
-    lowStockMessage: lowStock
-      ? latest.inventory.remaining <= 0
-        ? `${latest.name} 已无库存`
-        : `${latest.name} 仅剩 ${latest.inventory.remaining}${doseUnit}`
-      : undefined,
+    lowStockMessage,
   };
 }

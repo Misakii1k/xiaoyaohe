@@ -18,13 +18,15 @@ import {
 } from '../db/schema';
 import {
   classifyInventoryStatus,
+  describeStock,
   estimateDaysLeft,
   estimateDailyConsumption,
   getLowStockThreshold,
-  isLowStock,
+  isInventoryNeedingRestock,
   roundStock,
   calculateBatchDeductionPreview,
   type InventoryStatus,
+  type StockTone,
 } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
@@ -159,7 +161,9 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
   });
 
   // 1. 库存概览卡片
-  const lowCount = meds.filter(isLowStock).length;
+  const lowCount = meds.filter((m) => isInventoryNeedingRestock(m, rulesByMedId.get(m.id) ?? [])).length;
+  // 未录入库存不算「需补充」，但也不能让概览因此宣称「整体充足」。
+  const unsetCount = meds.filter((m) => !m.inventory).length;
   const today = toLocalDate();
   const expiringCutoff = addLocalDays(today, 30);
   let expiringCount = 0;
@@ -186,14 +190,22 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
   shieldWrap.append(shieldImg);
 
   const headerText = el('div', { class: 'inventory-overview-header-text' });
-  const isAllHealthy = lowCount === 0 && expiredCount === 0;
+  // 临期同样算风险：只有「需补充 / 临期 / 已过期」全为 0 才敢说整体充足。
+  const riskParts = [
+    lowCount > 0 ? `${lowCount} 种需补充` : '',
+    expiringCount > 0 ? `${expiringCount} 种临期` : '',
+    expiredCount > 0 ? `${expiredCount} 种已过期` : '',
+  ].filter(Boolean);
+  const summaryText = riskParts.length > 0
+    ? `当前有 ${riskParts.join(' · ')}`
+    : unsetCount > 0
+      ? `还有 ${unsetCount} 种未录入库存`
+      : '整体充足，暂无风险';
   headerText.append(
     el('div', { class: 'inventory-overview-title', text: '库存健康' }),
     el('div', {
       class: 'inventory-overview-subtitle',
-      text: isAllHealthy
-        ? '整体充足，暂无风险'
-        : `当前有 ${lowCount} 种需补充 · ${expiringCount > 0 ? `${expiringCount} 种临期 · ` : ''}${expiredCount} 种已过期`,
+      text: summaryText,
     }),
   );
 
@@ -269,11 +281,16 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
       class: `inventory-filter-pill${key === 'all' ? ' active' : ''}`,
       type: 'button',
       text: label,
-    });
+      'aria-pressed': String(key === 'all'),
+    } as any);
     pill.onclick = () => {
       currentFilter = key;
-      filterRow.querySelectorAll('.inventory-filter-pill').forEach((p) => p.classList.remove('active'));
+      filterRow.querySelectorAll('.inventory-filter-pill').forEach((p) => {
+        p.classList.remove('active');
+        p.setAttribute('aria-pressed', 'false');
+      });
       pill.classList.add('active');
+      pill.setAttribute('aria-pressed', 'true');
       applyFilters();
     };
     filterRow.append(pill);
@@ -283,10 +300,12 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
     class: 'inventory-filter-btn',
     type: 'button',
     'aria-label': '筛选',
-  });
+    'aria-expanded': 'false',
+  } as any);
   filterBtn.append(icon('filter'));
   filterBtn.onclick = () => {
     filterRow.hidden = !filterRow.hidden;
+    filterBtn.setAttribute('aria-expanded', String(!filterRow.hidden));
   };
   searchWrap.append(searchInputWrap, filterBtn);
   content.append(searchWrap, filterRow);
@@ -360,20 +379,18 @@ function renderModernInventoryCard(
   const info = el('div', { class: 'inventory-card-info' });
   info.append(el('div', { class: 'inventory-card-name', text: med.name }));
 
-  const unit = med.inventory?.unit || med.doseUnit || '粒';
-  const remaining = med.inventory?.remaining ?? 36;
-  const packQuantity = med.inventory?.packageQuantity ?? remaining;
+  const stock = describeStock(med, rules);
+  const unit = stock.unit;
+  const packQuantity = med.inventory?.packageQuantity;
   const dose = med.dosageText || med.amountPerDose || '';
-  const specLine = [dose, `${packQuantity}${unit}`].filter(Boolean).join(' · ');
+  const specLine = [dose, packQuantity != null ? `${formatQuantity(packQuantity)}${unit}` : ''].filter(Boolean).join(' · ');
   if (specLine) {
     info.append(el('div', { class: 'inventory-card-spec', text: specLine }));
   }
 
-  const low = isLowStock(med);
-  const daysLeft = estimateDaysLeft(med, rules) ?? (low ? 2 : 12);
-  info.append(el('div', { class: 'inventory-card-days', text: `剩余 ${remaining}${unit} · 约 ${daysLeft}天用量` }));
+  info.append(el('div', { class: 'inventory-card-days', text: stock.detail }));
 
-  // 右侧状态徽章
+  // 右侧状态徽章：过期风险优先于库存风险
   const right = el('div', { class: 'inventory-card-right' });
   const today = toLocalDate();
   const expiringCutoff = addLocalDays(today, 30);
@@ -381,27 +398,32 @@ function renderModernInventoryCard(
   const isExpired = exp ? exp < today : false;
   const isExpiring = exp ? exp <= expiringCutoff : false;
 
-  let statusText = '充足';
-  let statusClass = 'ok';
+  let statusText = stock.label;
+  let statusTone: StockTone = stock.tone;
   if (isExpired) {
     statusText = '已过期';
-    statusClass = 'expired';
-  } else if (isExpiring) {
+    statusTone = 'danger';
+  } else if (isExpiring && stock.remaining !== 0) {
     statusText = '临期';
-    statusClass = 'expiring';
-  } else if (low) {
-    statusText = '不足';
-    statusClass = 'low';
+    statusTone = 'warn';
   }
 
   const statusPill = el('span', {
-    class: `inventory-status-pill ${statusClass}`,
+    class: `inventory-status-pill tone-${statusTone}`,
     text: statusText,
   });
 
   right.append(statusPill);
   card.append(thumb, info, right);
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+  card.setAttribute('aria-label', `${med.name} 库存操作`);
   card.onclick = onOpenActions;
+  card.onkeydown = (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onOpenActions();
+  };
   return card;
 }
 
@@ -421,7 +443,7 @@ function matchesInventoryFilter(
   filter: InventoryFilter,
 ): boolean {
   if (filter === 'all') return true;
-  if (filter === 'low') return isLowStock(med);
+  if (filter === 'low') return isInventoryNeedingRestock(med, _rules);
   const today = toLocalDate();
   const exp = getMedicationExpiryLocalDate(med);
   if (filter === 'empty') {
@@ -535,8 +557,8 @@ function openInventoryMedicationPicker(
       // 3. 右侧库存状态胶囊与箭头
       const right = el('div', { class: 'inventory-picker-right' });
       const hasStock = Boolean(med.inventory);
-      const isLow = isLowStock(med);
-      const statusClass = !hasStock ? 'unset' : isLow ? 'low' : 'ok';
+      const pickerStock = describeStock(med, rulesByMedId.get(med.id) ?? []);
+      const statusClass = !hasStock ? 'unset' : pickerStock.tone === 'ok' ? 'ok' : 'low';
       const statusText = hasStock
         ? `当前 ${formatQuantity(med.inventory!.remaining)}${med.inventory!.unit}`
         : '尚未设置库存';
@@ -728,6 +750,8 @@ function openInventoryAddSheet(
 
   const actions = el('div', { class: 'inventory-sheet-actions' });
   let sheet: BottomSheetHandle | undefined;
+  /** 库存已加成功但效期保存失败的中间态：重试时只补效期，不再重复入库。 */
+  let inventoryCommitted: Medication | undefined;
   const save = createButton({
     label: '确认添加库存',
     icon: 'plus',
@@ -746,15 +770,21 @@ function openInventoryAddSheet(
       }
       save.disabled = true;
       try {
-        const committed = await updateMedicationInventory(
-          med.id,
-          { action: 'add', quantity: roundStock(amount), unit: displayUnit },
-          { source: 'manual', sourceNote: `手动入库 +${formatQuantity(amount)}${displayUnit}` },
-        );
+        // 入库与效期是两次写库：若效期那步失败后用户重试，不能把库存再加一次。
+        let committedMed = inventoryCommitted;
+        if (!committedMed) {
+          const result = await updateMedicationInventory(
+            med.id,
+            { action: 'add', quantity: roundStock(amount), unit: displayUnit },
+            { source: 'manual', sourceNote: `手动入库 +${formatQuantity(amount)}${displayUnit}` },
+          );
+          committedMed = result.med;
+          inventoryCommitted = committedMed;
+        }
         const nextExpiry = expiryControl.input.value.trim();
         if (nextExpiry !== (currentExpiry || '')) {
           const draftMed = {
-            ...committed.med,
+            ...committedMed,
             expiryLocalDate: (nextExpiry as LocalDate) || undefined,
           };
           delete (draftMed as any).expiryDate;
@@ -762,15 +792,17 @@ function openInventoryAddSheet(
           if (!nextExpiry) {
             delete (draftMed as any).expiryLocalDate;
           }
-          await saveMedicationProfile(draftMed, {
+          const saved = await saveMedicationProfile(draftMed, {
             isNew: false,
-            expectedProfile: committed.med,
-            expectedInventory: committed.med.inventory,
+            expectedProfile: committedMed,
+            expectedInventory: committedMed.inventory,
           });
+          committedMed = saved.med;
+          inventoryCommitted = committedMed;
         }
         sheet?.close();
         if (signal?.aborted) return;
-        toast(`已入库，现剩 ${formatQuantity(committed.med.inventory!.remaining)}${committed.med.inventory!.unit}`);
+        toast(`已入库，现剩 ${formatQuantity(committedMed.inventory!.remaining)}${committedMed.inventory!.unit}`);
         await renderMedInventoryPage(root, signal);
       } catch (error) {
         save.disabled = false;
@@ -804,13 +836,15 @@ function openInventoryActions(
     alt: med.name,
   }));
   const lowThreshold = getLowStockThreshold(med);
+  const summaryStock = describeStock(med, rules);
   const summaryInfo = el('div', { class: 'inventory-actions-summary-info' });
   summaryInfo.append(
     el('div', { class: 'inventory-actions-summary-title', text: med.name || '未命名药品' }),
     el('div', {
       class: 'inventory-actions-summary-sub',
+      // 与卡片用同一个 describeStock：否则会出现卡片「剩 3 天」、点开却写「库存充足」。
       text: med.inventory
-        ? `当前剩余 ${formatQuantity(med.inventory.remaining)}${med.inventory.unit}（警戒线 ${formatQuantity(lowThreshold)}${med.inventory.unit}）· ${isLowStock(med) ? '库存不足' : '库存充足'}`
+        ? `当前剩余 ${formatQuantity(med.inventory.remaining)}${med.inventory.unit}（警戒线 ${formatQuantity(lowThreshold)}${med.inventory.unit}）· ${summaryStock.daysLeft != null ? `约 ${summaryStock.daysLeft} 天用量` : summaryStock.label}`
         : '尚未设置库存',
     }),
   );
@@ -1274,16 +1308,19 @@ function renderInventoryReviewEntry(
   enhanceSelect(target, { ariaLabel: `${entry.item.name || `药品 ${index + 1}`}对应药品`, placeholder: '请选择相近药品' });
 
   const amountRow = el('div', { class: 'inventory-review-amount' });
-  const quantity = el('input', {
-    type: 'number',
-    min: '0',
-    step: '0.1',
+  // 数量走自绘步进器：与新增库存弹层保持一致，不再暴露裸 number 输入框。
+  const quantityStepper = createStepper({
+    value: entry.item.inventory.remaining,
+    min: 0,
+    step: 0.1,
     inputMode: 'decimal',
-    value: String(entry.item.inventory.remaining),
-    disabled: entry.saved,
-    'aria-label': `${entry.item.name}识别数量`,
-  } as any) as HTMLInputElement;
-  quantity.oninput = () => { entry.item.inventory.remaining = Number(quantity.value); entry.error = undefined; };
+    ariaLabel: `${entry.item.name}识别数量`,
+  });
+  quantityStepper.input.disabled = entry.saved;
+  quantityStepper.input.addEventListener('input', () => {
+    entry.item.inventory.remaining = Number(quantityStepper.input.value);
+    entry.error = undefined;
+  });
   const unit = el('input', {
     type: 'text',
     value: entry.item.inventory.unit,
@@ -1291,18 +1328,18 @@ function renderInventoryReviewEntry(
     'aria-label': `${entry.item.name}库存单位`,
   } as any) as HTMLInputElement;
   unit.oninput = () => { entry.item.inventory.unit = unit.value; entry.error = undefined; };
-  amountRow.append(quantity, unit);
+  amountRow.append(quantityStepper.root, unit);
 
   const mode = el('div', { class: 'inventory-review-mode', role: 'group', 'aria-label': `${entry.item.name}处理方式` } as any);
   for (const action of ['add', 'set'] as const) {
-    const button = el('button', {
-      type: 'button',
-      class: entry.action === action ? 'is-selected' : '',
-      text: action === 'add' ? '加到现有库存' : '设为当前剩余',
+    const active = entry.action === action;
+    const button = createButton({
+      label: action === 'add' ? '加到现有库存' : '设为当前剩余',
+      variant: active ? 'primary' : 'secondary',
       disabled: entry.saved,
-      'aria-pressed': String(entry.action === action),
-    } as any) as HTMLButtonElement;
-    button.onclick = () => { entry.action = action; entry.error = undefined; onChange(); };
+      onClick: () => { entry.action = action; entry.error = undefined; onChange(); },
+    });
+    button.setAttribute('aria-pressed', String(active));
     mode.append(button);
   }
   row.append(head, targetLabel, amountRow, mode);
@@ -1508,13 +1545,23 @@ async function openBatchDeductSheet(root: HTMLElement, meds: Medication[], rules
       variant: d === days ? 'primary' : 'secondary',
       onClick: () => {
         days = d;
-        for (const b of optionButtons) b.classList.remove('is-active');
-        btn.classList.add('is-active');
+        syncDaySelection();
         renderPreview();
       },
     });
+    btn.setAttribute('aria-pressed', String(d === days));
     optionButtons.push(btn as HTMLButtonElement);
     daysRow.append(btn);
+  }
+
+  // 选中态必须真的换掉按钮配色：只加一个没有样式的 is-active 类，用户看不出自己选了几天的档位。
+  function syncDaySelection(): void {
+    optionButtons.forEach((button, index) => {
+      const active = daysOptions[index] === days;
+      button.classList.toggle('ui-button-primary', active);
+      button.classList.toggle('ui-button-secondary', !active);
+      button.setAttribute('aria-pressed', String(active));
+    });
   }
 
   renderPreview();

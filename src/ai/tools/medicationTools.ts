@@ -18,6 +18,7 @@ import {
 import { getMedicationExpiryLocalDate } from '../../domain/medicationSchedule';
 import {
   classifyInventoryStatus,
+  describeStock,
   estimateDaysLeft,
   roundStock,
   suggestStructuredDose,
@@ -48,17 +49,16 @@ export const listMyMedications: AssistantTool = {
     const [meds, rules, periodSettings] = await Promise.all([listMeds(), listRules(), listReminderPeriodSettings()]);
     const medicationRows = meds.map((med): AssistantCardItem => {
       const medRules = rules.filter((r) => r.medId === med.id && !r.deleted && r.enabled);
-      const daysLeft = estimateDaysLeft(med, medRules);
       const inventoryStatus = classifyInventoryStatus(med, medRules);
-      const inventoryLabel = inventoryStatus === 'empty'
-        ? '库存已空'
-        : inventoryStatus === 'low'
-          ? `仅剩 ${med.inventory?.remaining ?? 0}${med.inventory?.unit || ''}`
-          : inventoryStatus === 'days_low'
-            ? `约 ${daysLeft} 天`
-            : inventoryStatus === 'ok'
-              ? `库存 ${med.inventory?.remaining ?? 0}${med.inventory?.unit || ''}`
-              : '未设置库存';
+      const stock = describeStock(med, medRules);
+      // 只剩 2 天时说「仅剩 20片」会弱化紧迫感：天数优先，其次才报件数。
+      const inventoryLabel = stock.remaining == null
+        ? '未设置库存'
+        : stock.remaining <= 0
+          ? '库存已空'
+          : stock.daysLeft != null && stock.daysLeft <= 7
+            ? `约 ${stock.daysLeft} 天用量（剩 ${stock.remaining}${stock.unit}）`
+            : `库存 ${stock.remaining}${stock.unit}`;
       const status: AssistantCardItemStatus = inventoryStatus === 'empty' || inventoryStatus === 'low' || inventoryStatus === 'days_low'
         ? 'warning'
         : inventoryStatus === 'ok'

@@ -754,15 +754,17 @@
 
 .today-card-badges {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   margin-top: 2px;
 }
 
 .today-stock-tag {
-  font-size: 10px;
+  /* 设计规范 caption 底线 14px、严禁 <12px：原 10px 在强光下基本读不清 */
+  font-size: var(--fs-caption-sm, 13px);
   font-weight: 600;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 4px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -776,8 +778,8 @@
 }
 
 .today-stock-tag.low {
-  background: #fdf3e7;
-  color: #987146;
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
 }
 
 /* 圆形打卡 Radio 按钮 (扩大触控热区至 >= 44px) */

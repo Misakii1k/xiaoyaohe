@@ -1587,7 +1587,10 @@ a:active,
 .ui-badge,
 .today-stock-tag,
 .today-time-status-pill,
-.med-stock-pill {
+.med-stock-pill,
+.inventory-status-pill,
+.inventory-picker-status,
+.inventory-filter-pill {
   white-space: nowrap !important;
   flex-shrink: 0 !important;
   min-width: max-content !important;

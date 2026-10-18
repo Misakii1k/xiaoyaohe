@@ -26,7 +26,7 @@ import {
 import { createButton } from '../ui/primitives/Button';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { navigate } from '../router';
-import { isLowStock } from '../features/inventory';
+import { describeStock, isInventoryNeedingRestock } from '../features/inventory';
 import { getMedPhotoUrls } from '../features/medPhotos';
 import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import { parseSvg } from '../ui/assets3d';
@@ -81,6 +81,8 @@ const medListCleanupByRoot = new WeakMap<HTMLElement, () => void>();
 export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal): Promise<() => void> {
   medListCleanupByRoot.get(root)?.();
   let meds = await listMeds();
+  if (signal?.aborted) return () => undefined;
+  let rules = await listRules();
   if (signal?.aborted) return () => undefined;
   let photoUrls = await getMedPhotoUrls(meds.map((m) => m.id));
   if (signal?.aborted) return () => undefined;
@@ -252,13 +254,19 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
       const specEl = el('p', { class: 'med-item-spec', text: `${spec} · ${freqText}` });
 
       const amountRow = el('div', { class: 'amount' });
-      const stock = med.inventory?.remaining ?? 36;
-      const low = isLowStock(med);
-      const unit = med.doseUnit || '片';
-      const stockSmall = el('small', { text: `余 ${stock} ${unit}` });
-      const tagText = !isDaily ? '家庭常备' : low ? '即将用完' : '日常服用';
+      const medRules = rules.filter((r) => r.medId === med.id && !r.deleted && r.enabled);
+      const stockInfo = describeStock(med, medRules);
+      const stockSmall = el('small', { text: stockInfo.short });
+      const needsRestock = isInventoryNeedingRestock(med, medRules);
+      const tagText = !isDaily
+        ? '家庭常备'
+        : stockInfo.remaining === 0
+          ? '已用完'
+          : needsRestock
+            ? '即将用完'
+            : '日常服用';
       const tagEl = el('span', {
-        class: `tag med-stock-pill ${low ? 'low' : ''}`,
+        class: `tag med-stock-pill ${stockInfo.tone === 'ok' ? '' : 'low'}`,
         text: tagText,
       });
       amountRow.append(stockSmall, tagEl);
@@ -284,6 +292,7 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
     if (getDatabaseRevision() <= lastRevision) return;
     lastRevision = getDatabaseRevision();
     meds = await listMeds();
+    rules = await listRules();
     photoUrls = await getMedPhotoUrls(meds.map((m) => m.id));
     renderFilteredCards();
   };
