@@ -58,11 +58,10 @@ import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { applyExplicitDose, createMedicationDraft } from '../domain/medicationDraft';
 import { openPillCounterSheet } from '../features/pillCounter';
 
-type ScanMode = 'code' | 'smart' | 'sheet';
+type ScanMode = 'code' | 'sheet';
 
 const MODE_LABEL: Record<ScanMode, string> = {
   code: '扫码认药',
-  smart: '拍药盒识别',
   sheet: '拍药单录入',
 };
 
@@ -149,12 +148,11 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
   } as any);
 
   const codeFile = fileInput('从相册识别条码');
-  const smartFile = fileInput('上传药盒照片');
   const sheetFile = fileInput('上传药单照片');
   const pillFile = fileInput('拍照数药片');
 
   panel.append(reader, hint, resultBox);
-  content.append(home, backRow, panel, codeFile, smartFile, sheetFile, pillFile);
+  content.append(home, backRow, panel, codeFile, sheetFile, pillFile);
   backBtn.onclick = () => renderHome();
 
   pillFile.onchange = async () => {
@@ -184,16 +182,6 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     await runCodeImage(file, resultBox, hint, {
       isCurrent: () => isOperationCurrent(operation, 'code'),
       continueAction: { label: '继续从相册识别', run: () => codeFile.click() },
-    });
-  };
-  smartFile.onchange = async () => {
-    const file = smartFile.files?.[0];
-    smartFile.value = '';
-    if (!file || disposed || mode !== 'smart') return;
-    const operation = ++operationSequence;
-    await runSmartScan(file, resultBox, hint, {
-      isCurrent: () => isOperationCurrent(operation, 'smart'),
-      continueAction: { label: '继续智能扫', run: renderSmartStart },
     });
   };
   sheetFile.onchange = async () => {
@@ -549,8 +537,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     }
 
     reader.style.display = 'none';
-    if (mode === 'smart') renderSmartStart();
-    else renderSheetStart();
+    renderSheetStart();
   }
 
   async function handleLiveScan(raw: string): Promise<void> {
@@ -570,7 +557,6 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
         key,
         resultBox,
         hint,
-        false,
         continueAction,
         () => isOperationCurrent(operation, 'code'),
       );
@@ -609,23 +595,6 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     );
   }
 
-  function renderSmartStart(): void {
-    if (disposed || mode !== 'smart') return;
-    operationSequence += 1;
-    setHint(hint, 'info', '拍摄药盒正面；先识别条码，没有码时再识别药名和规格');
-    resultBox.replaceChildren(
-      actionCard(
-        '智能扫药盒',
-        '直接打开相机拍药盒正面；相册作为备用入口。',
-        '打开相机',
-        () => void openSmartCamera(),
-        '相册上传',
-        () => smartFile.click(),
-      ),
-    );
-    setResultBusy(resultBox, false);
-  }
-
   function renderSheetStart(): void {
     if (disposed || mode !== 'sheet') return;
     operationSequence += 1;
@@ -641,27 +610,6 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
       ),
     );
     setResultBusy(resultBox, false);
-  }
-
-  async function openSmartCamera(): Promise<void> {
-    await openCameraCapture({
-      title: '智能扫药盒',
-      sub: '把药盒正面放进画面，尽量让药名和规格清晰可见。',
-      filenamePrefix: 'medicine-box',
-      box: resultBox,
-      hint,
-      controller: cameraCapture,
-      isActive: () => !disposed && mode === 'smart',
-      onCapture: async (file) => {
-        const operation = ++operationSequence;
-        await runSmartScan(file, resultBox, hint, {
-          isCurrent: () => isOperationCurrent(operation, 'smart'),
-          continueAction: { label: '继续智能扫', run: renderSmartStart },
-        });
-      },
-      onAlbum: () => smartFile.click(),
-      onClose: renderSmartStart,
-    });
   }
 
   async function openSheetCamera(): Promise<void> {
@@ -691,7 +639,6 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     switchSequence += 1;
     operationSequence += 1;
     codeFile.onchange = null;
-    smartFile.onchange = null;
     sheetFile.onchange = null;
     cameraCapture.stop();
     const current = scanner;
@@ -724,35 +671,7 @@ async function runCodeImage(
   const { key, med } = await identifyByCode(code.raw);
   if (!context.isCurrent()) return;
   if (med) await showMatched(med, key, box, hint, context.continueAction, context.isCurrent);
-  else await showUnknownCode(key, box, hint, false, context.continueAction, context.isCurrent);
-  if (context.isCurrent()) setResultBusy(box, false);
-}
-
-async function runSmartScan(
-  file: File,
-  box: HTMLElement,
-  hint: HTMLElement,
-  context: { isCurrent: () => boolean; continueAction: ContinueAction },
-): Promise<void> {
-  if (!context.isCurrent()) return;
-  box.replaceChildren(loadingCard('智能扫识别中…', '正在先找条形码或追溯码，再分析药盒文字'));
-  setHint(hint, 'info', '智能扫处理中…');
-  setResultBusy(box, true);
-
-  const code = await scanCodeFromImage(file);
-  if (!context.isCurrent()) return;
-  if (code?.raw) {
-    const { key, med } = await identifyByCode(code.raw);
-    if (!context.isCurrent()) return;
-    if (med) await showMatched(med, key, box, hint, context.continueAction, context.isCurrent);
-    else await showUnknownCode(key, box, hint, true, context.continueAction, context.isCurrent);
-    if (context.isCurrent()) setResultBusy(box, false);
-    return;
-  }
-
-  const localText = await tryLocalText(file);
-  if (!context.isCurrent()) return;
-  await runAiIdentify(file, null, box, hint, localText, context);
+  else await showUnknownCode(key, box, hint, context.continueAction, context.isCurrent);
   if (context.isCurrent()) setResultBusy(box, false);
 }
 
@@ -860,7 +779,6 @@ async function showUnknownCode(
   key: ProductKey,
   box: HTMLElement,
   hint: HTMLElement,
-  fromSmartScan: boolean,
   continuation?: ContinueAction,
   isActive: () => boolean = () => true,
 ): Promise<void> {
@@ -877,7 +795,7 @@ async function showUnknownCode(
   const input = el('input', { type: 'text', placeholder: '填写药名，例如：阿司匹林肠溶片' }) as HTMLInputElement;
   card.append(field('药名', input));
 
-  const save = iconButton('check', fromSmartScan ? '保存并继续填表' : '保存绑定', 'btn success');
+  const save = iconButton('check', '保存绑定', 'btn success');
   save.onclick = async () => {
     if (!isActive()) return;
     const name = input.value.trim();
@@ -890,8 +808,7 @@ async function showUnknownCode(
     await putMed(med);
     if (!isActive()) return;
     toast('已保存，下次扫码会自动识别');
-    if (fromSmartScan) navigate(`/meds/${med.id}/edit`);
-    else await showMatched(med, key, box, hint, continuation, isActive);
+    await showMatched(med, key, box, hint, continuation, isActive);
   };
   card.append(save);
 
@@ -1490,24 +1407,6 @@ function rankMeds(meds: Medication[], name: string): Medication[] {
 
 async function savePhoto(blob: Blob, medId: string): Promise<void> {
   await saveMedPhoto(medId, blob);
-}
-
-async function tryLocalText(file: File): Promise<string> {
-  const TextDetector = (window as any).TextDetector;
-  if (!TextDetector) return '';
-  try {
-    const bitmap = await createImageBitmap(file);
-    const detector = new TextDetector();
-    const lines = await detector.detect(bitmap);
-    bitmap.close?.();
-    return (lines as { rawValue?: string }[])
-      .map((line) => line.rawValue || '')
-      .filter(Boolean)
-      .join('\n')
-      .slice(0, 800);
-  } catch {
-    return '';
-  }
 }
 
 class CameraCaptureController {

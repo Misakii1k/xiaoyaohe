@@ -4,9 +4,17 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-10-18
 Status: active
-Latest version: `1.2.0` (Android `versionCode: 77`)
+Latest version: `1.2.1` (Android `versionCode: 78`)
 
 ## Summary of Accomplished Work
+
+### 75. 移除分药页「拍药盒识别」死模式并发版 v1.2.1（workspace/claude）
+
+1. **背景**：上一轮遗留项——`smart` 模式自 v1.2.0 首屏改版后无任何入口，`renderSmartStart` / `openSmartCamera` 不可达。用户确认直接删除。
+2. **删除范围**（`src/pages/ScanSort.ts`）：`ScanMode` 联合类型去掉 `'smart'`、`MODE_LABEL.smart`、`smartFile` 隐藏 input 与其 change 处理、`renderSmartStart`、`openSmartCamera`、`runSmartScan`、`tryLocalText`（仅被 smart 使用），以及 `showUnknownCode` 的 `fromSmartScan` 参数与「保存并继续填表」分支。净减约 130 行。
+3. **测试同步**：`tests/scannerUiContracts.test.ts` 的切片边界从 `renderSmartStart` 改为 `renderSheetStart`（前者已不存在，`indexOf` 返回 -1 会让断言失去边界）。
+4. **发版 v1.2.1 / versionCode 78**：`package.json`、`package-lock.json`、`android/app/build.gradle`、`scripts/lib/release-utils.mjs` 映射、`docs/releases/1.2.1.md`（tone_lint PASS）、`CURRENT.md` 同步；候选 mock 版本升至 79。
+5. **门禁**：`npm run typecheck` 0 错误；`npm test` 96 文件 / 649 项通过；`npx playwright test` 全量 112 项通过；`npm run build:web` + `cap:sync` 正常。
 
 ### 74. 库存收尾：单位语义、死代码清理与全站「灰块/错位」修复（未发版，workspace/claude，commit `ea2310c`）
 

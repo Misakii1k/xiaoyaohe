@@ -1,9 +1,18 @@
 # Current Integration State
 
-Updated: 2026-10-10
+Updated: 2026-10-18
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.0` (versionCode 77)
-Latest integration commit: `release: v1.2.0 (versionCode 77)`
+Product version: `1.2.1` (versionCode 78)
+Latest integration commit: `release: v1.2.1 (versionCode 78)`
+
+## Release v1.2.1 (versionCode 78, workspace/claude)
+
+- **集成内容**：
+  - 库存判定收口为单一来源（剩余量 / 可用天数 / 是否需要补货），修掉「列表说快没了、详情说充足」与编造件数；
+  - 药品列表卡片配图恢复（此前 SVG 缺命名空间导致整列灰块），搜索图标回到输入框内；
+  - 库存复核弹层置信度分档着色，批量预扣按实际可扣量预览，小屏主按钮常驻可见；
+  - 分药页移除无入口的「拍药盒识别」模式及其代码。
+- **质量门禁与发布状态**：96 个测试套件（649 项）、静态类型检查与 Playwright 全量 112 项 100% 通过。
 
 ## Release v1.2.0 (versionCode 77, workspace/claude)
 

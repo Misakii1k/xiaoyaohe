@@ -126,7 +126,7 @@ describe('局域网 APK 更新的安装前校验', () => {
       nativePlugin.download.mockResolvedValue({ bytes: 2048, destPath: 'medbox-update-probe.apk' });
       nativePlugin.verifyApk.mockResolvedValue({
         packageName: 'com.medbox.app',
-        versionCode: 78,
+        versionCode: 79,
         versionName: '1.3.0',
       });
       nativePlugin.deleteApk.mockResolvedValue({ deleted: true });
@@ -135,7 +135,7 @@ describe('局域网 APK 更新的安装前校验', () => {
 
       expect(update).not.toBeNull();
       expect(update?.version).toBe('1.3.0');
-      expect(update?.versionCode).toBe(78);
+      expect(update?.versionCode).toBe(79);
       expect(update?.peerHost).toBe('192.168.1.120');
       expect(update?.peerPort).toBe(38473);
 
@@ -146,7 +146,7 @@ describe('局域网 APK 更新的安装前校验', () => {
       const saved = localStorage.getItem('medbox.lan-sync.available-update.v1');
       expect(saved).not.toBeNull();
       const parsed = JSON.parse(saved!);
-      expect(parsed.versionCode).toBe(78);
+      expect(parsed.versionCode).toBe(79);
     });
 
     it('当探测到的版本不高于本机版本时，删除 probe 且返回 null', async () => {
@@ -282,7 +282,7 @@ describe('局域网 APK 更新的安装前校验', () => {
         ok: true,
         json: async () => ({
           version: '1.3.0',
-          versionCode: 78,
+          versionCode: 79,
           releaseDate: '2026-09-08',
           downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.3.0/xiaoyaohe-1.3.0-android-release.apk',
           fileSize: 19123456,
@@ -294,7 +294,7 @@ describe('局域网 APK 更新的安装前校验', () => {
         const update = await checkFastCloudVersion();
         expect(update).not.toBeNull();
         expect(update?.version).toBe('1.3.0');
-        expect(update?.versionCode).toBe(78);
+        expect(update?.versionCode).toBe(79);
         expect(update?.source).toBe('cloud');
         expect(update?.fileSize).toBe(19123456);
         expect(update?.releaseNotes).toBe('云端极速通道更新测试');
@@ -356,7 +356,7 @@ describe('局域网 APK 更新的安装前校验', () => {
             ok: true,
             json: async () => ({
               version: '1.3.0',
-              versionCode: 78,
+              versionCode: 79,
               downloadUrl: 'https://github.com/Misakii1k/xiaoyaohe/releases/download/v1.3.0/app.apk',
             }),
           };
@@ -469,7 +469,7 @@ describe('云端更新通道的下载地址与完整性校验', () => {
       ok: true,
       json: async () => ({
         version: '1.3.0',
-        versionCode: 78,
+        versionCode: 79,
         downloadUrl: '/api/download?tag=v1.3.0',
         fileSize: 32095374,
         sha256: 'a'.repeat(64),
@@ -524,7 +524,7 @@ describe('云端更新通道的下载地址与完整性校验', () => {
 
       saveAvailableUpdate({
         version: '1.3.0',
-        versionCode: 78,
+        versionCode: 79,
         source: 'cloud',
         downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.3.0',
         discoveredAt: Date.now(),
@@ -557,7 +557,7 @@ describe('云端更新通道的下载地址与完整性校验', () => {
 
       saveAvailableUpdate({
         version: '1.3.0',
-        versionCode: 78,
+        versionCode: 79,
         source: 'cloud',
         downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.3.0',
         discoveredAt: Date.now(),
@@ -580,7 +580,7 @@ describe('云端更新通道的下载地址与完整性校验', () => {
 
       saveAvailableUpdate({
         version: '1.3.0',
-        versionCode: 78,
+        versionCode: 79,
         source: 'cloud',
         downloadUrl: 'https://xiaoyaohe.pages.dev/api/download?tag=v1.3.0',
         discoveredAt: Date.now(),

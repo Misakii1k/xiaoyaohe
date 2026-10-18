@@ -62,7 +62,7 @@ describe('scanner workbench visual contracts', () => {
     const page = readFileSync(join(root, 'src/pages/ScanSort.ts'), 'utf8');
     const unavailable = page.slice(
       page.indexOf('function renderScannerUnavailable'),
-      page.indexOf('function renderSmartStart'),
+      page.indexOf('function renderSheetStart'),
     );
 
     expect(unavailable).toContain("setHint(hint, 'info'");
