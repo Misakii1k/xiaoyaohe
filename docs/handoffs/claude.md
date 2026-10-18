@@ -8,6 +8,31 @@ Latest version: `1.2.0` (Android `versionCode: 77`)
 
 ## Summary of Accomplished Work
 
+### 74. 库存收尾：单位语义、死代码清理与全站「灰块/错位」修复（未发版，workspace/claude，commit `ea2310c`）
+
+1. **需求与背景**：用户要求把库存审计剩下的问题一次性做完。除了已知的两项（AI 工具单位语义、`dailyConsumption` 死字段），这轮扫全仓又发现三类真问题：药品卡片配图一直是灰块、药品页搜索图标飘到列表中间、助手面板在小屏上拖不动。
+2. **库存语义收口**：
+   - `areDoseUnitsCompatible` 把 片/粒/颗/丸 定为同一计数族，扣减、盘点（set）、补货（add）、撤回、天数估算共用一条规则；盒/瓶/袋 仍严格比较。删掉临时函数 `canDeductInventoryInUnit`。
+   - AI 工具 `edit_inventory` 的 `set` 分支不再能把「20 片」悄悄改成「2 盒」：单位不一致直接抛 `unit-conflict`；`mark_empty` 不受影响。工具描述删掉「会按字符串归一化」的假承诺。
+   - 只填包装规格/单位、不填「当前剩余」时不再落成 0：编辑页拦下并提示「请同时填写当前剩余」，批量编辑器不再凭空生成空库存。
+   - AI 库存更新卡改用 `describeStock` 定 tone，并补「可用天数」事实，补完货仍只够吃几天时不再显示成功态。
+3. **删除的死代码**：
+   - `inventory.dailyConsumption` 字段全链路移除（schema / zod 校验 / 元数据合并 / 编辑页写回），只改服药时段不会再产生 `delta:0` 的假库存日志；
+   - 无引用的 `restoreInventory`、`getDaysLeftInfo` + `DaysLeftInfo`；
+   - 约 190 行死样式：`.med-detail-*`（详情态分支已删）、`.med-toggle-*`、`.inventory-stepper-wrap/.inventory-stepper-btn`、`.inventory-filter-button`（并把契约测试改成断言真正在用的 `.inventory-filter-btn` / `.inventory-filter-pill.active`）。
+4. **界面修复**：
+   - **药品卡片配图全是灰块**：`renderBPackageSvg` 生成的 `<svg>` 缺 `xmlns`，`parseSvg` 用 `image/svg+xml` 解析直接失败返回空 SVG。补上命名空间，并让 `parseSvg` 自动补（防止以后再犯）。药品页与今天页的卡片配图恢复成 3D 药盒插画。
+   - **药品页搜索图标飘到列表中间**：`legacy.css` 里 `.med-search-icon { position: absolute; left: 12px; top: 50% }` 是给旧结构写的，把图标甩到页面中部。删掉该规则，图标回到输入框内（新结构是 flex + gap 10px）。
+   - **未录入库存不再涂成橙色警示**：`MedList` 的标签只对 warn/danger 上警示色。
+   - **助手面板小屏拖不动**：拖拽行程下限 240 → 120（320×568 两态高度差只有 ~130px，要求拖 240px 物理上不可能）。
+5. **测试稳定性**：
+   - `camera-actions` 用例原本点的是已不存在的「拍药盒识别」快捷卡（自 v1.2.0 起首屏只有「拍单录入 / 快速数药片」），改为当前真实入口后通过；
+   - 助手拖拽用例改为「拖到位后停 180ms 再松手 + 失败重试一次」，四视口连跑 3 轮 12/12 稳定。
+6. **验证与门禁**：
+   - `npm run typecheck` 0 错误；`npm test` 96 文件 / 649 项通过；`npx playwright test` 全量 **112 项通过**（四视口）；
+   - 逐屏目检：药品页（卡片配图、搜索框、标签配色）、库存页、库存操作/历史/批量预扣/复核、分享库存、空状态、分药页。
+7. **遗留（需要产品决定，未擅自动）**：分药页的 `smart`（拍药盒识别）模式自 v1.2.0 起没有任何入口可进入，`renderSmartStart` / `openSmartCamera` 成为不可达代码。要么把入口加回去，要么整段删除。
+
 ### 73. 库存逻辑收口与库存界面审计修复（未发版，workspace/claude，commit `658a3a8`）
 
 1. **需求与背景**：用户要求「重点检查库存逻辑、前端等设计优化」。审计发现库存存在两套并行判定：展示层按「还够吃几天」，写入/通知层只按件数阈值；同时三处页面用 `?? 36` 编造库存件数，未录入库存被算进「需补充」却显示「充足」。
