@@ -80,3 +80,31 @@ test('keeps camera actions aligned with the app button hierarchy', async ({ page
   });
   expect(focusStyle).toEqual({ outlineColor: layout.tokens.primaryPressed, outlineWidth: '3px' });
 });
+
+test('opens the in-app camera directly from the quick pill counter card', async ({ page }) => {
+  await page.addInitScript(() => {
+    const stream = new MediaStream();
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: async () => stream },
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: async () => undefined,
+    });
+  });
+
+  await page.goto('/#/scan');
+  await page.locator('.scan-quick-card', { hasText: '快速数药片' }).click();
+
+  // 点击快捷卡后直接进入相机取景，而不是弹系统文件管理器。
+  await expect(page.locator('.camera-capture-card')).toContainText('拍照数药片');
+  await expect(page.getByRole('button', { name: '拍照' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '相册上传' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '返回' })).toBeVisible();
+
+  // 返回后仍停留在药片清点流程，相机与相册两条入口都在。
+  await page.getByRole('button', { name: '返回' }).click();
+  await expect(page.getByRole('button', { name: '打开相机' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '相册上传' })).toBeVisible();
+});

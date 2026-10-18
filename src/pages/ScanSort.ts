@@ -58,11 +58,12 @@ import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { applyExplicitDose, createMedicationDraft } from '../domain/medicationDraft';
 import { openPillCounterSheet } from '../features/pillCounter';
 
-type ScanMode = 'code' | 'sheet';
+type ScanMode = 'code' | 'sheet' | 'pill';
 
 const MODE_LABEL: Record<ScanMode, string> = {
   code: '扫码认药',
   sheet: '拍药单录入',
+  pill: '拍照数药片',
 };
 
 interface ContinueAction {
@@ -149,7 +150,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
 
   const codeFile = fileInput('从相册识别条码');
   const sheetFile = fileInput('上传药单照片');
-  const pillFile = fileInput('拍照数药片');
+  const pillFile = fileInput('从相册选择药片照片');
 
   panel.append(reader, hint, resultBox);
   content.append(home, backRow, panel, codeFile, sheetFile, pillFile);
@@ -158,20 +159,8 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
   pillFile.onchange = async () => {
     const file = pillFile.files?.[0];
     pillFile.value = '';
-    if (!file || disposed) return;
-    try {
-      await openPillCounterSheet({
-        image: file,
-        onConfirm: (res) => {
-          toast(`已完成清点：共 ${res.count} 粒药片`);
-        },
-        onRetake: () => {
-          pillFile.click();
-        },
-      });
-    } catch (e) {
-      toast(`数药片出错：${e instanceof Error ? e.message : String(e)}`);
-    }
+    if (!file || disposed || mode !== 'pill') return;
+    await startPillCounting(file);
   };
 
   codeFile.onchange = async () => {
@@ -287,7 +276,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
       el('div', { class: 'scan-quick-desc', text: '拍照秒级清点' })
     );
     pillCountQuick.append(pillCountIcon, pillCountInfo);
-    pillCountQuick.onclick = () => pillFile.click();
+    pillCountQuick.onclick = () => void enterMode('pill', () => void openPillCamera());
 
     quickGrid.append(sheetQuick, pillCountQuick);
     quickSection.append(quickGrid);
@@ -537,6 +526,10 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     }
 
     reader.style.display = 'none';
+    if (mode === 'pill') {
+      renderPillStart();
+      return;
+    }
     renderSheetStart();
   }
 
@@ -633,6 +626,60 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     });
   }
 
+  function renderPillStart(): void {
+    if (disposed || mode !== 'pill') return;
+    operationSequence += 1;
+    setHint(hint, 'info', '药片摊开、彼此留一点空隙，数得最准');
+    resultBox.replaceChildren(
+      actionCard(
+        '拍照数药片',
+        '把药片摊在桌面上，尽量让桌面颜色和药片区分开，避免强反光。',
+        '打开相机',
+        () => void openPillCamera(),
+        '相册上传',
+        () => pillFile.click(),
+      ),
+    );
+    setResultBusy(resultBox, false);
+  }
+
+  async function openPillCamera(): Promise<void> {
+    await openCameraCapture({
+      title: '拍照数药片',
+      sub: '药片摊开、彼此留一点空隙；桌面颜色和药片差别越大，认得越准。',
+      filenamePrefix: 'pills',
+      box: resultBox,
+      hint,
+      controller: cameraCapture,
+      isActive: () => !disposed && mode === 'pill',
+      onCapture: (file) => startPillCounting(file),
+      onAlbum: () => pillFile.click(),
+      onClose: renderPillStart,
+    });
+  }
+
+  async function startPillCounting(file: File): Promise<void> {
+    if (disposed) return;
+    try {
+      await openPillCounterSheet({
+        image: file,
+        onConfirm: (res) => {
+          toast(`已完成清点：共 ${res.count} 粒药片`);
+          if (!disposed && mode === 'pill') renderPillStart();
+        },
+        onRetake: () => {
+          if (!disposed && mode === 'pill') void openPillCamera();
+        },
+        onCancel: () => {
+          if (!disposed && mode === 'pill') renderPillStart();
+        },
+      });
+    } catch (error) {
+      toast(`数药片出错：${error instanceof Error ? error.message : String(error)}`);
+      if (!disposed && mode === 'pill') renderPillStart();
+    }
+  }
+
   const cleanup = () => {
     if (disposed) return;
     disposed = true;
@@ -640,6 +687,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     operationSequence += 1;
     codeFile.onchange = null;
     sheetFile.onchange = null;
+    pillFile.onchange = null;
     cameraCapture.stop();
     const current = scanner;
     scanner = null;
