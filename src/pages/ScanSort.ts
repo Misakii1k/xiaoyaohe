@@ -652,6 +652,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
       hint,
       controller: cameraCapture,
       isActive: () => !disposed && mode === 'pill',
+      cardClass: 'pill-camera-card',
       onCapture: (file) => startPillCounting(file),
       onAlbum: () => pillFile.click(),
       onClose: renderPillStart,
@@ -1500,6 +1501,7 @@ async function openCameraCapture(opts: {
   hint: HTMLElement;
   controller: CameraCaptureController;
   isActive: () => boolean;
+  cardClass?: string;
   onCapture: (file: File) => Promise<void>;
   onAlbum: () => void;
   onClose: () => void;
@@ -1513,7 +1515,9 @@ async function openCameraCapture(opts: {
   const sessionId = opts.controller.begin();
   let stream: MediaStream | null = null;
   let closed = false;
-  const card = el('div', { class: 'card camera-capture-card' });
+  const card = el('div', {
+    class: `card camera-capture-card${opts.cardClass ? ` ${opts.cardClass}` : ''}`,
+  });
   card.append(el('div', { class: 'big', text: opts.title }));
   card.append(el('div', { class: 'muted', text: opts.sub }));
 

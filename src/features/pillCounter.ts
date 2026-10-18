@@ -6,6 +6,7 @@
  * 不依赖任何第三方重量级 AI 库，零网络与安装包体积负担。
  */
 
+import '../ui/styles/pages/pill-counter.css';
 import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/BottomSheet';
 import { createButton } from '../ui/primitives/Button';
 import { el } from '../ui/components';
@@ -132,30 +133,26 @@ export async function openPillCounterSheet(
   let currentPoints: PillPoint[] = detection.points;
 
   // 界面构建
-  const container = el('div', { class: 'pill-counter-sheet space-y-3' });
+  const container = el('div', { class: 'pill-counter-sheet' });
 
   // 顶部标题与计数徽标
-  const header = el('div', { class: 'flex items-center justify-between pb-2 border-b border-[var(--color-border,#e2e8f0)]' });
-  const titleWrap = el('div', {});
-  const title = el('h3', { class: 'font-bold text-sm text-[var(--color-text,#0f172a)]', text: '快速数药片' });
-  const sub = el('p', { class: 'text-xs text-[var(--color-text-muted,#64748b)] mt-0.5', text: `算法用时 ${(detection.elapsedMs).toFixed(1)}ms · 点击空白处补点，点击圆点删除` });
+  const header = el('div', { class: 'pill-counter-header' });
+  const titleWrap = el('div', { class: 'pill-counter-title-wrap' });
+  const title = el('h3', { class: 'pill-counter-title', text: '快速数药片' });
+  const sub = el('p', { class: 'pill-counter-sub', text: `算法用时 ${(detection.elapsedMs).toFixed(1)}ms · 点击空白处补点，点击圆点删除` });
   titleWrap.append(title, sub);
 
   const countBadge = el('div', {
-    class: 'px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-black text-sm border border-emerald-200 dark:border-emerald-800',
+    class: 'pill-counter-count',
     text: `共 ${currentPoints.length} 粒`,
   });
   header.append(titleWrap, countBadge);
 
   // 画布容器
-  const canvasWrap = el('div', {
-    class: 'relative overflow-hidden rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-center',
-    style: 'max-height: 52dvh;',
-  });
+  const canvasWrap = el('div', { class: 'pill-counter-canvas-wrap' });
 
   const displayCanvas = el('canvas', {
-    class: 'max-w-full block select-none cursor-crosshair',
-    style: 'touch-action: none;',
+    class: 'pill-counter-canvas',
   }) as HTMLCanvasElement;
   displayCanvas.width = targetW;
   displayCanvas.height = targetH;
@@ -163,7 +160,7 @@ export async function openPillCounterSheet(
   canvasWrap.append(displayCanvas);
 
   const emptyHint = el('div', {
-    class: 'text-xs leading-relaxed text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg px-3 py-2',
+    class: 'pill-counter-empty',
     text: '没有自动认到药片：把药片摊开、让桌面和药片颜色差别大一点，或直接点画面手动补点。',
   });
   emptyHint.hidden = currentPoints.length > 0;
@@ -173,7 +170,7 @@ export async function openPillCounterSheet(
     renderPillDotsOnCanvas(displayCtx, currentPoints);
     countBadge.textContent = `共 ${currentPoints.length} 粒`;
     emptyHint.hidden = currentPoints.length > 0;
-    confirmBtn.querySelector('span')!.textContent = `确认数量 (${currentPoints.length}片)`;
+    confirmBtn.querySelector('span')!.textContent = `确认 ${currentPoints.length} 片`;
   };
 
   // 画布交互：点击补点 / 删点
@@ -204,12 +201,12 @@ export async function openPillCounterSheet(
   });
 
   // 操作按钮坞
-  const actions = el('div', { class: 'grid grid-cols-2 gap-2 pt-1' });
+  const actions = el('div', { class: 'pill-counter-actions' });
 
   let sheetHandle: BottomSheetHandle | undefined;
 
   const confirmBtn = createButton({
-    label: `确认数量 (${currentPoints.length}片)`,
+    label: `确认 ${currentPoints.length} 片`,
     variant: 'primary',
     onClick: async () => {
       sheetHandle?.close();

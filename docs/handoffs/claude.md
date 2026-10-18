@@ -24,11 +24,13 @@ Latest version: `1.2.1` (Android `versionCode: 78`)
 4. **交互与相机**（`src/pages/ScanSort.ts`）：
    - `ScanMode` 新增 `'pill'`；首屏「快速数药片」由 `pillFile.click()` 改为 `enterMode('pill', openPillCamera)`，**点击直接进入应用内相机取景**（复用既有 `openCameraCapture` 与相机样式），相机页保留「相册上传」备用入口；权限失败时仍给出重试/相册两条路；
    - 拍照后直接打开清点弹层；「重拍/换图」回到相机而不是文件管理器；确认后回到药片清点页并 toast 数量；
-   - `openPillCounterSheet` 增加 0 检出时的引导提示，删除圆点的热区按显示比例换算到约 14px，小屏更好点。
+   - `openPillCounterSheet` 增加 0 检出时的引导提示，删除圆点的热区按显示比例换算到约 14px，小屏更好点；
+   - **弹层样式收口**：原实现混用了并不存在的 Tailwind 工具类，实测标题与计数徽标重叠、按钮无间距、画布不居中。新增 `src/ui/styles/pages/pill-counter.css`，改用语义类（`pill-counter-header/title/sub/count/canvas-wrap/canvas/empty/actions`），标题与徽标改为 flex 两端对齐、徽标 `nowrap + min-width: max-content`，画布居中并限制 `max-block-size: min(46dvh,420px)`，双按钮等宽 44px 热区，空态提示走琥珀色微卡片；确认按钮文案缩短为「确认 N 片」，320px 小屏不再折行；
+   - **相机取景排版**：`openCameraCapture` 支持 `cardClass`，药片取景用 4:3 预览（`max-block-size: min(40vh,360px)`）；同时把通用相机预览上限从 58vh 收到 `min(46vh,420px)`、快门按钮文字颜色由「与背景同色（看不见）」改为 `--color-on-primary`、相机激活时隐藏底栏（`body.camera-capture-active .tabbar`），320×568 上快门/相册/返回三键完整可见。
 5. **测试**：
    - 新增 `tests/pillDetection.test.ts`（19 项）：深色药片/浅色纸、大药片不重复计数、光照渐变、木色台面低亮度差、软阴影、药片内部高光细环、相碰与 30% 重叠、长胶囊、紧密药堆、灰尘、传感器噪声、2 倍尺度一致、6 组随机散布布局、720×540 / 42 粒性能（实测约 80ms）、空木纹桌面 0 误检、铝塑板凹槽、低对比浅色药片；
    - 新增 `e2e/pill-counter.spec.ts`：真实浏览器上传合成药片照片 → 自动数出 5 粒 → 点画面补点/删点 → 确认 toast 并回到清点入口；`e2e/camera-actions.spec.ts` 增加「点快捷卡直接开相机、返回后仍保留相机/相册入口」用例。
-6. **门禁**：`npm run typecheck` 0 错误；`npm test` 97 文件 / 668 项通过；相关 Playwright 用例（phone-390）3/3 通过；全量 Playwright 118/120，2 项失败均为既有偶发（`reminder-periods` 首用例超时、`assistant-cards` 拖拽手势），单独重跑均通过，与本次改动无关；`npm run build:web` 成功。
+6. **门禁**：`npm run typecheck` 0 错误；`npm test` 97 文件 / 668 项通过；`pill-counter` + `camera-actions` 两组 E2E 在 phone-320 / phone-390 / tablet-landscape / desktop 四视口 **12/12 通过**；全量 Playwright 118/120，2 项失败均为既有偶发（`reminder-periods` 首用例超时、`assistant-cards` 拖拽手势），单独重跑均通过，与本次改动无关；`npm run build:web` 成功；320×568 与 390×844 截图目检弹层/相机排版，修掉了标题徽标重叠、按钮折行、快门文字不可见、相机底栏遮挡四处问题。
 7. **遗留**：算法仍是传统视觉启发式，对「白药片放在纯白纸上、只靠阴影成像」这类零对比场景只能数到阴影轮廓（已用文案引导换深色台面）；真机相机取景与弱光照片待用户实测。
 
 ### 75. 移除分药页「拍药盒识别」死模式并发版 v1.2.1（workspace/claude）

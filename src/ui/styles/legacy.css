@@ -1690,7 +1690,7 @@ textarea {
   position: relative;
   width: 100%;
   aspect-ratio: 3 / 4;
-  max-height: 58vh;
+  max-height: min(46vh, 420px);
   overflow: hidden;
   border-radius: var(--radius-lg);
   background: #050505;

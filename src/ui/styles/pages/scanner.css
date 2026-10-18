@@ -478,15 +478,27 @@
 .camera-actions .btn.camera-shutter {
   grid-column: 1 / -1;
   background: var(--color-primary-pressed);
-  color: var(--color-primary-pressed);
+  color: var(--color-on-primary);
 }
 
 .camera-actions .btn:focus-visible {
   outline: 3px solid var(--color-primary-pressed);
 }
 
-body.camera-capture-active .ai-launcher {
+.camera-actions .btn span {
+  min-inline-size: max-content;
+  white-space: nowrap;
+}
+
+body.camera-capture-active .ai-launcher,
+body.camera-capture-active .tabbar {
   display: none;
+}
+
+/* 药片清点取景：横向 4:3 更贴合「摊开的药片」，同时给底部快门留出空间 */
+.pill-camera-card .camera-preview {
+  aspect-ratio: 4 / 3;
+  max-block-size: min(40vh, 360px);
 }
 /* 契约兼容样式 */
 .scan-entry-card {

@@ -59,7 +59,7 @@ test('counts pills from a photo and allows manual correction before confirming',
   await canvas.click({ position: emptySpot });
   await expect(sheet).toContainText('共 5 粒');
 
-  await page.getByRole('button', { name: '确认数量 (5片)' }).click();
+  await page.getByRole('button', { name: '确认 5 片' }).click();
   await expect(sheet).toBeHidden();
   await expect(page.getByText('已完成清点：共 5 粒药片')).toBeVisible();
   // 确认后回到药片清点入口，不再停留在已经关闭的相机画面。
