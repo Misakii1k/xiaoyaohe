@@ -15,6 +15,13 @@ Latest version: `1.2.1` (Android `versionCode: 78`)
 3. **测试同步**：`tests/scannerUiContracts.test.ts` 的切片边界从 `renderSmartStart` 改为 `renderSheetStart`（前者已不存在，`indexOf` 返回 -1 会让断言失去边界）。
 4. **发版 v1.2.1 / versionCode 78**：`package.json`、`package-lock.json`、`android/app/build.gradle`、`scripts/lib/release-utils.mjs` 映射、`docs/releases/1.2.1.md`（tone_lint PASS）、`CURRENT.md` 同步；候选 mock 版本升至 79。
 5. **门禁**：`npm run typecheck` 0 错误；`npm test` 96 文件 / 649 项通过；`npx playwright test` 全量 112 项通过；`npm run build:web` + `cap:sync` 正常。
+6. **发版交付（v1.2.1，已上线）**：
+   - `assembleRelease` BUILD SUCCESSFUL，APK 20,971,071 字节（上版 20,971,203，删代码后略小）；Web Bundle 8,339,940 字节；SHA256SUMS 与 `public/version.json` 已同步；
+   - `git push origin workspace/claude` + `v1.2.1` tag + 快进合并推送 `main`；
+   - GitHub Release [v1.2.1](https://github.com/Misakii1k/xiaoyaohe/releases/tag/v1.2.1) 已创建并上传 APK / Web 增量包 / 校验和三附件（APK sha256 `b0e0dd72…`）；
+   - `check-release-endpoints.mjs` 线上冒烟 **4/4 通过**（version.json v1.2.1/78、releases 识别 APK、非法 tag 400、download 200）；
+   - 纯前端改动，已装底座的设备走秒级增量热更新即可收到。
+7. **踩坑**：`npm version` 之后先跑了测试，`tests/versionManifest.test.ts` 因 `public/version.json` 仍指向旧版本而红——它依赖 `gen-version` 在 APK 归档后重写该文件；正确顺序是先出包再跑全量测试。
 
 ### 74. 库存收尾：单位语义、死代码清理与全站「灰块/错位」修复（未发版，workspace/claude，commit `ea2310c`）
 
