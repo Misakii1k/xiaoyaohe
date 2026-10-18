@@ -1302,10 +1302,17 @@ function renderInventoryReviewEntry(
     'aria-label': `处理第 ${index + 1} 条 ${entry.item.name}`,
   } as any) as HTMLInputElement;
   selected.onchange = () => { entry.selected = selected.checked; entry.error = undefined; onChange(); };
+  // 置信度必须自己会变色：35% 和 92% 长得一样，用户就没有理由去核对那一条。
+  const confidence = entry.item.confidence;
+  const confidenceTone = confidence >= 0.85 ? 'ok' : confidence >= 0.6 ? 'warn' : 'danger';
   head.append(
     selected,
     el('strong', { text: entry.item.name || `药品 ${index + 1}` }),
-    el('span', { class: 'inventory-review-confidence', text: `${Math.round(entry.item.confidence * 100)}%` }),
+    el('span', {
+      class: `inventory-review-confidence tone-${confidenceTone}`,
+      text: `${Math.round(confidence * 100)}%`,
+      title: confidenceTone === 'ok' ? '识别置信度' : '识别把握不大，建议逐项核对',
+    } as any),
   );
 
   const targetLabel = el('label', { class: 'inventory-review-field' });

@@ -1222,11 +1222,23 @@
   font-size: var(--fs-caption-sm, 13px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
+  color: var(--tone-ok-fg);
+  background: var(--tone-ok-bg);
   border-radius: var(--radius-full);
   padding: 2px 8px;
   white-space: nowrap;
+  min-inline-size: max-content;
+}
+
+/* 把握不大时换色，否则 35% 和 92% 看起来一样，用户不会去核对那一条。 */
+.inventory-review-confidence.tone-warn {
+  color: var(--tone-warn-fg);
+  background: var(--tone-warn-bg);
+}
+
+.inventory-review-confidence.tone-danger {
+  color: var(--tone-danger-fg);
+  background: var(--tone-danger-bg);
 }
 
 .inventory-review-field {
