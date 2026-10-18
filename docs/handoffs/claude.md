@@ -8,18 +8,24 @@ Latest version: `1.2.2` (Android `versionCode: 79`)
 
 ## Summary of Accomplished Work
 
-### 77. 版本递增至 1.2.2 / versionCode 79（workspace/claude，准备发布）
+### 77. v1.2.2 完整发版（versionCode 79，已上线）
 
-1. **背景**：用户要求把版本更换为 1.2.2。接手时 `package.json` / `package-lock.json` 已被单独改成 1.2.2，其余位置仍是 1.2.1 / 78。
-2. **处理**：先把这两个文件还原到 HEAD，再执行 `node scripts/release-bump.mjs 1.2.2`，让脚本一次补齐 6 处版本号与 3 份更新夹具：
+1. **背景**：用户要求把版本更换为 1.2.2，并明确「要推送就直接走完整流程，不要光版本切换」。接手时 `package.json` / `package-lock.json` 已被单独改成 1.2.2，其余位置仍是 1.2.1 / 78。
+2. **版本同步**：先把这两个文件还原到 HEAD，再执行 `node scripts/release-bump.mjs 1.2.2`，让脚本一次补齐 6 处版本号与 3 份更新夹具：
    - `package.json` / `package-lock.json` → 1.2.2；
    - `android/app/build.gradle` → versionCode 79 / versionName "1.2.2"；
    - `scripts/lib/release-utils.mjs` 与 `functions/version.json.ts` 映射表追加 `'1.2.2': 79`；
    - `tests/release-utils.test.ts` 追加 1.2.2/79 断言并更新版本锁；
    - `tests/apkUpdateVerification.test.ts` / `appUpdateButtons.test.ts` / `bundleUpdateVerification.test.ts` 的「云端更高版本」夹具 1.3.0/79 → 1.3.1/80。
-3. **发布说明**：新建 `docs/releases/1.2.2.md`（3 条要点，无黑话），`lintReleaseNotes` 0 问题；`node scripts/gen-version.mjs` 已把 `public/version.json` 刷新为 1.2.2 / 79，但因本版 APK 尚未构建，暂不含 fileSize/sha256。
-4. **门禁**：`npm run typecheck` 0 错误；`npm test` 97 文件 / 668 项通过。
-5. **下一步（未执行）**：构建 APK 与 Web Bundle → `gen-version` 回填体积/哈希 → commit + tag `v1.2.2` → push → `gh release create` → `check-release-endpoints.mjs`。按用户当前指令只做了版本更换，未推送、未发版。
+3. **发布说明**：新建 `docs/releases/1.2.2.md`（3 条要点，无黑话），`lintReleaseNotes` 0 问题。
+4. **门禁**：`npm run release:build` 全流程通过——typecheck 0 错误；Vitest 97 文件 / 668 项；Playwright `--workers=2` **120/120**；两遍 APK 打包 + 112 个内嵌 Web 资源校验通过。
+5. **产物与发布**：
+   - APK `release/xiaoyaohe-1.2.2-android-release.apk` 20,975,450 字节，sha256 `8b004aee18ed788aa2ee8593307cee65d0d3c4e71e913fb740a48f6cd81de3a2`；
+   - Web Bundle `release/xiaoyaohe-1.2.2-web-bundle.zip` 8,344,146 字节，sha256 `067d058d3ec31cffe8c5dee28c7fbea9a734bd75318616c316a09feeb78310d6`；
+   - `public/version.json` 已回填最终 APK / Bundle 体积与哈希，`manifest sha256 == final APK sha256` 校验通过；
+   - `npm run release:publish`：tag `v1.2.2`，4 个提交推送成功，`main` 快进推送成功，GitHub Release [v1.2.2](https://github.com/Misakii1k/xiaoyaohe/releases/tag/v1.2.2) 已创建并上传 APK / Web Bundle / SHA256SUMS 三附件；
+   - 线上冒烟 `check-release-endpoints.mjs` **4/4 通过**（version.json v1.2.2/79、releases 识别 APK、非法 tag 400、download 200）。
+6. **说明**：APK 比 1.2.1（20,971,071 字节）增加约 4.4 KB，属正常波动；纯前端改动，已装底座的设备可走秒级增量热更新。
 
 ### 76. 药片清点算法 3.0 重写与「点击直接开相机」（未发版，workspace/claude）
 
