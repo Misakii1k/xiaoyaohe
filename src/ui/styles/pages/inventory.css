@@ -1,7 +1,8 @@
 .inventory-page {
   display: grid;
   gap: var(--space-4);
-  padding-block-end: calc(var(--space-8) + var(--safe-bottom));
+  /* 与药品列表一致：底部要留出悬浮「添加库存」按钮的高度，否则最后一张卡被按钮压住。 */
+  padding-block-end: calc(var(--tap, 44px) + var(--space-8, 40px) + 28px + var(--safe-bottom));
 }
 
 /* 库存概览卡片 */
@@ -359,6 +360,24 @@
     animation: none !important;
   }
 }
+
+/* 与药品列表同款：库存页的「添加库存」是右下角悬浮按钮，dock 不再画玻璃底板。 */
+.app-shell:has(.inventory-page) > .action-dock {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.app-shell:has(.inventory-page) > .action-dock .inventory-fab-add {
+  pointer-events: auto;
+  box-shadow: 0 4px 16px rgba(35, 106, 85, 0.32);
+}
 /* 契约兼容样式 */
 .topbar-pill {
   border-radius: var(--radius-full);
@@ -486,6 +505,25 @@
   flex-direction: column;
   gap: var(--space-2);
   margin-block-start: var(--space-4);
+  /* 320×568 这类小屏上弹层要滚动：主按钮必须常驻可见，不能靠用户往下翻找。 */
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 2;
+  padding-block: var(--space-2);
+  background: var(--color-surface-solid);
+  /* 一条细分割线，让「常驻按钮条」看起来是底栏，而不是把输入框切断。 */
+  border-block-start: 1px solid var(--color-border);
+}
+
+/* 按钮条上方留一段淡出，滚动时下面的字段看起来是「滚进去」而不是被硬切。 */
+.inventory-sheet-actions::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 100%;
+  block-size: 14px;
+  background: linear-gradient(to top, var(--color-surface-solid), transparent);
+  pointer-events: none;
 }
 
 .inventory-sheet-actions > .ui-button {

@@ -217,11 +217,12 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
   header.append(shieldWrap, headerText, chevronWrap);
   overviewCard.append(header);
 
-  const activeCount = meds.filter((m) => m.slots && m.slots.length > 0).length || meds.length;
+  // 「日常服用」只数真的排了时段的药；以前没有排程时会回退成全部药品，数字对不上。
+  const activeCount = meds.filter((m) => m.slots && m.slots.length > 0).length;
   const statsRow = el('div', { class: 'inventory-stats-row' });
   statsRow.append(
     createOverviewCol(`${meds.length} 种`, '全部药品', ''),
-    createOverviewCol(`${activeCount} 种`, '近期使用', ''),
+    createOverviewCol(`${activeCount} 种`, '日常服用', ''),
     createOverviewCol(`${lowCount} 种`, '需补充', lowCount > 0 ? 'low' : ''),
     createOverviewCol(`${expiredCount} 种`, '已过期', expiredCount > 0 ? 'expired' : ''),
   );
@@ -663,7 +664,7 @@ function openInventoryAddSheet(
   const currentExpiry = getMedicationExpiryLocalDate(med);
   const expiryControl = createDateControl({
     value: currentExpiry,
-    placeholder: '选择药品有效期（可选）',
+    placeholder: '选择日期',
     ariaLabel: '药品有效期',
   });
   const expiryField = el('div', { class: 'inventory-sheet-field' });
@@ -684,18 +685,31 @@ function openInventoryAddSheet(
     const displayUnit = unit.value.trim() || med.inventory?.unit || '单位';
     const nextStock = roundStock(current + safeAmount);
 
-    // 库存变化行
-    stockRow.replaceChildren(
-      el('span', { class: 'inventory-preview-label', text: '库存变化：' }),
-      el('span', { class: 'inventory-preview-val', text: `当前 ${formatQuantity(current)}${displayUnit} → 入库后 ` }),
-      el('strong', { class: 'inventory-preview-highlight', text: `${formatQuantity(nextStock)}${displayUnit}` }),
-      safeAmount > 0
-        ? el('span', { class: 'inventory-preview-delta', text: ` (+${formatQuantity(safeAmount)}${displayUnit})` })
-        : el('span', { text: '' }),
-    );
+    // 库存变化行：没填数量时不摆「0 → 0」这种空对空，直接说明下一步。
+    if (safeAmount > 0) {
+      stockRow.replaceChildren(
+        el('span', { class: 'inventory-preview-label', text: '库存变化：' }),
+        el('span', { class: 'inventory-preview-val', text: `当前 ${formatQuantity(current)}${displayUnit} → 入库后 ` }),
+        el('strong', { class: 'inventory-preview-highlight', text: `${formatQuantity(nextStock)}${displayUnit}` }),
+        el('span', { class: 'inventory-preview-delta', text: ` (+${formatQuantity(safeAmount)}${displayUnit})` }),
+      );
+    } else {
+      stockRow.replaceChildren(
+        el('span', { class: 'inventory-preview-label', text: '库存变化：' }),
+        el('span', {
+          class: 'inventory-preview-muted',
+          text: `当前 ${formatQuantity(current)}${displayUnit}，填入数量后显示入库结果`,
+        }),
+      );
+    }
 
     // 可用天数变化行
-    if (daily > 0) {
+    if (daily <= 0) {
+      daysRow.replaceChildren(
+        el('span', { class: 'inventory-preview-label', text: '可用天数：' }),
+        el('span', { class: 'inventory-preview-muted', text: '未配置用药计划，暂无法推算天数' }),
+      );
+    } else if (safeAmount > 0) {
       const currentDays = current > 0 ? Math.floor(current / daily) : 0;
       const nextDays = nextStock > 0 ? Math.floor(nextStock / daily) : 0;
       const deltaDays = nextDays - currentDays;
@@ -710,7 +724,10 @@ function openInventoryAddSheet(
     } else {
       daysRow.replaceChildren(
         el('span', { class: 'inventory-preview-label', text: '可用天数：' }),
-        el('span', { class: 'inventory-preview-muted', text: '未配置用药计划，暂无法推算天数' }),
+        el('span', {
+          class: 'inventory-preview-muted',
+          text: current > 0 ? `当前约 ${Math.floor(current / daily)} 天` : '现在没有库存',
+        }),
       );
     }
 

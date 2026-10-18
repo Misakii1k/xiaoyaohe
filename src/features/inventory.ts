@@ -295,7 +295,9 @@ export function estimateDailyConsumption(med: Medication, rules: ReminderRule[])
 
   const confirmedDose = getConfirmedDose(med);
   if (!confirmedDose) return 0;
-  if (med.inventory?.unit && !areDoseUnitsCompatible(med.inventory.unit, confirmedDose.unit)) return 0;
+  // 与扣减同一把尺子：库存记「粒」、剂量写「片」时照样能推算天数，
+  // 否则页面会出现「剩余 60粒」却没有「约 N 天」的空白。
+  if (med.inventory?.unit && !canDeductInventoryInUnit(med.inventory.unit, confirmedDose.unit)) return 0;
   const dose = confirmedDose.quantity;
   const weekdayFactor = daysPerWeek / 7;
   const dosesPerCalendarDay = enabledRules.reduce((sum, rule) => {

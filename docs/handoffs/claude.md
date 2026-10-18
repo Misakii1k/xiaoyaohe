@@ -8,7 +8,7 @@ Latest version: `1.2.0` (Android `versionCode: 77`)
 
 ## Summary of Accomplished Work
 
-### 73. 库存逻辑收口与库存界面审计修复（未发版，workspace/claude，待提交）
+### 73. 库存逻辑收口与库存界面审计修复（未发版，workspace/claude，commit `658a3a8`）
 
 1. **需求与背景**：用户要求「重点检查库存逻辑、前端等设计优化」。审计发现库存存在两套并行判定：展示层按「还够吃几天」，写入/通知层只按件数阈值；同时三处页面用 `?? 36` 编造库存件数，未录入库存被算进「需补充」却显示「充足」。
 2. **判定语义收口（单一来源）**：
@@ -31,9 +31,10 @@ Latest version: `1.2.0` (Android `versionCode: 77`)
    - `npm run typecheck`：0 错误；
    - `npm test`：96 文件 / 648 项 100% 通过（新增 12 项库存语义用例：天数优先、未录入不计入、NaN/超范围、批量只统计实扣、片粒互通、提醒按天数、聚合不误并概览卡）；
    - `npx playwright test e2e/inventory-workflows.spec.ts`：4 视口 4/4 通过；`e2e/assistant-cards.spec.ts` 通过；
-   - `npm run build:web`：构建成功。
+   - `npm run build:web`：构建成功；
+   - 视觉目检（切换为可读图模型后补做）：390×844 浅色/深色、320×568 窄屏逐屏查看库存页、筛选展开、选药弹层、入库弹层、操作弹层。
 6. **未做 / 后续**：
-   - 未做实际视觉验收——当前模型无法读取截图，只按令牌、尺寸与结构审查，真机观感待用户确认；
+   - 视觉目检后又修了四处：悬浮「添加库存」按钮压住最后一张卡片（底部留白 40px → 与药品列表同款 112px，dock 改透明右对齐）；入库预览在未填数量时显示「0 → 0」的空对空文案；有效期占位把「（可选）」重复了两遍；320×568 小屏上主按钮需滚动才可见（改为常驻底栏）。
    - `shouldSendLowStockReminder` 的 12 小时节流沿用旧行为；AI 工具 `set` 分支的单位换算（片↔盒）仍未实现，工具描述待同步；
    - `med.inventory.dailyConsumption` 现已无人读取，后续可整列删除（涉及 schema 与迁移，本次只从比较中排除）。
 7. **教训**：再次踩到「PowerShell `Set-Content` 改写测试文件导致编码损坏」（见 69.6）。批量替换一律用 node 脚本 `fs.writeFileSync(..., 'utf8')`；本次通过 `git checkout -- <file>` 还原后重写恢复。
