@@ -47,7 +47,8 @@ describe('scanner workbench visual contracts', () => {
     expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
     expect(styles).toContain('grid-column: 1 / -1');
     expect(styles).toContain('background: var(--color-primary-pressed)');
-    expect(styles).toContain('color: var(--color-primary-pressed)');
+    // 快门文字必须用反色，不能和背景同色（旧契约把文字写成 primary-pressed，真机上看不见）
+    expect(styles).toContain('color: var(--color-on-primary)');
     expect(styles).toContain('max-inline-size: 620px');
     expect(styles).toContain('.camera-actions .btn:focus-visible');
     expect(styles).toContain('outline: 3px solid var(--color-primary-pressed)');
@@ -56,6 +57,7 @@ describe('scanner workbench visual contracts', () => {
     expect(cameraFlow).toContain('capture.focus()');
     expect(cameraFlow).toContain("opts.box.querySelector<HTMLButtonElement>('button')?.focus()");
     expect(styles).toContain('body.camera-capture-active .ai-launcher');
+    expect(styles).toContain('body.camera-capture-active .tabbar');
   });
 
   it('uses one concise recovery path when the camera is unavailable', () => {
