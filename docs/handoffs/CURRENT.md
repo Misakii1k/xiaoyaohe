@@ -2,8 +2,16 @@
 
 Updated: 2026-10-18
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.1` (versionCode 78)
-Latest integration commit: `release: v1.2.1 (versionCode 78)`
+Product version: `1.2.2` (versionCode 79)
+Latest integration commit: `release: v1.2.1 (versionCode 78)`（1.2.2 尚在 `workspace/claude` 准备发布）
+
+## Release v1.2.2 (versionCode 79, workspace/claude, 准备发布)
+
+- **集成内容**：
+  - 药片清点算法 3.0：局部背景色场、感知色距、鞍点校验与尺度自适应，散落 / 相碰 / 大小不一的药片计数更准，空桌面不再误报；
+  - 「快速数药片」点击直接打开应用内相机，相册上传保留为备用入口；
+  - 数药片弹层与相机取景排版收口，小屏按钮不再折行或被底栏遮挡。
+- **状态**：`package.json` / `package-lock.json` / `android/app/build.gradle` / `release-utils.mjs` / `functions/version.json.ts` / 三份更新夹具已同步到 1.2.2 / 79（夹具 1.3.1 / 80）；`docs/releases/1.2.2.md` 已通过无黑话校验；APK、Web Bundle 与 GitHub Release 尚未构建发布。
 
 ## Release v1.2.1 (versionCode 78, workspace/claude)
 

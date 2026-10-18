@@ -4,9 +4,22 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-10-18
 Status: active
-Latest version: `1.2.1` (Android `versionCode: 78`)
+Latest version: `1.2.2` (Android `versionCode: 79`)
 
 ## Summary of Accomplished Work
+
+### 77. 版本递增至 1.2.2 / versionCode 79（workspace/claude，准备发布）
+
+1. **背景**：用户要求把版本更换为 1.2.2。接手时 `package.json` / `package-lock.json` 已被单独改成 1.2.2，其余位置仍是 1.2.1 / 78。
+2. **处理**：先把这两个文件还原到 HEAD，再执行 `node scripts/release-bump.mjs 1.2.2`，让脚本一次补齐 6 处版本号与 3 份更新夹具：
+   - `package.json` / `package-lock.json` → 1.2.2；
+   - `android/app/build.gradle` → versionCode 79 / versionName "1.2.2"；
+   - `scripts/lib/release-utils.mjs` 与 `functions/version.json.ts` 映射表追加 `'1.2.2': 79`；
+   - `tests/release-utils.test.ts` 追加 1.2.2/79 断言并更新版本锁；
+   - `tests/apkUpdateVerification.test.ts` / `appUpdateButtons.test.ts` / `bundleUpdateVerification.test.ts` 的「云端更高版本」夹具 1.3.0/79 → 1.3.1/80。
+3. **发布说明**：新建 `docs/releases/1.2.2.md`（3 条要点，无黑话），`lintReleaseNotes` 0 问题；`node scripts/gen-version.mjs` 已把 `public/version.json` 刷新为 1.2.2 / 79，但因本版 APK 尚未构建，暂不含 fileSize/sha256。
+4. **门禁**：`npm run typecheck` 0 错误；`npm test` 97 文件 / 668 项通过。
+5. **下一步（未执行）**：构建 APK 与 Web Bundle → `gen-version` 回填体积/哈希 → commit + tag `v1.2.2` → push → `gh release create` → `check-release-endpoints.mjs`。按用户当前指令只做了版本更换，未推送、未发版。
 
 ### 76. 药片清点算法 3.0 重写与「点击直接开相机」（未发版，workspace/claude）
 
