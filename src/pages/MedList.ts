@@ -51,7 +51,8 @@ export function renderBPackageSvg(m: { id: string; name: string; dosageText?: st
   const safeName = escapeHtml(m.name || '药品');
   const safeSpec = escapeHtml(spec || '');
   const idAttr = escapeHtml(m.id || 'pack');
-  return `<svg viewBox="0 0 170 130" aria-hidden="true" class="b-package-svg">
+  // 必须带 xmlns：parseSvg 用 image/svg+xml 解析，缺命名空间会直接变成空 <svg>（卡片图变成灰块）。
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 130" aria-hidden="true" class="b-package-svg">
     <defs>
       <linearGradient id="paper_${idAttr}" x1="0" y1="0" x2="1" y2="1">
         <stop stop-color="#fffef9"/>
@@ -266,7 +267,8 @@ export async function renderMedListPage(root: HTMLElement, signal?: AbortSignal)
             ? '即将用完'
             : '日常服用';
       const tagEl = el('span', {
-        class: `tag med-stock-pill ${stockInfo.tone === 'ok' ? '' : 'low'}`,
+        // 未录入库存不该被涂成橙色警示：那不是「快用完了」，是「还没记」。
+        class: `tag med-stock-pill ${stockInfo.tone === 'ok' || stockInfo.tone === 'muted' ? '' : 'low'}`,
         text: tagText,
       });
       amountRow.append(stockSmall, tagEl);

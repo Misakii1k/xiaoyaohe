@@ -194,6 +194,14 @@ export async function updateMedicationInventory(
       if (!Number.isFinite(remaining) || remaining < 0 || !unit) {
         throw new MedicationInventoryError('invalid-intent', '库存数量或单位无效');
       }
+      // 与补货同一套规则：单位不一致时直接拒绝，不能把「20片」悄悄改成「2盒」。
+      // mark_empty 只是把剩余清零，单位不参与语义，不拦。
+      if (intent.action !== 'mark_empty' && previousUnit && !areDoseUnitsCompatible(previousUnit, unit)) {
+        throw new MedicationInventoryError(
+          'unit-conflict',
+          `单位 ${unit} 与当前库存单位 ${previousUnit} 不一致，请先统一单位再改数量`,
+        );
+      }
       remaining = roundStock(remaining);
     }
 

@@ -2552,16 +2552,6 @@ textarea {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--glass-highlight);
 }
-.med-search-icon {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  color: var(--label-tertiary);
-  pointer-events: none;
-}
 .med-search-input {
   flex: 1;
   min-height: 44px;

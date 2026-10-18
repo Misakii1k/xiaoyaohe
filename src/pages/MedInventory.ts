@@ -1441,7 +1441,7 @@ function inventoryEntryToMedicationDraft(entry: InventoryReviewEntry): Prescript
   };
 }
 
-/** 保留原库存的提醒/消耗信息，识别结果只覆盖明确识别到的库存详情。 */
+/** 保留原库存的提醒信息，识别结果只覆盖明确识别到的库存详情。 */
 function mergeInventory(current: MedicationInventory | undefined, identified: MedicationInventory): MedicationInventory {
   return {
     remaining: identified.remaining,
@@ -1450,7 +1450,6 @@ function mergeInventory(current: MedicationInventory | undefined, identified: Me
     lowThreshold: identified.lowThreshold ?? current?.lowThreshold,
     sourceNote: identified.sourceNote ?? current?.sourceNote,
     lastReminderAt: current?.lastReminderAt,
-    dailyConsumption: current?.dailyConsumption,
   };
 }
 

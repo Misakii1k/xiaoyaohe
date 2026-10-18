@@ -74,7 +74,11 @@ export function parseSvg(rawSvg: string): SVGSVGElement {
     return fallback();
   }
   try {
-    const doc = svgParser.parseFromString(rawSvg, 'image/svg+xml');
+    // 缺 xmlns 的字符串会被当成非法 XML，只得到一个空 <svg>（卡片图变灰块）；这里补一次。
+    const normalized = /<svg[^>]*\sxmlns=/.test(rawSvg)
+      ? rawSvg
+      : rawSvg.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+    const doc = svgParser.parseFromString(normalized, 'image/svg+xml');
     const parsed = doc.documentElement;
     if (
       !(parsed instanceof SVGSVGElement) ||

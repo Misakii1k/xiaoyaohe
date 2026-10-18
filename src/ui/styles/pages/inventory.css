@@ -392,15 +392,6 @@
   inline-size: 100%;
 }
 
-.inventory-filter-button {
-  cursor: pointer;
-}
-
-.inventory-filter-button.is-selected {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
 /* 添加库存弹窗增强：快捷预设与动态预览 */
 .inventory-presets-row {
   display: flex;
@@ -820,45 +811,8 @@
 }
 
 /* ==========================================================================
-   添加库存表单（加减步进器与结构）
+   添加库存表单（步进器输入框）
    ========================================================================== */
-
-.inventory-stepper-wrap {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  inline-size: 100%;
-}
-
-.inventory-stepper-wrap .ui-stepper {
-  inline-size: 100%;
-  justify-content: space-between;
-}
-
-.inventory-stepper-btn {
-  inline-size: 46px;
-  block-size: 46px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-muted);
-  color: var(--color-text);
-  font-size: 22px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.18s ease;
-  user-select: none;
-}
-
-.inventory-stepper-btn:active {
-  transform: scale(0.92);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-}
 
 .inventory-stepper-input {
   flex: 1 1 auto;
@@ -1122,8 +1076,7 @@
 [data-theme='dark'] .inventory-picker-item,
 [data-theme='dark'] .inventory-actions-summary,
 [data-theme='dark'] .inventory-adjust-card,
-[data-theme='dark'] .inventory-more-tile,
-[data-theme='dark'] .inventory-stepper-btn {
+[data-theme='dark'] .inventory-more-tile {
   background: var(--color-surface);
   border-color: var(--color-border);
 }

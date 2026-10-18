@@ -195,7 +195,8 @@ export class MedicationBatchEditor {
       const inventory = draft.medication.inventory ?? { remaining: 0, unit: '' };
       inventory.remaining = Number.isFinite(remaining) && remaining >= 0 ? remaining : 0;
       inventory.unit = unit.input.value.trim();
-      draft.medication.inventory = stock.input.value || unit.input.value ? inventory : undefined;
+      // 只填了单位没填数量时不要落成 0：那会让药品直接显示「已缺药」。
+      draft.medication.inventory = stock.input.value.trim() ? inventory : undefined;
       this.notify();
     };
     stock.input.addEventListener('input', ensureInventory);

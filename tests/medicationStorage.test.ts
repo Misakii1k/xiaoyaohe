@@ -367,12 +367,55 @@ describe('atomic occurrence actions', () => {
     expect((await getMed(med.id))?.inventory?.remaining).toBe(5);
 
     const wrongUnit = (await getMed(med.id))!;
-    wrongUnit.inventory = { remaining: 6, unit: '粒' };
+    wrongUnit.inventory = { remaining: 6, unit: '盒' };
     await putMed(wrongUnit);
     const unitConflict = await undoInventoryOperation(second.log.id);
     expect(unitConflict).toMatchObject({ ok: false });
     expect(unitConflict.message).toContain('单位');
-    expect((await getMed(med.id))?.inventory).toMatchObject({ remaining: 6, unit: '粒' });
+    expect((await getMed(med.id))?.inventory).toMatchObject({ remaining: 6, unit: '盒' });
+  });
+
+  it('rejects a set that would silently swap the inventory unit', async () => {
+    const med: Medication = {
+      id: 'med-set-unit-conflict',
+      name: '改单位测试药',
+      dosageText: '',
+      amountPerDose: '1片',
+      slots: [],
+      mealRels: [],
+      mealRelsBySlot: {},
+      daysOfWeek: [],
+      inventory: { remaining: 20, unit: '片' },
+      identity: emptyIdentity(),
+      updatedAt: 1,
+    };
+    await putMed(med);
+
+    // 「改成 2 盒」不能被当成「剩 2 片」：片与盒不可互换，直接拒绝。
+    await expect(updateMedicationInventory(med.id, {
+      action: 'set',
+      remaining: 2,
+      unit: '盒',
+      expectedRemaining: 20,
+      expectedUnit: '片',
+    }, {
+      source: 'manual',
+      sourceNote: 'AI 改单位',
+    })).rejects.toThrow(/单位/);
+    expect((await getMed(med.id))?.inventory).toMatchObject({ remaining: 20, unit: '片' });
+
+    // 片 / 粒 属于同一计数族，仍可正常盘点。
+    const ok = await updateMedicationInventory(med.id, {
+      action: 'set',
+      remaining: 18,
+      unit: '粒',
+      expectedRemaining: 20,
+      expectedUnit: '片',
+    }, {
+      source: 'manual',
+      sourceNote: '盘点',
+    });
+    expect(ok.med.inventory?.remaining).toBe(18);
   });
 
   it('applies add against fresh stock without overwriting fresh inventory metadata', async () => {

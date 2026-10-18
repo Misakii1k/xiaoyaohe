@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 import {
   areDoseUnitsCompatible,
   calculateBatchDeductionPreview,
-  canDeductInventoryInUnit,
   classifyInventoryStatus,
   deductInventory,
   describeStock,
@@ -157,10 +156,10 @@ describe('inventory page helpers', () => {
     expect(result.changed).toBe(true);
     expect(med.inventory?.remaining).toBe(59);
 
-    // 但补货/撤回仍按字面比较：不能把片数悄悄写进盒数。
-    expect(canDeductInventoryInUnit('片', '粒')).toBe(true);
+    // 片/粒/颗/丸 是同一计数族；盒这类包装单位仍然不可互换。
+    expect(areDoseUnitsCompatible('片', '粒')).toBe(true);
     expect(areDoseUnitsCompatible('片', '盒')).toBe(false);
-    expect(canDeductInventoryInUnit('盒', '片')).toBe(false);
+    expect(areDoseUnitsCompatible('盒', '片')).toBe(false);
   });
 
   it('falls back to the package-derived threshold instead of trusting a zero', () => {
@@ -203,8 +202,10 @@ describe('inventory page helpers', () => {
     expect(inventoryStyles).toContain('.topbar-pill');
     expect(inventoryStyles).toContain('.topbar-pill-primary');
     expect(inventoryStyles).toContain('.inventory-search');
-    expect(inventoryStyles).toContain('.inventory-filter-button');
-    expect(inventoryStyles).toContain('.inventory-filter-button.is-selected');
+    // 断言真正在用的类名：旧契约指向早已不存在的 .inventory-filter-button
+    expect(inventoryStyles).toContain('.inventory-filter-btn');
+    expect(inventoryStyles).toContain('.inventory-filter-pill.active');
+    expect(inventoryStyles).not.toContain('.inventory-filter-button');
   });
 
   it('includes quick presets, dynamic preview, and expiry management in the inventory add sheet', () => {

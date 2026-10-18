@@ -15,7 +15,6 @@ import {
   readNumber,
   readPositiveNumber,
   evaluateDoseReview,
-  calculateDailyConsumption,
   calculateEstimatedDaysLeft,
 } from './medEdit/dosageHelper';
 import { buildBoxPhotoStudio, type BoxPhotoStudioController } from './medEdit/photoStudioHelper';
@@ -553,16 +552,16 @@ export async function renderMedEditPage(
     med.mealRelsBySlot = buildMealRelsBySlot();
     med.mealRels = mealRelsFromBySlot(med.mealRelsBySlot);
     med.daysOfWeek = [...selectedDays].sort();
+    const inventoryIssue = inventoryInputIssue();
+    if (inventoryIssue) {
+      goToStep(3);
+      remainingInput.focus();
+      toast(inventoryIssue);
+      return;
+    }
     med.inventory = readInventory();
     med.notes = notesInput.value.trim();
     applyExpiryDate();
-    // 回写 dailyConsumption（基于当前已选择的时段 + 用量推算）
-    const daily = calculateDailyConsumption(med, buildRulesPreview());
-    if (med.inventory && daily > 0) {
-      med.inventory.dailyConsumption = daily;
-    } else if (med.inventory) {
-      delete med.inventory.dailyConsumption;
-    }
 
     saveBtn.setAttribute('disabled', 'true');
     let medSaved = false;
@@ -1082,6 +1081,19 @@ export async function renderMedEditPage(
       if (rels.length > 0) out[s] = rels;
     }
     return out;
+  }
+
+  /**
+   * 只填了包装规格/警戒线却没填「当前剩余」时，不能把剩余默认成 0：
+   * 那会让刚登记的药品立刻显示「已缺药」，也会让打卡扣减以为库存是空的。
+   */
+  function inventoryInputIssue(): string | undefined {
+    if (readNumber(remainingInput.value) != null) return undefined;
+    const otherFilled = readNumber(packageQtyInput.value) != null
+      || readNumber(lowThresholdInput.value) != null
+      || Boolean(unitInput.value.trim())
+      || Boolean(inventorySourceInput.value.trim());
+    return otherFilled ? '填了库存信息，请同时填写「当前剩余」，否则无法判断是否缺药' : undefined;
   }
 
   function readInventory(): MedicationInventory | undefined {

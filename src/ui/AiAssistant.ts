@@ -758,8 +758,9 @@ export function mountGlobalAssistant(): void {
       }
       root.classList.add('is-gesturing');
     }
-    // 上滑进度增大（趋向全屏），下滑减小；行程取两态高度差
-    const travel = Math.max(g.fullRect.h - g.floatRect.h, 240);
+    // 上滑进度增大（趋向全屏），下滑减小；行程取两态高度差。
+    // 下限不能设太大：小屏（320×568）两态只差 130px 左右，要求拖 240px 根本拖不出来。
+    const travel = Math.max(g.fullRect.h - g.floatRect.h, 120);
     const p = Math.min(Math.max(g.startProgress + (g.startY - e.clientY) / travel, 0), 1);
     g.lastProgress = p;
     applyGestureGeometry(g, p);

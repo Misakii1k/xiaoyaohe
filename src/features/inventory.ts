@@ -179,20 +179,18 @@ function formatStockNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : String(roundStock(value));
 }
 
-export function areDoseUnitsCompatible(left: string, right: string): boolean {
-  return normalizeDoseUnit(left) === normalizeDoseUnit(right);
-}
-
 /**
- * 片/粒/颗/丸 都是「按个数吃」的剂量单位：库存写 60 粒、剂量写 1 片时，
- * 扣减的是同一堆药，不能因为用词不同就中止打卡。
- * 只放宽扣减方向；补货、撤回仍然要求字面一致，避免把片数写进盒数。
+ * 片/粒/颗/丸 都是「按个数吃」的同一族单位：库存写 60 粒、剂量写 1 片时，
+ * 扣减的是同一堆药，不能因为用词不同就中止打卡，也不该在盘点/撤回时判成冲突。
+ * 盒/瓶/袋/支/贴/滴 不在这一族里，字面不一致仍然拒绝。
  */
 const COUNT_DOSE_UNITS = new Set(['片', '粒', '颗', '丸']);
 
-export function canDeductInventoryInUnit(inventoryUnit: string, doseUnit: string): boolean {
-  if (areDoseUnitsCompatible(inventoryUnit, doseUnit)) return true;
-  return COUNT_DOSE_UNITS.has(inventoryUnit.trim()) && COUNT_DOSE_UNITS.has(doseUnit.trim());
+export function areDoseUnitsCompatible(left: string, right: string): boolean {
+  const a = normalizeDoseUnit(left);
+  const b = normalizeDoseUnit(right);
+  if (a === b) return true;
+  return COUNT_DOSE_UNITS.has(a) && COUNT_DOSE_UNITS.has(b);
 }
 
 function normalizeDoseUnit(unit: string): string {
@@ -214,7 +212,7 @@ export function deductInventory(
     return { changed: false, low: false, reviewRequired: true, message: `${med.name} 的每次用量需要确认` };
   }
   const inventoryUnit = med.inventory.unit?.trim();
-  if (inventoryUnit && !canDeductInventoryInUnit(inventoryUnit, confirmedDose.unit)) {
+  if (inventoryUnit && !areDoseUnitsCompatible(inventoryUnit, confirmedDose.unit)) {
     return {
       changed: false,
       low: false,
@@ -256,12 +254,6 @@ export function deductInventory(
   return { changed: true, low, deductedQuantity: confirmedDose.quantity, message };
 }
 
-export function restoreInventory(med: Medication, quantity: number): boolean {
-  if (!med.inventory || !Number.isFinite(quantity) || quantity <= 0) return false;
-  med.inventory.remaining = roundStock(med.inventory.remaining + quantity);
-  return true;
-}
-
 export function shouldSendLowStockReminder(
   med: Medication,
   rules: ReminderRule[] = [],
@@ -297,7 +289,7 @@ export function estimateDailyConsumption(med: Medication, rules: ReminderRule[])
   if (!confirmedDose) return 0;
   // 与扣减同一把尺子：库存记「粒」、剂量写「片」时照样能推算天数，
   // 否则页面会出现「剩余 60粒」却没有「约 N 天」的空白。
-  if (med.inventory?.unit && !canDeductInventoryInUnit(med.inventory.unit, confirmedDose.unit)) return 0;
+  if (med.inventory?.unit && !areDoseUnitsCompatible(med.inventory.unit, confirmedDose.unit)) return 0;
   const dose = confirmedDose.quantity;
   const weekdayFactor = daysPerWeek / 7;
   const dosesPerCalendarDay = enabledRules.reduce((sum, rule) => {
@@ -319,32 +311,6 @@ export function estimateDaysLeft(med: Medication, rules: ReminderRule[]): number
   const remaining = med.inventory?.remaining ?? 0;
   if (!Number.isFinite(remaining) || remaining <= 0) return null;
   return Math.floor(remaining / daily);
-}
-
-export interface DaysLeftInfo {
-  days: number | null;
-  text: string;
-  status: 'empty' | 'danger' | 'warning' | 'ok' | 'unknown';
-}
-
-export function getDaysLeftInfo(med: Medication, rules: ReminderRule[]): DaysLeftInfo {
-  if (!med.inventory || med.inventory.remaining <= 0) {
-    return { days: 0, text: '已无库存', status: 'empty' };
-  }
-  const days = estimateDaysLeft(med, rules);
-  if (days === null) {
-    return { days: null, text: `剩余 ${med.inventory.remaining} ${med.inventory.unit || ''}`.trim(), status: 'unknown' };
-  }
-  if (days <= 0) {
-    return { days: 0, text: '不足 1 天用量', status: 'danger' };
-  }
-  if (days <= 3) {
-    return { days, text: `仅剩 ${days} 天用量`, status: 'danger' };
-  }
-  if (days <= 7) {
-    return { days, text: `约还够吃 ${days} 天`, status: 'warning' };
-  }
-  return { days, text: `约还够吃 ${days} 天`, status: 'ok' };
 }
 
 export interface BatchDeductionItemPreview {

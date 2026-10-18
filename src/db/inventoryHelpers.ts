@@ -65,7 +65,6 @@ export function inventoryMetadata(inventory: Medication['inventory']): Inventory
     lowThreshold: inventory?.lowThreshold,
     sourceNote: inventory?.sourceNote,
     lastReminderAt: inventory?.lastReminderAt,
-    dailyConsumption: inventory?.dailyConsumption,
   };
 }
 

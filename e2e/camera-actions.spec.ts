@@ -14,8 +14,8 @@ test('keeps camera actions aligned with the app button hierarchy', async ({ page
   });
 
   await page.goto('/#/scan');
-  // 0.9.11 起分药页首屏改为入口卡；「拍药盒识别」快捷卡（div，非 button role）直接打开智能相机工作台
-  await page.locator('.scan-quick-card', { hasText: '拍药盒识别' }).click();
+  // 分药页首屏只有「拍单录入 / 快速数药片」两张快捷卡（「拍药盒识别」已不在首屏入口）。
+  await page.locator('.scan-quick-card', { hasText: '拍单录入' }).click();
 
   const capture = page.getByRole('button', { name: '拍照' });
   const album = page.getByRole('button', { name: '相册上传' });

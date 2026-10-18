@@ -32,7 +32,6 @@ const inventorySchema = z.object({
   lowThreshold: nonNegativeNumber.optional(),
   sourceNote: shortText.optional(),
   lastReminderAt: nonNegativeNumber.optional(),
-  dailyConsumption: nonNegativeNumber.optional(),
 }).passthrough();
 
 const structuredDoseSchema = z.object({

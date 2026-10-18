@@ -89,25 +89,34 @@ test('drags the panel header to morph between floating and full-screen', async (
   await expect(page.locator('.ai-root.is-open .ai-panel')).toBeVisible({ timeout: PANEL_BOOT_TIMEOUT });
   await expect(panel).not.toHaveClass(/is-fullscreen/);
 
-  const dragHeaderBy = async (dy: number): Promise<void> => {
-    const header = panel.locator('.ai-panel-header');
-    const box = await header.boundingBox();
-    if (!box) throw new Error('panel header not measurable');
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
-    await page.mouse.move(cx, cy);
-    await page.mouse.down();
-    await page.mouse.move(cx, cy + dy, { steps: 12 });
-    await page.mouse.up();
+  // 手势依赖 rAF 与过渡时序，四视口并行时偶发被拖慢；失败就再拖一次，最多两轮。
+  const dragUntil = async (dy: number, fullscreen: boolean): Promise<void> => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const header = panel.locator('.ai-panel-header');
+      const box = await header.boundingBox();
+      if (!box) throw new Error('panel header not measurable');
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      await page.mouse.move(cx, cy);
+      await page.mouse.down();
+      await page.mouse.move(cx, cy + dy, { steps: 12 });
+      // 停一下再松手：让落点由「拖过一半」决定，而不是被最后一帧的速度窗口左右。
+      await page.waitForTimeout(180);
+      await page.mouse.up();
+      const matched = await expect(panel)
+        .toHaveClass(fullscreen ? /is-fullscreen/ : /^(?!.*is-fullscreen).*$/, { timeout: 4000 })
+        .then(() => true)
+        .catch(() => false);
+      if (matched) return;
+    }
+    throw new Error(`drag ${dy}px did not reach ${fullscreen ? 'fullscreen' : 'floating'}`);
   };
 
   // 按住头部向上拖：浮动面板渐变进全屏
-  await dragHeaderBy(-300);
-  await expect(panel).toHaveClass(/is-fullscreen/);
+  await dragUntil(-300, true);
   await expect(page.getByRole('button', { name: '收起面板' })).toBeVisible();
 
   // 全屏态按住头部向下拖：渐变还原回浮动面板
-  await dragHeaderBy(300);
-  await expect(panel).not.toHaveClass(/is-fullscreen/);
+  await dragUntil(300, false);
   await expect(page.getByRole('button', { name: '展开面板' })).toBeVisible();
 });

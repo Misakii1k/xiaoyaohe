@@ -6,8 +6,9 @@ import {
   undoInventoryOperation,
   batchDeductInventory,
 } from '../../db/local';
+import { listRulesByMed } from '../../db/repositories/rulesRepo';
 import { INVENTORY_SOURCE_LABEL } from '../../db/schema';
-import { roundStock, calculateBatchDeductionPreview } from '../../features/inventory';
+import { describeStock, roundStock, calculateBatchDeductionPreview } from '../../features/inventory';
 import { rescheduleMedicationReminders } from '../../features/reminderScheduler';
 import type { AssistantCardBlock, AssistantCardItem } from '../assistant';
 import { type AssistantTool, str, findMedByName } from './toolTypes';
@@ -25,7 +26,7 @@ export const editInventory: AssistantTool = {
       medName: { type: 'string', description: '药名，可以是部分名字' },
       action: { type: 'string', enum: INVENTORY_ACTION_VALUES, description: 'set=设为剩余多少，add=补货加上多少，mark_empty=标记用完' },
       quantity: { type: 'number', description: 'set/add 时要传的数量；mark_empty 可不传', minimum: 0 },
-      unit: { type: 'string', description: '单位（片/粒/袋/mL 等）；若与库存单位不一致会按字符串归一化处理', maxLength: 12 },
+      unit: { type: 'string', description: '单位（片/粒/袋/mL 等）。必须与当前库存单位一致（片/粒/颗/丸 视为同类），不一致会被拒绝；不要自己把盒换算成片', maxLength: 12 },
       note: { type: 'string', description: '可选的来源说明，例如「补了一盒」', maxLength: 80 },
     },
     required: ['medName', 'action'],
@@ -97,6 +98,10 @@ export const editInventory: AssistantTool = {
     const committedInventory = committed.med.inventory!;
     const unitDisplay = committedInventory.unit || unit || '片';
     try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
+    // 和库存页同一把尺子：补完货仍只够吃几天时，卡片不能显示「成功」。
+    const medRules = await listRulesByMed(committed.med.id).catch(() => []);
+    const stock = describeStock(committed.med, medRules);
+    const stockTone: AssistantCardBlock['tone'] = stock.tone === 'ok' ? 'success' : stock.tone === 'muted' ? 'neutral' : 'warning';
 
     const ui: AssistantCardBlock = {
       type: 'card',
@@ -105,10 +110,11 @@ export const editInventory: AssistantTool = {
       eyebrow: '库存已更新',
       title: committed.med.name,
       badge: `${committedInventory.remaining}${unitDisplay}`,
-      tone: committedInventory.remaining <= 0 ? 'warning' : 'success',
+      tone: stockTone,
       body: note ? `备注：${note}` : undefined,
       facts: [
         { label: '当前剩余', value: `${committedInventory.remaining}${unitDisplay}` },
+        { label: '可用天数', value: stock.daysLeft != null ? `约 ${stock.daysLeft} 天` : '未设置排程' },
         { label: '操作', value: action === 'set' ? '设为' : action === 'add' ? '补货' : '标记用完' },
       ],
     };

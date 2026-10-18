@@ -135,8 +135,6 @@ export interface MedicationInventory {
   sourceNote?: string;
   /** 最近一次提醒时间，避免低库存提醒刷屏 */
   lastReminderAt?: number;
-  /** 日均用量（由提醒规则推算），用于预测可用天数 */
-  dailyConsumption?: number;
 }
 
 export type InventorySource = 'manual' | 'ai' | 'intake' | 'wizard' | 'batch' | 'undo';
