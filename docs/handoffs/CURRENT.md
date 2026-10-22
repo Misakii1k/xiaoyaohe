@@ -1,9 +1,17 @@
 # Current Integration State
 
-Updated: 2026-10-18
+Updated: 2026-10-22
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.2` (versionCode 79)
-Latest integration commit: `2ebdd5c` — v1.2.2 (versionCode 79)
+Product version: `1.2.3` (versionCode 80)
+Latest integration commit: 待提交 — v1.2.3 (versionCode 80)
+
+## Release v1.2.3 (versionCode 80, workspace/claude)
+
+- **集成内容**：
+  - 首页更新提醒弹窗（借鉴 career-ops 风格）：居顶强化数据安全保障承诺，醒目展示版本跃迁与秒级/完整更新类别，支持双通道秒级/整包更新、版本级跳过与当日静默避扰；服药打卡及底层弹窗时自动避让；
+  - 食用剂量修改与分药页面即时联动：分药向导优先对齐药品最新设定剂量，扫码识别合并结构化保护防止清空用量，激活排程快照比对与 AI 修改用量快照同步；
+  - 分药智能差额补扣：同日已分装药品若调大剂量支持补扣差额库存并记录日志，调小剂量时提示从药盒取出放回药瓶，保持物理药盒与账面一致。
+- **状态**：已构建完成。APK 20,979,767 字节（sha256 `f3b8cb4a…`），Web Bundle 8,348,447 字节（sha256 `88cc36df…`）；准备推送并发布 GitHub Release。
 
 ## Release v1.2.2 (versionCode 79, workspace/claude, 已上线)
 

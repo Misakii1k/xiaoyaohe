@@ -2,11 +2,31 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-10-18
+Updated: 2026-10-22
 Status: active
-Latest version: `1.2.2` (Android `versionCode: 79`)
+Latest version: `1.2.3` (Android `versionCode: 80`)
 
 ## Summary of Accomplished Work
+
+### 78. v1.2.3 首页更新提醒弹窗与分药剂量同步补扣（versionCode 80，已发布）
+
+1. **首页更新提醒（career-ops 风格）**：
+   - 新增 `src/ui/HomeUpdateBottomSheet.ts` 与 `home-update-sheet.css`，采用自有 `openBottomSheet` 控件；
+   - 居顶强化数据安全承诺：“升级不会清除您的服药记录、药品清单或库存数据，请放心升级。”；
+   - 展示版本跃迁（`v1.2.2 → v1.2.3`）与秒级/完整更新类型徽章，更新内容调用 `sanitizeReleaseNotesForDisplay` 深度清洗；
+   - 双通道更新：推荐秒级更新，提供完整包下载；秒级失败自动平滑降级切换为完整包；
+   - 避让防扰：服药打卡及其他弹层时自动避让；当日遮罩关闭当日静默；点击“本次跳过”永久跳过该版本直到更高版本。
+2. **食用剂量修改与分药页面即时联动**：
+   - `ScanSort.ts`：向导优先对齐 `Medication` 最新结构化有效剂量；`applyMedicationFieldDiff` 引入 `suggestStructuredDose` 保护 `doseQuantity` / `doseUnit` 不被归一化清除；
+   - 快照同步：`rulesRepo.ts` 激活 `scheduleRevisionMatches` 比对，药品修改或多端同步后派生当日新快照；AI 小助手修改用量工具同步更新规则与快照；
+   - 智能差额：`logsRepo.ts` 升级 `recordPreDeduction`，同日调大剂量二次分药支持差额补扣与日志记录，调小剂量友好提示放回药瓶。
+3. **测试与质量守护**：
+   - 新增 `tests/homeUpdateBottomSheet.test.ts` 与 `tests/dosageScanSortSync.test.ts`；
+   - 全量 99 个测试套件（682 项测试）、类型检查全部通过；
+   - Playwright E2E 120/120 测试全绿；
+   - APK `release/xiaoyaohe-1.2.3-android-release.apk` 20,979,767 字节（sha256 `f3b8cb4a648c63bb301813c586cd1199ba5723f7fec03b07290d9efd5139d135`）；
+   - Web Bundle `release/xiaoyaohe-1.2.3-web-bundle.zip` 8,348,447 字节（sha256 `88cc36df38423216eff2a96a5846a0fca6384d9501d502795f0697582636d8f1`）；
+   - `public/version.json` 与 `dist/version.json` 真实体积与哈希回写校验通过。
 
 ### 77. v1.2.2 完整发版（versionCode 79，已上线）
 
