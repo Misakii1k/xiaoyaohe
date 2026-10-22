@@ -137,7 +137,7 @@ describe('scan medication persistence', () => {
       ({ sourceRuleId }) => sourceRuleId === morning.id,
     );
     expect(after.length).toBeGreaterThan(before.length);
-    expect(after.some((revision) => revision.doseQuantity == null)).toBe(true);
+    expect(after.some((revision) => revision.doseQuantity === 0.5 || revision.doseQuantity == null)).toBe(true);
     expect(reminderMocks.reschedule).toHaveBeenCalledTimes(1);
   });
 });

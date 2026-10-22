@@ -494,18 +494,28 @@ export interface PreDeductionResult {
   skipped: boolean;
   lowStock: boolean;
   lowStockMessage?: string;
+  adviceMessage?: string;
 }
 
 /**
- * 按具体服药时段预扣库存。重复运行时只扣新增时段，不恢复已经从原包装取出的药。
- * 有效时段在同一个 IndexedDB 事务中一次性扣减，库存不足时整批不扣。
+ * 按具体服药时段预扣库存。
+ * 具备智能差额处理：
+ * - 首次预扣全额扣减；
+ * - 重复运行时若时段剂量未变，跳过重复扣减；
+ * - 若同日修改剂量调大，自动补扣差额并记录库存流水；
+ * - 若同日修改剂量调小，给出友好提示“建议从药盒取出放回药瓶”，保持物理药盒与账面一致。
  */
 export async function recordPreDeduction(
   med: Medication,
   entries: readonly PreDeductionEntry[],
   localDate: LocalDate,
 ): Promise<PreDeductionResult> {
-  const skippedResult = (current: Medication, skippedOccurrences = entries.length, lowStockMessage?: string): PreDeductionResult => ({
+  const skippedResult = (
+    current: Medication,
+    skippedOccurrences = entries.length,
+    lowStockMessage?: string,
+    adviceMessage?: string,
+  ): PreDeductionResult => ({
     med: current,
     deducted: 0,
     deductedOccurrences: 0,
@@ -514,6 +524,7 @@ export async function recordPreDeduction(
     skipped: true,
     lowStock: lowStockMessage ? true : isLowStock(current),
     lowStockMessage,
+    adviceMessage,
   });
   if (!med.inventory || entries.length === 0) return skippedResult(med);
 
@@ -541,35 +552,91 @@ export async function recordPreDeduction(
     return skippedResult(latest);
   }
 
-  const existingIds = new Set(state?.occurrenceIds ?? []);
+  const previousDoses: Record<string, number> = { ...(state?.dosesByOccurrenceId ?? {}) };
+  // 兼容旧版仅记录 occurrenceIds 与 totalDose 的快照
+  if (state?.occurrenceIds && Object.keys(previousDoses).length === 0 && state.occurrenceIds.length > 0) {
+    const avg = roundStock(state.totalDose / state.occurrenceIds.length);
+    for (const id of state.occurrenceIds) {
+      previousDoses[id] = avg;
+    }
+  }
+
   const seenIds = new Set<string>();
   const inventoryUnit = latest.inventory.unit?.trim();
   let baselineUnit = inventoryUnit || '';
-  const pending = entries.filter((entry) => {
+
+  interface PendingDifferential {
+    entry: PreDeductionEntry;
+    delta: number;
+  }
+  const pending: PendingDifferential[] = [];
+  const updatedDoses: Record<string, number> = { ...previousDoses };
+  let hasReducedDose = false;
+
+  for (const entry of entries) {
     const unit = entry.unit.trim();
-    if (!entry.occurrenceId || existingIds.has(entry.occurrenceId) || seenIds.has(entry.occurrenceId)) return false;
+    if (!entry.occurrenceId || seenIds.has(entry.occurrenceId)) continue;
     seenIds.add(entry.occurrenceId);
-    if (!Number.isFinite(entry.quantity) || entry.quantity <= 0 || !unit) return false;
+    if (!Number.isFinite(entry.quantity) || entry.quantity <= 0 || !unit) continue;
     if (!baselineUnit) baselineUnit = unit;
-    return areDoseUnitsCompatible(baselineUnit, unit);
-  });
+    if (!areDoseUnitsCompatible(baselineUnit, unit)) continue;
+
+    const prevDose = previousDoses[entry.occurrenceId] ?? 0;
+    const currentDose = entry.quantity;
+    const diff = roundStock(currentDose - prevDose);
+
+    if (diff > 0) {
+      pending.push({ entry, delta: diff });
+      updatedDoses[entry.occurrenceId] = currentDose;
+    } else if (diff < 0) {
+      hasReducedDose = true;
+      updatedDoses[entry.occurrenceId] = currentDose;
+    } else {
+      updatedDoses[entry.occurrenceId] = currentDose;
+    }
+  }
+
+  const adviceMessage = hasReducedDose
+    ? `${latest.name} 剂量调小，建议从药盒取出放回药瓶，保持物理药盒与账面一致`
+    : undefined;
+
   if (pending.length === 0) {
+    if (hasReducedDose) {
+      const now = Date.now();
+      const allOccurrenceIds = [...new Set([...(state?.occurrenceIds ?? []), ...entries.map((e) => e.occurrenceId).filter(Boolean)])];
+      latest.preDeduction = {
+        localDate,
+        occurrenceIds: allOccurrenceIds,
+        totalDose: state?.totalDose ?? 0,
+        doseUnit: state?.doseUnit || baselineUnit || latest.inventory.unit || '',
+        dosesByOccurrenceId: updatedDoses,
+        updatedAt: now,
+      };
+      latest.updatedAt = now;
+      await medStore.put(latest);
+      await tx.done;
+      notifyDataChanged('meds');
+      return skippedResult(latest, entries.length, undefined, adviceMessage);
+    }
     await tx.done;
     return skippedResult(latest);
   }
 
-  const totalDose = roundStock(pending.reduce((sum, entry) => sum + entry.quantity, 0));
+  const totalDose = roundStock(pending.reduce((sum, item) => sum + item.delta, 0));
   const skippedOccurrences = entries.length - pending.length;
   const firstPending = pending[0];
   if (!firstPending) return skippedResult(latest);
-  const doseUnit = baselineUnit || firstPending.unit.trim();
+  const doseUnit = baselineUnit || firstPending.entry.unit.trim();
+  const isSupplement = Boolean(state && state.occurrenceIds.length > 0);
+
   if (latest.inventory.remaining < totalDose) {
     tx.abort();
     void tx.done.catch(() => undefined);
     return skippedResult(
       latest,
       entries.length,
-      `${latest.name} 库存不足（本次需 ${totalDose}${doseUnit}，剩余 ${latest.inventory.remaining}${doseUnit}），未执行预扣`,
+      `${latest.name} 库存不足（本次需${isSupplement ? '补扣' : ''} ${totalDose}${doseUnit}，剩余 ${latest.inventory.remaining}${doseUnit}），未执行预扣`,
+      adviceMessage,
     );
   }
 
@@ -577,16 +644,20 @@ export async function recordPreDeduction(
   const previousRemaining = latest.inventory.remaining;
   latest.inventory.remaining = roundStock(latest.inventory.remaining - totalDose);
   if (!latest.inventory.unit) latest.inventory.unit = doseUnit;
+
+  const allOccurrenceIds = [...new Set([...(state?.occurrenceIds ?? []), ...entries.map((e) => e.occurrenceId).filter(Boolean)])];
   latest.preDeduction = {
     localDate,
-    occurrenceIds: [...existingIds, ...pending.map((entry) => entry.occurrenceId)],
+    occurrenceIds: allOccurrenceIds,
     totalDose: roundStock((state?.totalDose ?? 0) + totalDose),
     doseUnit,
+    dosesByOccurrenceId: updatedDoses,
     updatedAt: now,
   };
   latest.lastPreDeductedAt = now;
   latest.updatedAt = now;
   await medStore.put(latest);
+
   const medLogs = await inventoryLogStore.index('byMed').getAll(latest.id);
   await inventoryLogStore.put({
     id: uid(),
@@ -598,13 +669,16 @@ export async function recordPreDeduction(
     delta: roundStock(-totalDose),
     unit: doseUnit,
     source: 'wizard',
-    sourceNote: `分药向导预扣 ${localDate}（${pending.length} 个时段）`,
+    sourceNote: isSupplement
+      ? `分药向导补扣差额 ${localDate}（${pending.length} 个时段）`
+      : `分药向导预扣 ${localDate}（${pending.length} 个时段）`,
     timestamp: nextInventoryOperationTimestamp(medLogs),
     // 已取出的药仍在药盒格中，不能通过库存历史撤回后再由打卡恢复。
     canUndo: false,
   });
   await tx.done;
   notifyDataChanged('inventory');
+  notifyDataChanged('meds');
 
   // 展示层早就按「还够吃几天」判断需不需要补货；提醒必须用同一把尺子，
   // 否则 20 片只够 2 天的药在库存页是红的，却永远不提醒。
@@ -628,5 +702,6 @@ export async function recordPreDeduction(
     skipped: false,
     lowStock,
     lowStockMessage,
+    adviceMessage,
   };
 }

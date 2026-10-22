@@ -123,12 +123,25 @@ export function scheduleRevisionMatches(
   med: Medication,
   rule: ReminderRule,
 ): boolean {
+  if (revision.medId !== med.id || revision.sourceRuleId !== rule.id) return false;
   const candidate = createScheduleRevision(med, rule, {
     effectiveDate: revision.effectiveDate,
     createdAt: revision.createdAt,
     enabled: rule.enabled && !rule.deleted && !med.deleted,
   });
-  return candidate.id === revision.id;
+  if (candidate.id === revision.id) return true;
+  return (
+    candidate.slot === revision.slot &&
+    candidate.timeLocal === revision.timeLocal &&
+    candidate.enabled === revision.enabled &&
+    candidate.doseQuantity === revision.doseQuantity &&
+    candidate.doseUnit === revision.doseUnit &&
+    candidate.cycleStartDate === revision.cycleStartDate &&
+    JSON.stringify(candidate.cycle) === JSON.stringify(revision.cycle) &&
+    JSON.stringify(candidate.daysOfWeek) === JSON.stringify(revision.daysOfWeek) &&
+    JSON.stringify(candidate.mealRels) === JSON.stringify(revision.mealRels) &&
+    JSON.stringify(candidate.reviewFlags) === JSON.stringify(revision.reviewFlags)
+  );
 }
 
 export function projectScheduleDate(

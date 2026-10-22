@@ -56,6 +56,7 @@ import { openSortWizard, type SortWizardEntry, type SortWizardItem } from '../ui
 import { isMedicationExpiredOn, projectScheduleDate, toLocalDate, localDayBounds } from '../domain/medicationSchedule';
 import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { applyExplicitDose, createMedicationDraft } from '../domain/medicationDraft';
+import { suggestStructuredDose } from '../features/inventory';
 import { openPillCounterSheet } from '../features/pillCounter';
 
 type ScanMode = 'code' | 'sheet' | 'pill';
@@ -379,15 +380,29 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
         }
         group.earliest = Math.min(group.earliest, projection.dueAt);
         if (projection.isRest || !projection.occurrence) continue;
+        const medHasDose = Number.isFinite(med.doseQuantity) && (med.doseQuantity as number) > 0 && !!med.doseUnit?.trim();
+        let effectiveDoseQuantity = projection.occurrence.doseQuantity;
+        let effectiveDoseUnit = projection.occurrence.doseUnit;
+        if (medHasDose) {
+          effectiveDoseQuantity = med.doseQuantity;
+          effectiveDoseUnit = med.doseUnit!.trim();
+        } else if (med.amountPerDose?.trim()) {
+          const suggested = suggestStructuredDose(med.amountPerDose, med.inventory?.unit);
+          if (suggested) {
+            effectiveDoseQuantity = suggested.quantity;
+            effectiveDoseUnit = suggested.unit;
+          }
+        }
+        const doseLabel = effectiveDoseQuantity && effectiveDoseUnit
+          ? `${effectiveDoseQuantity}${effectiveDoseUnit}`
+          : (med.amountPerDose || (projection.occurrence.doseQuantity && projection.occurrence.doseUnit ? `${projection.occurrence.doseQuantity}${projection.occurrence.doseUnit}` : ''));
         group.entries.push({
           occurrenceId: projection.occurrence.id,
           slot: projection.revision.slot,
           timeLocal: projection.revision.timeLocal,
-          doseLabel: projection.occurrence.doseQuantity && projection.occurrence.doseUnit
-            ? `${projection.occurrence.doseQuantity}${projection.occurrence.doseUnit}`
-            : med.amountPerDose || '',
-          doseQuantity: projection.occurrence.doseQuantity,
-          doseUnit: projection.occurrence.doseUnit,
+          doseLabel,
+          doseQuantity: effectiveDoseQuantity,
+          doseUnit: effectiveDoseUnit,
           mealRels: [...projection.revision.mealRels],
         });
       }
@@ -416,6 +431,7 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
           let skipped = 0;
           let failed = 0;
           const lowStockMessages = new Set<string>();
+          const adviceMessages = new Set<string>();
           for (const entry of summary.items) {
             skipped += entry.entryCount - entry.entries.length;
             const med = medById.get(entry.medId);
@@ -431,6 +447,9 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
               const result = await recordPreDeduction(med, entry.entries, today);
               deducted += result.deductedOccurrences;
               skipped += result.skippedOccurrences;
+              if (result.adviceMessage) {
+                adviceMessages.add(result.adviceMessage);
+              }
               if (result.lowStockMessage) {
                 lowStockMessages.add(result.lowStockMessage);
                 await sendLowStockReminderIfDue(result.med, result.lowStockMessage);
@@ -444,11 +463,12 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
             if (skipped > 0) parts.push(`跳过 ${skipped} 个时段`);
             if (failed > 0) parts.push(`失败 ${failed} 个时段`);
             toast(parts.join('，'));
-          } else if (skipped > 0) {
+          } else if (skipped > 0 && adviceMessages.size === 0) {
             toast(`本次无需重复扣减（${skipped} 个时段已扣或待复核）`);
           } else if (failed > 0) {
             toast(`库存扣减失败：${failed} 个时段`);
           }
+          for (const message of adviceMessages) toast(message);
           for (const message of lowStockMessages) toast(message);
           void refreshHome();
         },
@@ -1134,7 +1154,23 @@ export function applyMedicationFieldDiff(
   };
   if (selected.has('name') && result.name.trim()) next.name = result.name.trim();
   if (selected.has('dosageText') && result.dosageText.trim()) next.dosageText = result.dosageText.trim();
-  if (selected.has('amountPerDose') && result.amountPerDose.trim()) next.amountPerDose = result.amountPerDose.trim();
+  if (selected.has('amountPerDose') && result.amountPerDose.trim()) {
+    const newDose = result.amountPerDose.trim();
+    next.amountPerDose = newDose;
+    const parsed = suggestStructuredDose(newDose, next.inventory?.unit || next.doseUnit);
+    if (parsed) {
+      next.doseQuantity = parsed.quantity;
+      next.doseUnit = parsed.unit;
+      next.doseSourceText = newDose;
+      next.doseReviewRequired = false;
+      delete next.doseMigrationSuggestion;
+    } else {
+      delete next.doseQuantity;
+      delete next.doseUnit;
+      delete next.doseSourceText;
+      next.doseReviewRequired = true;
+    }
+  }
   if (selected.has('slots') && result.slots.length > 0) {
     next.slots = [...result.slots];
     next.mealRelsBySlot = cloneMealMap(result.mealRelsBySlot);

@@ -39,9 +39,10 @@ import { getOrCreateMed3DImage } from '../features/aiImageGen';
 import { describeStock } from '../features/inventory';
 import { openTakeMedModal } from '../ui/TakeMedModal';
 import { mascotEmptyImg, parseSvg } from '../ui/assets3d';
-import { navigate } from '../router';
+import { navigate, getActiveTab } from '../router';
 import { closeNotificationsByTag } from '../features/notifier';
 import { renderBPackageSvg } from './MedList';
+import { maybeShowHomeUpdatePrompt } from '../ui/HomeUpdateBottomSheet';
 
 interface TodayItem {
   revision: MedicationScheduleRevision;
@@ -546,7 +547,14 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
 
   let lastRevision = getDatabaseRevision();
   let lastDate = realToday;
+  const onUpdateChanged = () => {
+    if (getActiveTab() !== null && getActiveTab() !== '/today') return;
+    maybeShowHomeUpdatePrompt();
+  };
+  window.addEventListener('medbox:app-update-changed', onUpdateChanged);
+
   const onActivated = async () => {
+    maybeShowHomeUpdatePrompt();
     const currentToday = toLocalDate(new Date());
     const currentRev = getDatabaseRevision();
     if (currentRev <= lastRevision && currentToday === lastDate) return;
@@ -570,6 +578,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
     if (cleaned) return;
     cleaned = true;
     root.removeEventListener('tab:activated', onActivated);
+    window.removeEventListener('medbox:app-update-changed', onUpdateChanged);
     signal?.removeEventListener('abort', cleanup);
     if (todayPageCleanupByRoot.get(root) === cleanup) {
       todayPageCleanupByRoot.delete(root);
@@ -590,6 +599,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
     header: todayHeader,
     content,
   });
+  queueMicrotask(() => maybeShowHomeUpdatePrompt());
   return cleanup;
 }
 

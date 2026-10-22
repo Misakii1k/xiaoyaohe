@@ -230,6 +230,8 @@ export interface Medication {
     totalDose: number;
     doseUnit: string;
     updatedAt: number;
+    /** 各服药时段对应的已预扣剂量，用于同日剂量变更时的差额补扣与调小提示 */
+    dosesByOccurrenceId?: Record<string, number>;
   };
   /** @deprecated 旧字段：with_meal slot + 单值 mealRel；inflateMed 会迁移 */
   mealRel?: 'before' | 'after' | 'with' | 'none';

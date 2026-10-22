@@ -4,6 +4,7 @@ import {
   createScheduleRevision,
   freezeScheduleRevision,
   isLocalDate,
+  scheduleRevisionMatches,
   toLocalDate,
 } from '../../domain/medicationSchedule';
 import type {
@@ -91,17 +92,43 @@ export async function listScheduleRevisions(): Promise<MedicationScheduleRevisio
   const ids = new Set(existing.map((revision) => revision.id));
   const countByRule = new Map<string, number>();
   const createdAtByRule = new Map<string, Set<number>>();
+  const additions: MedicationScheduleRevision[] = [];
+  const revisionsByRule = new Map<string, MedicationScheduleRevision[]>();
   for (const revision of existing) {
     countByRule.set(revision.sourceRuleId, (countByRule.get(revision.sourceRuleId) ?? 0) + 1);
     const timestamps = createdAtByRule.get(revision.sourceRuleId) ?? new Set<number>();
     timestamps.add(revision.createdAt);
     createdAtByRule.set(revision.sourceRuleId, timestamps);
+    const ruleRevs = revisionsByRule.get(revision.sourceRuleId) ?? [];
+    ruleRevs.push(revision);
+    revisionsByRule.set(revision.sourceRuleId, ruleRevs);
   }
-  const additions: MedicationScheduleRevision[] = [];
   for (const rule of rules) {
+    if (rule.deleted) continue;
     const med = medById.get(rule.medId);
-    if (!med) continue;
-    const hasHistory = (countByRule.get(rule.id) ?? 0) > 0;
+    if (!med || med.deleted) continue;
+    const ruleRevs = revisionsByRule.get(rule.id) ?? [];
+    const hasHistory = ruleRevs.length > 0;
+
+    if (hasHistory) {
+      // 检查已有最新快照与当前 med/rule 是否吻合；若因修改剂量等导致不吻合，则派生今日最新快照
+      const latest = [...ruleRevs].sort(
+        (a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.createdAt - a.createdAt,
+      )[0];
+      if (latest && !scheduleRevisionMatches(latest, med, rule)) {
+        const now = Date.now();
+        const revision = createScheduleRevision(med, rule, {
+          effectiveDate: toLocalDate(now),
+          createdAt: now,
+        });
+        if (!ids.has(revision.id)) {
+          additions.push(revision);
+          ids.add(revision.id);
+        }
+        continue;
+      }
+    }
+
     const sourceCreatedAt = rule.updatedAt || med.createdAt;
     // Completely undated legacy records get one baseline at first migration;
     // reuse it on later reads instead of appending a new Date.now revision.

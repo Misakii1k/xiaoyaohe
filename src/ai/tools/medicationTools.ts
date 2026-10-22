@@ -1,6 +1,8 @@
 import {
   listMeds,
   listRules,
+  listRulesByMed,
+  putRule,
   listReminderPeriodSettings,
   createMedicationBatch,
   getMed,
@@ -332,6 +334,17 @@ export const updateMedication: AssistantTool = {
       return { ok: false, 提示: '没有要更新的字段' };
     }
     await putMed(med);
+    try {
+      const rules = await listRulesByMed(med.id);
+      const now = Date.now();
+      for (const rule of rules) {
+        if (rule.deleted) continue;
+        rule.updatedAt = now;
+        await putRule(rule);
+      }
+    } catch {
+      /* 规则同步失败由启动兜底 */
+    }
     try { await rescheduleMedicationReminders(); } catch { /* 重排失败下次启动兜底 */ }
     try { await recomputeReminderPeriodReviewState(); } catch { /* 复核标记下次打开设置页会刷新 */ }
     const ui: AssistantCardBlock = {
