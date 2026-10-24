@@ -4,11 +4,11 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-10-24
 Status: active
-Latest version: `1.2.4` (Android `versionCode: 81`)
+Latest version: `1.2.5` (Android `versionCode: 82`)
 
 ## Summary of Accomplished Work
 
-### 79. v1.2.4 全站 UX 体验巡检与实色微质感升级（versionCode 81，发布准备）
+### 80. v1.2.5 全站 UX 体验巡检与实色微质感升级（versionCode 82，已发布）
 
 1. **触控交互基线统一**：
    - 全站按钮、卡片、列表行及分段选择器 `:active` 下沉统一收敛为 `scale(0.98)` 与 80ms 快速响应，兼顾扎实质感与无过冲回弹；
@@ -20,6 +20,8 @@ Latest version: `1.2.4` (Android `versionCode: 81`)
 3. **质量门禁**：
    - 99 个测试套件（682 项测试）100% 通过；
    - `npm run typecheck` 0 错误。
+
+### 79. v1.2.4 发布流水线归档（versionCode 81）
 
 ### 78. v1.2.3 首页更新提醒弹窗与分药剂量同步补扣（versionCode 80，已发布）
 
