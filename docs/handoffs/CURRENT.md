@@ -1,9 +1,18 @@
 # Current Integration State
 
-Updated: 2026-10-22
+Updated: 2026-10-24
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.3` (versionCode 80)
-Latest integration commit: 待提交 — v1.2.3 (versionCode 80)
+Product version: `1.2.4` (versionCode 81)
+Latest integration commit: 待提交 — v1.2.4 (versionCode 81)
+
+## Release v1.2.4 (versionCode 81, workspace/claude)
+
+- **集成内容**：
+  - 全站触控基线与交互微质感升级：统一全站按钮、列表行与卡片 `:active` 按压下沉为克制利落的 `scale(0.98)` 与 80ms 即时响应；
+  - 纯净实色微质感与防误触倒计时：彻底移除 Toast 背景模糊滤镜，升级为纯净深色高对比底板与 1px 微边框；新增 5 秒平滑倒计时指示条，服药打卡支持误触一键原位撤销；
+  - 多模态轻反馈：打卡、一键打卡与撤销操作接入清脆微触感振动（不支持环境静默降级）；
+  - 页面排版减法与适老化字阶提档：今日服药（Today）、药品列表（MedList）与库存管理（Inventory）药名提升为第一主角大字，清除全站违规 11px/12px 小字，压平卡片边框并强化单行防折行。
+- **状态**：准备构建与发布。
 
 ## Release v1.2.3 (versionCode 80, workspace/claude)
 

@@ -2,11 +2,24 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-10-22
+Updated: 2026-10-24
 Status: active
-Latest version: `1.2.3` (Android `versionCode: 80`)
+Latest version: `1.2.4` (Android `versionCode: 81`)
 
 ## Summary of Accomplished Work
+
+### 79. v1.2.4 全站 UX 体验巡检与实色微质感升级（versionCode 81，发布准备）
+
+1. **触控交互基线统一**：
+   - 全站按钮、卡片、列表行及分段选择器 `:active` 下沉统一收敛为 `scale(0.98)` 与 80ms 快速响应，兼顾扎实质感与无过冲回弹；
+   - 彻底清除 Toast 背景模糊滤镜，升级为纯净深色高对比底板；新增 5 秒平滑倒计时指示线，服药打卡防误触可一键原位撤回；
+   - 引入轻量触觉微振动（`triggerHapticFeedback`），单药打卡、时段批量打卡及撤销操作具备明确多模态反馈。
+2. **页面减法与适老化字阶提档**：
+   - 今日服药（Today）：药名提升为 16px 第一视觉主角，卡片采用纯净实色底板，消除灰底多层嵌套；
+   - 药品列表（MedList）与库存管理（Inventory）：药名提升为 15px，消除全站 11px/12px 细碎小字，标签强化单行防挤压折行。
+3. **质量门禁**：
+   - 99 个测试套件（682 项测试）100% 通过；
+   - `npm run typecheck` 0 错误。
 
 ### 78. v1.2.3 首页更新提醒弹窗与分药剂量同步补扣（versionCode 80，已发布）
 
