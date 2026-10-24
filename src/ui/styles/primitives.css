@@ -87,7 +87,7 @@
 
 .ui-button:active:not([disabled]),
 .ui-icon-button:active:not([disabled]) {
-  transform: scale(0.96);
+  transform: scale(0.98);
 }
 
 .ui-button { padding-inline: var(--space-4); }
@@ -102,7 +102,7 @@
 }
 .ui-button-primary:active:not([disabled]) {
   box-shadow: 0 2px 6px rgba(35, 106, 85, 0.16);
-  transform: translateY(0) scale(0.96);
+  transform: translateY(0) scale(0.98);
 }
 
 .ui-button-secondary {
@@ -379,7 +379,7 @@
   transition: all var(--duration-fast) var(--ease-spring);
   cursor: pointer;
 }
-.ui-segmented-control button:active { transform: scale(0.96); }
+.ui-segmented-control button:active { transform: scale(0.98); }
 .ui-segmented-control button.is-selected { background: var(--color-primary); color: var(--color-on-primary); font-weight: 600; box-shadow: var(--shadow-sm); }
 .status-badge { display: inline-flex; align-items: center; min-block-size: 24px; padding-inline: 10px; border-radius: var(--radius-full); font-size: var(--fs-caption); font-weight: 600; }
 .status-badge-success { background: var(--tone-ok-bg); color: var(--tone-ok-fg); }
@@ -1022,7 +1022,7 @@ a:active,
   transform-origin: center center;
 }
 
-/* Toast 提示深色高对比度胶囊与平滑动效 */
+/* Toast 提示深色高对比度实色微质感胶囊与平滑动效（消除 backdrop-filter 滤镜，采用纯净实色） */
 .toast {
   position: fixed;
   inset-inline: 0;
@@ -1035,7 +1035,7 @@ a:active,
   align-items: center;
   justify-content: center;
   padding: 10px 20px;
-  background: rgba(22, 23, 28, 0.92);
+  background: rgba(22, 23, 28, 0.96);
   color: #ffffff !important;
   font-size: 14px;
   font-weight: 500;
@@ -1044,13 +1044,12 @@ a:active,
   border-radius: var(--radius-full);
   border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   pointer-events: none;
   opacity: 0;
-  transform: translateY(12px) scale(0.96);
-  transition: opacity 240ms ease, transform 420ms var(--ease-spring);
+  transform: translateY(12px) scale(0.98);
+  transition: opacity 240ms ease, transform 320ms var(--ease-spring);
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .toast.show {
@@ -1067,13 +1066,14 @@ a:active,
 .toast:has(.toast-action-btn) {
   pointer-events: auto;
   gap: 12px;
+  padding-bottom: 12px;
 }
 
 .toast-action-btn {
   pointer-events: auto;
   flex: 0 0 auto;
   min-inline-size: max-content;
-  padding: 3px 10px;
+  padding: 3px 12px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.18);
@@ -1081,12 +1081,33 @@ a:active,
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform var(--duration-fast) ease, background var(--duration-fast) ease;
+  transition: transform 80ms ease, background var(--duration-fast) ease;
 }
 
 .toast-action-btn:active {
-  transform: scale(0.94);
+  transform: scale(0.98);
   background: rgba(255, 255, 255, 0.28);
+}
+
+/* Toast 5秒微型平滑倒计时指示进度线 */
+.toast-progress-bar {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-end: 0;
+  block-size: 2px;
+  inline-size: 100%;
+  background: var(--color-primary, #48a88c);
+  transform-origin: left center;
+  animation: toastCountdown var(--toast-duration, 5000ms) linear forwards;
+}
+
+@keyframes toastCountdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 
 /* 卡片与列表项触控反馈 */
@@ -1098,8 +1119,9 @@ a:active,
 
 .medication-list-row:active,
 .inventory-row-main:active,
-.today-medication-row:active {
-  transform: scale(0.985);
+.today-medication-row:active,
+.inventory-card-item:active {
+  transform: scale(0.98);
 }
 
 /* 动效关键帧 (Animations & Keyframes) */

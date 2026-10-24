@@ -166,7 +166,7 @@
 }
 
 .inventory-card-item {
-  background: var(--color-surface);
+  background: var(--color-surface-solid);
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
   display: flex;
@@ -180,7 +180,6 @@
 }
 
 .inventory-card-item:hover {
-  transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   border-color: var(--color-primary);
 }
@@ -192,7 +191,7 @@
 .inventory-card-item:nth-child(n + 5) { animation-delay: 140ms; }
 
 .inventory-card-item:active {
-  transform: scale(0.985);
+  transform: scale(0.98);
 }
 
 .inventory-card-thumb {
@@ -237,7 +236,7 @@
 }
 
 .inventory-card-days {
-  font-size: 12px;
+  font-size: var(--fs-caption-sm, 13px);
   color: var(--color-text-muted);
 }
 

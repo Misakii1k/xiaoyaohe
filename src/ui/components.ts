@@ -135,6 +135,10 @@ export function toast(msg: string, ms = 2200, action?: ToastAction): void {
       t.remove();
     };
     t.append(actionBtn);
+
+    const progressBar = el('div', { class: 'toast-progress-bar' });
+    progressBar.style.setProperty('--toast-duration', `${ms}ms`);
+    t.append(progressBar);
   }
   t.setAttribute('role', 'status');
   t.setAttribute('aria-live', 'polite');

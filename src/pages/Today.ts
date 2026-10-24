@@ -43,6 +43,7 @@ import { navigate, getActiveTab } from '../router';
 import { closeNotificationsByTag } from '../features/notifier';
 import { renderBPackageSvg } from './MedList';
 import { maybeShowHomeUpdatePrompt } from '../ui/HomeUpdateBottomSheet';
+import { triggerHapticFeedback } from '../features/reminderVibration';
 
 interface TodayItem {
   revision: MedicationScheduleRevision;
@@ -354,15 +355,30 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
         if (!nextItem.occurrence) return;
         takeBtn.disabled = true;
         try {
-          const res = await setOccurrenceAction(nextItem.occurrence, 'taken');
-          if (nextItem.occurrence) {
-            closeNotificationsByTag(nextItem.occurrence.id);
-            closeNotificationsByTag(nextItem.occurrence.legacyLogId);
+          const occ = nextItem.occurrence;
+          const medName = nextItem.med.name;
+          const res = await setOccurrenceAction(occ, 'taken');
+          triggerHapticFeedback(12);
+          if (occ) {
+            closeNotificationsByTag(occ.id);
+            closeNotificationsByTag(occ.legacyLogId);
           }
           if (res.lowStock && res.lowStockMessage) {
             toast(res.lowStockMessage);
           } else {
-            toast(`已记录 ${nextItem.med.name} 服用，可随时撤销`);
+            toast(`已服用 ${medName}`, 5000, {
+              text: '撤销',
+              onClick: async () => {
+                try {
+                  await setOccurrenceAction(occ, undefined);
+                  triggerHapticFeedback(12);
+                  toast(`已撤销 ${medName} 服用记录`);
+                  await renderTodayPage(root, signal);
+                } catch {
+                  toast('撤销失败');
+                }
+              },
+            });
           }
           await renderTodayPage(root, signal);
         } catch {
@@ -440,6 +456,7 @@ export async function renderTodayPage(root: HTMLElement, signal?: AbortSignal): 
           undoBtn.disabled = true;
           try {
             await setOccurrenceAction(lastHandledItem.occurrence, undefined);
+            triggerHapticFeedback(12);
             if (lastHandledItem.occurrence) {
               closeNotificationsByTag(lastHandledItem.occurrence.id);
               closeNotificationsByTag(lastHandledItem.occurrence.legacyLogId);
@@ -647,6 +664,7 @@ function renderSlotGroup(
       const pendingOccurrences = pendingItems.map((i) => i.occurrence!);
       try {
         const results = await setOccurrenceActions(pendingOccurrences, 'taken');
+        triggerHapticFeedback(16);
         for (const occ of pendingOccurrences) {
           closeNotificationsByTag(occ.id);
           closeNotificationsByTag(occ.legacyLogId);
@@ -656,7 +674,19 @@ function renderSlotGroup(
             toast(res.lowStockMessage);
           }
         }
-        toast(`已完成${slotName}一键打卡`);
+        toast(`已完成${slotName}打卡`, 5000, {
+          text: '撤销',
+          onClick: async () => {
+            try {
+              await setOccurrenceActions(pendingOccurrences, undefined);
+              triggerHapticFeedback(12);
+              toast(`已撤销${slotName}打卡记录`);
+              onRefresh();
+            } catch {
+              toast('撤销失败');
+            }
+          },
+        });
         onRefresh();
       } catch {
         toast('一键打卡失败');
@@ -759,11 +789,12 @@ function renderSlotGroup(
       if (isTaken) {
         try {
           await setOccurrenceAction(item.occurrence, undefined);
+          triggerHapticFeedback(12);
           if (item.occurrence) {
             closeNotificationsByTag(item.occurrence.id);
             closeNotificationsByTag(item.occurrence.legacyLogId);
           }
-          toast('已撤销服药打卡');
+          toast(`已撤销 ${item.med.name} 服用打卡`);
           onRefresh();
         } catch {
           toast('操作失败');
@@ -771,15 +802,30 @@ function renderSlotGroup(
       } else {
         try {
           radioBtn.classList.add('punch-animating');
-          const res = await setOccurrenceAction(item.occurrence, 'taken');
-          if (item.occurrence) {
-            closeNotificationsByTag(item.occurrence.id);
-            closeNotificationsByTag(item.occurrence.legacyLogId);
+          const occ = item.occurrence;
+          const medName = item.med.name;
+          const res = await setOccurrenceAction(occ, 'taken');
+          triggerHapticFeedback(12);
+          if (occ) {
+            closeNotificationsByTag(occ.id);
+            closeNotificationsByTag(occ.legacyLogId);
           }
           if (res.lowStock && res.lowStockMessage) {
             toast(res.lowStockMessage);
           } else {
-            toast(`已完成 ${item.med.name} 服药打卡`);
+            toast(`已服用 ${medName}`, 5000, {
+              text: '撤销',
+              onClick: async () => {
+                try {
+                  await setOccurrenceAction(occ, undefined);
+                  triggerHapticFeedback(12);
+                  toast(`已撤销 ${medName} 服用打卡`);
+                  onRefresh();
+                } catch {
+                  toast('撤销失败');
+                }
+              },
+            });
           }
           onRefresh();
         } catch (error) {

@@ -23,3 +23,18 @@ export function triggerReminderVibration(mode?: ReminderMode): void {
     /* 振动不可用或不被允许时静默 */
   }
 }
+
+/**
+ * 触感微反馈：轻微触感（12ms 极短微振动），用于服药打卡、核心保存与关键交互。
+ * 平台不支持或权限未授予时静默降级。
+ */
+export function triggerHapticFeedback(durationMs = 12): void {
+  try {
+    const nav = navigator as Navigator & { vibrate?: (pattern: number[] | number) => boolean };
+    if (typeof nav.vibrate === 'function') {
+      nav.vibrate(durationMs);
+    }
+  } catch {
+    /* 振动不可用或不被允许时静默 */
+  }
+}
