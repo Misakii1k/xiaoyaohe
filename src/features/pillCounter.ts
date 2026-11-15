@@ -5,11 +5,12 @@
 import '../ui/styles/pages/pill-counter.css';
 import { CLOUD_ORIGIN } from '../sync/lan/apkTransport';
 import { grantAiConsentForOrigins } from '../ai/consent';
-import { el, toast } from '../ui/components';
+import { el, icon, toast } from '../ui/components';
 import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/BottomSheet';
 import { createButton } from '../ui/primitives/Button';
 import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
 import { createStepper } from '../ui/primitives/Stepper';
+import { createPillCountDisplay } from './pillCountDisplay';
 import {
   clusterPillAppearances,
   detectPillsFromImageData,
@@ -60,6 +61,13 @@ export interface PillCounterSheetOptions {
 }
 
 type ToolMode = 'tap' | 'sample' | 'roi' | 'grid';
+
+/** 画布标点配色：薄荷=自动识别，琥珀=手动补点，序号用深墨绿保证高对比。 */
+const PILL_DOT_AUTO = '#2fbf8f';
+const PILL_DOT_MANUAL = '#f3a63b';
+const PILL_DOT_INK = '#06281c';
+const PILL_OVERLAY_MINT = 'rgba(47, 191, 143, 0.88)';
+const PILL_OVERLAY_FILL = 'rgba(47, 191, 143, 0.10)';
 
 interface CounterSnapshot {
   points: PillPoint[];
@@ -190,22 +198,25 @@ export function renderPillDotsOnCanvas(
 
   points.forEach((pt, index) => {
     const num = index + 1;
+    const dotColor = pt.isManual ? PILL_DOT_MANUAL : PILL_DOT_AUTO;
     ctx.save();
 
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, haloR, 0, Math.PI * 2);
-    ctx.fillStyle = pt.isManual ? 'rgba(239, 68, 68, 0.32)' : 'rgba(16, 185, 129, 0.32)';
+    ctx.fillStyle = pt.isManual
+      ? 'rgba(243, 166, 59, 0.30)'
+      : 'rgba(47, 191, 143, 0.28)';
     ctx.fill();
 
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, dotR, 0, Math.PI * 2);
-    ctx.fillStyle = pt.isManual ? '#ef4444' : '#10b981';
+    ctx.fillStyle = dotColor;
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1.4;
     ctx.stroke();
 
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = PILL_DOT_INK;
     ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -233,7 +244,7 @@ function renderBlisterGridOverlay(
   });
 
   ctx.save();
-  ctx.strokeStyle = 'rgba(124, 58, 237, 0.85)';
+  ctx.strokeStyle = PILL_OVERLAY_MINT;
   ctx.lineWidth = 1.6;
   for (let r = 0; r <= grid.rows; r += 1) {
     const a = interp(0, r / grid.rows);
@@ -270,7 +281,7 @@ function renderBlisterGridOverlay(
   for (const corner of grid.corners) {
     ctx.beginPath();
     ctx.arc(corner.x, corner.y, 7, 0, Math.PI * 2);
-    ctx.fillStyle = '#7c3aed';
+    ctx.fillStyle = PILL_DOT_AUTO;
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
@@ -284,11 +295,11 @@ function renderRoiOverlay(
   roi: PillROI,
 ): void {
   ctx.save();
-  ctx.strokeStyle = '#7c3aed';
+  ctx.strokeStyle = PILL_OVERLAY_MINT;
   ctx.lineWidth = 2;
   ctx.setLineDash([6, 4]);
   ctx.strokeRect(roi.x, roi.y, roi.width, roi.height);
-  ctx.fillStyle = 'rgba(124, 58, 237, 0.08)';
+  ctx.fillStyle = PILL_OVERLAY_FILL;
   ctx.fillRect(roi.x, roi.y, roi.width, roi.height);
   ctx.restore();
 }
@@ -311,9 +322,15 @@ export async function openPillCounterSheet(
   let consentNeeded = false;
   let statusNote: string | undefined;
 
+  // 手动补点只标“手动”，不参与药片颜色分组，避免把误点的深色背景说成“深色药粒”。
+  const refreshClusters = () => {
+    const autoPoints = currentPoints.filter((pt) => !pt.isManual);
+    currentClusters = clusterPillAppearances(prepared.rawImgData, autoPoints);
+  };
+
   if (options.initialPoints) {
     currentPoints = clonePoints(options.initialPoints);
-    currentClusters = clusterPillAppearances(prepared.rawImgData, currentPoints);
+    refreshClusters();
   } else {
     const initial = await runPillDetectionPipeline({
       source: prepared,
@@ -352,42 +369,45 @@ export async function openPillCounterSheet(
   let panX = 0;
   let panY = 0;
 
+  let sheetHandle: BottomSheetHandle | undefined;
+  let settledByAction = false;
+
   const container = el('div', { class: 'pill-counter-sheet' });
 
-  // 1. 顶部标题与状态提示
+  // 1. 标题行 + 大数字 + 单行状态
   const header = el('div', { class: 'pill-counter-header' });
-  const titleWrap = el('div', { class: 'pill-counter-title-wrap' });
+  const titleRow = el('div', { class: 'pill-counter-title-row' });
   const title = el('h3', { class: 'pill-counter-title', text: '数药片清点' });
+  const closeBtn = el(
+    'button',
+    { type: 'button', class: 'pill-counter-close', 'aria-label': '关闭数药片清点' },
+    [icon('close')],
+  ) as HTMLButtonElement;
+  closeBtn.addEventListener('click', () => sheetHandle?.close());
+  titleRow.append(title, closeBtn);
+
+  const meter = el('div', { class: 'pill-counter-meter' });
+  const countDisplay = createPillCountDisplay(currentPoints.length);
   const sub = el('p', { class: 'pill-counter-sub' });
-  titleWrap.append(title, sub);
+  meter.append(countDisplay.root, sub);
+  header.append(titleRow, meter);
 
-  const countBadge = el('div', {
-    class: 'pill-counter-count',
-    text: `共 ${currentPoints.length} 粒`,
-  });
-  header.append(titleWrap, countBadge);
-
-  // 2. 模式切换 + 视图还原
+  // 2. 模式切换
   const modeRow = el('div', { class: 'pill-counter-mode-row' });
-  const resetZoomBtn = el('button', {
-    type: 'button',
-    class: 'pill-tool-btn pill-reset-zoom-btn',
-    text: '还原视图',
-  }) as HTMLButtonElement;
-  resetZoomBtn.hidden = true;
 
   // 3. 非阻塞云端授权引导条
   const consentBanner = el('div', { class: 'pill-counter-consent-banner' });
+  const consentIcon = el('span', { class: 'pill-counter-consent-icon' }, [icon('lock')]);
   const consentText = el('span', {
     class: 'pill-counter-consent-text',
-    text: '开启云端识别可显著提高散落混装与整板准确率',
+    text: '云端识别更准',
   });
   const enableCloudBtn = el('button', {
     type: 'button',
     class: 'pill-counter-consent-btn',
     text: '开启云端识别',
   }) as HTMLButtonElement;
-  consentBanner.append(consentText, enableCloudBtn);
+  consentBanner.append(consentIcon, consentText, enableCloudBtn);
   consentBanner.hidden = !consentNeeded;
 
   // 4. 混装外观汇总条
@@ -406,56 +426,68 @@ export async function openPillCounterSheet(
     throw new Error('无法创建 Canvas 上下文');
   }
   stage.append(displayCanvas);
-  canvasWrap.append(stage);
+  const emptyHint = el('div', {
+    class: 'pill-counter-empty',
+    text: '没数到药片 · 试试点样本校准',
+  });
+  canvasWrap.append(stage, emptyHint);
 
-  // 6. 工具模式栏 + 辅助子条
+  // 6. 工具模式栏
   const toolBar = el('div', { class: 'pill-counter-tools' });
   const tapToolBtn = el('button', {
     type: 'button',
     class: 'pill-tool-btn is-active',
     text: '点选增删',
+    'aria-pressed': 'true',
   }) as HTMLButtonElement;
   const sampleToolBtn = el('button', {
     type: 'button',
     class: 'pill-tool-btn',
     text: '点样本校准',
+    'aria-pressed': 'false',
   }) as HTMLButtonElement;
   const roiToolBtn = el('button', {
     type: 'button',
     class: 'pill-tool-btn',
     text: '框选范围',
+    'aria-pressed': 'false',
   }) as HTMLButtonElement;
   const gridToolBtn = el('button', {
     type: 'button',
     class: 'pill-tool-btn',
     text: '药板网格',
+    'aria-pressed': 'false',
   }) as HTMLButtonElement;
   gridToolBtn.hidden = mode !== 'blister';
 
-  const holdPreviewBtn = el('button', {
-    type: 'button',
-    class: 'pill-tool-btn',
-    text: '长按看原图',
-  }) as HTMLButtonElement;
+  toolBar.append(tapToolBtn, sampleToolBtn, roiToolBtn, gridToolBtn);
 
-  const undoBtn = el('button', {
-    type: 'button',
-    class: 'pill-tool-btn',
-    text: '撤销',
-  }) as HTMLButtonElement;
+  // 7. 辅助动作：撤销 / 长按看原图 / 还原视图
+  const utilityRow = el('div', { class: 'pill-counter-utilities' });
+  const resetZoomBtn = el(
+    'button',
+    { type: 'button', class: 'pill-utility-btn' },
+    [icon('contract'), el('span', { text: '还原视图' })],
+  ) as HTMLButtonElement;
+  resetZoomBtn.hidden = true;
+
+  const holdPreviewBtn = el(
+    'button',
+    { type: 'button', class: 'pill-utility-btn' },
+    [icon('image'), el('span', { text: '长按看原图' })],
+  ) as HTMLButtonElement;
+
+  const undoBtn = el(
+    'button',
+    { type: 'button', class: 'pill-utility-btn' },
+    [icon('undo'), el('span', { text: '撤销' })],
+  ) as HTMLButtonElement;
   undoBtn.disabled = true;
 
-  toolBar.append(
-    tapToolBtn,
-    sampleToolBtn,
-    roiToolBtn,
-    gridToolBtn,
-    holdPreviewBtn,
-    undoBtn,
-  );
+  utilityRow.append(resetZoomBtn, holdPreviewBtn, undoBtn);
 
-  // 子控制区：ROI 框选重算操作 / 药板行列步进器
-  const roiSubBar = el('div', { class: 'pill-sub-controls' });
+  // 8. 子控制区：ROI 框选重算操作 / 药板行列步进器
+  const roiSubBar = el('div', { class: 'pill-sub-controls pill-roi-subbar' });
   const roiRecountBtn = el('button', {
     type: 'button',
     class: 'pill-tool-btn is-primary',
@@ -486,19 +518,13 @@ export async function openPillCounterSheet(
   );
   gridSubBar.hidden = true;
 
-  const emptyHint = el('div', {
-    class: 'pill-counter-empty',
-    text: '暂无标记：可轻触药片补点，或点一下「点样本校准」点中一颗同类药片。',
-  });
-
-  // 7. 底部确认与重拍
+  // 9. 底部确认与重拍
   const actions = el('div', { class: 'pill-counter-actions' });
-  let sheetHandle: BottomSheetHandle | undefined;
-  let settledByAction = false;
 
   const confirmBtn = createButton({
-    label: `确认 ${currentPoints.length} 片`,
+    label: `确认 ${currentPoints.length} 粒`,
     variant: 'primary',
+    icon: 'check',
     onClick: async () => {
       settledByAction = true;
       // Draw clean final dots without temporary overlays before snapshot
@@ -530,6 +556,7 @@ export async function openPillCounterSheet(
   const retakeBtn = createButton({
     label: '重拍/换图',
     variant: 'secondary',
+    icon: 'retry',
     onClick: () => {
       settledByAction = true;
       sheetHandle?.close();
@@ -548,14 +575,15 @@ export async function openPillCounterSheet(
 
   const describeStatus = (): string => {
     if (isBusy) return '正在识别分析…';
-    if (tool === 'sample') return '点一下你想数的那种药片，系统会圈出同类；点多颗可兼顾混装';
-    if (tool === 'roi') return '在图上拖出需要清点的方框区域，再点下方「仅数框内」';
-    if (tool === 'grid' && gridEnabled) return '拖动四角对齐药板边缘，轻触单元格可切换有药/空泡';
-    if (currentEngine === 'cloud') return '云端高清识别 · 点空白补点，点标记删除，双指可缩放';
-    if (currentEngine === 'sample_local') return '已按样本颜色重算 · 可继续补点或微调';
-    if (currentEngine === 'blister_grid') return '已按药板网格统计 · 点网格可单独切换有药或空泡';
-    if (statusNote) return `${statusNote} · 点画面可补点或删点`;
-    return '点空白补点，点圆点删除 · 双指捏合可放大细看';
+    if (tool === 'sample') return '点一颗药片作样本';
+    if (tool === 'roi') return '拖出方框后再重数';
+    if (tool === 'grid' && gridEnabled) return '拖角对齐，点格切换';
+    if (currentEngine === 'cloud') return '云端识别完成，可微调';
+    if (currentEngine === 'sample_local') return '已按样本颜色重算';
+    if (currentEngine === 'blister_grid') return '已按药板网格统计';
+    if (statusNote) return `${statusNote} · 可补点微调`;
+    if (currentPoints.length === 0) return '没数到药片，试试点样本校准';
+    return '点空白补点，点圆点删除';
   };
 
   const syncToolButtons = () => {
@@ -563,6 +591,10 @@ export async function openPillCounterSheet(
     sampleToolBtn.classList.toggle('is-active', tool === 'sample');
     roiToolBtn.classList.toggle('is-active', tool === 'roi');
     gridToolBtn.classList.toggle('is-active', tool === 'grid' && gridEnabled);
+    tapToolBtn.setAttribute('aria-pressed', String(tool === 'tap'));
+    sampleToolBtn.setAttribute('aria-pressed', String(tool === 'sample'));
+    roiToolBtn.setAttribute('aria-pressed', String(tool === 'roi'));
+    gridToolBtn.setAttribute('aria-pressed', String(tool === 'grid' && gridEnabled));
     gridToolBtn.hidden = mode !== 'blister';
     roiSubBar.hidden = tool !== 'roi' && roiRect === null;
     roiRecountBtn.disabled = !roiRect;
@@ -571,20 +603,41 @@ export async function openPillCounterSheet(
     undoBtn.disabled = undoStack.length === 0;
   };
 
+  const createLegendChip = (color: string, label: string) => {
+    const chip = el('span', { class: 'pill-legend-chip' });
+    const dot = el('span', { class: 'pill-cluster-swatch' });
+    dot.style.backgroundColor = color;
+    chip.append(dot, el('span', { text: label }));
+    return chip;
+  };
+
   const renderClusters = () => {
     clusterStrip.replaceChildren();
-    if (currentClusters.length < 2) {
-      clusterStrip.hidden = true;
+    const manualCount = currentPoints.filter((pt) => pt.isManual).length;
+    if (currentClusters.length >= 2 || (currentClusters.length >= 1 && manualCount > 0)) {
+      clusterStrip.hidden = false;
+      for (const c of currentClusters) {
+        const chip = el('span', { class: 'pill-cluster-chip' });
+        const dot = el('span', { class: 'pill-cluster-swatch' });
+        dot.style.backgroundColor = c.swatch;
+        chip.append(dot, el('span', { text: `${c.label} ${c.count}` }));
+        clusterStrip.append(chip);
+      }
+      if (manualCount > 0) {
+        clusterStrip.append(createLegendChip(PILL_DOT_MANUAL, `手动 ${manualCount}`));
+      }
       return;
     }
-    clusterStrip.hidden = false;
-    for (const c of currentClusters) {
-      const chip = el('span', { class: 'pill-cluster-chip' });
-      const dot = el('span', { class: 'pill-cluster-swatch' });
-      dot.style.backgroundColor = c.swatch;
-      chip.append(dot, el('span', { text: `${c.label} ${c.count}` }));
-      clusterStrip.append(chip);
+    if (manualCount > 0) {
+      clusterStrip.hidden = false;
+      const autoCount = currentPoints.length - manualCount;
+      if (autoCount > 0) {
+        clusterStrip.append(createLegendChip(PILL_DOT_AUTO, `自动 ${autoCount}`));
+      }
+      clusterStrip.append(createLegendChip(PILL_DOT_MANUAL, `手动 ${manualCount}`));
+      return;
     }
+    clusterStrip.hidden = true;
   };
 
   const redraw = () => {
@@ -598,11 +651,15 @@ export async function openPillCounterSheet(
       }
       renderPillDotsOnCanvas(displayCtx, currentPoints);
     }
-    countBadge.textContent = `共 ${currentPoints.length} 粒`;
+    countDisplay.setCount(currentPoints.length);
     sub.textContent = describeStatus();
+    sub.title = sub.textContent;
     emptyHint.hidden = currentPoints.length > 0;
     const labelSpan = confirmBtn.querySelector('span');
-    if (labelSpan) labelSpan.textContent = `确认 ${currentPoints.length} 片`;
+    if (labelSpan) labelSpan.textContent = `确认 ${currentPoints.length} 粒`;
+    const emptyCount = currentPoints.length === 0;
+    confirmBtn.disabled = emptyCount;
+    confirmBtn.title = emptyCount ? '先补点或校准后再确认' : '';
     renderClusters();
     syncToolButtons();
   };
@@ -619,13 +676,14 @@ export async function openPillCounterSheet(
     gridConfig = res.grid;
     currentPoints = res.points;
     currentEngine = 'blister_grid';
-    currentClusters = clusterPillAppearances(prepared.rawImgData, currentPoints);
+    refreshClusters();
     redraw();
   };
 
   const runCloudOrModePipeline = async (opts: { roi?: PillROI; pushHistory?: boolean } = {}) => {
     isBusy = true;
     sub.textContent = describeStatus();
+    sub.title = sub.textContent;
     try {
       const res = await runPillDetectionPipeline({
         source: prepared,
@@ -666,7 +724,7 @@ export async function openPillCounterSheet(
       void runCloudOrModePipeline({ roi: roiRect ?? undefined, pushHistory: true });
     },
   );
-  modeRow.append(modeControl, resetZoomBtn);
+  modeRow.append(modeControl);
 
   resetZoomBtn.onclick = () => {
     zoom = 1;
@@ -738,7 +796,7 @@ export async function openPillCounterSheet(
     roiRect = snap.roi ? { ...snap.roi } : null;
     gridConfig = cloneGrid(snap.grid);
     currentEngine = snap.engine;
-    currentClusters = clusterPillAppearances(prepared.rawImgData, currentPoints);
+    refreshClusters();
     if (gridConfig) {
       rowStepper.input.value = String(gridConfig.rows);
       colStepper.input.value = String(gridConfig.cols);
@@ -777,7 +835,7 @@ export async function openPillCounterSheet(
       });
       currentPoints = clonePoints(sampleRes.points);
       currentEngine = 'sample_local';
-      currentClusters = clusterPillAppearances(prepared.rawImgData, currentPoints);
+      refreshClusters();
       redraw();
       return;
     }
@@ -797,7 +855,7 @@ export async function openPillCounterSheet(
         pushUndo();
         gridConfig.cells[bestIdx] = !gridConfig.cells[bestIdx];
         currentPoints = pointsFromGrid(gridConfig);
-        currentClusters = clusterPillAppearances(prepared.rawImgData, currentPoints);
+        refreshClusters();
         redraw();
       }
       return;
@@ -819,7 +877,7 @@ export async function openPillCounterSheet(
         isManual: true,
       });
     }
-    currentClusters = clusterPillAppearances(prepared.rawImgData, currentPoints);
+    refreshClusters();
     redraw();
   };
 
@@ -949,6 +1007,13 @@ export async function openPillCounterSheet(
   const endPointer = (e: PointerEvent) => {
     activePointers.delete(e.pointerId);
 
+    // 所有真实指针交互都在 pointerup 里处理，统一抑制随后的 click，
+    // 避免框选/拖角/缩放后的点击在落点误补一个手动点。
+    suppressNextClick = true;
+    setTimeout(() => {
+      suppressNextClick = false;
+    }, 0);
+
     if (draggingCornerIndex >= 0) {
       draggingCornerIndex = -1;
       applyBlisterGridEvaluation(true);
@@ -965,10 +1030,6 @@ export async function openPillCounterSheet(
       !gestureMoved &&
       activePointers.size === 0
     ) {
-      suppressNextClick = true;
-      setTimeout(() => {
-        suppressNextClick = false;
-      }, 0);
       const pt = toCanvasPoint(e.clientX, e.clientY);
       handleCanvasTap(pt.x, pt.y, pt.scaleX);
     }
@@ -996,12 +1057,12 @@ export async function openPillCounterSheet(
     header,
     modeRow,
     consentBanner,
-    clusterStrip,
     canvasWrap,
     toolBar,
+    utilityRow,
     roiSubBar,
     gridSubBar,
-    emptyHint,
+    clusterStrip,
     actions,
   );
 
@@ -1013,6 +1074,7 @@ export async function openPillCounterSheet(
     sheetHandle = openBottomSheet({
       label: '数药片清点',
       content: container,
+      className: 'pill-counter-sheet-shell',
       dismissOnOverlay: true,
       onClose: () => {
         if (!settledByAction) {

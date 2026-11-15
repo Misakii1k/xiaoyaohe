@@ -500,22 +500,28 @@ body.camera-capture-active .tabbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  flex-wrap: nowrap;
+  gap: 6px;
   margin-block-start: var(--space-2);
-  padding: var(--space-2);
+  padding: 6px;
   background: var(--color-surface-solid);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
 }
 
 .pill-camera-toolbar .ui-segmented-control {
-  flex: 1 1 200px;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.pill-camera-toolbar .ui-segmented-control button {
+  min-block-size: 40px;
+  white-space: nowrap;
 }
 
 .pill-camera-toolbar .pill-torch-btn {
   flex: 0 0 auto;
-  min-block-size: var(--tap);
+  min-block-size: 40px;
   min-inline-size: max-content;
   white-space: nowrap;
 }

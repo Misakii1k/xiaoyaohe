@@ -122,7 +122,45 @@ describe('pillCounter interactive sheet UI', () => {
     expect(buttons).toContain('框选范围');
     expect(buttons).toContain('长按看原图');
     expect(buttons).toContain('撤销');
+    expect(buttons).toContain('确认 2 粒');
     expect(sheet.textContent).toContain('开启云端识别');
+    expect(sheet.querySelector('[aria-label="关闭数药片清点"]')).not.toBeNull();
+
+    const tapBtn = [...sheet.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('点选增删'),
+    )!;
+    expect(tapBtn.getAttribute('aria-pressed')).toBe('true');
+    const sampleBtn = [...sheet.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('点样本校准'),
+    )!;
+    expect(sampleBtn.getAttribute('aria-pressed')).toBe('false');
+    sampleBtn.click();
+    expect(sampleBtn.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('disables confirm when nothing was detected and keeps the empty guidance visible', async () => {
+    vi.spyOn(pillCounterClient, 'runPillDetectionPipeline').mockResolvedValue({
+      points: [],
+      count: 0,
+      engine: 'heuristic_local',
+      mode: 'loose',
+      imageWidth: 240,
+      imageHeight: 180,
+      consentNeeded: false,
+      prepared,
+    });
+
+    void openPillCounterSheet({ image: prepared });
+    await vi.waitFor(() => {
+      expect(document.querySelector('.pill-counter-sheet')).not.toBeNull();
+    });
+    const sheet = document.querySelector('.pill-counter-sheet')!;
+    expect(sheet.textContent).toContain('共 0 粒');
+    expect(sheet.textContent).toContain('没数到药片');
+    const confirmBtn = [...sheet.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('确认 0 粒'),
+    )!;
+    expect(confirmBtn.disabled).toBe(true);
   });
 
   it('supports sample calibration on canvas and restoring prior count with undo', async () => {

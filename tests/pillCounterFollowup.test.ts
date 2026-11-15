@@ -182,6 +182,8 @@ describe('pillCounterFollowup business closure', () => {
   it('renders followup bottom sheet with custom select and segmented actions', async () => {
     const med = makeMed('med-ui-1', '奥美拉唑');
     await putMed(med);
+    await putRule(makeRule('ui-rule-1', med.id, 'morning'));
+    await putRule(makeRule('ui-rule-2', med.id, 'evening'));
 
     void openPillCountFollowupSheet({ count: 15, defaultMedId: med.id });
 
@@ -190,9 +192,30 @@ describe('pillCounterFollowup business closure', () => {
     });
     const sheet = document.querySelector('.pill-followup-sheet')!;
     expect(sheet.textContent).toContain('共 15 粒');
+    expect(sheet.textContent).toContain('清点结果怎么记？');
     expect(sheet.textContent).toContain('设为剩余');
     expect(sheet.textContent).toContain('入库累加');
     expect(sheet.textContent).toContain('核对分药');
+    expect(sheet.textContent).toContain('现在');
+    expect(sheet.textContent).toContain('记完');
+    expect(sheet.textContent).toContain('20片');
+    expect(sheet.textContent).toContain('15片');
+
+    const buttons = [...sheet.querySelectorAll('button')];
+    expect(buttons.some((b) => b.textContent?.includes('设为剩余 15 粒'))).toBe(true);
+
+    const addBtn = buttons.find((b) => b.textContent?.includes('入库累加'))!;
+    addBtn.click();
+    expect(sheet.textContent).toContain('35片');
+    expect(sheet.textContent).toContain('+15');
+    expect(buttons.some((b) => b.textContent?.includes('累加 15 粒'))).toBe(true);
+
+    const checkBtn = buttons.find((b) => b.textContent?.includes('核对分药'))!;
+    checkBtn.click();
+    expect(sheet.textContent).toContain('当日应取');
+    expect(sheet.textContent).toContain('实点');
+    expect(sheet.textContent).toContain('多 11 粒');
+    expect(buttons.some((b) => b.textContent?.includes('完成核对'))).toBe(true);
   });
 
   it('skips followup sheet when skipIfNoMeds is set and no active meds exist', async () => {

@@ -328,8 +328,6 @@
   padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
   background: var(--scrim);
   animation: overlayFadeIn var(--duration-fast) var(--ease-smooth) forwards;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 .bottom-sheet {
   position: relative;

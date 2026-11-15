@@ -1,256 +1,528 @@
-/* 快速数药片 4.0 抽屉样式：纯净实色表面（禁用 backdrop-filter 液态玻璃），防折行状态胶囊 */
+/* 快速数药片 4.0：清点台
+   照片是样本，数字是答案，工具是仪器。
+   只用实色表面 + 1px 微边框，不引入 backdrop-filter / 渐变光斑。 */
+
+/* ---------- 抽屉外壳：全宽台面 + 吸底操作区 ---------- */
+.bottom-sheet.pill-counter-sheet-shell {
+  padding: 0;
+  max-block-size: min(88dvh, 820px);
+  background: var(--color-surface-solid);
+}
+
+.bottom-sheet.pill-counter-sheet-shell::before {
+  margin: 10px auto var(--space-1);
+}
 
 .pill-counter-sheet {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-1) 0;
+  min-inline-size: 0;
+  padding: 0 var(--space-5);
 }
 
+/* ---------- 标题 + 大数字 ---------- */
 .pill-counter-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.pill-counter-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.pill-counter-title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-inline-size: 0;
+  gap: var(--space-2);
+  min-block-size: 38px;
 }
 
 .pill-counter-title {
   margin: 0;
-  font-size: var(--fs-title, 18px);
+  font-size: var(--fs-title3);
   font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.pill-counter-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 38px;
+  block-size: 38px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-solid);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.pill-counter-close svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.pill-counter-close:hover {
+  background: var(--color-surface-muted);
   color: var(--color-text);
 }
 
-.pill-counter-sub {
-  margin: 0;
-  font-size: var(--fs-caption, 12px);
-  color: var(--color-muted);
-  line-height: 1.4;
+.pill-counter-close:active {
+  transform: scale(0.96);
+}
+
+.pill-counter-close:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.pill-counter-meter {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-inline-size: 0;
 }
 
 .pill-counter-count {
   flex: 0 0 auto;
-  min-inline-size: max-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   white-space: nowrap;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: var(--color-primary);
-  color: var(--color-on-primary, #ffffff);
-  font-size: var(--fs-subtitle, 15px);
-  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1;
 }
 
+.pill-counter-count-label,
+.pill-counter-count-unit {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  letter-spacing: 0.02em;
+}
+
+.pill-counter-count-value {
+  font-size: calc(34px * var(--care-scale));
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+  transform-origin: left bottom;
+}
+
+.pill-counter-count.is-bumped .pill-counter-count-value {
+  animation: pill-count-bump 260ms var(--ease-out) both;
+}
+
+@keyframes pill-count-bump {
+  0% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.pill-counter-sub {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  padding-block-end: 2px;
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 模式切换 ---------- */
 .pill-counter-mode-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  display: block;
 }
 
 .pill-counter-mode-row .ui-segmented-control {
-  flex: 1 1 200px;
+  display: grid;
+  inline-size: 100%;
 }
 
+.pill-counter-mode-row .ui-segmented-control button {
+  min-block-size: 42px;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+/* ---------- 云端授权条（轻量提示，不抢画布） ---------- */
 .pill-counter-consent-banner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md, 12px);
-  background: var(--color-surface-solid, #ffffff);
-  border: 1px solid var(--color-border);
+  padding: 5px 6px 5px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.pill-counter-consent-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+.pill-counter-consent-icon svg {
+  inline-size: 15px;
+  block-size: 15px;
 }
 
 .pill-counter-consent-text {
-  font-size: var(--fs-caption, 12px);
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.3;
   color: var(--color-text);
-  line-height: 1.35;
 }
 
 .pill-counter-consent-btn {
   flex: 0 0 auto;
   min-inline-size: max-content;
-  white-space: nowrap;
-  min-block-size: 36px;
-  padding: 6px 12px;
-  border-radius: 999px;
+  min-block-size: 32px;
+  padding: 4px 12px;
   border: 1px solid var(--color-primary);
+  border-radius: var(--radius-full);
   background: var(--color-primary);
-  color: var(--color-on-primary, #ffffff);
-  font-size: var(--fs-caption, 12px);
+  color: var(--color-on-primary);
+  font-size: var(--fs-xs);
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.pill-counter-clusters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.pill-counter-consent-btn:active {
+  background: var(--color-primary-pressed);
 }
 
-.pill-cluster-chip {
+/* ---------- 画布：近黑台面 ---------- */
+.pill-counter-canvas-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-block-size: min(38dvh, 380px);
+  border: 1px solid color-mix(in srgb, var(--color-border) 76%, #000);
+  border-radius: 18px;
+  background: #101714;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  touch-action: none;
+  user-select: none;
+}
+
+.pill-counter-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.pill-counter-canvas {
+  display: block;
+  inline-size: auto;
+  block-size: auto;
+  max-inline-size: 100%;
+  max-block-size: min(38dvh, 380px);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.pill-counter-empty {
+  position: absolute;
+  inset-inline: 12px;
+  inset-block-end: 12px;
+  padding: 7px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(5, 19, 14, 0.82);
+  color: #dff3ec;
+  font-size: var(--fs-xs);
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+/* ---------- 工具行：四个等宽仪器 ---------- */
+.pill-counter-tools {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-block: 1px;
+  scrollbar-width: none;
+}
+
+.pill-counter-tools::-webkit-scrollbar {
+  display: none;
+}
+
+.pill-tool-btn {
+  flex: 1 1 0;
+  min-inline-size: max-content;
+  min-block-size: 38px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-solid);
+  color: var(--color-text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.pill-tool-btn.is-active,
+.pill-tool-btn.is-primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.pill-tool-btn:active {
+  transform: translateY(1px);
+}
+
+.pill-tool-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+  box-shadow: none;
+}
+
+.pill-tool-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ---------- 辅助动作：撤销 / 长按看原图 / 还原视图 ---------- */
+.pill-counter-utilities {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  margin-block-start: -2px;
+}
+
+.pill-utility-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-block-size: 34px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.pill-utility-btn svg {
+  inline-size: 15px;
+  block-size: 15px;
+}
+
+.pill-utility-btn:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.pill-utility-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.pill-utility-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.pill-utility-btn span {
+  white-space: nowrap;
+}
+
+/* ---------- 上下文子控制：框选 / 药板行列 ---------- */
+.pill-sub-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.pill-sub-hint {
+  flex: 1 1 140px;
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+
+.pill-sub-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.pill-grid-controls {
+  flex-wrap: nowrap;
+}
+
+.pill-grid-controls .ui-stepper {
+  flex: 1 1 0;
+  inline-size: auto;
+  min-inline-size: 0;
+}
+
+.pill-sub-controls .pill-tool-btn {
+  flex: 0 0 auto;
+  min-block-size: 36px;
+  background: var(--color-surface-solid);
+}
+
+.pill-sub-controls .pill-tool-btn.is-primary {
+  background: var(--color-primary);
+}
+
+/* ---------- 混装外观 / 手动点图例 ---------- */
+.pill-counter-clusters {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-inline-size: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pill-counter-clusters::-webkit-scrollbar {
+  display: none;
+}
+
+.pill-cluster-chip,
+.pill-legend-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
   min-inline-size: max-content;
   white-space: nowrap;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--color-surface-solid, #ffffff);
-  border: 1px solid var(--color-border);
-  font-size: var(--fs-caption, 12px);
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
   color: var(--color-text);
 }
 
 .pill-cluster-swatch {
+  flex: 0 0 auto;
   inline-size: 9px;
   block-size: 9px;
+  border: 1px solid color-mix(in srgb, var(--color-text) 18%, transparent);
   border-radius: 50%;
-  border: 1px solid var(--color-border);
-  flex-shrink: 0;
 }
 
-.pill-counter-canvas-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  max-block-size: 48vh;
-  border-radius: var(--radius-md, 14px);
-  overflow: hidden;
-  background: #0f172a;
-  border: 1px solid var(--color-border);
-  touch-action: none;
-  user-select: none;
-}
-
-.pill-counter-stage {
-  transform-origin: 0 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.pill-counter-canvas {
-  display: block;
-  max-inline-size: 100%;
-  max-block-size: 48vh;
-  block-size: auto;
-  inline-size: auto;
-  cursor: crosshair;
-  touch-action: none;
-}
-
-.pill-counter-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.pill-tool-btn {
-  flex: 0 0 auto;
-  min-inline-size: max-content;
-  white-space: nowrap;
-  min-block-size: 36px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-solid, #ffffff);
-  color: var(--color-text);
-  font-size: var(--fs-caption, 12px);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.pill-tool-btn.is-active,
-.pill-tool-btn.is-primary {
-  background: var(--color-primary);
-  color: var(--color-on-primary, #ffffff);
-  border-color: var(--color-primary);
-}
-
-.pill-tool-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.pill-sub-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius-md, 12px);
-  background: var(--color-surface-solid, #ffffff);
-  border: 1px solid var(--color-border);
-}
-
-.pill-sub-hint {
-  font-size: var(--fs-caption, 12px);
-  color: var(--color-muted);
-  flex: 1 1 160px;
-}
-
-.pill-sub-label {
-  font-size: var(--fs-caption, 12px);
-  font-weight: 600;
-  color: var(--color-text);
-  white-space: nowrap;
-}
-
-.pill-counter-empty {
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md, 10px);
-  background: var(--color-surface-solid, #ffffff);
-  border: 1px solid var(--color-border);
-  color: var(--color-muted);
-  font-size: var(--fs-caption, 12px);
-  text-align: center;
-}
-
+/* ---------- 吸底操作区 ---------- */
 .pill-counter-actions {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 2;
   display: grid;
-  grid-template-columns: 1fr 1.6fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--space-2);
-  padding-block-start: var(--space-1);
+  margin-inline: calc(var(--space-5) * -1);
+  padding: 10px var(--space-5) calc(10px + var(--safe-bottom));
+  border-block-start: 1px solid var(--color-border);
+  background: var(--color-surface-solid);
+  box-shadow: 0 -6px 16px color-mix(in srgb, var(--color-text) 6%, transparent);
 }
 
 .pill-counter-actions > button {
   flex: 0 0 auto;
+  min-inline-size: 0;
   min-block-size: var(--tap);
-  min-inline-size: max-content;
+  padding-inline: var(--space-3);
   white-space: nowrap;
+}
+
+.pill-counter-actions > button > span {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pill-counter-actions .ui-button,
+.pill-followup-actions .ui-button {
+  font-size: var(--fs-md);
+}
+
+.pill-counter-actions .ui-button:disabled,
+.pill-followup-actions .ui-button:disabled {
+  opacity: 0.5;
+  box-shadow: none;
+  cursor: default;
+}
+
+/* ---------- 清点后记账 ---------- */
+.bottom-sheet.pill-followup-sheet-shell {
+  padding: 0;
+  max-block-size: min(86dvh, 760px);
+  background: var(--color-surface-solid);
+}
+
+.bottom-sheet.pill-followup-sheet-shell::before {
+  margin: 10px auto var(--space-1);
 }
 
 .pill-followup-sheet {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-1) 0;
+  min-inline-size: 0;
+  padding: 0 var(--space-5);
 }
 
 .pill-followup-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  min-inline-size: 0;
 }
 
 .pill-followup-title {
   margin: 0;
-  font-size: var(--fs-title, 18px);
+  font-size: var(--fs-title3);
   font-weight: 700;
+  line-height: 1.2;
   color: var(--color-text);
+  letter-spacing: -0.01em;
 }
 
 .pill-followup-field {
@@ -260,34 +532,328 @@
 }
 
 .pill-followup-label {
-  font-size: var(--fs-caption, 12px);
+  font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--color-muted);
+  color: var(--color-text-muted);
 }
 
-.pill-followup-preview {
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md, 12px);
-  background: var(--color-surface-solid, #ffffff);
+.pill-followup-mode .ui-segmented-control {
+  display: grid;
+  inline-size: 100%;
+}
+
+.pill-followup-mode .ui-segmented-control button {
+  min-block-size: 42px;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+/* 库存变化卡：现在 → 记完 / 应取 vs 实点 */
+.pill-followup-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
   border: 1px solid var(--color-border);
-  font-size: var(--fs-body, 14px);
-  color: var(--color-text);
-  line-height: 1.45;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
 }
 
-.pill-followup-preview[data-state='warn'] {
-  border-color: var(--color-warn, #d97706);
+.pill-followup-summary[data-state='warn'] {
+  border-color: var(--tone-warn-border);
+  background: var(--tone-warn-bg);
+}
+
+.pill-followup-summary[data-state='check'] {
+  background: var(--color-surface-solid);
+}
+
+.pill-followup-summary[data-state='ok'] {
+  border-color: var(--tone-ok-border);
+  background: var(--tone-ok-bg);
+}
+
+.pill-followup-caption {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.pill-followup-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+}
+
+.pill-followup-stock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.pill-followup-stock-label {
+  font-size: var(--fs-xs);
+  line-height: 1.25;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.pill-followup-stock-value {
+  font-size: calc(20px * var(--care-scale));
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.pill-followup-arrow {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+
+.pill-followup-arrow svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.pill-followup-delta {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: var(--tone-ok-bg);
+  color: var(--tone-ok-fg);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pill-followup-delta[data-tone='down'] {
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+}
+
+.pill-followup-delta[data-tone='muted'] {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.pill-followup-compare {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.pill-followup-compare > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pill-followup-compare .is-strong {
+  font-size: calc(20px * var(--care-scale));
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  color: var(--color-text);
+}
+
+.pill-followup-bar {
+  block-size: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.pill-followup-bar > span {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+}
+
+.pill-followup-verdict {
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  background: var(--tone-ok-bg);
+  color: var(--tone-ok-fg);
+  white-space: nowrap;
+}
+
+.pill-followup-verdict[data-tone='warn'] {
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+}
+
+.pill-followup-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: var(--tone-warn-fg);
+}
+
+.pill-followup-note svg {
+  flex: 0 0 auto;
+  inline-size: 16px;
+  block-size: 16px;
+  margin-block-start: 1px;
 }
 
 .pill-followup-actions {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 2;
   display: grid;
-  grid-template-columns: 1fr 1.5fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--space-2);
+  margin-inline: calc(var(--space-5) * -1);
+  padding: 10px var(--space-5) calc(10px + var(--safe-bottom));
+  border-block-start: 1px solid var(--color-border);
+  background: var(--color-surface-solid);
+  box-shadow: 0 -6px 16px color-mix(in srgb, var(--color-text) 6%, transparent);
 }
 
 .pill-followup-actions > button {
   flex: 0 0 auto;
+  min-inline-size: 0;
   min-block-size: var(--tap);
-  min-inline-size: max-content;
+  padding-inline: var(--space-3);
   white-space: nowrap;
+}
+
+.pill-followup-actions > button > span {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 小屏与矮屏预算 ---------- */
+@media (max-width: 360px) {
+  .pill-counter-sheet,
+  .pill-followup-sheet {
+    padding-inline: var(--space-4);
+  }
+
+  .pill-counter-actions,
+  .pill-followup-actions {
+    margin-inline: calc(var(--space-4) * -1);
+    padding-inline: var(--space-4);
+  }
+
+  .pill-counter-count-value {
+    font-size: calc(30px * var(--care-scale));
+  }
+
+  .pill-counter-canvas-wrap,
+  .pill-counter-canvas {
+    max-block-size: min(30dvh, 220px);
+  }
+
+  .pill-counter-title-row {
+    min-block-size: 34px;
+  }
+
+  .pill-roi-subbar {
+    justify-content: center;
+  }
+
+  .pill-roi-subbar .pill-sub-hint {
+    display: none;
+  }
+
+  .pill-counter-clusters {
+    display: none;
+  }
+
+  .pill-counter-close {
+    inline-size: 34px;
+    block-size: 34px;
+  }
+}
+
+@media (max-height: 620px) {
+  .pill-counter-sheet,
+  .pill-followup-sheet {
+    gap: 6px;
+  }
+
+  .pill-counter-canvas-wrap,
+  .pill-counter-canvas {
+    max-block-size: min(34dvh, 300px);
+  }
+
+  .pill-counter-title-row {
+    min-block-size: 32px;
+  }
+
+  .pill-counter-mode-row .ui-segmented-control button,
+  .pill-followup-mode .ui-segmented-control button {
+    min-block-size: 38px;
+  }
+}
+
+@media (max-width: 360px) and (max-height: 620px) {
+  .bottom-sheet.pill-counter-sheet-shell {
+    max-block-size: calc(100dvh - 8px);
+  }
+
+  .pill-counter-canvas-wrap,
+  .pill-counter-canvas {
+    max-block-size: min(26dvh, 180px);
+  }
+}
+
+@media (min-width: 768px) {
+  .pill-counter-sheet,
+  .pill-followup-sheet {
+    padding-inline: var(--space-6);
+  }
+
+  .pill-counter-actions,
+  .pill-followup-actions {
+    margin-inline: calc(var(--space-6) * -1);
+    padding-inline: var(--space-6);
+  }
+
+  .pill-counter-canvas-wrap,
+  .pill-counter-canvas {
+    max-block-size: min(44vh, 420px);
+  }
+
+  .pill-counter-count-value {
+    font-size: calc(38px * var(--care-scale));
+  }
+}
+
+/* 关怀大字：工具行允许横滑，不截字、不折行 */
+:root[data-care='on'] .pill-counter-tools {
+  overflow-x: auto;
+}
+
+:root[data-care='on'] .pill-utility-btn {
+  min-block-size: var(--tap);
+}
+
+/* 降低动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .pill-counter-count.is-bumped .pill-counter-count-value {
+    animation: none;
+  }
+
+  .pill-tool-btn,
+  .pill-utility-btn,
+  .pill-counter-close {
+    transition: none;
+  }
 }

@@ -60,7 +60,7 @@ test('counts pills from a photo and allows manual correction before confirming',
   await canvas.click({ position: emptySpot });
   await expect(sheet).toContainText('共 5 粒');
 
-  await page.getByRole('button', { name: `确认 5 片` }).click();
+  await page.getByRole('button', { name: `确认 5 粒` }).click();
   await expect(sheet).toBeHidden();
   await expect(page.getByText('已完成清点：共 5 粒药片')).toBeVisible();
   // 确认后回到药片清点入口，不再停留在已经关闭的相机画面。
@@ -92,6 +92,45 @@ async function makeBlisterPhoto(): Promise<Buffer> {
   </svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
+
+test('drawing a ROI box keeps the count and does not add a manual pill', async ({ page }) => {
+  await page.addInitScript(() => {
+    const stream = new MediaStream();
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: async () => stream },
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: async () => undefined,
+    });
+  });
+
+  const photo = await makePillPhoto();
+  await page.goto('/#/scan');
+  await page.locator('.scan-quick-card', { hasText: '快速数药片' }).click();
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.getByRole('button', { name: '相册上传' }).click(),
+  ]);
+  await chooser.setFiles({ name: 'pills.png', mimeType: 'image/png', buffer: photo });
+
+  const sheet = page.locator('.pill-counter-sheet');
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toContainText('共 5 粒');
+
+  await sheet.getByRole('button', { name: '框选范围' }).click();
+  const canvas = sheet.locator('canvas');
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('canvas not laid out');
+  await page.mouse.move(box.x + box.width * 0.15, box.y + box.height * 0.12);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.88, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(sheet).toContainText('共 5 粒');
+  await expect(sheet.getByRole('button', { name: '仅数框内' })).toBeVisible();
+});
 
 test('switches to blister mode, adjusts grid steppers, and toggles cavity state', async ({ page }) => {
   await page.addInitScript(() => {
@@ -155,12 +194,12 @@ test('counts pills from inventory operations sheet and sets medication remaining
   const sheet = page.locator('.pill-counter-sheet');
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText('共 5 粒');
-  await page.getByRole('button', { name: '确认 5 片' }).click();
+  await page.getByRole('button', { name: '确认 5 粒' }).click();
 
   const followup = page.locator('.pill-followup-sheet');
   await expect(followup).toBeVisible();
   await expect(followup).toContainText('共 5 粒');
-  await followup.getByRole('button', { name: '确认执行' }).click();
+  await followup.getByRole('button', { name: '设为剩余 5 粒' }).click();
   await expect(followup).toBeHidden();
 
   await expect(page.locator('.inventory-card-days').first()).toContainText('剩余 5片');

@@ -6,7 +6,7 @@ import {
   updateMedicationInventory,
 } from '../db/local';
 import type { Medication, ReminderRule } from '../db/schema';
-import { el, toast } from '../ui/components';
+import { el, icon, toast } from '../ui/components';
 import { openBottomSheet, type BottomSheetHandle } from '../ui/primitives/BottomSheet';
 import { createButton } from '../ui/primitives/Button';
 import { createSelectControl } from '../ui/primitives/Pickers';
@@ -16,6 +16,7 @@ import {
   getConfirmedDose,
   roundStock,
 } from './inventory';
+import { createPillCountDisplay } from './pillCountDisplay';
 import type { PillDetectionMode } from './pillEngine';
 import { rescheduleMedicationReminders } from './reminderScheduler';
 
@@ -189,31 +190,45 @@ export async function openPillCountFollowupSheet(
     }),
   );
 
-  const container = el('div', { class: 'pill-followup-sheet' });
-  const header = el('div', { class: 'pill-followup-header' });
-  const title = el('h3', { class: 'pill-followup-title', text: '把清点结果用到哪里？' });
-  const countBadge = el('span', {
-    class: 'pill-counter-count',
-    text: `共 ${count} 粒`,
-  });
-  header.append(title, countBadge);
-
   let sheetHandle: BottomSheetHandle | undefined;
 
+  const container = el('div', { class: 'pill-followup-sheet' });
+
+  // 标题 + 大数字 + 关闭
+  const header = el('div', { class: 'pill-counter-header' });
+  const titleRow = el('div', { class: 'pill-counter-title-row' });
+  const title = el('h3', { class: 'pill-followup-title', text: '清点结果怎么记？' });
+  const closeBtn = el(
+    'button',
+    { type: 'button', class: 'pill-counter-close', 'aria-label': '关闭清点后续操作' },
+    [icon('close')],
+  ) as HTMLButtonElement;
+  closeBtn.addEventListener('click', () => sheetHandle?.close());
+  titleRow.append(title, closeBtn);
+
+  const meter = el('div', { class: 'pill-counter-meter' });
+  const countDisplay = createPillCountDisplay(count);
+  const sub = el('p', { class: 'pill-counter-sub', text: '选择这批药片的去向' });
+  meter.append(countDisplay.root, sub);
+  header.append(titleRow, meter);
+
   if (activeMeds.length === 0) {
-    const emptyMsg = el('div', {
-      class: 'pill-followup-preview',
-      text: '还没有录入在用药品；先去添加药品后，就可以把清点结果直接回填库存或核对分药。',
-    });
-    const closeBtn = createButton({
+    const emptyMsg = el('div', { class: 'pill-followup-summary' }, [
+      el('p', {
+        class: 'pill-followup-caption',
+        text: '还没有录入在用药品；先去添加药品后，就可以把清点结果直接回填库存或核对分药。',
+      }),
+    ]);
+    const closeEmptyBtn = createButton({
       label: '仅关闭',
       variant: 'secondary',
       onClick: () => sheetHandle?.close(),
     });
-    container.append(header, emptyMsg, closeBtn);
+    container.append(header, emptyMsg, closeEmptyBtn);
     sheetHandle = openBottomSheet({
       label: '清点后续操作',
       content: container,
+      className: 'pill-followup-sheet-shell',
       dismissOnOverlay: true,
     });
     return;
@@ -236,31 +251,121 @@ export async function openPillCountFollowupSheet(
     })),
   });
 
-  const previewBox = el('div', { class: 'pill-followup-preview' });
+  const previewBox = el('div', { class: 'pill-followup-summary' });
 
-  const refreshPreview = () => {
+  let confirmBtn!: HTMLButtonElement;
+
+  const primaryLabel = () => {
+    if (selectedAction === 'check_dose') return '完成核对';
+    return selectedAction === 'add' ? `累加 ${count} 粒` : `设为剩余 ${count} 粒`;
+  };
+
+  const stockBlock = (label: string, value: number, unit: string) => {
+    const wrap = el('div', { class: 'pill-followup-stock' });
+    wrap.append(
+      el('span', { class: 'pill-followup-stock-label', text: label }),
+      el('span', {
+        class: 'pill-followup-stock-value',
+        text: `${roundStock(value)}${unit}`,
+      }),
+    );
+    return wrap;
+  };
+
+  const showWarning = (text: string) => {
+    previewBox.append(el('div', { class: 'pill-followup-note' }, [icon('warn'), el('span', { text })]));
+  };
+
+  const setPrimary = (canApply: boolean) => {
+    confirmBtn.disabled = !canApply;
+    const label = confirmBtn.querySelector('span');
+    if (label) label.textContent = primaryLabel();
+  };
+
+  const refreshPreview = (): boolean => {
     const med = activeMeds.find((m) => m.id === selectedMedId);
-    if (!med) return;
+    previewBox.replaceChildren();
+    previewBox.dataset.state = 'info';
+    if (!med) {
+      setPrimary(false);
+      return false;
+    }
+
     if (selectedAction === 'check_dose') {
       const check = evaluateDoseComparison(count, med, rulesByMed.get(med.id) ?? []);
-      previewBox.textContent = check.message;
-      previewBox.dataset.state = check.ok ? (check.diff === 0 ? 'ok' : 'warn') : 'warn';
-      return;
+      const expected = check.expectedDaily ?? 0;
+      const diff = check.diff ?? 0;
+      if (!check.ok) {
+        previewBox.dataset.state = 'warn';
+        showWarning(check.message);
+        setPrimary(false);
+        return false;
+      }
+
+      previewBox.dataset.state = diff === 0 ? 'ok' : 'check';
+      const compare = el('div', { class: 'pill-followup-compare' });
+      compare.append(
+        stockBlock('当日应取', expected, getConfirmedDose(med)?.unit ?? '粒'),
+        stockBlock('实点', count, '粒'),
+      );
+      const verdict = el('span', {
+        class: 'pill-followup-verdict',
+        text: diff === 0 ? '刚好' : diff > 0 ? `多 ${diff} 粒` : `还差 ${Math.abs(diff)} 粒`,
+      });
+      verdict.dataset.tone = diff === 0 ? 'ok' : 'warn';
+      compare.append(verdict);
+      previewBox.append(
+        compare,
+        el('div', { class: 'pill-followup-bar' }, [
+          el('span', {
+            style: `inline-size: ${Math.min(100, expected > 0 ? (count / expected) * 100 : 0)}%`,
+          }),
+        ]),
+        el('p', {
+          class: 'pill-followup-caption',
+          text: `「${med.name}」当日应取 ${expected}${getConfirmedDose(med)?.unit ?? '粒'}，实点 ${count} 粒`,
+        }),
+      );
+      setPrimary(true);
+      return true;
     }
+
     const existingUnit = med.inventory?.unit?.trim() ?? '';
     if (existingUnit && !areDoseUnitsCompatible(existingUnit, '粒')) {
-      previewBox.textContent = `「${med.name}」库存单位是「${existingUnit}」，不支持直接用「粒」修改。`;
       previewBox.dataset.state = 'warn';
-      return;
+      showWarning(`「${med.name}」库存单位是「${existingUnit}」，不能直接用「粒」修改。`);
+      setPrimary(false);
+      return false;
     }
+
     const unit = existingUnit || '粒';
-    if (selectedAction === 'add') {
-      const base = med.inventory?.remaining ?? 0;
-      previewBox.textContent = `将在「${med.name}」原库存 ${base}${unit} 基础上累加 ${count}${unit}（变为 ${roundStock(base + count)}${unit}）`;
-    } else {
-      previewBox.textContent = `将把「${med.name}」当前剩余库存更新为 ${count}${unit}`;
-    }
-    previewBox.dataset.state = 'info';
+    const base = roundStock(med.inventory?.remaining ?? 0);
+    const next = selectedAction === 'add' ? roundStock(base + count) : count;
+    const delta = roundStock(next - base);
+
+    const row = el('div', { class: 'pill-followup-summary-row' });
+    row.append(
+      stockBlock('现在', base, unit),
+      el('span', { class: 'pill-followup-arrow' }, [icon('chevron-right')]),
+      stockBlock('记完', next, unit),
+      el('span', {
+        class: 'pill-followup-delta',
+        text: delta > 0 ? `+${delta}` : String(delta),
+        'data-tone': delta > 0 ? 'up' : delta < 0 ? 'down' : 'muted',
+      }),
+    );
+    previewBox.append(
+      row,
+      el('p', {
+        class: 'pill-followup-caption',
+        text:
+          selectedAction === 'add'
+            ? `在原库存 ${base}${unit} 上累加 ${count} 粒`
+            : `把当前剩余 ${base}${unit} 更新为 ${count} 粒`,
+      }),
+    );
+    setPrimary(true);
+    return true;
   };
 
   medControl.select.addEventListener('change', () => {
@@ -282,6 +387,9 @@ export async function openPillCountFollowupSheet(
     },
   );
 
+  const modeRow = el('div', { class: 'pill-followup-mode' });
+  modeRow.append(actionSegment);
+
   const fieldRow = el('div', { class: 'pill-followup-field' });
   fieldRow.append(
     el('label', { class: 'pill-followup-label', text: '对应药品' }),
@@ -289,15 +397,18 @@ export async function openPillCountFollowupSheet(
   );
 
   const actions = el('div', { class: 'pill-followup-actions' });
-  const closeBtn = createButton({
+  const cancelBtn = createButton({
     label: '仅关闭',
     variant: 'secondary',
     onClick: () => sheetHandle?.close(),
   });
-  const confirmBtn = createButton({
-    label: '确认执行',
+
+  confirmBtn = createButton({
+    label: primaryLabel(),
     variant: 'primary',
+    icon: 'check',
     onClick: async () => {
+      confirmBtn.disabled = true;
       const result = await applyPillCountFollowup({
         action: selectedAction,
         medId: selectedMedId,
@@ -312,14 +423,15 @@ export async function openPillCountFollowupSheet(
       }
     },
   });
-  actions.append(closeBtn, confirmBtn);
+  actions.append(cancelBtn, confirmBtn);
 
+  container.append(header, fieldRow, modeRow, previewBox, actions);
   refreshPreview();
-  container.append(header, fieldRow, actionSegment, previewBox, actions);
 
   sheetHandle = openBottomSheet({
     label: '清点后续操作',
     content: container,
+    className: 'pill-followup-sheet-shell',
     dismissOnOverlay: true,
   });
 }
