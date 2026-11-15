@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { detectPillsFromImageData } from '../src/features/pillDetection';
+import {
+  clusterPillAppearances,
+  detectPillsFromImageData,
+  detectPillsFromSample,
+  evaluateBlisterGrid,
+} from '../src/features/pillDetection';
 
 type RGB = [number, number, number];
 
@@ -539,5 +544,154 @@ describe('pill detection 3.0 — shape & separation', () => {
     }
     const result = detect(buffer, width, height);
     expect(result.points.length).toBe(centers.length);
+  });
+});
+
+function drawRect(
+  buffer: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x0: number,
+  y0: number,
+  rw: number,
+  rh: number,
+  color: RGB,
+): void {
+  const xEnd = Math.min(width, Math.round(x0 + rw));
+  const yEnd = Math.min(height, Math.round(y0 + rh));
+  for (let y = Math.max(0, Math.round(y0)); y < yEnd; y += 1) {
+    for (let x = Math.max(0, Math.round(x0)); x < xEnd; x += 1) {
+      const idx = (y * width + x) * 4;
+      buffer[idx] = color[0];
+      buffer[idx + 1] = color[1];
+      buffer[idx + 2] = color[2];
+    }
+  }
+}
+
+describe('pill detection 4.0 — sample calibration, blister grid, and mixed appearance clustering', () => {
+  it('isolates low-contrast white pills via single tapped sample while ignoring heavy colored distractors', () => {
+    const width = 300;
+    const height = 220;
+    const buffer = createImage(width, height, [212, 214, 218]);
+    // Large distracting colored desk objects
+    drawRect(buffer, width, height, 10, 15, 55, 190, [48, 105, 200]);
+    drawEllipse(buffer, width, height, 250, 165, 24, 24, [155, 82, 48]);
+
+    const centers = [
+      { x: 100, y: 65 },
+      { x: 168, y: 68 },
+      { x: 112, y: 145 },
+      { x: 185, y: 140 },
+    ];
+    for (const c of centers) {
+      drawEllipse(buffer, width, height, c.x, c.y, 12, 12, [248, 248, 250]);
+    }
+    addNoise(buffer, 3, 19);
+
+    const res = detectPillsFromSample(toImageData(buffer, width, height), [{ x: 100, y: 65 }]);
+    expect(res.points).toHaveLength(centers.length);
+    expectCenters(res.points, centers, 5);
+  });
+
+  it('detects heterogeneous mixed pills via multiple sample taps while ignoring unrelated background clutter', () => {
+    const width = 320;
+    const height = 220;
+    const buffer = createImage(width, height, [168, 164, 156]);
+    // Clutter (dark coaster + green leaflet)
+    drawRect(buffer, width, height, 12, 140, 48, 65, [42, 44, 48]);
+    drawEllipse(buffer, width, height, 265, 55, 20, 14, [55, 145, 78]);
+
+    const whitePills = [
+      { x: 75, y: 55 },
+      { x: 140, y: 60 },
+      { x: 105, y: 120 },
+    ];
+    const redCapsules = [
+      { x: 195, y: 115 },
+      { x: 245, y: 165 },
+    ];
+    for (const c of whitePills) {
+      drawEllipse(buffer, width, height, c.x, c.y, 11, 11, [247, 247, 249]);
+    }
+    for (const c of redCapsules) {
+      drawEllipse(buffer, width, height, c.x, c.y, 16, 9, [208, 48, 52]);
+    }
+
+    const res = detectPillsFromSample(toImageData(buffer, width, height), [
+      whitePills[0]!,
+      redCapsules[0]!,
+    ]);
+    const allCenters = [...whitePills, ...redCapsules];
+    expect(res.points).toHaveLength(allCenters.length);
+    expectCenters(res.points, allCenters, 6);
+  });
+
+  it('evaluates 2x3 blister pack grid and distinguishes filled cavities from empty pressed shadows', () => {
+    const width = 300;
+    const height = 220;
+    const buffer = createImage(width, height, [178, 182, 188]);
+
+    const corners: [
+      { x: number; y: number },
+      { x: number; y: number },
+      { x: number; y: number },
+      { x: number; y: number },
+    ] = [
+      { x: 30, y: 30 },
+      { x: 270, y: 30 },
+      { x: 270, y: 190 },
+      { x: 30, y: 190 },
+    ];
+    const cellW = (270 - 30) / 3;
+    const cellH = (190 - 30) / 2;
+    const expectedFilled = [true, true, false, true, false, true];
+
+    for (let r = 0; r < 2; r += 1) {
+      for (let c = 0; c < 3; c += 1) {
+        const cx = 30 + (c + 0.5) * cellW;
+        const cy = 30 + (r + 0.5) * cellH;
+        const filled = expectedFilled[r * 3 + c]!;
+        if (filled) {
+          drawEllipse(buffer, width, height, cx, cy, 18, 18, [247, 247, 249]);
+        } else {
+          drawEllipse(buffer, width, height, cx, cy, 16, 16, [110, 114, 122]);
+        }
+      }
+    }
+
+    const evaluated = evaluateBlisterGrid(toImageData(buffer, width, height), {
+      rows: 2,
+      cols: 3,
+      corners,
+    });
+    expect(evaluated.grid.cells).toEqual(expectedFilled);
+    expect(evaluated.points).toHaveLength(4);
+  });
+
+  it('clusters mixed pill appearances into summary groups and stays empty for homogeneous pills', () => {
+    const width = 260;
+    const height = 160;
+    const buffer = createImage(width, height, [175, 175, 175]);
+    const whitePills = [
+      { id: 1, x: 50, y: 50 },
+      { id: 2, x: 100, y: 50 },
+      { id: 3, x: 150, y: 50 },
+    ];
+    const redCapsules = [
+      { id: 4, x: 75, y: 115 },
+      { id: 5, x: 145, y: 115 },
+    ];
+    for (const c of whitePills) drawEllipse(buffer, width, height, c.x, c.y, 11, 11, [246, 246, 248]);
+    for (const c of redCapsules) drawEllipse(buffer, width, height, c.x, c.y, 15, 9, [212, 48, 52]);
+
+    const imgData = toImageData(buffer, width, height);
+    const mixedClusters = clusterPillAppearances(imgData, [...whitePills, ...redCapsules]);
+    expect(mixedClusters).toHaveLength(2);
+    expect(mixedClusters.reduce((sum, item) => sum + item.count, 0)).toBe(5);
+    expect(mixedClusters.map((c) => c.count).sort((a, b) => a - b)).toEqual([2, 3]);
+
+    const uniformClusters = clusterPillAppearances(imgData, whitePills);
+    expect(uniformClusters).toEqual([]);
   });
 });

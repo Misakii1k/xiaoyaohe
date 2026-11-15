@@ -11,18 +11,29 @@
  *    因此远近、大小不同的照片都稳定。
  */
 
-export interface PillPoint {
-  x: number;
-  y: number;
-  id: number;
-  isManual?: boolean;
-}
+import type {
+  PillAppearanceCluster,
+  PillGridConfig,
+  PillGridCorner,
+  PillPoint,
+  PillROI,
+} from './pillEngine';
+
+export type {
+  PillPoint,
+  PillAppearanceCluster,
+  PillGridConfig,
+  PillGridCorner,
+  PillROI,
+};
 
 export interface PillDetectOptions {
   /** 手动敏感度偏移（-50 ~ 50，默认 0；正值更敏感，会多检出弱对比药片） */
   sensitivityOffset?: number;
   /** 兼容旧参数：最小中心间距（像素）。不传时按药片半径自适应。 */
   minSpacing?: number;
+  /** 可选局部裁剪区域（整图坐标），仅统计该框内并返回整图坐标。 */
+  roi?: PillROI;
 }
 
 export interface PillDetectionResult {
@@ -72,56 +83,85 @@ function medianOf(values: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
 }
 
-/**
- * 从 ImageData 中检测药片中心坐标。
- */
-export function detectPillsFromImageData(
-  imgData: ImageData,
-  options: PillDetectOptions = {},
-): PillDetectionResult {
-  const started = clockNow();
-  const w = imgData.width;
-  const h = imgData.height;
-  const data = imgData.data;
-  const total = w * h;
-  const empty: PillDetectionResult = {
-    points: [],
-    elapsedMs: 0,
-    detectedThresh: 0,
-    pillRadius: 0,
-    componentCount: 0,
-  };
-  if (w < 8 || h < 8 || total <= 0) return empty;
-
-  const field = estimateBackgroundField(data, w, h);
-  const score = computeForegroundScore(data, w, h, field);
-  const histogram = buildScoreHistogram(score);
-  let threshold = clamp(Math.max(otsuThreshold(histogram, total) * 0.68, 24), 24, 120);
-  const userOffset = clamp(options.sensitivityOffset ?? 0, -50, 50);
-  threshold = clamp(threshold - userOffset * 0.45, 12, 150);
-
-  // 阈值自校准：背景被误判成前景（或药片几乎全被漏掉）时，往回收一档。
-  let mask = buildMask(score, w, h, threshold);
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const coverage = countForeground(mask);
-    if (coverage > 0.55) {
-      threshold = clamp(threshold * 1.35, 14, 170);
-      mask = buildMask(score, w, h, threshold);
-      continue;
-    }
-    if (coverage < 0.0012 && threshold > 26) {
-      threshold = clamp(threshold * 0.85, 24, 170);
-      mask = buildMask(score, w, h, threshold);
-      continue;
-    }
-    break;
+const SRGB_LINEAR_LUT = (() => {
+  const lut = new Float32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    const s = i / 255;
+    lut[i] = s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
   }
+  return lut;
+})();
 
+function fLab(t: number): number {
+  return t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+}
+
+/** Convert sRGB [0..255] into CIE L*a*b* (D65). */
+export function rgbToLab(r: number, g: number, b: number): [number, number, number] {
+  const ri = SRGB_LINEAR_LUT[clamp(Math.round(r), 0, 255)]!;
+  const gi = SRGB_LINEAR_LUT[clamp(Math.round(g), 0, 255)]!;
+  const bi = SRGB_LINEAR_LUT[clamp(Math.round(b), 0, 255)]!;
+
+  const x = (ri * 0.4124 + gi * 0.3576 + bi * 0.1805) / 0.95047;
+  const y = ri * 0.2126 + gi * 0.7152 + bi * 0.0722;
+  const z = (ri * 0.0193 + gi * 0.1192 + bi * 0.9505) / 1.08883;
+
+  const fx = fLab(x);
+  const fy = fLab(y);
+  const fz = fLab(z);
+
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+/** Euclidean CIE76 Delta-E between two Lab vectors. */
+export function labDistance(a: readonly [number, number, number], b: readonly [number, number, number]): number {
+  const dl = a[0] - b[0];
+  const da = a[1] - b[1];
+  const db = a[2] - b[2];
+  return Math.sqrt(dl * dl + da * da + db * db);
+}
+
+interface CroppedRegion {
+  imgData: ImageData;
+  offsetX: number;
+  offsetY: number;
+}
+
+function cropImageDataRegion(imgData: ImageData, roi?: PillROI): CroppedRegion {
+  if (!roi) return { imgData, offsetX: 0, offsetY: 0 };
+  const x0 = clamp(Math.floor(roi.x), 0, imgData.width);
+  const y0 = clamp(Math.floor(roi.y), 0, imgData.height);
+  const x1 = clamp(Math.ceil(roi.x + roi.width), x0, imgData.width);
+  const y1 = clamp(Math.ceil(roi.y + roi.height), y0, imgData.height);
+  const cw = x1 - x0;
+  const ch = y1 - y0;
+  if (cw < 8 || ch < 8 || (x0 === 0 && y0 === 0 && cw === imgData.width && ch === imgData.height)) {
+    return { imgData, offsetX: 0, offsetY: 0 };
+  }
+  const out = new Uint8ClampedArray(cw * ch * 4);
+  const src = imgData.data;
+  for (let y = 0; y < ch; y += 1) {
+    const srcStart = ((y0 + y) * imgData.width + x0) * 4;
+    out.set(src.subarray(srcStart, srcStart + cw * 4), y * cw * 4);
+  }
+  return {
+    imgData: { width: cw, height: ch, data: out, colorSpace: imgData.colorSpace } as ImageData,
+    offsetX: x0,
+    offsetY: y0,
+  };
+}
+
+function extractPillPointsFromMask(
+  mask: Uint8Array,
+  w: number,
+  h: number,
+  options: { minSpacing?: number; overrideRadius?: number; maxComponentArea?: number } = {},
+): { points: PillPoint[]; pillRadius: number; componentCount: number } {
   closePinholes(mask, w, h);
 
   const { labels, components } = labelComponents(mask, w, h);
   if (components.length === 0) {
-    return { ...empty, elapsedMs: clockNow() - started, detectedThresh: threshold };
+    return { points: [], pillRadius: 0, componentCount: 0 };
   }
 
   const dist = chamferDistance(mask, w, h);
@@ -141,7 +181,9 @@ export function detectPillsFromImageData(
 
   const holes = analyzeEnclosedHoles(mask, labels, w, h);
 
-  const pillRadius = estimatePillRadius(components, w, h);
+  const pillRadius = options.overrideRadius && options.overrideRadius > 0
+    ? options.overrideRadius
+    : estimatePillRadius(components, w, h);
   const minArea = Math.max(7, Math.PI * pillRadius * pillRadius * 0.18);
   const minPeakDist = Math.max(1.3, pillRadius * 0.32);
   const maxPeakSpacing = Math.max(2.6, pillRadius * 2.3);
@@ -154,6 +196,7 @@ export function detectPillsFromImageData(
 
   for (const component of components) {
     if (component.area < minArea) continue;
+    if (options.maxComponentArea && component.area > options.maxComponentArea) continue;
     if (component.maxDist < Math.max(1.25, pillRadius * 0.42)) continue;
 
     // 药片内部高光/刻痕形成的「细环」：按一粒计，中心取环+孔洞的合并质心。
@@ -256,12 +299,67 @@ export function detectPillsFromImageData(
     isManual: false,
   }));
 
+  return { points, pillRadius, componentCount: components.length };
+}
+
+/**
+ * 从 ImageData 中检测药片中心坐标。
+ */
+export function detectPillsFromImageData(
+  imgData: ImageData,
+  options: PillDetectOptions = {},
+): PillDetectionResult {
+  const started = clockNow();
+  const cropped = cropImageDataRegion(imgData, options.roi);
+  const target = cropped.imgData;
+  const w = target.width;
+  const h = target.height;
+  const data = target.data;
+  const total = w * h;
+  const empty: PillDetectionResult = {
+    points: [],
+    elapsedMs: 0,
+    detectedThresh: 0,
+    pillRadius: 0,
+    componentCount: 0,
+  };
+  if (w < 8 || h < 8 || total <= 0) return empty;
+
+  const field = estimateBackgroundField(data, w, h);
+  const score = computeForegroundScore(data, w, h, field);
+  const histogram = buildScoreHistogram(score);
+  let threshold = clamp(Math.max(otsuThreshold(histogram, total) * 0.68, 24), 24, 120);
+  const userOffset = clamp(options.sensitivityOffset ?? 0, -50, 50);
+  threshold = clamp(threshold - userOffset * 0.45, 12, 150);
+
+  // 阈值自校准：背景被误判成前景（或药片几乎全被漏掉）时，往回收一档。
+  let mask = buildMask(score, w, h, threshold);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const coverage = countForeground(mask);
+    if (coverage > 0.55) {
+      threshold = clamp(threshold * 1.35, 14, 170);
+      mask = buildMask(score, w, h, threshold);
+      continue;
+    }
+    if (coverage < 0.0012 && threshold > 26) {
+      threshold = clamp(threshold * 0.85, 24, 170);
+      mask = buildMask(score, w, h, threshold);
+      continue;
+    }
+    break;
+  }
+
+  const extracted = extractPillPointsFromMask(mask, w, h, { minSpacing: options.minSpacing });
+  const points = (cropped.offsetX !== 0 || cropped.offsetY !== 0)
+    ? extracted.points.map((pt) => ({ ...pt, x: pt.x + cropped.offsetX, y: pt.y + cropped.offsetY }))
+    : extracted.points;
+
   return {
     points,
     elapsedMs: clockNow() - started,
     detectedThresh: threshold,
-    pillRadius,
-    componentCount: components.length,
+    pillRadius: extracted.pillRadius,
+    componentCount: extracted.componentCount,
   };
 }
 
@@ -447,10 +545,15 @@ function computeForegroundScore(
       const bgG = fieldG[i00]! * w00 + fieldG[i10]! * w10 + fieldG[i01]! * w01 + fieldG[i11]! * w11;
       const bgB = fieldB[i00]! * w00 + fieldB[i10]! * w10 + fieldB[i01]! * w01 + fieldB[i11]! * w11;
       const idx = (row + x) * 4;
-      const dr = data[idx]! - bgR;
-      const dg = data[idx + 1]! - bgG;
-      const db = data[idx + 2]! - bgB;
-      score[row + x] = Math.sqrt(0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db);
+      const pr = data[idx]!;
+      const pg = data[idx + 1]!;
+      const pb = data[idx + 2]!;
+      const dr = pr - bgR;
+      const dg = pg - bgG;
+      const db = pb - bgB;
+      const rgbScore = Math.sqrt(0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db);
+      const labScore = labDistance(rgbToLab(pr, pg, pb), rgbToLab(bgR, bgG, bgB)) * 2.45;
+      score[row + x] = rgbScore >= labScore ? rgbScore : labScore;
     }
   }
   return score;
@@ -885,4 +988,573 @@ function lineSaddle(dist: Float32Array, w: number, a: Peak, b: Peak): number {
     if (value < saddle) saddle = value;
   }
   return saddle === Infinity ? 0 : saddle;
+}
+
+/* ------------------------------------------------------------------ */
+/* 4.0 本地交互式增强：样本区域生长、整板透视网格、混装外观聚类                */
+/* ------------------------------------------------------------------ */
+
+export interface PillSampleDetectOptions extends PillDetectOptions {
+  /** 允许用户微调样本色彩宽容度（正值宽松，负值收敛）。 */
+  colorToleranceOffset?: number;
+}
+
+interface SampleColorModel {
+  meanRgb: [number, number, number];
+  meanLab: [number, number, number];
+  rgbTol: number;
+  labTol: number;
+  radius: number;
+  area: number;
+}
+
+function samplePatchMeanRgb(
+  data: Uint8ClampedArray,
+  w: number,
+  h: number,
+  cx: number,
+  cy: number,
+  halfSize = 1,
+): [number, number, number] {
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let count = 0;
+  const x0 = clamp(Math.round(cx) - halfSize, 0, w - 1);
+  const x1 = clamp(Math.round(cx) + halfSize, 0, w - 1);
+  const y0 = clamp(Math.round(cy) - halfSize, 0, h - 1);
+  const y1 = clamp(Math.round(cy) + halfSize, 0, h - 1);
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
+      const idx = (y * w + x) * 4;
+      sumR += data[idx]!;
+      sumG += data[idx + 1]!;
+      sumB += data[idx + 2]!;
+      count += 1;
+    }
+  }
+  if (count === 0) return [0, 0, 0];
+  return [sumR / count, sumG / count, sumB / count];
+}
+
+function buildSampleModel(
+  data: Uint8ClampedArray,
+  w: number,
+  h: number,
+  field: BackgroundField,
+  sx: number,
+  sy: number,
+  colorOffset: number,
+): SampleColorModel {
+  const seedX = clamp(Math.round(sx), 0, w - 1);
+  const seedY = clamp(Math.round(sy), 0, h - 1);
+  const seedRgb = samplePatchMeanRgb(data, w, h, seedX, seedY, 1);
+  const seedLab = rgbToLab(seedRgb[0], seedRgb[1], seedRgb[2]);
+
+  // Estimate local background color at seed using bilinear interpolation on field
+  const gx = clamp(seedX / field.cell - 0.5, 0, field.gw - 1);
+  const gy = clamp(seedY / field.cell - 0.5, 0, field.gh - 1);
+  const bgIdx = Math.round(gy) * field.gw + Math.round(gx);
+  const bgRgb: [number, number, number] = [
+    field.r[bgIdx] ?? seedRgb[0],
+    field.g[bgIdx] ?? seedRgb[1],
+    field.b[bgIdx] ?? seedRgb[2],
+  ];
+  const bgLab = rgbToLab(bgRgb[0], bgRgb[1], bgRgb[2]);
+  const bgDeltaRgb = Math.hypot(
+    seedRgb[0] - bgRgb[0],
+    seedRgb[1] - bgRgb[1],
+    seedRgb[2] - bgRgb[2],
+  );
+  const bgDeltaLab = labDistance(seedLab, bgLab);
+
+  const growRgbCap = bgDeltaRgb > 14 ? Math.min(26, bgDeltaRgb * 0.45) : 18;
+  const growLabCap = bgDeltaLab > 7 ? Math.min(13, bgDeltaLab * 0.55) : 9;
+
+  const maxRadius = Math.max(24, Math.round(Math.min(w, h) * 0.18));
+  const maxPixels = Math.min(8000, Math.round(w * h * 0.12));
+  const visited = new Uint8Array(w * h);
+  const queueX = new Int32Array(maxPixels);
+  const queueY = new Int32Array(maxPixels);
+  const grownIndices: number[] = [];
+
+  let head = 0;
+  let tail = 0;
+  const startIdx = seedY * w + seedX;
+  visited[startIdx] = 1;
+  queueX[tail] = seedX;
+  queueY[tail] = seedY;
+  tail += 1;
+
+  while (head < tail && grownIndices.length < maxPixels) {
+    const cx = queueX[head]!;
+    const cy = queueY[head]!;
+    head += 1;
+    const pIdx = cy * w + cx;
+    grownIndices.push(pIdx);
+
+    const neighbors = [
+      [cx + 1, cy],
+      [cx - 1, cy],
+      [cx, cy + 1],
+      [cx, cy - 1],
+    ];
+    for (const pair of neighbors) {
+      const nx = pair[0]!;
+      const ny = pair[1]!;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      if (Math.hypot(nx - seedX, ny - seedY) > maxRadius) continue;
+      const nIdx = ny * w + nx;
+      if (visited[nIdx]) continue;
+      const off = nIdx * 4;
+      const r = data[off]!;
+      const g = data[off + 1]!;
+      const b = data[off + 2]!;
+      const rgbDist = Math.hypot(r - seedRgb[0], g - seedRgb[1], b - seedRgb[2]);
+      if (rgbDist > growRgbCap && labDistance(rgbToLab(r, g, b), seedLab) > growLabCap) {
+        continue;
+      }
+      visited[nIdx] = 1;
+      if (tail < maxPixels) {
+        queueX[tail] = nx;
+        queueY[tail] = ny;
+        tail += 1;
+      }
+    }
+  }
+
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  const count = Math.max(1, grownIndices.length);
+  for (const pIdx of grownIndices) {
+    const off = pIdx * 4;
+    sumR += data[off]!;
+    sumG += data[off + 1]!;
+    sumB += data[off + 2]!;
+  }
+  const meanRgb: [number, number, number] = [sumR / count, sumG / count, sumB / count];
+  const meanLab = rgbToLab(meanRgb[0], meanRgb[1], meanRgb[2]);
+
+  const rgbSpreads: number[] = [];
+  const labSpreads: number[] = [];
+  for (const pIdx of grownIndices) {
+    const off = pIdx * 4;
+    const r = data[off]!;
+    const g = data[off + 1]!;
+    const b = data[off + 2]!;
+    rgbSpreads.push(Math.hypot(r - meanRgb[0], g - meanRgb[1], b - meanRgb[2]));
+    labSpreads.push(labDistance(rgbToLab(r, g, b), meanLab));
+  }
+
+  const p90Rgb = rgbSpreads.length > 0 ? percentile(rgbSpreads, 0.9) : 12;
+  const p90Lab = labSpreads.length > 0 ? percentile(labSpreads, 0.9) : 6;
+  const adj = clamp(colorOffset, -40, 40) * 0.35;
+
+  let rgbTol = clamp(Math.max(18, p90Rgb * 2.1 + adj), 14, 52);
+  let labTol = clamp(Math.max(8, p90Lab * 2.1 + adj * 0.45), 6, 26);
+
+  if (bgDeltaRgb > 16) {
+    rgbTol = Math.min(rgbTol, bgDeltaRgb * 0.62);
+  }
+  if (bgDeltaLab > 6.5) {
+    labTol = Math.min(labTol, bgDeltaLab * 0.65);
+  }
+
+  const area = grownIndices.length > 16 && grownIndices.length < maxPixels * 0.85
+    ? grownIndices.length
+    : Math.PI * 100;
+  const radius = clamp(Math.sqrt(area / Math.PI), 4, Math.min(w, h) * 0.16);
+
+  return { meanRgb, meanLab, rgbTol, labTol, radius, area };
+}
+
+/**
+ * Sample-calibrated local pill detector: users tap one or more sample pills and
+ * all matching pills across the scene (or ROI) are isolated even in high clutter.
+ */
+export function detectPillsFromSample(
+  imgData: ImageData,
+  samplePoints: readonly { x: number; y: number }[],
+  options: PillSampleDetectOptions = {},
+): PillDetectionResult {
+  const started = clockNow();
+  if (!samplePoints || samplePoints.length === 0) {
+    return detectPillsFromImageData(imgData, options);
+  }
+
+  const cropped = cropImageDataRegion(imgData, options.roi);
+  const target = cropped.imgData;
+  const w = target.width;
+  const h = target.height;
+  const data = target.data;
+  const total = w * h;
+  if (w < 8 || h < 8 || total <= 0) {
+    return { points: [], elapsedMs: 0, detectedThresh: 0, pillRadius: 0, componentCount: 0 };
+  }
+
+  const localSamples = samplePoints
+    .map((p) => ({ x: p.x - cropped.offsetX, y: p.y - cropped.offsetY }))
+    .filter((p) => p.x >= 0 && p.y >= 0 && p.x < w && p.y < h);
+  if (localSamples.length === 0) {
+    return detectPillsFromImageData(imgData, options);
+  }
+
+  const field = estimateBackgroundField(data, w, h);
+  const colorOffset = options.colorToleranceOffset ?? options.sensitivityOffset ?? 0;
+  const models = localSamples.map((s) =>
+    buildSampleModel(data, w, h, field, s.x, s.y, colorOffset),
+  );
+
+  const mask = new Uint8Array(total);
+  for (let i = 0; i < total; i += 1) {
+    const off = i * 4;
+    const r = data[off]!;
+    const g = data[off + 1]!;
+    const b = data[off + 2]!;
+    const lab = rgbToLab(r, g, b);
+    for (const model of models) {
+      const rgbDist = Math.hypot(
+        r - model.meanRgb[0],
+        g - model.meanRgb[1],
+        b - model.meanRgb[2],
+      );
+      if (rgbDist <= model.rgbTol || labDistance(lab, model.meanLab) <= model.labTol) {
+        mask[i] = 1;
+        break;
+      }
+    }
+  }
+
+  const medianRadius = medianOf(models.map((m) => m.radius));
+  const maxSampleArea = Math.max(...models.map((m) => m.area));
+  const extracted = extractPillPointsFromMask(mask, w, h, {
+    minSpacing: options.minSpacing,
+    overrideRadius: medianRadius,
+    maxComponentArea: Math.max(maxSampleArea * 12, total * 0.28),
+  });
+
+  const points = (cropped.offsetX !== 0 || cropped.offsetY !== 0)
+    ? extracted.points.map((pt) => ({ ...pt, x: pt.x + cropped.offsetX, y: pt.y + cropped.offsetY }))
+    : extracted.points;
+
+  return {
+    points,
+    elapsedMs: clockNow() - started,
+    detectedThresh: Math.round(models[0]?.labTol ?? 0),
+    pillRadius: extracted.pillRadius,
+    componentCount: extracted.componentCount,
+  };
+}
+
+export interface EvaluateBlisterGridOptions {
+  rows: number;
+  cols: number;
+  corners?: [PillGridCorner, PillGridCorner, PillGridCorner, PillGridCorner];
+  sensitivityOffset?: number;
+}
+
+function interpolateQuad(
+  corners: [PillGridCorner, PillGridCorner, PillGridCorner, PillGridCorner],
+  u: number,
+  v: number,
+): PillGridCorner {
+  const [tl, tr, br, bl] = corners;
+  const wTL = (1 - u) * (1 - v);
+  const wTR = u * (1 - v);
+  const wBR = u * v;
+  const wBL = (1 - u) * v;
+  return {
+    x: tl.x * wTL + tr.x * wTR + br.x * wBR + bl.x * wBL,
+    y: tl.y * wTL + tr.y * wTR + br.y * wBR + bl.y * wBL,
+  };
+}
+
+/**
+ * Evaluate each pocket of an M x N blister grid mapped across arbitrary four corners,
+ * distinguishing filled pills/capsules from empty crushed cavities.
+ */
+export function evaluateBlisterGrid(
+  imgData: ImageData,
+  options: EvaluateBlisterGridOptions,
+): { grid: PillGridConfig; points: PillPoint[] } {
+  const rows = clamp(Math.round(options.rows), 1, 20);
+  const cols = clamp(Math.round(options.cols), 1, 20);
+  const w = imgData.width;
+  const h = imgData.height;
+  const data = imgData.data;
+
+  const corners: [PillGridCorner, PillGridCorner, PillGridCorner, PillGridCorner] =
+    options.corners ?? [
+      { x: Math.round(w * 0.08), y: Math.round(h * 0.08) },
+      { x: Math.round(w * 0.92), y: Math.round(h * 0.08) },
+      { x: Math.round(w * 0.92), y: Math.round(h * 0.92) },
+      { x: Math.round(w * 0.08), y: Math.round(h * 0.92) },
+    ];
+
+  if (w < 8 || h < 8) {
+    const emptyCells = new Array(rows * cols).fill(false) as boolean[];
+    return { grid: { rows, cols, corners, cells: emptyCells }, points: [] };
+  }
+
+  interface CellStat {
+    r: number;
+    c: number;
+    cx: number;
+    cy: number;
+    signal: number;
+    foilDelta: number;
+  }
+
+  // Estimate blister foil baseline from grid border dividers
+  const borderL: number[] = [];
+  const borderA: number[] = [];
+  const borderB: number[] = [];
+  const sampleAtUv = (u: number, v: number): [number, number, number] => {
+    const pt = interpolateQuad(corners, u, v);
+    const px = clamp(Math.round(pt.x), 0, w - 1);
+    const py = clamp(Math.round(pt.y), 0, h - 1);
+    const idx = (py * w + px) * 4;
+    return [data[idx]!, data[idx + 1]!, data[idx + 2]!];
+  };
+
+  for (let rr = 0; rr <= rows; rr += 1) {
+    const v = rr / rows;
+    for (let s = 1; s < cols * 2; s += 2) {
+      const u = s / (cols * 2);
+      const [lr, la, lb] = rgbToLab(...sampleAtUv(u, v));
+      borderL.push(lr);
+      borderA.push(la);
+      borderB.push(lb);
+    }
+  }
+  const foilLab: [number, number, number] = [
+    medianOf(borderL),
+    medianOf(borderA),
+    medianOf(borderB),
+  ];
+
+  const stats: CellStat[] = [];
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      const cu = (c + 0.5) / cols;
+      const cv = (r + 0.5) / rows;
+      const center = interpolateQuad(corners, cu, cv);
+
+      let sumR = 0;
+      let sumG = 0;
+      let sumB = 0;
+      let samples = 0;
+      for (let dv = -2; dv <= 2; dv += 1) {
+        for (let du = -2; du <= 2; du += 1) {
+          const u = cu + (du * 0.08) / cols;
+          const v = cv + (dv * 0.08) / rows;
+          const [sr, sg, sb] = sampleAtUv(u, v);
+          sumR += sr;
+          sumG += sg;
+          sumB += sb;
+          samples += 1;
+        }
+      }
+      const meanLab = rgbToLab(sumR / samples, sumG / samples, sumB / samples);
+      const chroma = Math.hypot(meanLab[1], meanLab[2]);
+      const foilDelta = labDistance(meanLab, foilLab);
+      const isDarkNeutralHole = meanLab[0] < foilLab[0] - 8 && chroma < 10;
+      // Filled capsules/tablets score high on luminance or chroma contrast without falling into dark gray cavity shadow
+      const signal = isDarkNeutralHole
+        ? meanLab[0] - 24
+        : meanLab[0] + chroma * 1.45 + Math.max(0, foilDelta - 14) * 0.4;
+
+      stats.push({ r, c, cx: center.x, cy: center.y, signal, foilDelta });
+    }
+  }
+
+  const signals = stats.map((s) => s.signal);
+  const minSig = Math.min(...signals);
+  const maxSig = Math.max(...signals);
+  const spread = maxSig - minSig;
+  const sensAdj = clamp(options.sensitivityOffset ?? 0, -50, 50) * 0.25;
+
+  let cells: boolean[];
+  if (spread > 14) {
+    // 1D 2-means cluster split between empty cavities (low signal) and filled pockets (high signal)
+    let low = minSig;
+    let high = maxSig;
+    for (let iter = 0; iter < 8; iter += 1) {
+      const mid = (low + high) / 2;
+      let sumLow = 0;
+      let countLow = 0;
+      let sumHigh = 0;
+      let countHigh = 0;
+      for (const s of signals) {
+        if (s < mid) {
+          sumLow += s;
+          countLow += 1;
+        } else {
+          sumHigh += s;
+          countHigh += 1;
+        }
+      }
+      if (countLow > 0) low = sumLow / countLow;
+      if (countHigh > 0) high = sumHigh / countHigh;
+    }
+    const splitThresh = (low + high) / 2 - sensAdj;
+    cells = stats.map((s) => s.signal >= splitThresh);
+  } else {
+    const medianDelta = medianOf(stats.map((s) => s.foilDelta));
+    const allFilled = medianDelta > 7 - sensAdj * 0.2;
+    cells = stats.map(() => allFilled);
+  }
+
+  const points: PillPoint[] = [];
+  let idCounter = 1;
+  for (let i = 0; i < stats.length; i += 1) {
+    if (!cells[i]) continue;
+    const st = stats[i]!;
+    points.push({
+      id: idCounter++,
+      x: Math.round(st.cx),
+      y: Math.round(st.cy),
+      isManual: false,
+    });
+  }
+
+  return {
+    grid: { rows, cols, corners, cells },
+    points,
+  };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const hex = (n: number) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0');
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
+function labelForAppearanceCluster(lab: readonly [number, number, number]): string {
+  const [l, a, b] = lab;
+  const chroma = Math.hypot(a, b);
+  if (chroma < 14) {
+    if (l >= 82) return '浅白药粒';
+    if (l <= 45) return '深色药粒';
+    return '灰褐药粒';
+  }
+  const hue = (Math.atan2(b, a) * 180) / Math.PI;
+  const normHue = hue < 0 ? hue + 360 : hue;
+  if (normHue >= 330 || normHue < 25) return '红色药粒';
+  if (normHue >= 25 && normHue < 62) return l < 60 ? '棕橙药粒' : '橙色药粒';
+  if (normHue >= 62 && normHue < 110) return '黄色药粒';
+  if (normHue >= 110 && normHue < 180) return '绿色药粒';
+  if (normHue >= 180 && normHue < 265) return '蓝色药粒';
+  return '紫粉药粒';
+}
+
+/**
+ * Group detected pills by 5x5 local Lab median color so mixed regimens surface a lightweight
+ * appearance summary when 2+ visually distinct types are present. Returns [] if uniform.
+ */
+export function clusterPillAppearances(
+  imgData: ImageData,
+  points: readonly PillPoint[],
+): PillAppearanceCluster[] {
+  if (!points || points.length < 2 || imgData.width <= 0 || imgData.height <= 0) {
+    return [];
+  }
+
+  const w = imgData.width;
+  const h = imgData.height;
+  const data = imgData.data;
+
+  interface ClusterAccum {
+    sumL: number;
+    sumA: number;
+    sumB: number;
+    sumR: number;
+    sumG: number;
+    sumBlue: number;
+    pointIds: number[];
+    meanLab: [number, number, number];
+  }
+
+  const clusters: ClusterAccum[] = [];
+  const MERGE_DELTA_E = 22;
+
+  for (const pt of points) {
+    const cx = clamp(Math.round(pt.x), 0, w - 1);
+    const cy = clamp(Math.round(pt.y), 0, h - 1);
+    const rs: number[] = [];
+    const gs: number[] = [];
+    const bs: number[] = [];
+    for (let dy = -2; dy <= 2; dy += 1) {
+      const y = clamp(cy + dy, 0, h - 1);
+      for (let dx = -2; dx <= 2; dx += 1) {
+        const x = clamp(cx + dx, 0, w - 1);
+        const off = (y * w + x) * 4;
+        rs.push(data[off]!);
+        gs.push(data[off + 1]!);
+        bs.push(data[off + 2]!);
+      }
+    }
+    const mr = medianOf(rs);
+    const mg = medianOf(gs);
+    const mb = medianOf(bs);
+    const lab = rgbToLab(mr, mg, mb);
+
+    let bestCluster: ClusterAccum | null = null;
+    let bestDist = Infinity;
+    for (const c of clusters) {
+      const d = labDistance(lab, c.meanLab);
+      if (d <= MERGE_DELTA_E && d < bestDist) {
+        bestDist = d;
+        bestCluster = c;
+      }
+    }
+
+    if (bestCluster) {
+      bestCluster.pointIds.push(pt.id);
+      bestCluster.sumL += lab[0];
+      bestCluster.sumA += lab[1];
+      bestCluster.sumB += lab[2];
+      bestCluster.sumR += mr;
+      bestCluster.sumG += mg;
+      bestCluster.sumBlue += mb;
+      const n = bestCluster.pointIds.length;
+      bestCluster.meanLab = [
+        bestCluster.sumL / n,
+        bestCluster.sumA / n,
+        bestCluster.sumB / n,
+      ];
+    } else {
+      clusters.push({
+        sumL: lab[0],
+        sumA: lab[1],
+        sumB: lab[2],
+        sumR: mr,
+        sumG: mg,
+        sumBlue: mb,
+        pointIds: [pt.id],
+        meanLab: lab,
+      });
+    }
+  }
+
+  if (clusters.length < 2) {
+    return [];
+  }
+
+  const sorted = [...clusters].sort((a, b) => b.pointIds.length - a.pointIds.length);
+  const labelCounts = new Map<string, number>();
+
+  return sorted.map((c) => {
+    const n = c.pointIds.length;
+    const baseLabel = labelForAppearanceCluster(c.meanLab);
+    const seen = (labelCounts.get(baseLabel) ?? 0) + 1;
+    labelCounts.set(baseLabel, seen);
+    const label = seen > 1 ? `${baseLabel}${seen}` : baseLabel;
+    return {
+      label,
+      count: n,
+      swatch: rgbToHex(c.sumR / n, c.sumG / n, c.sumBlue / n),
+      pointIds: c.pointIds,
+    };
+  });
 }
