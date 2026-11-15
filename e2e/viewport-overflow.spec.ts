@@ -137,6 +137,7 @@ test.describe('关怀大字模式与分药播报交互回归', () => {
         await expect.poll(() =>
           page.evaluate(() => document.documentElement.dataset.care),
         ).toBe('on');
+        await expect(page.locator('.today-batch-take-btn, .today-primary-btn, .btn.primary').first()).toBeVisible({ timeout: 3_000 });
         const todayMetrics = await page.evaluate(() => {
           const cta = document.querySelector<HTMLElement>('.today-batch-take-btn, .today-primary-btn, .btn.primary');
           const medName = document.querySelector<HTMLElement>('.today-medication-name');

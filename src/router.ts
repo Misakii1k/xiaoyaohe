@@ -1,5 +1,13 @@
 import { reportSilentFailure } from './app/diagnostics';
 import {
+  animatePageIn,
+  animatePageSwap,
+  motionEnabled,
+  preparePage,
+  resetPageMotion,
+  transitionPages,
+} from './ui/motion';
+import {
   dispatchTabEvent,
   getActiveTabKey,
   getCachedTabEntry,
@@ -145,6 +153,7 @@ function abortTransientController(previousTabKey: PrimaryTabRoute | null): void 
 
 async function dispatch(): Promise<void> {
   const navigationId = ++navigationSeq;
+  resetPageMotion();
   const rawPath = location.hash.replace(/^#/, '') || defaultPath;
   const path = normalizeRoutePath(rawPath);
   const targetTabKey = resolveKeepAliveTabKey(path);
@@ -152,6 +161,8 @@ async function dispatch(): Promise<void> {
   // 1. Destination is a primary keep-alive tab
   if (targetTabKey) {
     const previousTabKey = getActiveTabKey();
+    const previousTabEntry = previousTabKey ? getCachedTabEntry(previousTabKey) : undefined;
+    const animate = motionEnabled();
 
     // Abort transient/subpage controller if any (preserve rendered keep-alive tab controller)
     abortTransientController(previousTabKey);
@@ -166,7 +177,9 @@ async function dispatch(): Promise<void> {
       activeCleanup = null;
     }
     const subpageEl = getExistingSubpageContainer();
-    if (subpageEl) {
+    const leavingSubpage = Boolean(subpageEl && !subpageEl.hidden);
+    const keepSubpageForExit = Boolean(leavingSubpage && animate);
+    if (subpageEl && !keepSubpageForExit) {
       hideElement(subpageEl);
       subpageEl.replaceChildren();
     }
@@ -179,17 +192,24 @@ async function dispatch(): Promise<void> {
       }
     }
 
-    // If another tab was active, save its scroll, dispatch deactivation, and hide it
+    // If another tab was active, save its scroll, dispatch deactivation, and hide it.
+    // 有动效时先把旧页留在屏幕上当背景，等新页渲染完再接手；测试环境没有 WAAPI 仍即时隐藏。
     if (previousTabKey && previousTabKey !== targetTabKey) {
-      const prevEntry = getCachedTabEntry(previousTabKey);
+      const prevEntry = previousTabEntry;
       if (prevEntry) {
         saveTabScrollPosition(prevEntry);
-        hideElement(prevEntry.container);
         dispatchTabEvent('deactivated', previousTabKey, prevEntry.container, {
           tab: previousTabKey,
           path,
           nextTab: targetTabKey,
         });
+        if (animate) {
+          prevEntry.container.style.pointerEvents = 'none';
+          prevEntry.container.inert = true;
+          prevEntry.container.setAttribute('aria-hidden', 'true');
+        } else {
+          hideElement(prevEntry.container);
+        }
       }
     }
 
@@ -232,6 +252,14 @@ async function dispatch(): Promise<void> {
     runRouteTransitionCleanups();
 
     const entry = getOrCreateTabContainer(targetTabKey, rootEl);
+    const oldTab =
+      previousTabEntry && previousTabKey !== targetTabKey ? previousTabEntry.container : null;
+    const settleSubpageExit = () => {
+      if (!subpageEl) return;
+      hideElement(subpageEl);
+      subpageEl.replaceChildren();
+    };
+
     if (entry.rendered) {
       // TAB CACHE HIT! Instant display and scroll restoration
       setActiveTabKey(targetTabKey);
@@ -243,13 +271,24 @@ async function dispatch(): Promise<void> {
         path,
         previousTab: previousTabKey,
       });
+      if (keepSubpageForExit && subpageEl) {
+        transitionPages(subpageEl, entry.container, 'back', {
+          oldOver: true,
+          after: settleSubpageExit,
+        });
+      } else if (oldTab && !oldTab.hidden) {
+        if (!transitionPages(oldTab, entry.container, 'tab')) hideElement(oldTab);
+      } else if (animate) {
+        animatePageIn(entry.container, 'initial');
+      }
       announceNavigation();
       return;
     }
 
-    // First render of this tab
+    // First render of this tab. 先把旧页留在屏幕上，等新页真正渲染完再开始翻页。
     setActiveTabKey(targetTabKey);
     showElement(entry.container);
+    const pendingPage = Boolean(oldTab && animate && preparePage(entry.container, 'tab'));
 
     const controller = new AbortController();
     entry.controller = controller;
@@ -271,6 +310,7 @@ async function dispatch(): Promise<void> {
       }
 
       if (controller.signal.aborted || navigationId !== navigationSeq) {
+        if (pendingPage) resetPageMotion();
         runCleanupSafely(entry.cleanup ?? null);
         entry.cleanup = null;
         return;
@@ -281,15 +321,27 @@ async function dispatch(): Promise<void> {
         path,
         previousTab: previousTabKey,
       });
+      if (keepSubpageForExit && subpageEl) {
+        transitionPages(subpageEl, entry.container, 'back', {
+          oldOver: true,
+          after: settleSubpageExit,
+        });
+      } else if (pendingPage && oldTab) {
+        if (!transitionPages(oldTab, entry.container, 'tab')) hideElement(oldTab);
+      } else if (animate && !keepSubpageForExit) {
+        animatePageIn(entry.container, 'initial');
+      }
       announceNavigation();
     } catch (cause) {
       if (controller.signal.aborted || navigationId !== navigationSeq) {
+        if (pendingPage) resetPageMotion();
         runCleanupSafely(entry.cleanup ?? null);
         entry.cleanup = null;
         return;
       }
       controller.abort();
       if (activeController === controller) activeController = null;
+      if (pendingPage) resetPageMotion();
       runCleanupSafely(entry.cleanup ?? null);
       entry.cleanup = null;
       renderRouteError(cause);
@@ -299,16 +351,29 @@ async function dispatch(): Promise<void> {
 
   // 2. Destination is a Subpage / non-tab route
   const previousTabKey = getActiveTabKey();
+  const previousTabEntry = previousTabKey ? getCachedTabEntry(previousTabKey) : undefined;
+  const animate = motionEnabled();
+  const previousSubpage = getExistingSubpageContainer();
+  const replacingSubpage = Boolean(previousSubpage && !previousSubpage.hidden);
+  let backdropTab: HTMLElement | null = null;
   if (previousTabKey) {
-    const prevEntry = getCachedTabEntry(previousTabKey);
+    const prevEntry = previousTabEntry;
     if (prevEntry) {
       saveTabScrollPosition(prevEntry);
-      hideElement(prevEntry.container);
       dispatchTabEvent('deactivated', previousTabKey, prevEntry.container, {
         tab: previousTabKey,
         path,
         nextTab: null,
       });
+      if (animate) {
+        // 子页盖上来之前先留着 Tab 当底片；子页渲染完成后一起推走。
+        backdropTab = prevEntry.container;
+        backdropTab.style.pointerEvents = 'none';
+        backdropTab.inert = true;
+        backdropTab.setAttribute('aria-hidden', 'true');
+      } else {
+        hideElement(prevEntry.container);
+      }
     }
     setActiveTabKey(null);
   }
@@ -329,11 +394,16 @@ async function dispatch(): Promise<void> {
 
   let targetContainer: HTMLElement;
   const isUsingTabPool = hasKeepAliveRoutes();
+  let subpageEl: HTMLElement | null = null;
+  let preparedSubpage = false;
   if (isUsingTabPool) {
-    const subEl = getOrCreateSubpageContainer(rootEl);
-    subEl.replaceChildren();
-    showElement(subEl);
-    targetContainer = subEl;
+    subpageEl = getOrCreateSubpageContainer(rootEl);
+    subpageEl.replaceChildren();
+    showElement(subpageEl);
+    if (backdropTab) {
+      preparedSubpage = preparePage(subpageEl, 'forward');
+    }
+    targetContainer = subpageEl;
   } else {
     targetContainer = rootEl;
   }
@@ -354,6 +424,8 @@ async function dispatch(): Promise<void> {
     }
 
     if (controller.signal.aborted || navigationId !== navigationSeq) {
+      if (preparedSubpage) resetPageMotion();
+      if (backdropTab) showElement(backdropTab);
       runCleanupSafely(routeCleanup);
       return;
     }
@@ -364,14 +436,27 @@ async function dispatch(): Promise<void> {
       activeCleanup = routeCleanup;
     }
     routeCleanup = null;
+
+    if (subpageEl) {
+      if (preparedSubpage && backdropTab) {
+        if (!transitionPages(backdropTab, subpageEl, 'forward')) hideElement(backdropTab);
+      } else if (replacingSubpage) {
+        animatePageSwap(subpageEl);
+      } else if (animate) {
+        animatePageIn(subpageEl, 'initial');
+      }
+    }
     announceNavigation();
   } catch (cause) {
     if (controller.signal.aborted || navigationId !== navigationSeq) {
+      if (preparedSubpage) resetPageMotion();
+      if (backdropTab) showElement(backdropTab);
       runCleanupSafely(routeCleanup);
       return;
     }
     controller.abort();
     if (activeController === controller) activeController = null;
+    if (preparedSubpage) resetPageMotion();
     if (activeCleanup === routeCleanup) activeCleanup = null;
     if (activeSubpageCleanup === routeCleanup) activeSubpageCleanup = null;
     runCleanupSafely(routeCleanup);

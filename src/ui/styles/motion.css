@@ -1,0 +1,54 @@
+/* ============ 页面级连续动效 ============
+   主 Tab 与子页共用同一套“纸张翻页”：旧页退场与新页入场同时发生，
+   背景和页面外的弹层不重置，避免白屏硬切。 */
+
+/* 页面在转场时会完整滑出根容器之外，根容器负责裁掉多出来的部分，避免横向滚动。 */
+#app {
+  overflow: hidden;
+}
+
+.tab-keepalive-container[data-motion-layer],
+.tab-keepalive-subpage[data-motion-layer] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline: 0;
+  block-size: 100%;
+  min-block-size: 100dvh;
+  overflow: hidden;
+  transform-origin: 50% 0;
+  backface-visibility: hidden;
+}
+
+.tab-keepalive-container[data-motion-layer='under'],
+.tab-keepalive-subpage[data-motion-layer='under'] {
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* 旧页退场时它的底栏不再和新页底栏重叠，避免两套 Tab 同时在屏幕上可点。 */
+.tab-keepalive-container[data-motion-layer='under'] .tabbar,
+.tab-keepalive-subpage[data-motion-layer='under'] .tabbar {
+  visibility: hidden;
+}
+
+.tab-keepalive-container[data-motion-layer='over'],
+.tab-keepalive-subpage[data-motion-layer='over'] {
+  z-index: 2;
+}
+
+/* 子页始终覆盖在 Tab 之上；从子页返回时先露出背后的 Tab，再把子页推走。 */
+.tab-keepalive-subpage {
+  position: absolute;
+  inset-block: 0;
+  inset-inline: 0;
+  z-index: 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-keepalive-container[data-motion-layer],
+  .tab-keepalive-subpage[data-motion-layer] {
+    position: static;
+    block-size: auto;
+    min-block-size: 0;
+  }
+}

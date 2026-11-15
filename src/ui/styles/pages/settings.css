@@ -161,7 +161,10 @@
 
 .settings-page .panel-body {
   padding-inline: var(--space-3);
-  transition: opacity 0.22s var(--ease-smooth);
+  transition:
+    max-height 0.32s var(--ease-out),
+    opacity 0.32s var(--ease-smooth),
+    padding 0.32s var(--ease-out);
 }
 
 .settings-page .panel.open .panel-body {
@@ -169,7 +172,7 @@
   padding: 12px;
   background: color-mix(in srgb, var(--color-surface-muted) 68%, transparent);
   border-block-start: 1px solid var(--color-border);
-  animation: microFadeUp 0.22s var(--ease-smooth) both;
+  animation: microFadeUp 0.22s var(--ease-smooth);
 }
 
 [data-theme='dark'] .settings-page .panel.open .panel-body {

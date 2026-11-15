@@ -121,6 +121,11 @@
   --duration-fast: 180ms;
   --duration-normal: 260ms;
   --duration-slow: 400ms;
+  /* 页面级连续翻页：进入慢、退出快，方向一致；只动 transform / opacity。 */
+  --motion-page-in: 420ms;
+  --motion-page-out: 280ms;
+  --motion-page-ease: cubic-bezier(0.22, 0.8, 0.25, 1);
+  --motion-page-exit: cubic-bezier(0.4, 0, 0.7, 0.2);
 
   /* Legacy aliases keep existing page markup readable during the staged migration. */
   --brand: var(--color-primary);

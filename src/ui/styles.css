@@ -2,6 +2,7 @@
 @import './styles/tokens.css';
 @import './styles/reset.css';
 @import './styles/shell.css';
+@import './styles/motion.css';
 @import './styles/primitives.css';
 @import './styles/pages/assistant.css';
 

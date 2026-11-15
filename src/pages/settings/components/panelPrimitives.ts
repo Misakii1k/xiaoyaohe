@@ -1,4 +1,5 @@
 import { el, icon, type IconName } from '../../../ui/components';
+import { motionEnabled } from '../../../ui/motion';
 import type { PanelChip, PanelOpts } from '../types';
 
 let panelSeq = 0;
@@ -35,12 +36,36 @@ export function panel(opts: PanelOpts): HTMLElement {
   body.id = bodyId;
   body.hidden = !opts.defaultOpen;
   if (!opts.defaultOpen) body.setAttribute('inert', '');
+  let closeTimer: ReturnType<typeof setTimeout> | null = null;
+  const finishClose = () => {
+    if (closeTimer !== null) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+    }
+    if (!wrap.classList.contains('open')) body.hidden = true;
+  };
   head.onclick = () => {
-    const open = wrap.classList.toggle('open');
-    head.setAttribute('aria-expanded', String(open));
-    body.hidden = !open;
-    if (open) body.removeAttribute('inert');
-    else body.setAttribute('inert', '');
+    const open = !wrap.classList.contains('open');
+    if (open) {
+      if (closeTimer !== null) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
+      body.hidden = false;
+      body.removeAttribute('inert');
+      wrap.classList.add('open');
+      head.setAttribute('aria-expanded', 'true');
+      return;
+    }
+    wrap.classList.remove('open');
+    head.setAttribute('aria-expanded', 'false');
+    body.setAttribute('inert', '');
+    // 关闭时先让 max-height 收完再 hidden；否则 320ms 的收起动画会被 display:none 截断。
+    if (!motionEnabled()) {
+      body.hidden = true;
+      return;
+    }
+    closeTimer = setTimeout(finishClose, 360);
   };
 
   wrap.append(head, body);

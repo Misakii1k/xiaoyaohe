@@ -112,6 +112,9 @@ export function restoreTabScrollPosition(entry: TabKeepAliveEntry): void {
 export function showElement(el: HTMLElement): void {
   el.hidden = false;
   el.style.display = '';
+  el.inert = false;
+  el.removeAttribute('inert');
+  el.style.pointerEvents = '';
   el.removeAttribute('aria-hidden');
 }
 
