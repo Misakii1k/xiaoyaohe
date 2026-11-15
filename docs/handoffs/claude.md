@@ -6,7 +6,45 @@ Updated: 2026-11-15
 Status: active
 Latest version: `1.2.10` (Android `versionCode: 87`, 数药片 4.0「清点台」UI 重排与记账抽屉重构)
 
+> 工作区另有未发版的补光灯修复与全站动效（本地提交 `ecd4299` / `752bd9c`，见第 87、88 节）。
+
 ## Summary of Accomplished Work
+
+### 88. 全站页面连续转场与「一镜到底」基础层（`workspace/claude`，本地提交 `752bd9c`，未发版）
+
+1. **页面级动效模块**（`src/ui/motion.ts` 新增、`src/ui/styles/motion.css` 新增，`styles.css` 接入）：
+   - 以容器级 WAAPI 连续转场替代白屏硬切：旧页退场与新页入场同时发生，主 Tab、进入子页、从子页返回、子页之间换页四条路径统一使用 `transitionPages` / `animatePageSwap` / `animatePageIn` / `preparePage`；
+   - 进入 420ms `cubic-bezier(0.22,0.8,0.25,1)`，退出 280ms `cubic-bezier(0.4,0,0.7,0.2)`；新页保持不透明从侧面盖住旧页，消除两页文字互相透视的重影；返回时旧子页整页右滑露出恢复的 Tab；
+   - `data-motion-layer=under/over` 管理层级；旧页 `inert` / `aria-hidden` / `pointer-events:none`，`under` 页底栏 `visibility:hidden`，避免两套底栏同时可点；根容器 `#app` 裁掉滑出屏幕的部分，防止横向滚动；
+   - `motionEnabled()` 同时检测 `prefers-reduced-motion` 与 WAAPI；减少动态效果时直接到位；`finishPageMotion()` / `resetPageMotion()` 兜底快速连点、路由失败与残留内联样式。
+2. **路由接入**（`src/router.ts`、`src/app/tabPool.ts`）：
+   - 主 Tab 分支缓存 `previousTabEntry`，旧 Tab 先留在屏幕当底片，新 Tab 渲染完成后接替；缓存命中直接转场，首渲染先 `preparePage` 再入场；
+   - 子页分支保留 backdrop Tab，子页渲染完成后推入；子页→子页用同向轻入场；深链/无旧页用首屏入场；
+   - 从子页返回时保留子页做 `oldOver` 退场，清理时才隐藏并清空子页内容；`showElement()` 清理 `inert` / `pointer-events` / `aria-hidden`，避免返回 Tab 后残留；
+   - 清理 `router.ts` 原有 `hadSubpageContent` 变量与空 `if` 注释块。
+3. **分段滑块与面板收起**（`src/ui/primitives/SegmentedControl.ts`、`primitives.css`、`panelPrimitives.ts`、`settings.css`、`legacy.css`）：
+   - 分段控件新增 `.ui-segmented-indicator` 滑动指示块，用 `getBoundingClientRect` + `ResizeObserver` 跟随显隐/尺寸；首帧、缩放、字体加载直接到位，只有用户切换才过渡；
+   - 设置面板关闭先移除 `.open`、设 `inert`，延迟 360ms 才 `hidden=true`，让 `max-height` 收起动画完整播放；重新打开会清掉关闭计时器；`motionEnabled()` 为 false 时即时隐藏；
+   - 修复 `.settings-page .panel-body` 只声明 opacity 过渡导致 `max-height` 关闭瞬间归零的问题，补齐 `max-height` / `padding` 0.32s 过渡，并去掉开启动画的 `animation-fill-mode: both`，让关闭时透明度从 1 正常过渡；
+   - `.btn` 按压 380ms→160ms、tabbar 颜色/位移 200/180ms、图标 240ms、标签 200ms、面板箭头 220ms、面板体 320ms、底抽屉 0.38s。
+4. **验证**：
+   - `npm run typecheck` 0 错误；Vitest **105 文件 / 724 项**全过；`npm run build:web` 通过；Playwright 四视口 **160/160** 全过（基线 144 + 新增 `e2e/motion.spec.ts` 16 项）；
+   - 新增动效 E2E 覆盖：Tab 连续层级切换、子页进入/返回无白屏、减少动态效果即时到位、分段滑块移动；`e2e/viewport-overflow.spec.ts` 增加首屏 CTA 可见等待，避免高并发下的 0 高度误判；
+   - Web Bundle 8,378,698 字节 / sha256 `78956ae600c2e19235524529624af9d34ebe8c28ca789e0a98c963e9b0ddc8fb`；本地 `version.json` 与 `release/xiaoyaohe-1.2.10-web-bundle.zip` 已指向该值，远端 v1.2.10 Release 仍是 8,376,446 / `2cf64b2c…`。
+5. **取证**：
+   - `output/motion-ui/` 390 Tab/子页/返回/分段前后共 11 张；`output/motion-ui/matrix/` 覆盖 320、1280、暗色（`colorScheme: dark`）、关怀大字四种环境的 Tab/子页/返回序列图与终态；`output/motion-ui/390-panel-open|closing|closed.png` 为面板收起三态；
+   - 逐张自查：320/1280/暗色/关怀下均为单 shell 终态，无白屏、无两页文字重影；分段滑块 120ms 时距目标约 4px、400ms 完全对齐。
+6. **范围与遗留**：
+   - 未使用 View Transitions API / 共享元素 morph，避免双页面 DOM 同时存在时的层级与内存问题；「一镜到底」是同一背景上的旧页退场 + 新页入场，不是元素级 morph；
+   - 从子页返回时左侧会露出约 40px 的旧 Tab 边缘（即上一页的左边栏），这是推入动效的正常露出，不是白屏或重影；如后续要完全遮住，可再加边缘阴影/遮罩；
+   - `#app { overflow: hidden; }` 用于裁掉整页滑出根容器的部分，可能影响贴边 tooltip / 焦点环；320/1280/暗色/关怀截图无明显异常，真机滚动与键盘焦点仍需复核；
+   - 本地构建已覆盖 `release/xiaoyaohe-1.2.10-web-bundle.zip` 与 `version.json`，但远端 v1.2.10 Release 未改；若推送需按项目规则先升版并走完整 GitHub Release。
+
+### 87. 补光灯按钮挤压数药片相机模式分段（`workspace/claude`，本地提交 `ecd4299`，未发版）
+
+1. **根因**：`src/pages/ScanSort.ts` 创建的 `.pill-torch-btn` 继承 `legacy.css` 的 `.btn { width: 100% }`；虽然工具条内声明 `flex: 0 0 auto`，基础宽度仍是 100%，把 `.ui-segmented-control` 压成 0 宽、补光灯撑满整行。
+2. **修复**（`src/ui/styles/pages/scanner.css`）：在 `.pill-camera-toolbar .pill-torch-btn` 增加 `inline-size: auto; width: auto;`，内边距收到 `padding-inline: 12px`，字号 `var(--fs-sm)`；其余工具条结构与能力检测逻辑不动。
+3. **验证**：临时 Playwright 伪造 `getCapabilities().torch=true` 复现；修复后 320 分段 161px / 补光灯 65px、390 分段 231px / 补光灯 65px，工具条三控件一行；`e2e/camera-actions.spec.ts` 新增回归用例检查分段宽度 >0、补光灯宽度小于工具条、右边界不越界与 active 状态；`npx playwright test e2e/camera-actions.spec.ts` 四视口 12/12 通过；`npm run typecheck` 通过。
 
 ### 86. v1.2.10 (versionCode 87) 发布：数药片清点台（`workspace/claude`）
 

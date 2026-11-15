@@ -5,6 +5,13 @@ Integration branch: `main` (同步自 `workspace/claude`)
 Product version: `1.2.10` (versionCode 87)
 Latest integration commit: `workspace/claude` 数药片 4.0「清点台」UI 重排与记账抽屉重构 — v1.2.10 (versionCode 87)
 
+## Workspace pending (workspace/claude, 未发版)
+
+- **补光灯修复**（本地提交 `ecd4299`）：`.pill-torch-btn` 不再继承 `.btn` 的 `width:100%`，数药片相机工具条恢复「散落药片 / 整板药片 / 补光灯」单行；新增 `e2e/camera-actions.spec.ts` 回归。
+- **全站页面连续转场**（本地提交 `752bd9c`）：新增 `src/ui/motion.ts` / `motion.css`，接入主 Tab、子页进入/返回、子页换页四条路径；分段控件增加滑动指示块，设置面板收起补齐 `max-height` 过渡；减少动态效果时直接到位。
+- **门禁**：`npm run typecheck` 0 错误；Vitest **105 / 724**；`npm run build:web` 通过；Playwright 四视口 **160/160**（含新增动效 16 项）。本地 Web Bundle 8,378,698 字节 / sha256 `78956ae6…`，已覆盖本地 `release/xiaoyaohe-1.2.10-web-bundle.zip` 与 `version.json`，与远端 v1.2.10 Release（8,376,446 / `2cf64b2c…`）暂不一致。
+- **未推送、未发版**：工作区仍保留 `AGENTS.md` 既有修改与 design PNG 既有删除；上述两份提交未 push，也未 bump 版本。
+
 ## Release v1.2.10 (versionCode 87, workspace/claude)
 
 - **核心改动**：
