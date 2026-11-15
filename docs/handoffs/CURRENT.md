@@ -2,15 +2,18 @@
 
 Updated: 2026-11-15
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.11` (versionCode 88)
-Latest integration commit: `workspace/claude` 全站页面连续转场与补光灯修复 — v1.2.11 (versionCode 88)
+Product version: `1.2.12` (versionCode 89)
+Latest integration commit: `workspace/claude` 底部一级页即时切换与闪烁修复 — v1.2.12 (versionCode 89)
 
-## Unreleased — 底部一级页即时切换（2026-11-15, workspace/claude）
+## Release v1.2.12 (versionCode 89, workspace/claude)
 
-- **改动**：底部五个一级页（今日 / 药品 / 分药 / 库存 / 我的）恢复上一版即时切换，不再播放整页推入转场；子页进入/返回、分段滑块、设置面板、按钮、相机工具条等页内动效保持不变。
-- **闪烁修复**：目标页首次渲染时先让旧页留在屏幕上，新页透明挂载，渲染完成后一次性替换；`/scan` 与 `/meds/inventory` 子页之间换页改为预渲染后替换，避免先清空再加载的空白帧。
-- **门禁**：`npm run typecheck` 0 错误；Vitest **105 文件 / 724 项**；Playwright 四视口 **164/164**；CDP 逐帧录制确认每组一级页点击只发生一次整页替换。
-- **状态**：已本地提交 `7416da6`，未发布、未推送。
+- **核心改动**：
+  - 底部五个一级页（今日 / 药品 / 分药 / 库存 / 我的）恢复上一版即时切换，不再播放整页推入转场；
+  - 目标页首次渲染时先让旧页留在屏幕上，新页透明挂载，渲染完成后一次性替换；`/scan` 与 `/meds/inventory` 子页之间换页改为预渲染后替换，消除点击后的闪烁和空白帧；
+  - 子页进入/返回、分段滑块、设置面板、按钮、相机工具条等页内动效保持不变。
+- **质量门禁与产物**：`npm run release:build` 通过；Vitest **105 文件 / 724 项**、Playwright 4 视口 **164/164** 全过；双遍 Web 构建、Capacitor 同步、Gradle 签名打包与 118 个内嵌资源校验通过。APK **21,010,126** 字节（sha256 `fe271538d2a45d56781e3e6c89294ecb91e64af176b3084020f4d22819f13777`，较 v1.2.11 的 21,009,850 字节 +276），Web Bundle **8,378,821** 字节（sha256 `f4f4821eeef1db3f2fdeb98d3ae512326a5988c005cd4bd1d2ed0a9157ff10d4`）。
+- **发布说明**：`docs/releases/1.2.12.md`，2 条大白话，已通过 `tone_lint.py` 与 `tests/releaseNotesJargon.test.ts`。
+- **状态**：待 `release:publish` 提交发版白名单文件、打 `v1.2.12` tag、推送 `workspace/claude`、快进 `main`、创建 GitHub Release 并执行线上冒烟。
 
 ## Release v1.2.11 (versionCode 88, workspace/claude)
 
