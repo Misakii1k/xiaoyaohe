@@ -5,6 +5,13 @@ Integration branch: `main` (同步自 `workspace/claude`)
 Product version: `1.2.11` (versionCode 88)
 Latest integration commit: `workspace/claude` 全站页面连续转场与补光灯修复 — v1.2.11 (versionCode 88)
 
+## Unreleased — 底部一级页即时切换（2026-11-15, workspace/claude）
+
+- **改动**：底部五个一级页（今日 / 药品 / 分药 / 库存 / 我的）恢复上一版即时切换，不再播放整页推入转场；子页进入/返回、分段滑块、设置面板、按钮、相机工具条等页内动效保持不变。
+- **闪烁修复**：目标页首次渲染时先让旧页留在屏幕上，新页透明挂载，渲染完成后一次性替换；`/scan` 与 `/meds/inventory` 子页之间换页改为预渲染后替换，避免先清空再加载的空白帧。
+- **门禁**：`npm run typecheck` 0 错误；Vitest **105 文件 / 724 项**；Playwright 四视口 **164/164**；CDP 逐帧录制确认每组一级页点击只发生一次整页替换。
+- **状态**：已本地提交 `7416da6`，未发布、未推送。
+
 ## Release v1.2.11 (versionCode 88, workspace/claude)
 
 - **核心改动**：

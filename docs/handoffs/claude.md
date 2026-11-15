@@ -8,6 +8,19 @@ Latest version: `1.2.11` (Android `versionCode: 88`, 全站页面连续转场与
 
 ## Summary of Accomplished Work
 
+### 89. 底部五个一级页恢复即时切换并消除点击闪烁（本地提交 `7416da6`，未发布）
+
+1. **根因**：`v1.2.11` 把底部五个一级页的切换统一接进整页转场。点击后旧页仍留在屏幕上、新页从右侧 24px 盖入，420ms 内两页同屏；首渲染和子页换页又叠加 `preparePage` / `animatePageSwap`，视觉上就是“页面闪一下、像刷新了一遍”。底部导航中的 `/scan` 与 `/meds/inventory` 还不是 keep-alive Tab，会走子页容器，换页时整页从 0.65 透明度淡入，闪烁更明显。
+2. **即时切换**（`src/router.ts`、`src/ui/components.ts`、`src/app/tabPool.ts`）：
+   - `tabbar()` 的五个一级导航点击统一走 `navigate(..., { source: 'primary-navigation' })`，路由识别底部一级导航意图；当前页与目标页都属于五个一级页时也按即时切换处理；
+   - 主 Tab 分支恢复上一版 `hideElement(showElement)` 语义，不再对 Tab 之间调用 `transitionPages` / `animatePageIn`；
+   - 目标 Tab 首次渲染时，旧 Tab 先留作底片，新 Tab 用 `preparePage` 透明挂载，渲染完成后一次性隐藏旧页并清理层级，避免渲染期间白屏；
+   - 从 Tab 进入 `/scan` 或 `/meds/inventory` 时，旧 Tab 留底、新子页在透明状态完成渲染后再显形；子页之间即时换页使用新的子页容器预渲染，完成后替换旧容器，避免先清空再加载的空白帧；
+   - 新增 `adoptSubpageContainer()`，即时替换子页后把模块内的当前子页容器指向新容器。
+3. **保留的动效**：子页进入/返回（`/meds/new`、`/meds/:id/edit` 等）仍使用 `transitionPages`；分段滑块、设置面板收起、按钮按压、相机工具条、进度环、Toast 等页内动效完全不变；减少动态效果时仍直接到位。
+4. **验证**：`npm run typecheck` 0 错误；Vitest **105 文件 / 724 项**全过；Playwright 四视口 **164/164** 全过（新增“五个一级页都走即时路径”用例）；CDP 逐帧录制显示 `今日→药品→分药→库存→我的→今日` 每组只发生一次整页替换，没有两页同屏、空白帧或透明度过渡。
+5. **取证**：`output/nav-screencast/` 为 390 视口五次点击的真实渲染帧；`output/nav-frame-diff.mjs` 可复算连续帧差异。
+
 ### 88. 全站页面连续转场与「一镜到底」基础层（已随 `v1.2.11` / `versionCode 88` 发布）
 
 1. **页面级动效模块**（`src/ui/motion.ts` 新增、`src/ui/styles/motion.css` 新增，`styles.css` 接入）：
