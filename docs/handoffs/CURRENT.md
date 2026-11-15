@@ -1,11 +1,20 @@
 # Current Integration State
 
-Updated: 2026-10-24
+Updated: 2026-11-15
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.5` (versionCode 82)
-Latest integration commit: 待提交 — v1.2.5 (versionCode 82)
+Product version: `1.2.6` (versionCode 83)
+Latest integration commit: 准备推送与发布 — v1.2.6 (versionCode 83)
 
-## Release v1.2.5 (versionCode 82, workspace/claude)
+## Release v1.2.6 (versionCode 83, workspace/claude)
+
+- **集成内容**：
+  - 关怀大字模式（Care Mode）：全站字体缩放与 52px 触控基线，同步 Android 原生全屏闹钟界面并强化对比度；
+  - 分药语音播报（TTS）：分药时自动读出当前药名与今日用量，支持标准/稍慢语速切换、静音控制及一键重听；
+  - 库存低余量正常推送降级：新建普通提醒通道（`inventory_normal_v1`），告别强闹钟打扰，点击直达库存页；
+  - 「我的」页面视觉与排版统一：全部图标收敛为品牌薄荷青、移除冗余彩色右侧状态胶囊、4 字对称面板标题与 8 字关于卡片文案，并清理全部展开子卡嵌套边框与混排结构。
+- **状态**：已通过 `release:build` 全量门禁（Typecheck、Vitest 101/694、Playwright 128/128、双遍 Web 构建与 Gradle 签名打包）。APK 20,987,389 字节（sha256 `23eeb2f9…`），Web Bundle 8,355,942 字节（sha256 `8c26782f…`）；准备执行 `release:publish` 推送并发布 GitHub Release。
+
+## Release v1.2.5 (versionCode 82, workspace/claude, 已归档)
 
 - **集成内容**：
   - 全站触控基线与交互微质感升级：统一全站按钮、列表行与卡片 `:active` 按压下沉为克制利落的 `scale(0.98)` 与 80ms 即时响应；

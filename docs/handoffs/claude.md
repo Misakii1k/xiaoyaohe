@@ -2,11 +2,32 @@
 
 Tool: Claude
 Branch: `workspace/claude`
-Updated: 2026-10-24
+Updated: 2026-11-15
 Status: active
-Latest version: `1.2.5` (Android `versionCode: 82`)
+Latest version: `1.2.6` (Android `versionCode: 83`, 已完成构建正发布)
 
 ## Summary of Accomplished Work
+
+### 81. 关怀大字模式、分药语音播报（TTS）、低余量轻提醒与「我的」页面全面改版（`workspace/claude`，已提交功能 `e19f8a2`，正发布 `v1.2.6`）
+
+1. **关怀大字模式（Care Mode）**：
+   - `src/features/careMode.ts`：新增状态持久化（`medbox.care-mode.v1`）、`document.documentElement.dataset.care` 切换（`initCareMode`、`setCareModeEnabled`、`isCareModeEnabled`、`CARE_MODE_CHANGE_EVENT`），并在 `src/main.ts` 启动初始化；同步注册到 `src/features/appSettings.ts`（`careModeEnabled`）。
+   - `MedicationAlarmPlugin.java` / `src/features/nativeMedicationAlarm.ts` / `MedicationAlarmActivity.kt`：通过 SharedPreferences（`medication_alarm_v1` 的 `care_mode`）同步至 Android 原生全屏闹钟界面，放大字阶、提升文字/边框对比度并加高按钮与滑动解锁区。
+   - `src/pages/settings/panels/AppearancePanel.ts`：在「我的 → 提醒与外观 → 外观」接入 `role="switch"` 关怀大字模式开关及状态徽章。
+   - 全站 CSS（`tokens.css`、`shell.css`、`primitives.css` 与 `pages/*.css`）：补充 `:root[data-care='on']` 字号缩放、`--tap: 52px` 触控基线、药名自动换行、卡片窄网格降列（如药品卡单列、分药格子 2×2）并保留标签胶囊 `white-space: nowrap` 防竖排。
+2. **分药向导语音播报（TTS）**：
+   - `android/app/src/main/java/com/medbox/app/MedboxTtsPlugin.java` + `MainActivity.java` + `AndroidManifest.xml`（新增 `android.intent.action.TTS_SERVICE` 查询声明）：零三方依赖接入系统 `TextToSpeech`，缺省优先绑定中文语音引擎并返回 `{ spoken, supported }`。
+   - `src/features/sortTts.ts`：封装原生/Web Speech (`window.speechSynthesis`) 双通道懒初始化播报、语速切换（标准 / 稍慢清晰）、文本组装（`buildSortCardSpeechText` / `buildSortSummarySpeechText`）、本轮降级仅温和提示一次及立即停播（`stopSortSpeech`）；注册 `sortTtsEnabled` 与 `sortTtsRate` 至 `appSettings.ts`。
+   - `src/ui/SortWizard.ts` + `src/pages/settings/panels/VoicePanel.ts` + `src/pages/settings/index.ts`：在分药向导顶栏添加语音静音图标键（`volume` / `volume-off`）与药名右侧「重听」按钮，翻页自动播报并打断上一句、关闭/离开即停播；在设置新增「语音播报」面板支持开关、语速分段与「试听示例」。
+3. **库存低余量通知降级为正常推送**：
+   - `src/features/inventoryReminder.ts`：标注 `channel: 'normal'`、`mode: 'normal'`、`deepLink: '/meds/inventory'`。
+   - `src/features/reminderTransport.ts` / `src/features/webReminderTransport.ts`：新增普通推送通道 `inventory_normal_v1`（`importance: 3`、无振动/无灯光、不挂 `已服用/跳过` 动作键），Web 端设 `requireInteraction: false`、`actions: []`；点击通知通过 `src/main.ts` 跳至 `/meds/inventory`。
+4. **「我的」页面视觉统一与排版精简**：
+   - `src/ui/styles/pages/settings.css`、`src/pages/settings/components/panelPrimitives.ts`、`src/pages/settings/index.ts`、`ProfileHero.ts`、`AboutSection.ts` 及各设置子面板：13 个功能面板图标与 4 个关于瓷贴统一为品牌薄荷青（`.panel-icon*`、`settings-about-tile-icon`）；隐藏折叠态右侧冗余彩色状态胶囊；3 组 5 字分组名与 13 枚 4 字面板标题、4×8 字关于文案对齐；展开态采用柔和底盘承载白色圆角子卡，移除嵌套内盒边框与行内彩虹徽标。
+5. **发布验证结果（v1.2.6 / versionCode 83）**：
+   - `node scripts/release-build.mjs`：通过（`tsc --noEmit` 通过；Vitest 101 个文件 / 694 项测试全过；Playwright 128/128 全过，含 320/390 关怀模式与我的页面交互）；
+   - APK 体积 `20,987,389` 字节（sha256 `23eeb2f9e793d7d83d4df574c0fdaf1e6c89ef6d19de760b1c2067f4e26b5791`），Web Bundle 体积 `8,355,942` 字节（sha256 `8c26782f638ea9f4aafdb1a7d562a7e5eb60d34ca34b5b81479cfbc6cb49603c`），内嵌 116 个 Web 资源哈希校验通过。
+   - 环境说明：恢复了仓库 `HEAD` 中已跟踪但在工作区误删的 `src/assets/images3d/nature-header-bokeh.png` 以保证构建与测试资源完整。
 
 ### 80. v1.2.5 全站 UX 体验巡检与实色微质感升级（versionCode 82，已发布）
 
