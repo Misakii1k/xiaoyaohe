@@ -521,8 +521,12 @@ body.camera-capture-active .tabbar {
 
 .pill-camera-toolbar .pill-torch-btn {
   flex: 0 0 auto;
+  inline-size: auto;
+  width: auto;
   min-block-size: 40px;
   min-inline-size: max-content;
+  padding-inline: 12px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 

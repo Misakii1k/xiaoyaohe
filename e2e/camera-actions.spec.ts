@@ -120,3 +120,58 @@ test('opens the in-app camera directly from the quick pill counter card', async 
   await expect(page.getByRole('button', { name: '打开相机' })).toBeVisible();
   await expect(page.getByRole('button', { name: '相册上传' })).toBeVisible();
 });
+
+test('keeps the torch control from crowding the pill camera mode switch', async ({ page }) => {
+  await page.addInitScript(() => {
+    const fakeTrack = {
+      getCapabilities: () => ({ torch: true }),
+      applyConstraints: async () => undefined,
+      stop: () => undefined,
+    };
+    const stream = new MediaStream();
+    Object.defineProperty(stream, 'getVideoTracks', {
+      configurable: true,
+      value: () => [fakeTrack],
+    });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: async () => stream },
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: async () => undefined,
+    });
+  });
+
+  await page.goto('/#/scan');
+  await page.locator('.scan-quick-card', { hasText: '快速数药片' }).click();
+  const torch = page.locator('.pill-camera-toolbar').getByRole('button', { name: '补光灯' });
+  await expect(torch).toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const toolbar = document.querySelector<HTMLElement>('.pill-camera-toolbar')!;
+    const segmented = toolbar.querySelector<HTMLElement>('.ui-segmented-control')!;
+    const torchButton = toolbar.querySelector<HTMLElement>('.pill-torch-btn')!;
+    const toolbarRect = toolbar.getBoundingClientRect();
+    const segmentedRect = segmented.getBoundingClientRect();
+    const torchRect = torchButton.getBoundingClientRect();
+    return {
+      viewportWidth: window.innerWidth,
+      toolbarWidth: toolbarRect.width,
+      toolbarRight: toolbarRect.right,
+      segmentedWidth: segmentedRect.width,
+      torchWidth: torchRect.width,
+      torchRight: torchRect.right,
+    };
+  });
+
+  // 补光灯必须按内容宽度排在模式切换右侧，不能把模式切换挤成 0 宽。
+  expect(layout.toolbarWidth).toBeLessThanOrEqual(layout.viewportWidth);
+  expect(layout.segmentedWidth).toBeGreaterThan(0);
+  expect(layout.torchWidth).toBeLessThan(layout.toolbarWidth);
+  expect(layout.torchRight).toBeLessThanOrEqual(layout.toolbarRight + 1);
+
+  await torch.click();
+  await expect(torch).toHaveAttribute('aria-pressed', 'true');
+  await expect(torch).toHaveClass(/is-active/);
+});
