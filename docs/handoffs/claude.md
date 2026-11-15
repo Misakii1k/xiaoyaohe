@@ -4,11 +4,18 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-11-15
 Status: active
-Latest version: `1.2.9` (Android `versionCode: 86`, 修复拍照数药片云端空检出与本地抗阴影抗反光识别)
+Latest version: `1.2.10` (Android `versionCode: 87`, 数药片 4.0「清点台」UI 重排与记账抽屉重构)
 
 ## Summary of Accomplished Work
 
-### 85. 数药片 4.0「清点台」视觉重排与记账抽屉信息重构（`workspace/claude`，本地提交 `c95fa59`，未发版）
+### 86. v1.2.10 (versionCode 87) 发布：数药片清点台（`workspace/claude`）
+
+1. **版本推进**：基于第 85 节功能提交 `c95fa59`，执行 `npm run release:bump`（`1.2.9/86 → 1.2.10/87`，更新夹具 `1.3.8/87 → 1.3.9/88`），新增 `docs/releases/1.2.10.md` 并通过 `tone_lint.py` 与发版文案校验。
+2. **门禁与产物**：`npm run release:build` 通过；typecheck 0 错误；Vitest **105 文件 / 724 项**、Playwright 4 视口 **140/140** 全过；双遍 Web 构建、Capacitor 同步、Gradle 签名打包与内嵌资源校验通过。APK 21,007,746 字节（sha256 `db0059a0…`，较 v1.2.9 的 21,004,998 字节 +2,748），Web Bundle 8,376,446 字节（sha256 `2cf64b2c…`）。
+3. **发布步骤**：`release:publish` 只提交发版白名单文件，保留工作区既有 `AGENTS.md` 修改与 design PNG 删除；打 `v1.2.10` tag，逐个 commit 推送 `workspace/claude`，快进 `main`，创建带 APK / Web Bundle / SHA256SUMS 的 GitHub Release，最后执行线上冒烟。
+4. **本版内容**：见第 85 节；遗留未修项仍为 1280@200% 工具行需抽屉内滚动、768×500 画布两侧暗边。
+
+### 85. 数药片 4.0「清点台」视觉重排与记账抽屉信息重构（`workspace/claude`，本地提交 `c95fa59`，已随 `v1.2.10` 发布）
 
 1. **清点抽屉重排**（`src/features/pillCountDisplay.ts` 新增、`src/features/pillCounter.ts`、`src/ui/styles/pages/pill-counter.css` 全量重写）：
    - 采用「清点台」方向：照片是样本、数字是答案、工具是仪器；主层只保留数量 / 照片 / 确认，模式降到次层，撤销 / 长按看原图 / 还原视图收进辅助行；
@@ -29,7 +36,7 @@ Latest version: `1.2.9` (Android `versionCode: 86`, 修复拍照数药片云端�
    - 前后对照：`output/pill-counter-ui/compare/core/stitch.png`（390 散落/整板、320 散落、390 空态）、`compare/followup/stitch.png`（记账与桌面）、`compare/states/stitch.png`（8 个改后状态）。
    - 200% 缩放按「640×400 CSS 视口 + DPR 2」模拟桌面 1280 浏览器 200% 缩放；关怀大字与暗色在抽屉打开后切换 `data-care` / `data-theme` 实测。
 5. **范围与遗留**：
-   - 按用户要求只做本地提交，未 push、未 bump `1.2.9`、未改 release 产物；未跑 `npm run build`（oil-ui 只要求 typecheck/lint，单测与 E2E 已通过）；
+   - 按用户要求本任务只做本地提交，未 push、未 bump `1.2.9`、未改 release 产物；后续 `v1.2.10` 的升版、构建与发布见第 86 节。本任务未跑 `npm run build`（oil-ui 只要求 typecheck/lint，单测与 E2E 已通过）；
    - 未派独立视觉评审，由主 Agent 逐张看截图自查；
    - 工作区保留两条与本任务无关的未提交内容：`AGENTS.md` 既有修改、`design/brand/raw/「分药助手横屏专用」盔宝 · 分药小管家.png` 既有删除；均未纳入 `c95fa59`。
 

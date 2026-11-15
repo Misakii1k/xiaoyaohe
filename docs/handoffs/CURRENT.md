@@ -2,8 +2,19 @@
 
 Updated: 2026-11-15
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.9` (versionCode 86)
-Latest integration commit: `workspace/claude` 修复数药片云端空检出与本地阴影/反光误检 — v1.2.9 (versionCode 86)
+Product version: `1.2.10` (versionCode 87)
+Latest integration commit: `workspace/claude` 数药片 4.0「清点台」UI 重排与记账抽屉重构 — v1.2.10 (versionCode 87)
+
+## Release v1.2.10 (versionCode 87, workspace/claude)
+
+- **核心改动**：
+  - 数药片清点抽屉重排为「清点台」：数量大数字为唯一主角，确认键吸底常驻，模式独占整行，撤销/看原图/还原视图收进辅助行；320×568 下工具行、辅助行、框选/药板子工具条与确认全部可见，0 粒禁用确认并显示空态提示；
+  - 清点结果抽屉改为「清点结果怎么记？」：新增库存变化卡（现在 → 记完）、当日应取 vs 实点比例条与结论胶囊，主按钮随方式动态变化；
+  - 修复框选、拖网格角点、缩放平移后 click 兜底误补手动点的问题，新增 E2E 回归；手动补点不再参与颜色聚类，图例改为「自动 N / 手动 N」；相机工具条收为单行 40px；
+  - `.bottom-sheet-overlay` 移除背景模糊（全站底抽屉生效），符合项目「下线液态玻璃」规则。
+- **质量门禁与产物**：`npm run release:build` 通过；Vitest **105 文件 / 724 项**、Playwright 4 视口 **140/140** 全过；APK 21,007,746 字节（sha256 `db0059a0…`，较 v1.2.9 的 21,004,998 字节 +2,748），Web Bundle 8,376,446 字节（sha256 `2cf64b2c…`）。
+- **状态**：由 `release:publish` 提交、打 `v1.2.10` tag、推送 `workspace/claude` 与 `main`、创建 GitHub Release 并执行线上冒烟。
+- **遗留**：1280@200% 时工具行需在抽屉内滚动；768×500 横屏画布两侧留暗边（均未修，已记录）。
 
 ## Release v1.2.9 (versionCode 86, workspace/claude)
 
