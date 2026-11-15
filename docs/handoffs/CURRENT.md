@@ -2,8 +2,14 @@
 
 Updated: 2026-11-15
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.8` (versionCode 85)
-Latest integration commit: `workspace/claude` 修复 Cloudflare Pages Linux 构建兼容并发布 — v1.2.8 (versionCode 85)
+Product version: `1.2.9` (versionCode 86)
+Latest integration commit: `workspace/claude` 修复数药片云端空检出与本地阴影/反光误检 — v1.2.9 (versionCode 86)
+
+## Release v1.2.9 (versionCode 86, workspace/claude)
+
+- **核心改动**：
+  - 修复云端 `/api/count-pills`：改用简短目标词调用 Moondream `point`，空结果时自动级联 `detect` 与 `@cf/qwen/qwen3.8-27b` JSON 坐标兜底，客户端对云端 200 空结果自动救援回退本地算法，避免真机再报「共 0 粒」；
+  - 升级本地数药片 `pillDetection.ts`：引入有界无框 Otsu 阈值与 CIE Lab 投影剥离/闪光灯柔边反光/黑边滤除，实测真机 8 粒场景精准识别 8 粒、9 粒强反光场景 0 误检。
 
 ## Release v1.2.8 (versionCode 85, workspace/claude)
 

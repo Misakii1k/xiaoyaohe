@@ -165,4 +165,25 @@ describe('pillCounterClient orchestrator', () => {
     expect(res.count).toBe(1);
     expect(res.points[0]).toMatchObject({ x: 70, y: 55 });
   });
+
+  it('rescues empty 200 cloud response with local detection instead of falsely showing 0 pills', async () => {
+    grantCloudPillConsent();
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ ok: true, mode: 'loose', engine: 'cloud', points: [] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const res = await runPillDetectionPipeline({
+      source: makeSyntheticPrepared(240, 180),
+      mode: 'loose',
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(res.engine).toBe('heuristic_local');
+    expect(res.count).toBe(2);
+    expect(res.degradedReason).toContain('本地');
+  });
 });

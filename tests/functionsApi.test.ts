@@ -374,14 +374,17 @@ describe('Cloudflare Functions: count-pills', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('loose 与 blister 模式分别传对应 target 调用 Moondream point 并透传坐标', async () => {
+  it('loose 与 blister 模式分别传简短 target 调用 Moondream point，并在 empty 时级联 detect 与 VLM fallback', async () => {
     const { onRequestPost } = await import('../functions/api/count-pills');
-    const run = vi.fn(async (_model: string, input: Record<string, unknown>) => ({
-      points:
-        String(input.target).includes('blister')
-          ? [{ x: 0.25, y: 0.5 }]
-          : [{ x: 0.2, y: 0.3 }, { x: 0.7, y: 0.8 }],
-    }));
+    const run = vi.fn(async (model: string, input: Record<string, unknown>) => {
+      if (model === '@cf/moondream/moondream3.1-9B-A2B' && input.target === 'pill in blister') {
+        return { points: [{ x: 0.25, y: 0.5 }] };
+      }
+      if (model === '@cf/moondream/moondream3.1-9B-A2B' && input.task === 'point') {
+        return { points: [{ x: 0.2, y: 0.3 }, { x: 0.7, y: 0.8 }] };
+      }
+      return { points: [] };
+    });
 
     const looseRes = await onRequestPost({
       request: postReq({ image: TINY_JPEG, mode: 'loose' }, { origin: 'capacitor://localhost', ip: '1.1.1.1' }),
@@ -401,8 +404,8 @@ describe('Cloudflare Functions: count-pills', () => {
       expect.objectContaining({
         task: 'point',
         image: TINY_JPEG,
-        target: 'pill, tablet, or capsule',
-        max_objects: 250,
+        target: 'pill',
+        max_objects: 150,
       }),
     );
 
@@ -423,9 +426,51 @@ describe('Cloudflare Functions: count-pills', () => {
       '@cf/moondream/moondream3.1-9B-A2B',
       expect.objectContaining({
         task: 'point',
-        target: 'unopened blister pocket containing a pill or capsule',
+        target: 'pill in blister',
       }),
     );
+
+    // 当 point 返回空时自动降级 detect 并解析 objects 框中心，且剔除超大误框
+    const detectRun = vi.fn(async (_model: string, input: Record<string, unknown>) => {
+      if (input.task === 'detect') {
+        return {
+          objects: [
+            { x_min: 0.1, y_min: 0.2, x_max: 0.2, y_max: 0.3 },
+            { x_min: 0.0, y_min: 0.0, x_max: 0.9, y_max: 0.9 },
+          ],
+        };
+      }
+      return { points: [] };
+    });
+    const detectRes = await onRequestPost({
+      request: postReq({ image: TINY_JPEG, mode: 'loose' }, { origin: 'https://xiaoyaohe.pages.dev', ip: '1.1.1.3' }),
+      env: { AI: { run: detectRun } },
+    });
+    expect(detectRes.status).toBe(200);
+    const detectJson = await detectRes.json();
+    expect(detectJson.points).toEqual([{ x: 0.15, y: 0.25 }]);
+    expect(detectJson.meta?.strategy).toBe('moondream_detect');
+
+    // 当 Moondream point + detect 都为空时自动使用 Qwen VLM 兜底并解析千分比 JSON 坐标
+    const vlmRun = vi.fn(async (model: string) => {
+      if (model === '@cf/qwen/qwen3.8-27b') {
+        return {
+          response: '```json\n{"points": [[250, 500], [750, 250]]}\n```',
+        };
+      }
+      return { points: [] };
+    });
+    const vlmRes = await onRequestPost({
+      request: postReq({ image: TINY_JPEG, mode: 'loose' }, { origin: 'https://xiaoyaohe.pages.dev', ip: '1.1.1.4' }),
+      env: { AI: { run: vlmRun } },
+    });
+    expect(vlmRes.status).toBe(200);
+    const vlmJson = await vlmRes.json();
+    expect(vlmJson.points).toEqual([
+      { x: 0.25, y: 0.5 },
+      { x: 0.75, y: 0.25 },
+    ]);
+    expect(vlmJson.meta?.strategy).toBe('qwen_vlm_points');
   });
 
   it('同 IP 高频请求触发 429 RATE_LIMITED 限流保护', async () => {

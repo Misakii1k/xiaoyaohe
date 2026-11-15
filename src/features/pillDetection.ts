@@ -185,11 +185,11 @@ function extractPillPointsFromMask(
     ? options.overrideRadius
     : estimatePillRadius(components, w, h);
   const minArea = Math.max(7, Math.PI * pillRadius * pillRadius * 0.18);
-  const minPeakDist = Math.max(1.3, pillRadius * 0.32);
+  const minPeakDist = Math.max(1.3, pillRadius * 0.35);
   const maxPeakSpacing = Math.max(2.6, pillRadius * 2.3);
   const minCenterSpacing = options.minSpacing && options.minSpacing > 0
     ? Math.max(2, options.minSpacing)
-    : Math.max(2.4, pillRadius * 0.55);
+    : Math.max(3, pillRadius * 1.28);
   const minCatchmentArea = Math.max(4, Math.PI * pillRadius * pillRadius * 0.2);
 
   const rawPoints: Array<{ x: number; y: number }> = [];
@@ -220,7 +220,7 @@ function extractPillPointsFromMask(
       dist,
       w,
       component,
-      Math.max(1.5, pillRadius * 0.3),
+      Math.max(2, pillRadius * 1.05),
       maxPeakSpacing,
       minPeakDist,
     );
@@ -326,9 +326,9 @@ export function detectPillsFromImageData(
   if (w < 8 || h < 8 || total <= 0) return empty;
 
   const field = estimateBackgroundField(data, w, h);
-  const score = computeForegroundScore(data, w, h, field);
-  const histogram = buildScoreHistogram(score);
-  let threshold = clamp(Math.max(otsuThreshold(histogram, total) * 0.68, 24), 24, 120);
+  const { score, shadowDark, edgeGrad } = analyzeForeground(data, w, h, field);
+  const histogram = buildCappedOtsuHistogram(score, shadowDark, w, h, 85);
+  let threshold = clamp(Math.max(otsuThreshold(histogram, histogramTotal(histogram)) * 0.65, 24), 24, 120);
   const userOffset = clamp(options.sensitivityOffset ?? 0, -50, 50);
   threshold = clamp(threshold - userOffset * 0.45, 12, 150);
 
@@ -348,6 +348,8 @@ export function detectPillsFromImageData(
     }
     break;
   }
+
+  pruneShadowsEdgesAndGlare(mask, score, shadowDark, edgeGrad, w, h);
 
   const extracted = extractPillPointsFromMask(mask, w, h, { minSpacing: options.minSpacing });
   const points = (cropped.offsetX !== 0 || cropped.offsetY !== 0)
@@ -511,15 +513,19 @@ function estimateBackgroundField(
   return { cell, gw, gh, r: filteredR, g: filteredG, b: filteredB };
 }
 
-/** 逐像素计算与局部背景的感知色距（0~255）。 */
-function computeForegroundScore(
+/** 逐像素分析：与局部背景感知色距 + 无色差暗阴影标记 + 空间梯度。 */
+function analyzeForeground(
   data: Uint8ClampedArray,
   w: number,
   h: number,
   field: BackgroundField,
-): Float32Array {
-  const score = new Float32Array(w * h);
+): { score: Float32Array; shadowDark: Uint8Array; edgeGrad: Float32Array } {
+  const total = w * h;
+  const score = new Float32Array(total);
+  const shadowDark = new Uint8Array(total);
+  const edgeGrad = new Float32Array(total);
   const { cell, gw, gh, r: fieldR, g: fieldG, b: fieldB } = field;
+
   for (let y = 0; y < h; y += 1) {
     const gy = y / cell - 0.5;
     let y0 = Math.floor(gy);
@@ -552,20 +558,201 @@ function computeForegroundScore(
       const dg = pg - bgG;
       const db = pb - bgB;
       const rgbScore = Math.sqrt(0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db);
-      const labScore = labDistance(rgbToLab(pr, pg, pb), rgbToLab(bgR, bgG, bgB)) * 2.45;
-      score[row + x] = rgbScore >= labScore ? rgbScore : labScore;
+      const pixLab = rgbToLab(pr, pg, pb);
+      const bgLab = rgbToLab(bgR, bgG, bgB);
+      const dl = pixLab[0] - bgLab[0];
+      const chromaDiff = Math.hypot(pixLab[1] - bgLab[1], pixLab[2] - bgLab[2]);
+      const labScore = Math.sqrt(dl * dl + chromaDiff * chromaDiff) * 2.45;
+      const pIdx = row + x;
+      score[pIdx] = rgbScore >= labScore ? rgbScore : labScore;
+      // 真实投射阴影的物理特征：相对台面明显变暗（dl < -7），但色相/彩度几乎不变。
+      if (dl < -7 && chromaDiff < 7.5 && chromaDiff <= (-dl) * 0.28) {
+        shadowDark[pIdx] = 1;
+      }
     }
   }
-  return score;
+
+  for (let y = 2; y < h - 2; y += 1) {
+    const row = y * w;
+    for (let x = 2; x < w - 2; x += 1) {
+      // 2-step (x+2 vs x-2) smoothed RGB gradient：抹平 JPEG 颗粒与相机噪点，只保留真实物体轮廓。
+      const xl = (row + x - 2) * 4;
+      const xr = (row + x + 2) * 4;
+      const yu = ((y - 2) * w + x) * 4;
+      const yd = ((y + 2) * w + x) * 4;
+      const gx =
+        Math.abs(data[xr]! - data[xl]!) +
+        Math.abs(data[xr + 1]! - data[xl + 1]!) +
+        Math.abs(data[xr + 2]! - data[xl + 2]!);
+      const gy =
+        Math.abs(data[yd]! - data[yu]!) +
+        Math.abs(data[yd + 1]! - data[yu + 1]!) +
+        Math.abs(data[yd + 2]! - data[yu + 2]!);
+      edgeGrad[row + x] = (gx + gy) / 6;
+    }
+  }
+
+  return { score, shadowDark, edgeGrad };
 }
 
-function buildScoreHistogram(score: Float32Array): Int32Array {
+/** 用截断上界且排除纯黑阴影/画面外框的直方图计算 Otsu，防止反光或黑角带偏浅色药片阈值。 */
+function buildCappedOtsuHistogram(
+  score: Float32Array,
+  shadowDark: Uint8Array,
+  w: number,
+  h: number,
+  cap: number,
+): Int32Array {
   const histogram = new Int32Array(SCORE_MAX + 1);
-  for (let i = 0; i < score.length; i += 1) {
-    const value = score[i]!;
-    histogram[value >= SCORE_MAX ? SCORE_MAX : value | 0]! += 1;
+  const maxBin = Math.min(SCORE_MAX, cap);
+  const margin = Math.min(4, Math.floor(Math.min(w, h) * 0.04));
+  let kept = 0;
+
+  for (let y = margin; y < h - margin; y += 1) {
+    const row = y * w;
+    for (let x = margin; x < w - margin; x += 1) {
+      const idx = row + x;
+      if (shadowDark[idx]) continue;
+      const value = score[idx]!;
+      const bin = value >= maxBin ? maxBin : value | 0;
+      histogram[bin]! += 1;
+      kept += 1;
+    }
+  }
+
+  if (kept < score.length * 0.1) {
+    histogram.fill(0);
+    for (let i = 0; i < score.length; i += 1) {
+      const value = score[i]!;
+      const bin = value >= maxBin ? maxBin : value | 0;
+      histogram[bin]! += 1;
+    }
   }
   return histogram;
+}
+
+function histogramTotal(histogram: Int32Array): number {
+  let sum = 0;
+  for (let i = 0; i < histogram.length; i += 1) sum += histogram[i]!;
+  return Math.max(1, sum);
+}
+
+/** 剔除相框黑边、依附药片的单侧投射阴影以及柔边虚影/桌面大面积反光误检。 */
+function pruneShadowsEdgesAndGlare(
+  mask: Uint8Array,
+  score: Float32Array,
+  shadowDark: Uint8Array,
+  edgeGrad: Float32Array,
+  w: number,
+  h: number,
+): void {
+  const { labels, components } = labelComponents(mask, w, h);
+  if (components.length === 0) return;
+
+  const anchors: Array<{ cx: number; cy: number }> = [];
+  const stats = components.map((comp) => {
+    let shadowCount = 0;
+    let nonShadowCount = 0;
+    let borderCount = 0;
+    let gradSum = 0;
+    let boundaryCount = 0;
+    let peakScore = 0;
+
+    for (let y = comp.minY; y <= comp.maxY; y += 1) {
+      const row = y * w;
+      for (let x = comp.minX; x <= comp.maxX; x += 1) {
+        const idx = row + x;
+        if (labels[idx] !== comp.id) continue;
+        if (score[idx]! > peakScore) peakScore = score[idx]!;
+        if (shadowDark[idx]) shadowCount += 1;
+        else nonShadowCount += 1;
+        if (x <= 1 || y <= 1 || x >= w - 2 || y >= h - 2) borderCount += 1;
+
+        const onBoundary =
+          x === 0 || x === w - 1 || y === 0 || y === h - 1 ||
+          !mask[idx - 1] || !mask[idx + 1] || !mask[idx - w] || !mask[idx + w];
+        if (onBoundary) {
+          gradSum += edgeGrad[idx]!;
+          boundaryCount += 1;
+        }
+      }
+    }
+
+    const bw = comp.maxX - comp.minX + 1;
+    const bh = comp.maxY - comp.minY + 1;
+    const touchesTop = comp.minY <= 1;
+    const touchesBottom = comp.maxY >= h - 2;
+    const touchesLeft = comp.minX <= 1;
+    const touchesRight = comp.maxX >= w - 2;
+    const touchesCorner = (touchesTop || touchesBottom) && (touchesLeft || touchesRight);
+    const elongatedEdgeStrip =
+      ((touchesTop || touchesBottom) && bw >= bh * 2.6) ||
+      ((touchesLeft || touchesRight) && bh >= bw * 2.6);
+    const thinBezel = borderCount >= comp.area * 0.3 && (bw >= 24 || bh >= 24);
+    const isEdgeArtifact = touchesCorner || elongatedEdgeStrip || thinBezel;
+
+    const meanGrad = boundaryCount > 0 ? gradSum / boundaryCount : 0;
+    if (!isEdgeArtifact && nonShadowCount >= 6) {
+      anchors.push({ cx: comp.sumX / comp.area, cy: comp.sumY / comp.area });
+    }
+
+    return {
+      comp,
+      shadowCount,
+      nonShadowCount,
+      isEdgeArtifact,
+      bw,
+      bh,
+      meanGrad,
+      peakScore,
+    };
+  });
+
+  const nearAnchorDist = Math.max(24, Math.min(w, h) * 0.16);
+  const rejectIds = new Set<number>();
+  const stripShadowIds = new Set<number>();
+
+  for (const s of stats) {
+    if (s.isEdgeArtifact) {
+      rejectIds.add(s.comp.id);
+      continue;
+    }
+
+    const shadowRatio = s.shadowCount / Math.max(1, s.comp.area);
+    if (shadowRatio >= 0.72) {
+      const cx = s.comp.sumX / s.comp.area;
+      const cy = s.comp.sumY / s.comp.area;
+      const aspectRatio = Math.max(s.bw, s.bh) / Math.max(1, Math.min(s.bw, s.bh));
+      const nearRealPill = anchors.some((a) => Math.hypot(a.cx - cx, a.cy - cy) <= nearAnchorDist);
+      if (nearRealPill || aspectRatio >= 2.2 || s.meanGrad < 4.5) {
+        rejectIds.add(s.comp.id);
+        continue;
+      }
+    }
+
+    // 柔边虚斑（例如台面闪光灯反光亮斑）：边缘过渡平缓、无清晰实体轮廓。
+    if (s.meanGrad < 7.2 && s.peakScore < 68) {
+      rejectIds.add(s.comp.id);
+      continue;
+    }
+
+    // 剥离依附在真实药片旁的单侧黑色投影，防止药片+阴影形成双峰误算两粒。
+    if (s.nonShadowCount >= 6 && s.shadowCount >= 4) {
+      stripShadowIds.add(s.comp.id);
+    }
+  }
+
+  if (rejectIds.size === 0 && stripShadowIds.size === 0) return;
+
+  for (let i = 0; i < mask.length; i += 1) {
+    const id = labels[i]!;
+    if (!id) continue;
+    if (rejectIds.has(id)) {
+      mask[i] = 0;
+    } else if (stripShadowIds.has(id) && shadowDark[i]) {
+      mask[i] = 0;
+    }
+  }
 }
 
 function otsuThreshold(histogram: Int32Array, total: number): number {
@@ -880,24 +1067,29 @@ function chamferDistance(mask: Uint8Array, w: number, h: number): Float32Array {
 }
 
 function estimatePillRadius(components: Component[], w: number, h: number): number {
-  const singleCandidates: number[] = [];
+  const singleCandidates: Array<{ area: number; radius: number }> = [];
   const thicknessCandidates: number[] = [];
+  let maxSingleArea = 0;
   for (const component of components) {
     if (component.area < 10 || component.maxDist < 1.8) continue;
     const radiusFromArea = Math.sqrt(component.area / Math.PI);
     const compactness = component.area / (Math.PI * component.maxDist * component.maxDist);
     if (compactness >= 0.5 && compactness <= 1.7 && radiusFromArea <= Math.min(w, h) / 7) {
-      singleCandidates.push(radiusFromArea);
+      singleCandidates.push({ area: component.area, radius: radiusFromArea });
+      if (component.area > maxSingleArea) maxSingleArea = component.area;
     }
     thicknessCandidates.push(component.maxDist);
   }
+  const substantialSingles = singleCandidates
+    .filter((item) => item.area >= Math.max(20, maxSingleArea * 0.42))
+    .map((item) => item.radius);
   const minDim = Math.min(w, h);
   const upper = minDim / 6;
-  if (singleCandidates.length >= 2) {
-    return clamp(medianOf(singleCandidates), 2.5, upper);
+  if (substantialSingles.length >= 2) {
+    return clamp(medianOf(substantialSingles), 2.5, upper);
   }
-  if (singleCandidates.length === 1) {
-    return clamp(medianOf([singleCandidates[0]!, percentile(thicknessCandidates, 0.9)]), 2.5, upper);
+  if (substantialSingles.length === 1) {
+    return clamp(medianOf([substantialSingles[0]!, percentile(thicknessCandidates, 0.9)]), 2.5, upper);
   }
   if (thicknessCandidates.length > 0) {
     const guess = percentile(thicknessCandidates, 0.9);

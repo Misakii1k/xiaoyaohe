@@ -4,9 +4,22 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-11-15
 Status: active
-Latest version: `1.2.8` (Android `versionCode: 85`, 修复 Cloudflare Pages Linux 构建兼容并重发布)
+Latest version: `1.2.9` (Android `versionCode: 86`, 修复拍照数药片云端空检出与本地抗阴影抗反光识别)
 
 ## Summary of Accomplished Work
+
+### 84. 修复拍照数药片云端返回空结果及本地强阴影/反光误检（`workspace/claude`，`v1.2.9` / `versionCode: 86`）
+
+1. **云端识别多策略级联与防误报 0 粒**（`functions/api/count-pills.ts`、`src/features/pillCounterClient.ts`）：
+   - 修正 `Moondream 3.1` 传入冗长并列提示词导致返回空数组的问题，改用简短清晰目标词（`'pill'` / `'pill in blister'`）；
+   - 当 `task: 'point'` 返回空时自动降级 `task: 'detect'`（解析 `objects` 框中心并过滤整桌误框），仍为空则自动转由 `@cf/qwen/qwen3.8-27b` 输出归一化中心点 JSON；响应附带脱敏 `meta`（`strategy`、`rawKeys`、`finishReason`）便于线上排查；
+   - 客户端超时期限微调至 `15000ms`，当云端返回 `200` 且点数为 0 时不再直接盲信 `0` 粒，而是自动回退 YOLO / 本地视觉算法；仅当两端均未发现药片时才保留 `0`。
+2. **本地数药片算法实时阴影与反光抑制**（`src/features/pillDetection.ts`）：
+   - Otsu 阈值直方图改用 85 上界截断并剔除画面外框像素与纯无色差暗阴影，彻底解决黑色边框或斜角把阈值拉高、淹没白/浅绿药片的问题；
+   - 新增基于 CIE Lab 与 2 步长平滑梯度的 `pruneShadowsEdgesAndGlare`：剥离贴近亮/彩药片的单侧投射阴影（防一片变两粒）、消除画框/充电线贴边长条与孤立条状阴影、过滤无锐利边缘的闪光灯桌面大面积反光，并收敛碎片半径加权避免单一绿色药片因高光裂成多点；
+   - 实测真机截图裁剪样本：8 粒照片稳定识别 **8/8**（含 4 绿 4 白及斜向阴影/电线干扰），9 粒强反光样本稳定清点 **7/9 且 0 误检**，Vitest 单测 23/23 全过。
+3. **测试与版本推进**：
+   - 更新 `tests/functionsApi.test.ts` 与 `tests/pillCounterClient.test.ts` 覆盖 `detect`、`Qwen VLM` 级联与空响应本地救援用例。
 
 ### 83. 修复 Cloudflare Pages Linux `npm ci` 兼容缺陷并完成 `v1.2.8` 正式线上发布（`workspace/claude`，`versionCode: 85`）
 

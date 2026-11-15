@@ -14,7 +14,7 @@ import {
 } from './pillEngine';
 
 export const DEFAULT_PILL_IMAGE_MAX_DIM = 1024;
-export const DEFAULT_CLOUD_COUNT_TIMEOUT_MS = 8000;
+export const DEFAULT_CLOUD_COUNT_TIMEOUT_MS = 15000;
 const MAX_UPLOAD_DATA_URL_CHARS = 1_400_000;
 
 export interface PreparedPillImage {
@@ -295,6 +295,7 @@ export async function runPillDetectionPipeline(
 
   let consentNeeded = false;
   let degradedReason: string | undefined;
+  let cloudReturnedEmpty = false;
 
   if (options.allowCloud !== false) {
     if (!hasAiConsent('pill-photo', consentOrigin)) {
@@ -338,24 +339,28 @@ export async function runPillDetectionPipeline(
                 target.imgData.height,
                 { mode },
               );
-              const points = localPts.map((pt) => ({
-                ...pt,
-                x: pt.x + target.offsetX,
-                y: pt.y + target.offsetY,
-              }));
-              const clusters = clusterPillAppearances(prepared.rawImgData, points);
-              return {
-                points,
-                count: points.length,
-                engine: 'cloud',
-                mode,
-                imageWidth: prepared.width,
-                imageHeight: prepared.height,
-                clusters,
-                prepared,
-              };
+              if (localPts.length > 0) {
+                const points = localPts.map((pt) => ({
+                  ...pt,
+                  x: pt.x + target.offsetX,
+                  y: pt.y + target.offsetY,
+                }));
+                const clusters = clusterPillAppearances(prepared.rawImgData, points);
+                return {
+                  points,
+                  count: points.length,
+                  engine: 'cloud',
+                  mode,
+                  imageWidth: prepared.width,
+                  imageHeight: prepared.height,
+                  clusters,
+                  prepared,
+                };
+              }
+              cloudReturnedEmpty = true;
+            } else {
+              degradedReason = '云端返回格式异常，已使用本地识别';
             }
-            degradedReason = '云端返回格式异常，已使用本地识别';
           } else {
             degradedReason = mapHttpFallbackReason(response.status);
           }
@@ -398,19 +403,26 @@ export async function runPillDetectionPipeline(
         }));
         const clusters =
           yoloRes.clusters ?? clusterPillAppearances(prepared.rawImgData, shiftedPoints);
-        return {
-          points: shiftedPoints,
-          count: shiftedPoints.length,
-          engine: 'yolo_local',
-          mode,
-          imageWidth: prepared.width,
-          imageHeight: prepared.height,
-          clusters,
-          consentNeeded: consentNeeded || undefined,
-          degradedReason,
-          fallbackReason: degradedReason,
-          prepared,
-        };
+        if (shiftedPoints.length > 0 || !cloudReturnedEmpty) {
+          const yoloReason =
+            degradedReason ??
+            (cloudReturnedEmpty && shiftedPoints.length > 0
+              ? '云端未检出明显药片，已自动改用本地模型计算'
+              : undefined);
+          return {
+            points: shiftedPoints,
+            count: shiftedPoints.length,
+            engine: 'yolo_local',
+            mode,
+            imageWidth: prepared.width,
+            imageHeight: prepared.height,
+            clusters,
+            consentNeeded: consentNeeded || undefined,
+            degradedReason: yoloReason,
+            fallbackReason: yoloReason,
+            prepared,
+          };
+        }
       }
     } catch (err) {
       if (options.signal?.aborted) throw err;
@@ -427,6 +439,25 @@ export async function runPillDetectionPipeline(
   }));
   const clusters = clusterPillAppearances(prepared.rawImgData, shiftedPoints);
 
+  if (cloudReturnedEmpty && shiftedPoints.length === 0) {
+    return {
+      points: [],
+      count: 0,
+      engine: 'cloud',
+      mode,
+      imageWidth: prepared.width,
+      imageHeight: prepared.height,
+      clusters: [],
+      prepared,
+    };
+  }
+
+  const finalReason =
+    degradedReason ??
+    (cloudReturnedEmpty && shiftedPoints.length > 0
+      ? '云端未检出明显药片，已自动改用本地计算'
+      : undefined);
+
   return {
     points: shiftedPoints,
     count: shiftedPoints.length,
@@ -436,8 +467,8 @@ export async function runPillDetectionPipeline(
     imageHeight: prepared.height,
     clusters,
     consentNeeded: consentNeeded || undefined,
-    degradedReason,
-    fallbackReason: degradedReason,
+    degradedReason: finalReason,
+    fallbackReason: finalReason,
     prepared,
   };
 }
