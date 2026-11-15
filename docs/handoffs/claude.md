@@ -4,11 +4,11 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-11-15
 Status: active
-Latest version: `1.2.6` (Android `versionCode: 83`, 已完成功能实现待发版)
+Latest version: `1.2.7` (Android `versionCode: 84`, 正在构建发布)
 
 ## Summary of Accomplished Work
 
-### 82. 数药片 4.0（云端 Moondream `point` 首选 + 本地视觉增强 + 整板网格 + AI/库存/分药全链路闭环，`workspace/claude`，未发版）
+### 82. 数药片 4.0（云端 Moondream `point` 首选 + 本地视觉增强 + 整板网格 + AI/库存/分药全链路闭环，`workspace/claude`，正发布 `v1.2.7`）
 
 1. **引擎契约与隐私同意扩展**（`src/ai/consent.ts`、`src/features/pillEngine.ts`）：
    - `AiDataKind` 新增 `'pill-photo'` 数据授权类型；
@@ -16,7 +16,7 @@ Latest version: `1.2.6` (Android `versionCode: 83`, 已完成功能实现待发�
 2. **Cloudflare Workers AI 零冷启动计数接口**（`functions/api/_shared.ts`、`functions/api/count-pills.ts`）：
    - 实现 `POST /api/count-pills`，执行白名单 Origin（403）、缺失 `env.AI`（503 `AI_NOT_BOUND`）、请求体 >1.5MB（413 `PAYLOAD_TOO_LARGE`）及单 IP 每分钟 15 次限流（429 `RATE_LIMITED`）；
    - 按 `mode` 调用 `@cf/moondream/moondream3.1-9B-A2B`（`task: 'point'`，散落/混药 `pill, tablet, or capsule`，整板泡罩 `unopened blister pocket containing a pill or capsule`，`max_objects: 250`）并将归一化坐标反算为像素点。
-   - **生产运维前置项**：上线云端视觉计数前，必须在 **Cloudflare Pages → Settings → Functions → Bindings → Workers AI** 添加变量名为 `AI` 的绑定；未绑定时接口返回 503 并自动平滑回退本地引擎。
+   - **生产运维绑定已完成**：已在 Cloudflare Pages 控制台 Production 与 Preview 环境新增变量名为 `AI` 的 **Workers AI** 绑定（保留既有 `GITHUB_TOKEN` 与 `NODE_VERSION` 不变），推送 `main` 重新部署后即生效。
 3. **本地视觉引擎升级与统一编排**（`src/features/pillDetection.ts`、`src/features/pillCounterClient.ts`）：
    - 本地检测混入 CIE Lab 感知色距以提升深/浅低对比度背景稳定性，新增点击样本区域生长校准 `detectPillsFromSample`、透视双线性整板空满判定 `evaluateBlisterGrid` 与颜色外观聚类 `clusterPillAppearances`；
    - `runPillDetectionPipeline` 实现图像 longest-edge 1024px 压缩、`'pill-photo'` 隐私授权门禁、8s 超时云端优先调度及平滑回退二期 `yolo_local` / 本地启发式算法 `heuristic_local`。
