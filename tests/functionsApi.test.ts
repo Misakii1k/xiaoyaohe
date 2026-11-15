@@ -300,3 +300,152 @@ describe('version.json 动态元数据', () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe('Cloudflare Functions: count-pills', () => {
+  const TINY_JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==';
+
+  function postReq(
+    body: unknown,
+    opts: { origin?: string; ip?: string; method?: string } = {},
+  ): Request {
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (opts.origin) headers.Origin = opts.origin;
+    if (opts.ip) headers['CF-Connecting-IP'] = opts.ip;
+    return new Request('https://xiaoyaohe.pages.dev/api/count-pills', {
+      method: opts.method ?? 'POST',
+      headers,
+      body: opts.method === 'GET' || opts.method === 'OPTIONS' ? undefined : JSON.stringify(body),
+    });
+  }
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    try {
+      const mod = await import('../functions/api/count-pills');
+      mod.resetCountPillsRateLimiterForTest();
+    } catch {
+      // Module does not exist during red-phase TDD check
+    }
+  });
+
+  it('OPTIONS 预检允许 POST 且拒绝非法 Origin 的 POST 请求', async () => {
+    const { onRequestOptions, onRequestPost, onRequestGet } = await import('../functions/api/count-pills');
+
+    const optRes = await onRequestOptions({
+      request: postReq(null, { origin: 'https://xiaoyaohe.pages.dev', method: 'OPTIONS' }),
+    });
+    expect(optRes.status).toBe(204);
+    expect(optRes.headers.get('access-control-allow-origin')).toBe('https://xiaoyaohe.pages.dev');
+    expect(optRes.headers.get('access-control-allow-methods')).toContain('POST');
+
+    const getRes = await onRequestGet({
+      request: postReq(null, { origin: 'https://xiaoyaohe.pages.dev', method: 'GET' }),
+    });
+    expect(getRes.status).toBe(405);
+
+    const evilRes = await onRequestPost({
+      request: postReq({ image: TINY_JPEG, mode: 'loose' }, { origin: 'https://evil.example' }),
+      env: { AI: { run: vi.fn() } },
+    });
+    expect(evilRes.status).toBe(403);
+    expect(evilRes.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('缺少 env.AI 绑定时返回 503 AI_NOT_BOUND', async () => {
+    const { onRequestPost } = await import('../functions/api/count-pills');
+    const res = await onRequestPost({
+      request: postReq({ image: TINY_JPEG, mode: 'loose' }, { origin: 'https://xiaoyaohe.pages.dev' }),
+      env: {},
+    });
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toBe('AI_NOT_BOUND');
+  });
+
+  it('图片体积超过 1.5MB base64 时返回 413 PAYLOAD_TOO_LARGE', async () => {
+    const { onRequestPost } = await import('../functions/api/count-pills');
+    const oversized = `data:image/jpeg;base64,${'A'.repeat(1_550_000)}`;
+    const run = vi.fn();
+    const res = await onRequestPost({
+      request: postReq({ image: oversized, mode: 'loose' }, { origin: 'https://localhost' }),
+      env: { AI: { run } },
+    });
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toBe('PAYLOAD_TOO_LARGE');
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('loose 与 blister 模式分别传对应 target 调用 Moondream point 并透传坐标', async () => {
+    const { onRequestPost } = await import('../functions/api/count-pills');
+    const run = vi.fn(async (_model: string, input: Record<string, unknown>) => ({
+      points:
+        String(input.target).includes('blister')
+          ? [{ x: 0.25, y: 0.5 }]
+          : [{ x: 0.2, y: 0.3 }, { x: 0.7, y: 0.8 }],
+    }));
+
+    const looseRes = await onRequestPost({
+      request: postReq({ image: TINY_JPEG, mode: 'loose' }, { origin: 'capacitor://localhost', ip: '1.1.1.1' }),
+      env: { AI: { run } },
+    });
+    expect(looseRes.status).toBe(200);
+    const looseJson = await looseRes.json();
+    expect(looseJson).toMatchObject({
+      ok: true,
+      mode: 'loose',
+      engine: 'cloud',
+      points: [{ x: 0.2, y: 0.3 }, { x: 0.7, y: 0.8 }],
+    });
+    expect(run).toHaveBeenNthCalledWith(
+      1,
+      '@cf/moondream/moondream3.1-9B-A2B',
+      expect.objectContaining({
+        task: 'point',
+        image: TINY_JPEG,
+        target: 'pill, tablet, or capsule',
+        max_objects: 250,
+      }),
+    );
+
+    const blisterRes = await onRequestPost({
+      request: postReq({ image: TINY_JPEG, mode: 'blister' }, { origin: 'https://xiaoyaohe.pages.dev', ip: '1.1.1.2' }),
+      env: { AI: { run } },
+    });
+    expect(blisterRes.status).toBe(200);
+    const blisterJson = await blisterRes.json();
+    expect(blisterJson).toMatchObject({
+      ok: true,
+      mode: 'blister',
+      engine: 'cloud',
+      points: [{ x: 0.25, y: 0.5 }],
+    });
+    expect(run).toHaveBeenNthCalledWith(
+      2,
+      '@cf/moondream/moondream3.1-9B-A2B',
+      expect.objectContaining({
+        task: 'point',
+        target: 'unopened blister pocket containing a pill or capsule',
+      }),
+    );
+  });
+
+  it('同 IP 高频请求触发 429 RATE_LIMITED 限流保护', async () => {
+    const { onRequestPost } = await import('../functions/api/count-pills');
+    const run = vi.fn(async () => ({ points: [] }));
+
+    let lastStatus = 200;
+    let lastCode = '';
+    for (let i = 0; i < 20; i++) {
+      const res = await onRequestPost({
+        request: postReq({ image: TINY_JPEG, mode: 'loose' }, { origin: 'https://localhost', ip: '9.9.9.9' }),
+        env: { AI: { run } },
+      });
+      lastStatus = res.status;
+      if (res.status === 429) {
+        lastCode = (await res.json()).error;
+        break;
+      }
+    }
+    expect(lastStatus).toBe(429);
+    expect(lastCode).toBe('RATE_LIMITED');
+  });
+});

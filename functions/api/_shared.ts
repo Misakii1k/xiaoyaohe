@@ -12,6 +12,9 @@
 
 export interface Env {
   GITHUB_TOKEN?: string;
+  AI?: {
+    run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
+  };
 }
 
 export const GITHUB_REPO = 'Misakii1k/xiaoyaohe';
@@ -127,15 +130,24 @@ function baseHeaders(): Record<string, string> {
 }
 
 /** 命中白名单才回显 CORS 头，并加 Vary 以便边缘正确缓存。 */
-export function corsHeaders(request: Request): Record<string, string> {
+export function isOriginAllowed(request: Request): boolean {
+  const origin = request.headers.get('Origin');
+  return !origin || ALLOWED_ORIGINS.has(origin);
+}
+
+export function corsHeaders(request: Request, methods = 'GET, OPTIONS'): Record<string, string> {
   const origin = request.headers.get('Origin');
   if (!origin || !ALLOWED_ORIGINS.has(origin)) return {};
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Methods': methods,
     'Access-Control-Allow-Headers': 'Content-Type',
     Vary: 'Origin',
   };
+}
+
+export function postCorsHeaders(request: Request): Record<string, string> {
+  return corsHeaders(request, 'POST, OPTIONS');
 }
 
 export function jsonResponse(
