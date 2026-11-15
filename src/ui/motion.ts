@@ -212,6 +212,7 @@ export function animatePageSwap(el: HTMLElement): boolean {
   if (el.hidden) return false;
   cancelAnimations(el);
   rememberStyles(el);
+  el.dataset.motionActive = 'true';
   el.style.willChange = 'transform, opacity';
   const animation = el.animate(
     [
@@ -222,6 +223,7 @@ export function animatePageSwap(el: HTMLElement): boolean {
   );
   const settle = () => {
     cancelAnimations(el);
+    delete el.dataset.motionActive;
     restoreStyles(el);
   };
   animation.finished.then(settle).catch(settle);
@@ -234,8 +236,10 @@ export function animatePageIn(el: HTMLElement, direction: PageMotionDirection = 
   finishPageMotion();
   const animation = animateIn(el, direction);
   if (!animation) return false;
+  el.dataset.motionActive = 'true';
   const settle = () => {
     cancelAnimations(el);
+    delete el.dataset.motionActive;
     restoreStyles(el);
   };
   animation.finished.then(settle).catch(settle);
@@ -251,9 +255,10 @@ export function finishPageMotion(): void {
 export function resetPageMotion(): void {
   finishPageMotion();
   if (typeof document === 'undefined') return;
-  for (const el of document.querySelectorAll<HTMLElement>('[data-motion-layer]')) {
+  for (const el of document.querySelectorAll<HTMLElement>('[data-motion-layer], [data-motion-active]')) {
     cancelAnimations(el);
     clearLayer(el);
+    delete el.dataset.motionActive;
     setInert(el, false);
     el.style.pointerEvents = '';
     restoreStyles(el);

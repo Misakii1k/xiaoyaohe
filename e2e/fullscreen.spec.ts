@@ -23,6 +23,16 @@ test.describe('fullscreen visual matrix', () => {
       await page.goto(route.path);
       const heading = page.getByRole('heading', { level: 1, name: route.heading });
       await expect(heading).toBeVisible();
+      // 页面入场使用 transform 位移，动画未结束时量到的是位移后的位置。
+      // 等页面转场和入场动画都清理干净，再按稳定布局断言。
+      await page.waitForFunction(
+        () => {
+          if (document.querySelector('[data-motion-layer], [data-motion-active]')) return false;
+          return document.getAnimations().every((animation) => animation.playState !== 'running');
+        },
+        undefined,
+        { timeout: 3_000 },
+      );
       // 保活页签（tabPool PRIMARY_TAB_ROUTES）会让每个缓存页签各持有一个 .app-shell，
       // 非激活页签带 hidden + display:none。这里断言「可见的 shell 只有一个」，
       // 既保留原用例意图，又兼容保活架构。
