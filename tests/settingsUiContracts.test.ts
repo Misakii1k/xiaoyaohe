@@ -9,11 +9,11 @@ describe('settings information architecture contracts', () => {
     const source = readFileSync(join(root, 'src/pages/settings/panels/LlmConfigPanel.ts'), 'utf8');
 
     expect(source).toContain('function renderAiConsentPanel()');
-    expect(source).toContain("title: 'AI 外发授权'");
+    expect(source).toContain("title: '外发授权'");
     expect(source).toContain("{ text: '首次询问', tone: 'muted' }");
     expect(source).toContain('function renderAiConsentControls(onChanged: () => void)');
     expect(source).toContain('clear.hidden = records.length === 0;');
-    expect(source).toContain("title: 'AI 服务商'");
+    expect(source).toContain("title: '对话模型'");
     expect(source).toContain("return { text: '未配置', tone: 'muted' }");
   });
 
@@ -180,7 +180,7 @@ describe('settings information architecture contracts', () => {
     const settings = readFileSync(join(root, 'src/pages/settings/panels/KeepAlivePanel.ts'), 'utf8');
     const styles = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8');
 
-    expect(settings).toContain("title: '后台保活与防杀'");
+    expect(settings).toContain("title: '后台保活'");
     expect(settings).toContain('function openKeepAliveGuideModal()');
     expect(settings).toContain('function openKeepAlivePromptSheet');
     expect(settings).toContain('主流手机后台防杀指南');
@@ -194,5 +194,56 @@ describe('settings information architecture contracts', () => {
     expect(styles).toContain('.keepalive-card');
     expect(styles).toContain('.keepalive-oem-tabs');
     expect(styles).toContain('.keepalive-oem-step');
+  });
+
+  it('unifies settings icons, hides header status chips, and aligns 4-char panel titles', () => {
+    const styles = readFileSync(join(root, 'src/ui/styles/pages/settings.css'), 'utf8');
+    const settingsIndex = readFileSync(join(root, 'src/pages/settings/index.ts'), 'utf8');
+    const primitives = readFileSync(join(root, 'src/pages/settings/components/panelPrimitives.ts'), 'utf8');
+    const lanPanel = readFileSync(join(root, 'src/sync/lan/settingsPanel.ts'), 'utf8');
+    const imgPanel = readFileSync(join(root, 'src/ui/imageGenSettingsPanel.ts'), 'utf8');
+    const panelsBundle = [
+      readFileSync(join(root, 'src/pages/settings/panels/ReminderPanel.ts'), 'utf8'),
+      readFileSync(join(root, 'src/pages/settings/panels/AppearancePanel.ts'), 'utf8'),
+      readFileSync(join(root, 'src/pages/settings/panels/VoicePanel.ts'), 'utf8'),
+      readFileSync(join(root, 'src/pages/settings/panels/KeepAlivePanel.ts'), 'utf8'),
+      readFileSync(join(root, 'src/pages/settings/panels/BackupPanel.ts'), 'utf8'),
+      readFileSync(join(root, 'src/pages/settings/panels/StorageCachePanel.ts'), 'utf8'),
+      readFileSync(join(root, 'src/pages/settings/panels/AppUpdatePanel.ts'), 'utf8'),
+      readFileSync(join(root, 'src/pages/settings/panels/LlmConfigPanel.ts'), 'utf8'),
+      readFileSync(join(root, 'src/pages/settings/panels/DiagnosticsPanel.ts'), 'utf8'),
+      lanPanel,
+      imgPanel,
+    ].join('\n');
+
+    // 1. 统一品牌青绿浅底图标，且不再在列表头展示五花八门的状态小胶囊
+    expect(styles).toContain('.settings-page .panel-head .panel-chip {\n  display: none;\n}');
+    expect(styles).toContain('.settings-about-tile.tone-blue .settings-about-tile-icon {\n  background: var(--color-primary-soft);\n  color: var(--color-primary);\n}');
+    expect(primitives).toContain("chip.hidden = true;");
+    expect(lanPanel).toContain("chip.hidden = true;");
+    expect(imgPanel).toContain("chip.hidden = true;");
+
+    // 2. 分组名与所有设置面板标题字数齐整
+    for (const groupTitle of ['提醒与外观', '数据与更新', '助手与诊断']) {
+      expect(settingsIndex).toContain(groupTitle);
+    }
+    for (const title of [
+      '系统通知',
+      '时段设置',
+      '界面外观',
+      '语音播报',
+      '后台保活',
+      '家庭同步',
+      '数据备份',
+      '存储缓存',
+      '应用更新',
+      '对话模型',
+      '生图模型',
+      '外发授权',
+      '诊断记录',
+    ]) {
+      expect(title.length).toBe(4);
+      expect(panelsBundle).toContain(`'${title}'`);
+    }
   });
 });

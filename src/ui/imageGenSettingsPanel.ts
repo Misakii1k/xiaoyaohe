@@ -28,11 +28,13 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
   const lead = el('span', { class: 'panel-lead' });
   const iconWrap = el('span', { class: 'panel-icon panel-icon-rose' });
   iconWrap.append(icon('image'));
-  lead.append(iconWrap, el('span', { class: 'panel-title', text: 'AI 生图服务商' }));
+  lead.append(iconWrap, el('span', { class: 'panel-title', text: '生图模型' }));
   head.append(lead);
 
   const right = el('span', { class: 'panel-right' });
   const chip = el('span', { class: 'panel-chip tone-muted', text: '检测中' });
+  chip.hidden = true;
+  chip.setAttribute('aria-hidden', 'true');
   const chevron = el('span', { class: 'panel-chevron' });
   chevron.append(icon('chevron-right'));
   right.append(chip, chevron);
@@ -76,12 +78,12 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     const effective = getEffectiveImageGenConfig();
 
     const desc = el('div', {
-      class: 'muted',
+      class: 'settings-subcard-desc',
       text: '拍药盒照片后，自动生成干净的白底图。',
     });
 
     // 1. 开关行
-    const toggleRow = el('div', { class: 'settings-toggle-row' });
+    const toggleRow = el('label', { class: 'settings-toggle-row' });
     const toggleCopy = el('div', { class: 'settings-toggle-copy' });
     toggleCopy.append(
       el('div', { class: 'settings-toggle-title', text: '启用药盒照片增强' }),
@@ -110,14 +112,11 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     const titleWrap = el('div', { class: 'settings-subcard-title-wrap' });
     titleWrap.append(el('div', { class: 'settings-subcard-title', text: '药盒照片增强' }));
     const cardBadge = el('span', {
-      class: 'settings-subcard-badge',
-      style: current.enabled
-        ? 'background: rgba(244, 63, 94, 0.12); color: #e11d48;'
-        : 'background: rgba(0, 0, 0, 0.05); color: var(--color-text-muted);',
+      class: `settings-subcard-badge ${current.enabled ? 'is-primary' : ''}`,
       text: current.enabled ? '已启用' : '未开启',
     });
     cardHead.append(titleWrap, cardBadge);
-    card.append(cardHead, toggleRow, formWrap);
+    card.append(cardHead, desc, toggleRow, formWrap);
     body.append(card);
 
     toggleSwitch.onchange = async () => {
@@ -139,7 +138,7 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     }) as HTMLInputElement;
     const urlHint = el('div', {
       class: 'muted text-xs mt-1',
-      text: '留空则使用「AI 服务商」的地址',
+      text: '留空则复用「对话模型」地址',
     });
     urlField.append(urlLabel, urlInput, urlHint);
 
@@ -152,12 +151,12 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
       autocomplete: 'off',
       autocapitalize: 'none',
       spellcheck: false,
-      placeholder: effective.apiKey ? '留空自动复用当前主 AI 密钥' : 'sk-...',
+      placeholder: effective.apiKey ? '留空自动复用当前对话模型密钥' : 'sk-...',
       value: current.apiKey,
     }) as HTMLInputElement;
     const keyHint = el('div', {
       class: 'muted text-xs mt-1',
-      text: '留空则使用「AI 服务商」的密钥',
+      text: '留空则复用「对话模型」密钥',
     });
     keyField.append(keyLabel, keyInput, keyHint);
 
@@ -284,12 +283,11 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
     // 操作按钮（2列响应式网格，杜绝按钮文案折行挤压）
     const btnRow = el('div', {
       class: 'image-gen-actions mt-3',
-      style: 'display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;' as any,
     });
     const saveBtn = el('button', { class: 'btn', type: 'button', text: '保存当前配置' });
     const saveProfileBtn = el('button', { class: 'btn tonal', type: 'button', text: '存为新配置' });
     const testBtn = el('button', { class: 'btn tonal', type: 'button', text: '测试生图连接' });
-    const copyMainBtn = el('button', { class: 'btn tonal', type: 'button', text: '从主服务商复制' });
+    const copyMainBtn = el('button', { class: 'btn tonal', type: 'button', text: '复用对话模型' });
 
     saveProfileBtn.onclick = async () => {
       const defaultName = modelInput.value.trim() || '自定义配置';
@@ -379,8 +377,6 @@ export function renderImageGenSettingsPanel(): ImageGenPanelResult {
 
     btnRow.append(saveBtn, saveProfileBtn, testBtn, copyMainBtn);
     formWrap.append(profilesField, urlField, keyField, modelField, modeField, btnRow);
-
-    body.append(desc, toggleRow, formWrap);
   }
 
   refreshChip();

@@ -1,9 +1,21 @@
 // 按顺序分药向导：一盒一盒弹卡展示「药盒长什么样、放哪些格、每格几粒」。
 // 逐盒步骤只做引导，完成页确认后由调用方按具体服药时段预扣库存。
 import { SLOT_LABEL, formatMealRels, type MealRel, type Medication, type Slot } from '../db/schema';
+import {
+  SORT_TTS_CHANGE_EVENT,
+  buildSortCardSpeechText,
+  buildSortSummarySpeechText,
+  isSortTtsEnabled,
+  resetSortTtsSessionState,
+  setSortTtsEnabled,
+  speakSortText,
+  stopSortSpeech,
+} from '../features/sortTts';
 import { registerRouteTransitionCleanup, navigate } from '../router';
-import { el, icon, banner, SLOT_ICON } from './components';
+import { el, icon, banner, toast, SLOT_ICON } from './components';
+import { Icon } from './icons/Icon';
 import { createButton } from './primitives/Button';
+import { createIconButton } from './primitives/IconButton';
 import { openBottomSheet } from './primitives/BottomSheet';
 import { doseFormLabel } from './MedOnboardWizard';
 
@@ -100,8 +112,55 @@ export function openSortWizard(
   const progress = el('div', { class: 'med-wizard-progress' });
   progress.setAttribute('aria-live', 'polite');
   const quit = el('button', { class: 'med-wizard-skip', type: 'button', html: '先不分了' } as any);
+
+  const speakCurrentStep = (force = false): void => {
+    if (disposed) return;
+    let text = '';
+    if (step >= items.length) {
+      text = buildSortSummarySpeechText(items);
+    } else {
+      const currentItem = items[step];
+      if (currentItem) text = buildSortCardSpeechText(currentItem);
+    }
+    if (!text) return;
+    void speakSortText(text, {
+      force,
+      onUnsupported: () => toast('当前设备暂不支持中文语音播报'),
+    });
+  };
+
+  const syncTtsToggleButton = () => {
+    const enabled = isSortTtsEnabled();
+    ttsToggleBtn.setAttribute('aria-pressed', String(enabled));
+    const label = enabled ? '关闭分药语音播报' : '开启分药语音播报';
+    ttsToggleBtn.setAttribute('aria-label', label);
+    ttsToggleBtn.title = label;
+    ttsToggleBtn.replaceChildren(Icon(enabled ? 'volume' : 'volume-off'));
+  };
+
+  const ttsToggleBtn = createIconButton({
+    icon: isSortTtsEnabled() ? 'volume' : 'volume-off',
+    label: isSortTtsEnabled() ? '关闭分药语音播报' : '开启分药语音播报',
+    pressed: isSortTtsEnabled(),
+    onClick: () => {
+      const next = !isSortTtsEnabled();
+      setSortTtsEnabled(next);
+      syncTtsToggleButton();
+      if (!next) {
+        stopSortSpeech();
+        toast('已关闭分药语音播报');
+      } else {
+        speakCurrentStep(true);
+        toast('已开启分药语音播报');
+      }
+    },
+  });
+  ttsToggleBtn.classList.add('med-wizard-tts-toggle');
+
+  const headActions = el('div', { class: 'med-wizard-head-actions' });
+  headActions.append(ttsToggleBtn, quit);
   const head = el('div', { class: 'med-wizard-head' });
-  head.append(progress, quit);
+  head.append(progress, headActions);
   const dots = el('div', { class: 'med-wizard-dots', 'aria-hidden': 'true' } as any);
   for (let i = 0; i < items.length; i += 1) dots.append(el('span'));
   const stage = el('div', { class: 'med-wizard-stage' });
@@ -109,9 +168,21 @@ export function openSortWizard(
 
   sheet.append(grabber, head, dots, stage, actions);
 
+  const onExternalTtsChange = () => {
+    if (disposed) return;
+    syncTtsToggleButton();
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener(SORT_TTS_CHANGE_EVENT, onExternalTtsChange);
+  }
+
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    stopSortSpeech();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener(SORT_TTS_CHANGE_EVENT, onExternalTtsChange);
+    }
     sheetHandle.close();
   };
 
@@ -123,6 +194,11 @@ export function openSortWizard(
     dismissOnOverlay: false,
     initialFocus: sheet,
     onClose: () => {
+      disposed = true;
+      stopSortSpeech();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener(SORT_TTS_CHANGE_EVENT, onExternalTtsChange);
+      }
       activeSortWizards.delete(dispose);
     },
   });
@@ -144,14 +220,30 @@ export function openSortWizard(
       photoZone.append(empty);
     }
 
+    const nameRow = el('div', { class: 'med-wizard-name-row' });
     const name = el('h3', { class: 'med-wizard-name', text: item.med.name });
+    const repeatBtn = createButton({
+      label: '重听',
+      ariaLabel: `重听 ${item.med.name}`,
+      variant: 'secondary',
+      icon: 'volume',
+      onClick: () => {
+        void speakSortText(buildSortCardSpeechText(item), {
+          force: true,
+          alwaysNotifyUnsupported: true,
+          onUnsupported: () => toast('当前设备暂不支持中文语音播报'),
+        });
+      },
+    });
+    repeatBtn.classList.add('med-wizard-repeat-btn');
+    nameRow.append(name, repeatBtn);
 
     const meta = el('div', { class: 'med-wizard-meta' });
     const form = doseFormLabel({ dosageText: item.med.dosageText ?? '', amountPerDose: item.med.amountPerDose ?? '' });
     if (form) meta.append(el('span', { class: 'med-wizard-chip', html: form }));
     if (item.med.dosageText) meta.append(el('span', { class: 'med-wizard-dosage', text: item.med.dosageText }));
 
-    card.append(photoZone, name);
+    card.append(photoZone, nameRow);
     if (meta.childElementCount > 0) card.append(meta);
 
     if (item.expired) {
@@ -236,6 +328,7 @@ export function openSortWizard(
     currentView = view;
     stage.append(view);
     updateChrome();
+    speakCurrentStep();
   }
 
   function complete(navigateToToday: boolean): void {
@@ -291,6 +384,8 @@ export function openSortWizard(
 
   quit.onclick = dispose;
   activeSortWizards.add(dispose);
+  resetSortTtsSessionState();
   updateChrome();
+  speakCurrentStep();
   return { close: dispose };
 }

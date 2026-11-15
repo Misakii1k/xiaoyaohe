@@ -206,7 +206,7 @@ export async function runAssistantTurn(
       await runExplicitWebSearch(explicitSearchQuery, events, blocks);
       return { markdown: '已完成联网搜索，结果和来源已列在上方。', blocks };
     }
-    throw new AssistantError('unconfigured', '还没连接 AI 服务。到「设置 → AI 服务商」填好服务地址和密钥，小助手就能陪你聊了。');
+    throw new AssistantError('unconfigured', '还没连接 AI 服务。到「我的 → 对话模型」填好服务地址和密钥，小助手就能陪你聊了。');
   }
   const baseUrl = normalizeAndValidateBaseUrl(cfg.baseUrl);
   await requireAiConsent('assistant-chat', baseUrl);

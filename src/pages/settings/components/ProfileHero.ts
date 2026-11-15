@@ -62,7 +62,7 @@ export function renderProfileHero(
     el('div', { class: 'profile-user-name', text: '小药盒用户' }),
     el('div', {
       class: 'profile-user-sub',
-      text: daysManaging > 0 ? `用药管理 第 ${daysManaging} 天` : '开启科学用药管理',
+      text: daysManaging > 0 ? `已管理用药 ${daysManaging} 天` : '日常用药本机记录',
     }),
   );
   userRow.append(avatarWrap, userInfo);

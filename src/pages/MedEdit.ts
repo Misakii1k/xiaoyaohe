@@ -184,8 +184,8 @@ export async function renderMedEditPage(
   function refreshReminderHint(): void {
     const slots = SLOTS.filter((s) => selectedSlots.has(s));
     reminderHint.textContent = slots.length === 0
-      ? '该药所属时段的提醒时间与方式在「设置」页的「时段提醒设置」里按时间段统一管理。'
-      : `该药属于「${slots.map((s) => SLOT_LABEL[s]).join('、')}」时段，每天只发一条整体提醒；提醒时间与方式在「设置」页的「时段提醒设置」里统一管理。`;
+      ? '该药所属时段的提醒时间与方式在「我的」页的「时段设置」里统一管理。'
+      : `该药属于「${slots.map((s) => SLOT_LABEL[s]).join('、')}」时段，每天只发一条整体提醒；提醒时间与方式在「我的」页的「时段设置」里统一管理。`;
   }
 
   // 库存可用天数显示（随库存输入实时刷新）

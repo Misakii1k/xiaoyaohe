@@ -51,7 +51,7 @@ describe('medication editor period-level reminder contract', () => {
     expect(page).not.toContain('selectedReminderMode');
     expect(page).not.toContain('MEDICATION_REMINDER_MODE_LABEL');
     // 改为指向设置页的时段级提示
-    expect(page).toContain('时段提醒设置');
+    expect(page).toContain('时段设置');
     expect(page).toContain('refreshReminderHint');
   });
 

@@ -3,6 +3,7 @@ import { listLogs, listMeds, listRules } from '../../db/local';
 import { initializeLlmSecretStore } from '../../ai/llmConfig';
 import { isNativeSecretStore } from '../../ai/secretStore';
 import { stopRingtonePreview } from '../../features/alarmRingtone';
+import { stopSortSpeech } from '../../features/sortTts';
 import { renderImageGenSettingsPanel } from '../../ui/imageGenSettingsPanel';
 import { renderLanSyncSettingsPanel } from '../../sync/lan/settingsPanel';
 
@@ -14,6 +15,7 @@ import type { PanelIconTone } from './types';
 
 import { renderReminderPanel, renderPeriodSettingsPanel } from './panels/ReminderPanel';
 import { renderAppearancePanel } from './panels/AppearancePanel';
+import { renderVoicePanel } from './panels/VoicePanel';
 import { renderKeepAlivePanel } from './panels/KeepAlivePanel';
 import { renderAppUpdatePanel } from './panels/AppUpdatePanel';
 import { renderBackupCard, importBackupFileForRoute, type BackupImportRouteOperations } from './panels/BackupPanel';
@@ -61,6 +63,7 @@ export async function renderSettingsPage(
     renderReminderPanel(),
     renderPeriodSettingsPanel(),
     renderAppearancePanel(),
+    renderVoicePanel(),
     renderKeepAlivePanel(),
   ]);
 
@@ -78,17 +81,17 @@ export async function renderSettingsPage(
     (routeSignal) => renderSettingsPage(root, routeSignal),
   );
   const cacheStoragePanel = renderCacheStoragePanel(signal);
-  const dataSyncGroup = createSettingsGroup('数据与家庭同步', 'cloud', [
+  const dataSyncGroup = createSettingsGroup('数据与更新', 'cloud', [
     lanSyncPanel.element,
     backupCard.element,
     cacheStoragePanel.element,
     appUpdatePanel.element,
   ]);
 
-  // 5. 分组 3：AI 智能助手与高级
+  // 5. 分组 3：助手与诊断
   const llmPanel = renderLlmPanel();
   const imageGenPanel = renderImageGenSettingsPanel();
-  const aiDiagnosticsGroup = createSettingsGroup('智能助手与高级', 'sparkles', [
+  const aiDiagnosticsGroup = createSettingsGroup('助手与诊断', 'sparkles', [
     llmPanel.element,
     imageGenPanel.element,
     renderAiConsentPanel(),
@@ -107,6 +110,7 @@ export async function renderSettingsPage(
 
   const onDeactivated = () => {
     stopRingtonePreview();
+    stopSortSpeech();
   };
   root.addEventListener('tab:deactivated', onDeactivated);
 
@@ -117,6 +121,7 @@ export async function renderSettingsPage(
     cleaned = true;
     root.removeEventListener('tab:deactivated', onDeactivated);
     stopRingtonePreview();
+    stopSortSpeech();
     llmPanel.cleanup();
     imageGenPanel.cleanup();
     lanSyncPanel.cleanup();

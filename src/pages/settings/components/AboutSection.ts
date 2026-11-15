@@ -46,10 +46,10 @@ export function renderAboutSection(): HTMLElement {
   };
 
   const highlights = el('div', { class: 'settings-about-grid' }, [
-    createTile('定时服药', '准时提醒与打卡记录', 'bell', 'amber'),
-    createTile('药箱余量', '低余量智能实时预警', 'box', 'emerald'),
-    createTile('纯净本地', '全量数据保存在本地设备', 'shield', 'teal'),
-    createTile('家庭同步', '局域网面对面免流量互传', 'cloud', 'blue'),
+    createTile('定时服药', '按时提醒并留存记录', 'bell', 'amber'),
+    createTile('药箱余量', '余量不足时提前提醒', 'box', 'emerald'),
+    createTile('纯净本地', '数据全部存在本机中', 'shield', 'teal'),
+    createTile('家庭同步', '同网设备面对面互传', 'cloud', 'blue'),
   ]);
 
   // 6. 底部健康免责声明

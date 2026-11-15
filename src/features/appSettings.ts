@@ -11,6 +11,17 @@ import {
   NOTIFICATION_PREF_CHANGE_EVENT,
 } from './notificationPreference';
 import {
+  isCareModeEnabled,
+  setCareModeEnabled,
+} from './careMode';
+import {
+  getSortTtsRate,
+  isSortTtsEnabled,
+  setSortTtsEnabled,
+  setSortTtsRate,
+  type SortTtsRate,
+} from './sortTts';
+import {
   isAutoSyncEnabled,
   setAutoSyncEnabled,
   isLanAutoSyncSilent,
@@ -87,6 +98,34 @@ const adjustableSettings: readonly AppSettingDescriptor[] = [
     get: () => isLanAllowRemoteOverwrite(),
     async set(value) {
       setLanAllowRemoteOverwrite(coerceBoolean(value));
+    },
+  },
+  {
+    key: 'careModeEnabled',
+    label: '关怀大字模式',
+    type: 'boolean',
+    get: () => isCareModeEnabled(),
+    async set(value) {
+      await setCareModeEnabled(coerceBoolean(value));
+    },
+  },
+  {
+    key: 'sortTtsEnabled',
+    label: '分药语音播报',
+    type: 'boolean',
+    get: () => isSortTtsEnabled(),
+    async set(value) {
+      setSortTtsEnabled(coerceBoolean(value));
+    },
+  },
+  {
+    key: 'sortTtsRate',
+    label: '分药语音语速',
+    type: 'string',
+    allowedValues: ['normal', 'slow'],
+    get: () => getSortTtsRate(),
+    async set(value) {
+      setSortTtsRate(value as SortTtsRate);
     },
   },
 ];

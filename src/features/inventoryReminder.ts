@@ -16,7 +16,13 @@ export async function sendLowStockReminderIfDue(
   const sent = await showNotification('药量提醒', {
     body: message,
     tag: `inventory_${med.id}`,
-    data: { kind: 'inventory', medId: med.id },
+    data: {
+      kind: 'inventory',
+      medId: med.id,
+      channel: 'normal',
+      mode: 'normal',
+      deepLink: '/meds/inventory',
+    },
   });
   if (!sent) return false;
 

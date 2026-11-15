@@ -26,6 +26,8 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
   await import('./ui/styles.css');
   const { initTheme } = await import('./ui/theme');
   initTheme();
+  const { initCareMode } = await import('./features/careMode');
+  initCareMode();
   const [
     router,
     { appModuleRoutes },
@@ -91,6 +93,15 @@ async function bootstrapApplication(appRoot: HTMLElement): Promise<void> {
       void handleMedicationReminderAction(action).then((handled) => {
         if (handled) navigate('/today');
       }).catch((cause) => reportSilentFailure('reminder.action', cause));
+      return;
+    }
+    if (action.data.kind === 'inventory') {
+      navigate('/meds/inventory');
+      return;
+    }
+    const deepLink = action.data.deepLink;
+    if (typeof deepLink === 'string' && deepLink.startsWith('/')) {
+      navigate(deepLink);
       return;
     }
     const occurrenceId = action.data.occurrenceId ?? action.data.logId;

@@ -29,6 +29,8 @@ interface NativeAlarmPlugin {
   openAccessibilitySettings(): Promise<void>;
   getRingtonePreference(): Promise<{ ringtone: string }>;
   setRingtonePreference(options: { ringtone: string }): Promise<{ ringtone: string; success: boolean }>;
+  getCareModePreference(): Promise<{ enabled: boolean }>;
+  setCareModePreference(options: { enabled: boolean }): Promise<{ enabled: boolean; success: boolean }>;
 }
 
 interface NativeAlarmNotification {
@@ -181,6 +183,26 @@ export async function setNativeAlarmRingtone(ringtone: string): Promise<boolean>
   if (!nativeMedicationAlarmAvailable()) return false;
   try {
     const res = await plugin.setRingtonePreference({ ringtone });
+    return res?.success ?? false;
+  } catch {
+    return false;
+  }
+}
+
+export async function getNativeCareMode(): Promise<boolean | null> {
+  if (!nativeMedicationAlarmAvailable()) return null;
+  try {
+    const res = await plugin.getCareModePreference();
+    return typeof res?.enabled === 'boolean' ? res.enabled : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setNativeCareMode(enabled: boolean): Promise<boolean> {
+  if (!nativeMedicationAlarmAvailable()) return false;
+  try {
+    const res = await plugin.setCareModePreference({ enabled });
     return res?.success ?? false;
   } catch {
     return false;

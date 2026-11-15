@@ -10,7 +10,7 @@ import {
   cancelNativeMedicationAlarm,
   reconcileNativeMedicationAlarms,
 } from './nativeMedicationAlarm';
-import { WebReminderTransport } from './webReminderTransport';
+import { WebReminderTransport, resolveNotificationDeliveryTier } from './webReminderTransport';
 import { reportSilentFailure } from '../app/diagnostics';
 
 const OWNER = 'medbox-medication-reminder-v1';
@@ -27,6 +27,7 @@ const REGISTRY_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 const ACTION_TYPE_ID = 'medication-reminder-actions-v1';
 const STRONG_CHANNEL_ID = 'medication_strong_v2';
 const ALARM_CHANNEL_ID = 'medication_alarm_v1';
+const NORMAL_CHANNEL_ID = 'inventory_normal_v1';
 const UPDATE_CHANNEL_ID = 'app_update_channel';
 
 interface TruncationInfo {
@@ -419,19 +420,15 @@ private async scheduleInChunksSafe(
       key,
       data: notification.data ?? {},
     };
-    // 组载荷（V2）用 data.mode，旧单药载荷用 data.reminderMode，两者都识别
-    const reminderMode = notification.data?.mode ?? notification.data?.reminderMode;
-    const isUpdate =
-      notification.tag === 'medbox-app-update' ||
-      notification.data?.channel === 'update' ||
-      reminderMode === 'light';
-    const isAlarm =
-      reminderMode === 'fullscreen-short' || reminderMode === 'fullscreen-persistent';
-    const channelId = isAlarm
-      ? ALARM_CHANNEL_ID
-      : isUpdate
-        ? UPDATE_CHANNEL_ID
-        : STRONG_CHANNEL_ID;
+    const tier = resolveNotificationDeliveryTier(notification);
+    const channelId =
+      tier === 'alarm'
+        ? ALARM_CHANNEL_ID
+        : tier === 'update'
+          ? UPDATE_CHANNEL_ID
+          : tier === 'normal'
+            ? NORMAL_CHANNEL_ID
+            : STRONG_CHANNEL_ID;
 
     const native: LocalNotificationSchema = {
       id,
@@ -441,10 +438,10 @@ private async scheduleInChunksSafe(
       autoCancel: true,
       channelId,
       extra: { __medboxReminder: envelope },
-      silent: isUpdate ? true : (notification.silent ?? false),
+      silent: tier === 'update' ? true : (notification.silent ?? false),
     };
-    // 仅服药提醒才挂载「已服用 / 跳过」操作按钮，避免出现在应用更新等轻提醒上
-    if (!isUpdate) {
+    // 仅服药提醒才挂载「已服用 / 跳过」操作按钮，避免出现在库存常规通知与应用更新轻提醒上
+    if (tier === 'alarm' || tier === 'strong') {
       native.actionTypeId = ACTION_TYPE_ID;
     }
     if (at != null) {
@@ -490,6 +487,15 @@ private async scheduleInChunksSafe(
           vibration: true,
           lights: true,
           lightColor: '#17745B',
+        }),
+        this.plugin.createChannel({
+          id: NORMAL_CHANNEL_ID,
+          name: '药量与常规提醒',
+          description: '药品余量不足等常规消息通知，无响铃强打扰与服药快捷栏',
+          importance: 3,
+          visibility: 1,
+          vibration: false,
+          lights: false,
         }),
         this.plugin.createChannel({
           id: UPDATE_CHANNEL_ID,

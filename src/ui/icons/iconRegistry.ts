@@ -47,6 +47,8 @@ import homeSvg from '@tabler/icons/icons/outline/home.svg?raw';
 import userSvg from '@tabler/icons/icons/outline/user.svg?raw';
 import searchSvg from '@tabler/icons/icons/outline/search.svg?raw';
 import filterSvg from '@tabler/icons/icons/outline/filter.svg?raw';
+import volumeSvg from '@tabler/icons/icons/outline/volume.svg?raw';
+import volumeOffSvg from '@tabler/icons/icons/outline/volume-off.svg?raw';
 
 export type AppIconName =
   | 'pill'
@@ -97,7 +99,9 @@ export type AppIconName =
   | 'user'
   | 'search'
   | 'filter'
-  | 'dots';
+  | 'dots'
+  | 'volume'
+  | 'volume-off';
 
 export const iconRegistry: Readonly<Record<AppIconName, string>> = {
   pill: pillSvg,
@@ -149,4 +153,6 @@ export const iconRegistry: Readonly<Record<AppIconName, string>> = {
   search: searchSvg,
   filter: filterSvg,
   dots: dotsSvg,
+  volume: volumeSvg,
+  'volume-off': volumeOffSvg,
 };

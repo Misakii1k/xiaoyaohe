@@ -1814,3 +1814,30 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   .ai-quick-chip,
   .ai-card-facts > div { background: var(--color-surface-solid); }
 }
+
+/* ============ 关怀大字模式适配 ============ */
+:root[data-care='on'] .ai-msg,
+:root[data-care='on'] .ai-bubble,
+:root[data-care='on'] .ai-input {
+  font-size: var(--fs-body);
+}
+
+:root[data-care='on'] .ai-quick-chip,
+:root[data-care='on'] .ai-pill,
+:root[data-care='on'] .ai-source-chip {
+  font-size: calc(12.5px * var(--care-scale));
+  min-block-size: 40px;
+}
+
+:root[data-care='on'] .ai-item-name {
+  font-size: var(--fs-headline);
+  font-weight: 800;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+:root[data-care='on'] .ai-item-take-btn {
+  min-block-size: 44px;
+  font-size: var(--fs-footnote);
+  font-weight: 700;
+}

@@ -95,34 +95,39 @@
   stroke-width: 2;
 }
 
-/* 全套五彩色系 */
-.settings-page .panel-icon.panel-icon-amber { background: #fffbeb; color: #f59e0b; }
-.settings-page .panel-icon.panel-icon-emerald { background: #ecfdf5; color: #10b981; }
-.settings-page .panel-icon.panel-icon-violet { background: #f0fdfa; color: #0d9488; }
-.settings-page .panel-icon.panel-icon-orange { background: #fff7ed; color: #f97316; }
-.settings-page .panel-icon.panel-icon-sky { background: #ecfeff; color: #0284c7; }
-.settings-page .panel-icon.panel-icon-teal { background: #f0fdfa; color: #0d9488; }
-.settings-page .panel-icon.panel-icon-blue { background: #eff6ff; color: #2563eb; }
-.settings-page .panel-icon.panel-icon-purple { background: #ecfdf5; color: #10b981; }
-.settings-page .panel-icon.panel-icon-rose { background: #fff1f2; color: #e11d48; }
-.settings-page .panel-icon.panel-icon-gold { background: #fefce8; color: #ca8a04; }
-.settings-page .panel-icon.panel-icon-cyan { background: #ecfeff; color: #0891b2; }
+/* 统一品牌青绿浅底系图标 */
+.settings-page .panel-icon,
+.settings-page .panel-icon.panel-icon-amber,
+.settings-page .panel-icon.panel-icon-emerald,
+.settings-page .panel-icon.panel-icon-violet,
+.settings-page .panel-icon.panel-icon-orange,
+.settings-page .panel-icon.panel-icon-sky,
+.settings-page .panel-icon.panel-icon-teal,
+.settings-page .panel-icon.panel-icon-blue,
+.settings-page .panel-icon.panel-icon-purple,
+.settings-page .panel-icon.panel-icon-rose,
+.settings-page .panel-icon.panel-icon-gold,
+.settings-page .panel-icon.panel-icon-cyan {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
 
 /* 深色模式适配 */
-[data-theme='dark'] .settings-page .panel-icon {
-  background: rgba(255, 255, 255, 0.08) !important;
+[data-theme='dark'] .settings-page .panel-icon,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-amber,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-emerald,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-violet,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-orange,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-sky,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-teal,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-blue,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-purple,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-rose,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-gold,
+[data-theme='dark'] .settings-page .panel-icon.panel-icon-cyan {
+  background: rgba(93, 186, 146, 0.14);
+  color: var(--color-primary);
 }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-amber { color: #fbbf24; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-emerald { color: #34d399; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-violet { color: #2dd4bf; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-orange { color: #fb923c; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-sky { color: #38bdf8; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-teal { color: #2dd4bf; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-blue { color: #60a5fa; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-purple { color: #34d399; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-rose { color: #fb7185; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-gold { color: #facc15; }
-[data-theme='dark'] .settings-page .panel-icon.panel-icon-cyan { color: #22d3ee; }
 
 .settings-page .panel-title {
   font-size: var(--fs-subheadline);
@@ -140,49 +145,8 @@
   flex-shrink: 0;
 }
 
-.settings-page .panel-chip {
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  font-size: 12px;
-  font-weight: 600;
-  border: 1px solid transparent;
-}
-
-.settings-page .panel-chip.tone-muted {
-  background: #f1f5f9;
-  color: #475569;
-  border-color: #e2e8f0;
-}
-
-.settings-page .panel-chip.tone-ok {
-  background: #e6f9f0;
-  color: #047857;
-  border-color: #c7f3de;
-}
-
-.settings-page .panel-chip.tone-info {
-  background: #eef0ff;
-  color: var(--tone-info-fg, #4348a8);
-  border-color: #e0e7ff;
-}
-
-/* 暗色模式：上方硬编码亮底会让文字对比度掉到 2:1~4.3:1，此处整体翻转 */
-[data-theme='dark'] .settings-page .panel-chip.tone-muted {
-  background: rgba(148, 163, 184, 0.16);
-  color: #cbd5e1;
-  border-color: rgba(148, 163, 184, 0.28);
-}
-
-[data-theme='dark'] .settings-page .panel-chip.tone-ok {
-  background: rgba(52, 211, 153, 0.16);
-  color: #6ee7b7;
-  border-color: rgba(52, 211, 153, 0.3);
-}
-
-[data-theme='dark'] .settings-page .panel-chip.tone-info {
-  background: rgba(129, 140, 248, 0.18);
-  color: #c7d2fe;
-  border-color: rgba(129, 140, 248, 0.32);
+.settings-page .panel-head .panel-chip {
+  display: none;
 }
 
 .settings-page .panel-chevron {
@@ -202,9 +166,14 @@
 
 .settings-page .panel.open .panel-body {
   max-block-size: 2400px;
-  padding: var(--space-3);
+  padding: 12px;
+  background: color-mix(in srgb, var(--color-surface-muted) 68%, transparent);
   border-block-start: 1px solid var(--color-border);
   animation: microFadeUp 0.22s var(--ease-smooth) both;
+}
+
+[data-theme='dark'] .settings-page .panel.open .panel-body {
+  background: rgba(0, 0, 0, 0.18);
 }
 
 .settings-page .btn {
@@ -358,7 +327,8 @@
   line-height: 1.4;
 }
 
-.settings-subcard-badge {
+.settings-subcard-badge,
+.settings-page .chip-pill {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
@@ -366,7 +336,51 @@
   font-size: 11px;
   font-weight: 600;
   line-height: 1.4;
+  white-space: nowrap;
+  min-width: max-content;
   flex-shrink: 0;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.settings-subcard-badge.is-primary,
+.settings-page .chip-pill.chip-primary {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.settings-subcard-badge.is-warn,
+.settings-page .chip-pill.chip-warn {
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+}
+
+.settings-subcard-badge.is-danger {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--color-danger, #dc2626);
+}
+
+[data-theme='dark'] .settings-subcard-badge,
+[data-theme='dark'] .settings-page .chip-pill {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-muted);
+}
+
+[data-theme='dark'] .settings-subcard-badge.is-primary,
+[data-theme='dark'] .settings-page .chip-pill.chip-primary {
+  background: rgba(93, 186, 146, 0.16);
+  color: var(--color-primary);
+}
+
+[data-theme='dark'] .settings-subcard-badge.is-warn,
+.settings-page .chip-pill.chip-warn {
+  background: var(--tone-warn-bg);
+  color: var(--tone-warn-fg);
+}
+
+[data-theme='dark'] .settings-subcard-badge.is-danger {
+  background: rgba(248, 113, 113, 0.16);
+  color: #fca5a5;
 }
 
 .settings-subcard-desc,
@@ -2131,17 +2145,23 @@ body.lan-sync-panel-active .ai-launcher {
   block-size: 13px;
 }
 
-.settings-about-tile.tone-amber .settings-about-tile-icon { background: #fffbeb; color: #f59e0b; }
-.settings-about-tile.tone-emerald .settings-about-tile-icon { background: #ecfdf5; color: #10b981; }
+.settings-about-tile.tone-amber .settings-about-tile-icon,
+.settings-about-tile.tone-emerald .settings-about-tile-icon,
 .settings-about-tile.tone-teal .settings-about-tile-icon,
-.settings-about-tile.tone-violet .settings-about-tile-icon { background: #f0fdfa; color: #0d9488; }
-.settings-about-tile.tone-blue .settings-about-tile-icon { background: #eff6ff; color: #2563eb; }
+.settings-about-tile.tone-violet .settings-about-tile-icon,
+.settings-about-tile.tone-blue .settings-about-tile-icon {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
 
-[data-theme='dark'] .settings-about-tile.tone-amber .settings-about-tile-icon { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-[data-theme='dark'] .settings-about-tile.tone-emerald .settings-about-tile-icon { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+[data-theme='dark'] .settings-about-tile.tone-amber .settings-about-tile-icon,
+[data-theme='dark'] .settings-about-tile.tone-emerald .settings-about-tile-icon,
 [data-theme='dark'] .settings-about-tile.tone-teal .settings-about-tile-icon,
-[data-theme='dark'] .settings-about-tile.tone-violet .settings-about-tile-icon { background: rgba(13, 148, 136, 0.15); color: #2dd4bf; }
-[data-theme='dark'] .settings-about-tile.tone-blue .settings-about-tile-icon { background: rgba(37, 99, 235, 0.15); color: #60a5fa; }
+[data-theme='dark'] .settings-about-tile.tone-violet .settings-about-tile-icon,
+[data-theme='dark'] .settings-about-tile.tone-blue .settings-about-tile-icon {
+  background: rgba(93, 186, 146, 0.14);
+  color: var(--color-primary);
+}
 
 .settings-about-tile-title {
   font-size: 12px;
@@ -2695,5 +2715,108 @@ body.lan-sync-panel-active .ai-launcher {
 .settings-page .settings-toggle-desc { margin-block-start: 2px; line-height: 1.4; }
 .settings-page .settings-subcard-title { font-size: var(--fs-footnote); color: var(--color-text-muted); font-weight: 600; }
 .settings-page .settings-hint { margin-block-start: var(--space-2); font-size: 13px; }
-/* 面板内容区纵向节奏统一 */
+/* 面板内容区纵向节奏统一（仅用 gap: 10px，清除直属子元素残留外边距） */
 .settings-page .panel.open .panel-body { gap: 10px; }
+.settings-page .panel.open .panel-body > * { margin-block: 0; }
+.settings-page :is(.settings-subcard, .settings-scan-card, .settings-ringtone-card) > :is(.field, .diagnostics-log, .lan-sync-actions, .lan-sync-syncall-row, .image-gen-actions, .llm-provider-list) {
+  margin-block: 0;
+}
+.settings-page .keepalive-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 14px);
+}
+[data-theme='dark'] .settings-page .keepalive-card {
+  background: color-mix(in srgb, var(--color-surface) 88%, white 12%);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.settings-page :is(.lan-sync-toggle-card, fieldset.lan-sync-extras) {
+  margin: 0;
+  box-shadow: none;
+}
+[data-theme='dark'] .settings-page :is(.lan-sync-toggle-card, fieldset.lan-sync-extras) {
+  background: color-mix(in srgb, var(--color-surface) 88%, white 12%);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+.settings-page .lan-sync-device-field { margin-block-end: 0; }
+.settings-page .settings-subcard .lan-sync-toggle-card {
+  padding: 10px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.settings-page .settings-subcard .lan-sync-toggle-card:hover {
+  background: transparent;
+}
+.settings-page .settings-subcard fieldset.lan-sync-extras {
+  border-color: var(--color-border);
+  background: color-mix(in srgb, var(--color-surface-muted) 45%, transparent);
+}
+.settings-page .settings-subcard .settings-cache-summary-card {
+  padding: 10px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.settings-page .settings-subcard .settings-cache-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-footnote);
+  line-height: 1.5;
+}
+.settings-page .image-gen-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.settings-page :is(.settings-subcard, .settings-scan-card) > .banner {
+  border-block-start: 1px solid var(--color-border);
+  margin: 0;
+}
+.settings-page :is(.settings-subcard, .settings-scan-card) > .banner + * {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+.settings-page .app-update-card { box-shadow: none; }
+
+.settings-voice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-block-start: var(--space-2);
+}
+
+/* ============ 关怀大字模式适配 ============ */
+:root[data-care='on'] .settings-page .settings-toggle-title {
+  font-size: var(--fs-headline);
+  font-weight: 700;
+}
+
+:root[data-care='on'] .settings-page .settings-toggle-desc,
+:root[data-care='on'] .settings-page .settings-subcard-title,
+:root[data-care='on'] .settings-page .settings-hint {
+  font-size: var(--fs-footnote);
+}
+
+:root[data-care='on'] .settings-page .chip-pill,
+:root[data-care='on'] .settings-page .settings-subcard-badge {
+  font-size: calc(12px * var(--care-scale));
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+:root[data-care='on'] .settings-page .period-switch {
+  inline-size: 52px;
+  block-size: 30px;
+}
+
+:root[data-care='on'] .settings-page .period-switch-thumb {
+  inline-size: 26px;
+  block-size: 26px;
+}
+
+:root[data-care='on'] .settings-page .period-switch[aria-checked='true'] .period-switch-thumb {
+  transform: translateX(22px);
+}

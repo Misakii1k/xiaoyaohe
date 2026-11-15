@@ -996,3 +996,74 @@
   position: absolute;
   inset: -6px;
 }
+
+/* ============ 关怀大字模式适配 ============ */
+:root[data-care='on'] .today-medication-name,
+:root[data-care='on'] .dose-name {
+  font-size: 20px;
+  font-weight: 800;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  overflow-wrap: anywhere;
+}
+
+:root[data-care='on'] .today-medication-dose,
+:root[data-care='on'] .dose-sub,
+:root[data-care='on'] .dose-meta {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+:root[data-care='on'] .summary .large {
+  font-size: 38px;
+  font-weight: 700;
+}
+
+:root[data-care='on'] .summary .large span {
+  font-size: 22px;
+}
+
+:root[data-care='on'] .today-summary-progress {
+  inline-size: 124px;
+  block-size: 124px;
+}
+
+:root[data-care='on'] .today-summary .progress-ring.is-full .ring-num,
+:root[data-care='on'] .today-summary .progress-ring.is-done .ring-num {
+  font-size: 22px;
+}
+
+:root[data-care='on'] .today-summary .progress-ring.is-full .ring-unit,
+:root[data-care='on'] .today-summary .progress-ring.is-done .ring-unit {
+  font-size: 12px;
+}
+
+:root[data-care='on'] .time-label {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+:root[data-care='on'] .time-label .tag,
+:root[data-care='on'] .today-time-status-pill {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+
+:root[data-care='on'] .day b {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+:root[data-care='on'] .day span.day-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+:root[data-care='on'] .today-batch-take-btn,
+:root[data-care='on'] .today-return-btn {
+  min-block-size: var(--tap);
+  font-size: 16px;
+  font-weight: 700;
+}

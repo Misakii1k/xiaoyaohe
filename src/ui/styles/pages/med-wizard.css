@@ -267,3 +267,81 @@
   background: var(--color-surface);
   border-color: var(--color-border);
 }
+
+/* ============ 分药语音播报控制 ============ */
+.med-wizard-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.med-wizard-tts-toggle {
+  min-inline-size: var(--tap);
+  min-block-size: var(--tap);
+  border-radius: var(--radius-full);
+  color: var(--color-primary);
+}
+
+.med-wizard-tts-toggle[aria-pressed='false'] {
+  color: var(--color-text-muted);
+}
+
+.med-wizard-name-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.med-wizard-name-row .med-wizard-name {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.med-wizard-repeat-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-footnote);
+  font-weight: 700;
+}
+
+/* ============ 关怀大字模式适配 ============ */
+:root[data-care='on'] .med-wizard-name {
+  font-weight: 800;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+:root[data-care='on'] .med-wizard-slots {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+:root[data-care='on'] .med-wizard-slot {
+  padding: var(--space-3) var(--space-2);
+}
+
+:root[data-care='on'] .med-wizard-slot-name,
+:root[data-care='on'] .med-wizard-slot-meal {
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+}
+
+:root[data-care='on'] .med-wizard-slot-amount {
+  font-size: var(--fs-headline);
+  font-weight: 800;
+}
+
+:root[data-care='on'] .med-wizard-actions .ui-button,
+:root[data-care='on'] .med-wizard-summary .ui-button,
+:root[data-care='on'] .med-wizard-repeat-btn {
+  min-block-size: var(--tap);
+  font-weight: 700;
+}
+
+:root[data-care='on'] .med-wizard-repeat-btn {
+  font-size: var(--fs-subhead);
+}

@@ -246,4 +246,24 @@ public final class MedicationAlarmPlugin extends Plugin {
         result.put("success", true);
         call.resolve(result);
     }
+
+    @PluginMethod
+    public void getCareModePreference(PluginCall call) {
+        SharedPreferences prefs = getContext().getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE);
+        boolean enabled = prefs.getBoolean("care_mode", false);
+        JSObject result = new JSObject();
+        result.put("enabled", enabled);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void setCareModePreference(PluginCall call) {
+        boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        SharedPreferences prefs = getContext().getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE);
+        prefs.edit().putBoolean("care_mode", enabled).apply();
+        JSObject result = new JSObject();
+        result.put("enabled", enabled);
+        result.put("success", true);
+        call.resolve(result);
+    }
 }

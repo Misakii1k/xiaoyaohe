@@ -124,6 +124,25 @@ describe('WebReminderTransport', () => {
     expect(fake.shown[0].options.actions).toEqual([]);
   });
 
+  it('shows inventory reminder as normal notification without persistent prompt or medication buttons', async () => {
+    const fake = fakeHost();
+    const transport = new WebReminderTransport(fake.host);
+
+    const sent = await transport.show({
+      title: '药量提醒',
+      body: '阿莫西林胶囊剩余 2 片，记得补药',
+      tag: 'inventory_med-1',
+      data: { kind: 'inventory', medId: 'med-1', channel: 'normal', mode: 'normal' },
+    });
+
+    expect(sent).toBe(true);
+    expect(fake.shown).toHaveLength(1);
+    expect(fake.shown[0].title).toBe('药量提醒');
+    expect(fake.shown[0].options.silent).toBe(false);
+    expect(fake.shown[0].options.requireInteraction).toBe(false);
+    expect(fake.shown[0].options.actions).toEqual([]);
+  });
+
   it('refuses to show anything before notification permission is granted', async () => {
     const fake = fakeHost({ permission: 'default' });
     const transport = new WebReminderTransport(fake.host);

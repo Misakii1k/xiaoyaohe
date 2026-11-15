@@ -178,6 +178,14 @@ class MedicationAlarmActivity : ComponentActivity() {
     /** 闹钟会话计数：onNewIntent 换载荷时 +1，驱动解锁态/取景器/倒计时全部复位 */
     private var scanSession = mutableIntStateOf(0)
 
+    /** 关怀大字模式开关（从 SharedPreferences 读取） */
+    private val careModeState = mutableStateOf(false)
+
+    private fun refreshCareModeState() {
+        careModeState.value = getSharedPreferences("medication_alarm_v1", Context.MODE_PRIVATE)
+            .getBoolean("care_mode", false)
+    }
+
     // 相机权限结果在 Activity 构建期注册（ComponentActivity 规范）
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -405,6 +413,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 or WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
         )
         enableImmersiveMode()
+        refreshCareModeState()
         try {
             val p = MedicationAlarmContract.payloadFrom(intent)
             payloadState.value = p
@@ -426,6 +435,7 @@ class MedicationAlarmActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         enableImmersiveMode()
+        refreshCareModeState()
         if (!autoResolvedState.value && !isFinishing) {
             updateAccessibilityGuard()
         }
@@ -445,6 +455,7 @@ class MedicationAlarmActivity : ComponentActivity() {
             val sameAlarm = !isTest && currentId != null && currentId != -1 && currentId == newId && currentAt == newAt
 
             payloadState.value = newPayload
+            refreshCareModeState()
             enableImmersiveMode()
             startAlert()
             updateAccessibilityGuard()
@@ -783,6 +794,7 @@ class MedicationAlarmActivity : ComponentActivity() {
             payload.optString("title", "该吃药了").removePrefix("⏰").trim().ifEmpty { "该吃药了" }
         }
 
+        val care = careModeState.value
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Canvas(Modifier.size(8.dp).graphicsLayer { alpha = dotAlpha }) {
@@ -791,14 +803,14 @@ class MedicationAlarmActivity : ComponentActivity() {
                 Spacer(Modifier.width(8.dp))
                 BasicText(
                     ALARM_EYEBROW,
-                    style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = GreenDeep),
+                    style = TextStyle(fontSize = if (care) 18.sp else 15.sp, fontWeight = FontWeight.SemiBold, color = GreenDeep),
                 )
             }
             Spacer(Modifier.height(10.dp))
             BasicText(
                 clock.value,
                 style = TextStyle(
-                    fontSize = 76.sp,
+                    fontSize = if (care) 82.sp else 76.sp,
                     fontWeight = FontWeight.Light,
                     color = Ink,
                     letterSpacing = (-1).sp,
@@ -808,7 +820,9 @@ class MedicationAlarmActivity : ComponentActivity() {
             Spacer(Modifier.height(4.dp))
             GlassText(
                 title,
-                22.sp, FontWeight.SemiBold, Ink,
+                if (care) 27.sp else 22.sp,
+                if (care) FontWeight.Bold else FontWeight.SemiBold,
+                Ink,
                 modifier = Modifier.fillMaxWidth(),
                 align = TextAlign.Center,
             )
@@ -850,18 +864,29 @@ class MedicationAlarmActivity : ComponentActivity() {
         val dose = occurrence.optString("dose")
         val occurrenceId = occurrence.optString("occurrenceId")
         if (name.isEmpty() && occurrenceId.isEmpty()) return
+        val care = careModeState.value
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 12.dp),
+                .padding(vertical = if (care) 14.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                GlassText(name.ifEmpty { "用药" }, 18.sp, FontWeight.SemiBold, Ink)
+                GlassText(
+                    name.ifEmpty { "用药" },
+                    if (care) 23.sp else 18.sp,
+                    if (care) FontWeight.Bold else FontWeight.SemiBold,
+                    Ink,
+                )
                 if (dose.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
-                    GlassText(dose, 14.sp, FontWeight.Normal, InkSoft)
+                    GlassText(
+                        dose,
+                        if (care) 18.sp else 14.sp,
+                        if (care) FontWeight.Medium else FontWeight.Normal,
+                        if (care) Ink else InkSoft,
+                    )
                 }
             }
             if (canAct && occurrenceId.isNotEmpty()) {
@@ -883,21 +908,34 @@ class MedicationAlarmActivity : ComponentActivity() {
         val dose = data?.optString("medicationDose").orEmpty()
         val medName = data?.optString("medicationName").orEmpty()
         if (medName.isEmpty() && dose.isEmpty()) return
+        val care = careModeState.value
 
         Column(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
                 .background(Color.White.copy(alpha = 0.82f))
-                .padding(horizontal = 18.dp, vertical = 16.dp),
+                .padding(horizontal = 18.dp, vertical = if (care) 20.dp else 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (medName.isNotEmpty()) {
-                GlassText(medName, 20.sp, FontWeight.SemiBold, Ink, align = TextAlign.Center)
+                GlassText(
+                    medName,
+                    if (care) 25.sp else 20.sp,
+                    if (care) FontWeight.Bold else FontWeight.SemiBold,
+                    Ink,
+                    align = TextAlign.Center,
+                )
             }
             if (dose.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                GlassText(dose, 15.sp, FontWeight.Medium, GreenDeep, align = TextAlign.Center)
+                GlassText(
+                    dose,
+                    if (care) 19.sp else 15.sp,
+                    if (care) FontWeight.SemiBold else FontWeight.Medium,
+                    GreenDeep,
+                    align = TextAlign.Center,
+                )
             }
         }
     }
@@ -926,17 +964,22 @@ class MedicationAlarmActivity : ComponentActivity() {
             label = "hintAlpha"
         )
 
+        val care = careModeState.value
+        val trackHeight = if (care) 70.dp else 64.dp
+        val handleSize = if (care) 58.dp else 52.dp
+        val trackRadius = if (care) 35.dp else 32.dp
+
         BoxWithConstraints(
             modifier = modifier
                 .fillMaxWidth()
-                .height(64.dp)
-                .clip(RoundedCornerShape(32.dp))
+                .height(trackHeight)
+                .clip(RoundedCornerShape(trackRadius))
                 .background(Color.White.copy(alpha = 0.85f))
-                .border(1.dp, Green.copy(alpha = 0.20f), RoundedCornerShape(32.dp)),
+                .border(1.dp, Green.copy(alpha = 0.20f), RoundedCornerShape(trackRadius)),
             contentAlignment = Alignment.CenterStart
         ) {
             val totalWidthPx = with(density) { maxWidth.toPx() }
-            val handleSizePx = with(density) { 52.dp.toPx() }
+            val handleSizePx = with(density) { handleSize.toPx() }
             val paddingPx = with(density) { 6.dp.toPx() }
             val maxDragDistance = (totalWidthPx - handleSizePx - paddingPx * 2).coerceAtLeast(1f)
             val dragFraction = (dragOffset.value / maxDragDistance).coerceIn(0f, 1f)
@@ -946,14 +989,14 @@ class MedicationAlarmActivity : ComponentActivity() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 60.dp),
+                    .padding(horizontal = if (care) 66.dp else 60.dp),
                 contentAlignment = Alignment.Center
             ) {
                 BasicText(
                     text = "向右滑动解锁 ❯❯❯",
                     style = TextStyle(
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = if (care) 18.sp else 15.sp,
+                        fontWeight = if (care) FontWeight.Bold else FontWeight.SemiBold,
                         color = GreenDeep.copy(alpha = textAlpha),
                         textAlign = TextAlign.Center
                     )
@@ -964,7 +1007,7 @@ class MedicationAlarmActivity : ComponentActivity() {
             Box(
                 modifier = Modifier
                     .offset { IntOffset((paddingPx + dragOffset.value).roundToInt(), 0) }
-                    .size(52.dp)
+                    .size(handleSize)
                     .clip(CircleShape)
                     .background(
                         Brush.linearGradient(
@@ -1062,6 +1105,7 @@ class MedicationAlarmActivity : ComponentActivity() {
     /** 扫码已记录：一行结果 + 完成按钮（1.5 秒后也会自动关闭）。 */
     @Composable
     private fun ResolvedPanel(onDismissAll: () -> Unit) {
+        val care = careModeState.value
         Row(
             Modifier.fillMaxWidth().padding(bottom = 14.dp),
             horizontalArrangement = Arrangement.Center,
@@ -1074,7 +1118,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 BasicText("✓", style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White))
             }
             Spacer(Modifier.width(10.dp))
-            GlassText("已记录为已服用", 18.sp, FontWeight.SemiBold, GreenDeep)
+            GlassText("已记录为已服用", if (care) 22.sp else 18.sp, FontWeight.SemiBold, GreenDeep)
         }
         PrimaryGradientButton(label = "完成", onClick = onDismissAll)
     }
@@ -1098,10 +1142,11 @@ class MedicationAlarmActivity : ComponentActivity() {
             label = "qrScale"
         )
 
+        val care = careModeState.value
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 Modifier
-                    .size(72.dp)
+                    .size(if (care) 78.dp else 72.dp)
                     .scale(scale)
                     .clip(RoundedCornerShape(20.dp))
                     .background(Color.White.copy(alpha = 0.82f))
@@ -1123,13 +1168,22 @@ class MedicationAlarmActivity : ComponentActivity() {
             Spacer(Modifier.height(12.dp))
             BasicText(
                 "扫码后才能关闭提醒",
-                style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = InkSoft),
+                style = TextStyle(
+                    fontSize = if (care) 18.sp else 15.sp,
+                    fontWeight = if (care) FontWeight.Bold else FontWeight.SemiBold,
+                    color = if (care) Ink else InkSoft,
+                ),
             )
             if (!scanFeedback.isNullOrEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 BasicText(
                     scanFeedback,
-                    style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Red, textAlign = TextAlign.Center),
+                    style = TextStyle(
+                        fontSize = if (care) 16.sp else 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Red,
+                        textAlign = TextAlign.Center,
+                    ),
                 )
             }
             Spacer(Modifier.height(16.dp))
@@ -1169,7 +1223,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                 BasicText(
                     "紧急关闭提醒",
                     style = TextStyle(
-                        fontSize = 19.sp,
+                        fontSize = if (careModeState.value) 23.sp else 19.sp,
                         fontWeight = FontWeight.Bold,
                         color = Ink,
                         textAlign = TextAlign.Center
@@ -1179,10 +1233,10 @@ class MedicationAlarmActivity : ComponentActivity() {
                 BasicText(
                     "扫不了码时，可以用下面的方式关闭。",
                     style = TextStyle(
-                        fontSize = 14.sp,
-                        color = InkSoft,
+                        fontSize = if (careModeState.value) 17.sp else 14.sp,
+                        color = if (careModeState.value) Ink else InkSoft,
                         textAlign = TextAlign.Center,
-                        lineHeight = 20.sp
+                        lineHeight = if (careModeState.value) 24.sp else 20.sp
                     )
                 )
                 Spacer(Modifier.height(20.dp))
@@ -1735,13 +1789,14 @@ class MedicationAlarmActivity : ComponentActivity() {
     /** 主 CTA：实色渐变胶囊 + 顶部内高光 + 按压缩放 */
     @Composable
     private fun PrimaryGradientButton(label: String, onClick: () -> Unit) {
+        val care = careModeState.value
         val interaction = remember { MutableInteractionSource() }
         val pressed by interaction.collectIsPressedAsState()
         val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "pressScale")
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(58.dp)
+                .height(if (care) 66.dp else 58.dp)
                 .graphicsLayer { scaleX = scale; scaleY = scale }
                 .clip(Capsule())
                 .background(
@@ -1765,7 +1820,7 @@ class MedicationAlarmActivity : ComponentActivity() {
             BasicText(
                 label,
                 style = TextStyle(
-                    fontSize = 18.sp,
+                    fontSize = if (care) 22.sp else 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                     shadow = Shadow(color = Color(0x33000000), blurRadius = 8f),
@@ -1785,9 +1840,10 @@ class MedicationAlarmActivity : ComponentActivity() {
         modifier: Modifier = Modifier,
         useLens: Boolean = true,
     ) {
+        val care = careModeState.value
         Box(
             modifier
-                .height(56.dp)
+                .height(if (care) 64.dp else 56.dp)
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { Capsule() },
@@ -1813,17 +1869,18 @@ class MedicationAlarmActivity : ComponentActivity() {
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
-            GlassText(label, 18.sp, FontWeight.SemiBold, contentColor)
+            GlassText(label, if (care) 19.5.sp else 18.sp, if (care) FontWeight.Bold else FontWeight.SemiBold, contentColor)
         }
     }
 
     /** 幽灵按钮：透明背景 + 文字色胶囊（危险/次要操作） */
     @Composable
     private fun GhostButton(label: String, contentColor: Color, onClick: () -> Unit) {
+        val care = careModeState.value
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .height(if (care) 60.dp else 52.dp)
                 .clip(Capsule())
                 .background(contentColor.copy(alpha = 0.07f))
                 .clickable(onClick = onClick),
@@ -1831,12 +1888,16 @@ class MedicationAlarmActivity : ComponentActivity() {
         ) {
             BasicText(
                 label,
-                style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = contentColor),
+                style = TextStyle(
+                    fontSize = if (care) 19.sp else 16.sp,
+                    fontWeight = if (care) FontWeight.Bold else FontWeight.SemiBold,
+                    color = contentColor,
+                ),
             )
         }
     }
 
-    /** 单药行小操作钮：同款玻璃材质，44dp 高。 */
+    /** 单药行小操作钮：同款玻璃材质，44dp 高（关怀模式抬高至 50dp）。 */
     @Composable
     private fun PillAction(
         label: String,
@@ -1844,9 +1905,10 @@ class MedicationAlarmActivity : ComponentActivity() {
         backdrop: Backdrop,
         onClick: () -> Unit
     ) {
+        val care = careModeState.value
         Box(
             Modifier
-                .height(44.dp)
+                .height(if (care) 50.dp else 44.dp)
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { Capsule() },
@@ -1860,10 +1922,10 @@ class MedicationAlarmActivity : ComponentActivity() {
                     }
                 )
                 .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = if (care) 16.dp else 14.dp),
             contentAlignment = Alignment.Center
         ) {
-            GlassText(label, 14.sp, FontWeight.SemiBold, fg)
+            GlassText(label, if (care) 17.sp else 14.sp, if (care) FontWeight.Bold else FontWeight.SemiBold, fg)
         }
     }
 

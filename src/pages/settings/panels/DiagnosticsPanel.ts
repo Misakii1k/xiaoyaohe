@@ -38,8 +38,7 @@ export function renderDiagnosticsPanel(
       const titleWrap = el('div', { class: 'settings-subcard-title-wrap' });
       titleWrap.append(el('div', { class: 'settings-subcard-title', text: '后台失败日志摘要' }));
       const badge = el('span', {
-        class: 'settings-subcard-badge',
-        style: 'background: rgba(6, 182, 212, 0.12); color: #0891b2;',
+        class: 'settings-subcard-badge is-primary',
         text: '安全脱敏',
       });
       head.append(titleWrap, badge);

@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ApkDistributionPlugin.class);
         registerPlugin(MedicationAlarmPlugin.class);
         registerPlugin(PowerSettingsPlugin.class);
+        registerPlugin(MedboxTtsPlugin.class);
         super.onCreate(savedInstanceState);
         // 降低 WebView 缓存与媒体解码压力，缓解大图列表页闪退
         try {

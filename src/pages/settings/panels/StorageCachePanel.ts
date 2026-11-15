@@ -9,21 +9,29 @@ export function renderCacheStoragePanel(signal?: AbortSignal): SettingsRenderPar
   let isClearing = false;
 
   const p = panel({
-    title: '存储空间与缓存',
+    title: '存储缓存',
     iconName: 'trash',
     iconTone: 'teal',
     chip: { text: '计算中...', tone: 'muted' },
     renderBody: (body) => {
       body.classList.add('settings-cache-panel-body');
 
+      const card = el('div', { class: 'settings-subcard' });
+      const cardHead = el('div', { class: 'settings-subcard-header' });
+      cardHead.append(
+        el('div', { class: 'settings-subcard-title-wrap' }, [
+          el('span', { class: 'settings-subcard-title', text: '临时与缓存空间' }),
+        ]),
+      );
+
       const summaryEl = el('div', { class: 'settings-cache-summary-card' });
-      const labelEl = el('div', { class: 'settings-cache-label', text: '临时与缓存占用' });
+      const labelEl = el('div', { class: 'settings-cache-label', text: '当前缓存占用' });
       cacheSizeTextEl = el('div', { class: 'settings-cache-size', text: '...' });
       summaryEl.append(labelEl, cacheSizeTextEl);
 
       const noteEl = el('div', {
-        class: 'muted settings-cache-note',
-        text: '只清理安装包和临时文件，药品和记录不受影响。',
+        class: 'settings-cache-note',
+        text: '只清理安装包和临时文件，药品与记录不受影响。',
       });
 
       clearBtn = el('button', {
@@ -56,7 +64,8 @@ export function renderCacheStoragePanel(signal?: AbortSignal): SettingsRenderPar
         }
       };
 
-      body.append(summaryEl, noteEl, clearBtn);
+      card.append(cardHead, summaryEl, noteEl, clearBtn);
+      body.append(card);
       queueMicrotask(refreshSize);
     },
   });

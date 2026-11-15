@@ -267,4 +267,36 @@ describe('AndroidReminderTransport', () => {
     expect(scheduledNotification.silent).toBe(false);
     expect(scheduledNotification.actionTypeId).toBe('medication-reminder-actions-v1');
   });
+
+  it('routes low-stock inventory reminders to normal push channel without vibration or medication action buttons', async () => {
+    const fake = fakePlugin();
+    const transport = new AndroidReminderTransport(fake.plugin, new MemoryStore(), () => now);
+
+    const shown = await transport.show({
+      title: '药量提醒',
+      body: '阿莫西林胶囊剩余不足，请及时补货',
+      tag: 'inventory_med-1',
+      data: {
+        kind: 'inventory',
+        medId: 'med-1',
+        channel: 'normal',
+        mode: 'normal',
+        deepLink: '/meds/inventory',
+      },
+    });
+
+    expect(shown).toBe(true);
+    expect(fake.plugin.createChannel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'inventory_normal_v1',
+        importance: 3,
+        vibration: false,
+        lights: false,
+      }),
+    );
+    const scheduledNotification = (fake.schedule.mock.calls[0][0] as ScheduleOptions).notifications[0];
+    expect(scheduledNotification.channelId).toBe('inventory_normal_v1');
+    expect(scheduledNotification.silent).toBe(false);
+    expect(scheduledNotification.actionTypeId).toBeUndefined();
+  });
 });

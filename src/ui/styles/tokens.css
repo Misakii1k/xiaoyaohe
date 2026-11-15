@@ -70,6 +70,11 @@
 
   --font-sans: 'MiSans', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-mono: 'SF Mono', 'SFMono-Regular', 'Menlo', 'Consolas', 'Source Code Pro', ui-monospace, monospace;
+  --care-scale: 1;
+  --fs-xs: calc(12px * var(--care-scale));
+  --fs-sm: calc(13px * var(--care-scale));
+  --fs-md: calc(15px * var(--care-scale));
+  --fs-xl: calc(20px * var(--care-scale));
   --fs-caption-sm: 13px;
   --fs-caption: 14px;
   --fs-footnote: 14px;
@@ -270,5 +275,54 @@
 @supports (transition-timing-function: linear(0, 1)) {
   :root {
     --ease-spring: linear(0, 0.036, 0.121, 0.233, 0.352, 0.47, 0.578, 0.673, 0.754, 0.82, 0.874, 0.915, 0.947, 0.97, 0.986, 0.997, 1.004, 1.009, 1.011, 1.011, 1.011, 1.01, 1.009, 1.007, 1.006, 1.005, 1.004, 1.003, 1);
+  }
+}
+
+/* ============ 关怀大字模式 ============
+   放大文字阶梯（约 1.24 倍）、抬高触控区底线至 52px、加深次要文字与边框对比度。
+   选择器使用 :root[data-care='on']（特异性 0,2,0），压过 legacy.css 的 :root。 */
+:root[data-care='on'] {
+  --care-scale: 1.24;
+  --fs-caption-sm: 16px;
+  --fs-caption: 17px;
+  --fs-footnote: 18px;
+  --fs-subheadline: 20px;
+  --fs-callout: 22px;
+  --fs-body: 23px;
+  --fs-headline: 23px;
+  --fs-title3: 26px;
+  --fs-title2: 29px;
+  --fs-title1: 34px;
+  --fs-largeTitle: 42px;
+  --tap: 52px;
+
+  --color-text: #101916;
+  --color-text-muted: #42504b;
+  --color-border: #c5d1cc;
+  --color-border-glass: #c5d1cc;
+  --label-primary: #101916;
+  --label-secondary: #42504b;
+  --label-tertiary: #4e5854;
+}
+
+:root[data-care='on'][data-theme='dark'] {
+  --color-text: #ffffff;
+  --color-text-muted: #c2ceca;
+  --color-border: rgba(125, 145, 138, 0.85);
+  --color-border-glass: rgba(255, 255, 255, 0.24);
+  --label-primary: #ffffff;
+  --label-secondary: #c2ceca;
+  --label-tertiary: #aeb9b5;
+}
+
+@media (min-width: 768px) {
+  :root[data-care='on'] {
+    --fs-body: 25px;
+    --fs-subheadline: 22px;
+    --fs-headline: 25px;
+    --fs-title3: 28px;
+    --fs-title2: 32px;
+    --fs-title1: 38px;
+    --fs-largeTitle: 46px;
   }
 }

@@ -23,6 +23,8 @@ export function panel(opts: PanelOpts): HTMLElement {
     class: 'panel-chip tone-' + opts.chip.tone,
     html: opts.chip.text,
   });
+  chip.hidden = true;
+  chip.setAttribute('aria-hidden', 'true');
   right.append(chip);
   const chevron = el('span', { class: 'panel-chevron' });
   chevron.append(icon('chevron-right'));

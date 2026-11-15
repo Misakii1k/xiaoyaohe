@@ -312,13 +312,41 @@ async function requestPeriodicSync(registration: ServiceWorkerRegistration): Pro
   }
 }
 
-function toOptions(notification: ReminderNotification): WebNotificationOptions {
-  const key = notification.key ?? 'dose';
+export type NotificationDeliveryTier = 'alarm' | 'strong' | 'normal' | 'update';
+
+/**
+ * 统一判定通知推送级别，区分强打扰用药提醒、常规提醒（如库存余量不足）与应用更新轻提醒。
+ */
+export function resolveNotificationDeliveryTier(
+  notification: Pick<ReminderNotification, 'tag' | 'data'>,
+): NotificationDeliveryTier {
   const reminderMode = notification.data?.mode ?? notification.data?.reminderMode;
-  const isUpdate =
+  if (
     notification.tag === 'medbox-app-update' ||
     notification.data?.channel === 'update' ||
-    reminderMode === 'light';
+    reminderMode === 'light'
+  ) {
+    return 'update';
+  }
+  if (
+    notification.data?.kind === 'inventory' ||
+    notification.data?.channel === 'normal' ||
+    reminderMode === 'normal' ||
+    String(notification.tag || '').startsWith('inventory_')
+  ) {
+    return 'normal';
+  }
+  if (reminderMode === 'fullscreen-short' || reminderMode === 'fullscreen-persistent') {
+    return 'alarm';
+  }
+  return 'strong';
+}
+
+function toOptions(notification: ReminderNotification): WebNotificationOptions {
+  const key = notification.key ?? 'dose';
+  const tier = resolveNotificationDeliveryTier(notification);
+  const isUpdate = tier === 'update';
+  const isMedicationStrong = tier === 'alarm' || tier === 'strong';
 
   return {
     body: notification.body,
@@ -328,15 +356,14 @@ function toOptions(notification: ReminderNotification): WebNotificationOptions {
     badge: ICON,
     data: { ...(notification.data ?? {}), tag: notification.tag, key },
     silent: isUpdate ? true : (notification.silent ?? false),
-    // 吃药提醒不该自己消失；桌面端会一直挂着直到用户处理，移动端浏览器会忽略此项。
-    // 更新轻提醒不长久常驻，允许自动隐藏
-    requireInteraction: isUpdate ? false : true,
-    actions: isUpdate
-      ? []
-      : [
+    // 只有吃药强提醒才要求常驻和带「已服用 / 跳过」按钮；常规通知与更新通知均自动收起、无强动作按钮。
+    requireInteraction: isMedicationStrong,
+    actions: isMedicationStrong
+      ? [
           { action: 'taken', title: '已服用' },
           { action: 'skip', title: '跳过' },
-        ],
+        ]
+      : [],
   };
 }
 

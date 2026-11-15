@@ -111,7 +111,7 @@ export function renderBackupCard(
   const countSummary = counts ? `${counts.meds} 药 · ${counts.logs} 记录` : '就绪';
 
   const element = panel({
-    title: '本地数据与备份',
+    title: '数据备份',
     iconName: 'box',
     iconTone: 'teal',
     chip: { text: countSummary, tone: 'ok' },
@@ -123,8 +123,7 @@ export function renderBackupCard(
       const titleWrap = el('div', { class: 'settings-subcard-title-wrap' });
       titleWrap.append(el('div', { class: 'settings-subcard-title', text: '数据归档与备份' }));
       const badge = el('span', {
-        class: 'settings-subcard-badge',
-        style: 'background: rgba(20, 184, 166, 0.12); color: var(--color-primary);',
+        class: 'settings-subcard-badge is-primary',
         text: countSummary,
       });
       cardHead.append(titleWrap, badge);
@@ -166,7 +165,7 @@ export function renderBackupCard(
         await importBackupFileForRoute(root, file, signal, undefined, onRerender);
       };
 
-      const row = el('div', { class: 'btn-row backup-actions', style: 'margin-block-start: var(--space-2);' });
+      const row = el('div', { class: 'btn-row backup-actions' });
       row.append(exportBtn, importBtn);
       card.append(row);
       body.append(card, fileInput);

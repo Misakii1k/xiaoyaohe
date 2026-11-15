@@ -84,7 +84,7 @@ async function seedMorningMedication(
 async function openPeriodSettingsPanel(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/#/settings');
   await expect(page.getByRole('heading', { level: 1, name: /设置|我的/ })).toBeVisible();
-  await page.getByRole('button', { name: /时段提醒设置/ }).click();
+  await page.getByRole('button', { name: /时段设置/ }).click();
   await expect(page.locator('.period-setting-card')).toHaveCount(4);
 }
 
@@ -149,6 +149,6 @@ test.describe('period-level reminder settings', () => {
     // 移除选择器：没有「提醒方式」radiogroup
     await expect(page.getByRole('radiogroup', { name: '提醒方式' })).toHaveCount(0);
     // 时段级提示指向设置页
-    await expect(page.locator('.period-reminder-hint')).toContainText('时段提醒设置');
+    await expect(page.locator('.period-reminder-hint')).toContainText('时段设置');
   });
 });

@@ -134,18 +134,16 @@ export function renderAlarmRingtoneCard(onRingtoneChanged: () => void): HTMLElem
   const currentRingtone = getAlarmRingtonePreference();
   const isPlaying = isRingtonePreviewPlaying();
 
-  const card = el('div', { class: 'settings-ringtone-card mt-3' });
-  const cardHeader = el('div', { class: 'settings-scan-card-header' });
+  const card = el('div', { class: 'settings-ringtone-card' });
+  const cardHeader = el('div', { class: 'settings-subcard-header' });
+  const titleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
+    el('span', { class: 'settings-subcard-title', text: '用药提醒铃声' }),
+  ]);
   const badge = el('span', {
-    class: 'chip-pill chip-pill-active',
-    style: 'font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px;',
+    class: 'settings-subcard-badge is-primary',
     text: currentRingtone === 'morning_energy' ? '专属音乐（默认）' : '系统自带铃声',
   });
-  const title = el('span', {
-    style: 'font-size: 13px; font-weight: 600; color: var(--color-text);',
-    text: '用药提醒铃声',
-  });
-  cardHeader.append(badge, title);
+  cardHeader.append(titleWrap, badge);
 
   const list = el('div', { class: 'settings-ringtone-list' });
 
@@ -175,8 +173,7 @@ export function renderAlarmRingtoneCard(onRingtoneChanged: () => void): HTMLElem
     if (option.isDefault) {
       nameRow.append(
         el('span', {
-          class: 'chip-pill',
-          style: 'font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: rgba(23, 96, 63, 0.1); color: var(--color-primary, #17603f);',
+          class: 'settings-subcard-badge is-primary',
           text: '推荐',
         }),
       );
@@ -490,7 +487,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
   // ── 全屏提醒滑动解锁（防误触设置）──
   const isNativeAlarm = isNativeReminderPlatform() && nativeMedicationAlarmAvailable();
   const slideUnlockEnabled = isAlarmSlideUnlockEnabled();
-  const slideRow = el('label', { class: 'settings-toggle-row mt-3' });
+  const slideRow = el('label', { class: 'settings-toggle-row' });
   const slideCopy = el('div', { class: 'settings-toggle-copy' });
 
   const slideTitleRow = el('div', {
@@ -501,8 +498,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
   if (!isNativeAlarm) {
     slideTitleRow.append(
       el('span', {
-        class: 'chip-pill',
-        style: 'font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: rgba(0, 0, 0, 0.06); color: var(--color-text-muted);',
+        class: 'settings-subcard-badge',
         text: '仅 Android App 生效',
       }),
     );
@@ -528,16 +524,25 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
   };
   slideRow.append(slideCopy, slideToggle);
 
-  // 滑动解锁：开关行 + 一个测试按钮，不再附带说明卡片
+  // 滑动解锁：开关行 + 一个测试按钮
   const slideCard = el('div', { class: 'settings-scan-card mt-2' });
+  const slideHeader = el('div', { class: 'settings-subcard-header' });
+  slideHeader.append(
+    el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '全屏防误触' }),
+    ]),
+    el('span', {
+      class: `settings-subcard-badge ${slideUnlockEnabled ? 'is-primary' : ''}`,
+      text: slideUnlockEnabled ? '已开启' : '未开启',
+    }),
+  );
+  slideCard.append(slideHeader);
 
   const needsApkUpgrade = isNativeAlarm && LOCAL_APP_VERSION_CODE > 0 && LOCAL_APP_VERSION_CODE < 56;
   if (needsApkUpgrade) {
-    const upgradeNotice = el('div', {
-      class: 'settings-scan-card-desc mt-1',
-      style: 'color: #b45309; background: rgba(245, 158, 11, 0.1); padding: 8px 12px; border-radius: 8px; font-size: 12px; line-height: 1.5;',
-      text: '需在「应用更新」里安装一次完整包才能生效。',
-    });
+    const upgradeNotice = el('div', { class: 'banner warn' }, [
+      el('span', { text: '需在「应用更新」里安装一次完整包才能生效。' }),
+    ]);
     slideCard.append(upgradeNotice);
   }
 
@@ -552,7 +557,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
       return;
     }
     if (needsApkUpgrade) {
-      toast('当前底层安装包版本未包含滑动解锁，请前往「软件更新」安装完整 APK');
+      toast('当前底层安装包版本未包含滑动解锁，请前往「应用更新」安装完整包');
       return;
     }
     try {
@@ -568,7 +573,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
 
   // ── 扫码解除强制提醒（全屏响铃仅 Android 原生生效，配置与绑定全局常驻）──
   const scanPref = getAlarmScanVerifyPreference();
-  const scanRow = el('label', { class: 'settings-toggle-row mt-3' });
+  const scanRow = el('label', { class: 'settings-toggle-row' });
   const scanCopy = el('div', { class: 'settings-toggle-copy' });
   const isCustom = scanPref.mode === 'custom';
 
@@ -580,8 +585,7 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
   if (!isNativeAlarm) {
     titleRow.append(
       el('span', {
-        class: 'chip-pill',
-        style: 'font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: rgba(0, 0, 0, 0.06); color: var(--color-text-muted);',
+        class: 'settings-subcard-badge',
         text: '仅 Android App 生效',
       }),
     );
@@ -633,7 +637,17 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
 
   // ── 绑定操作按钮常驻（无论开关开闭均可见）──
   const scanCard = el('div', { class: 'settings-scan-card mt-2' });
-  scanCard.append(scanRow);
+  const scanHeader = el('div', { class: 'settings-subcard-header' });
+  scanHeader.append(
+    el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '扫码确认服药' }),
+    ]),
+    el('span', {
+      class: `settings-subcard-badge ${scanPref.enabled ? 'is-primary' : ''}`,
+      text: scanPref.enabled ? '已开启' : '未开启',
+    }),
+  );
+  scanCard.append(scanHeader, scanRow);
 
   // 操作按钮网格（双列排列，保证移动端自适应舒展）
   const qrGrid = el('div', { class: 'settings-scan-grid mt-2' });
@@ -675,30 +689,25 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
   body.append(scanCard);
 
   if (isNativeAlarm) {
-    const accCard = el('div', {
-      class: 'settings-scan-card mt-2',
-      style: 'background: rgba(0, 0, 0, 0.02); border: 1px dashed var(--color-border);',
-    });
-    const accHeader = el('div', { class: 'settings-scan-card-header flex items-center justify-between' });
-    const accTitle = el('span', {
-      style: 'font-size: 13px; font-weight: 600; color: var(--color-text);',
-      text: '无障碍防退出保护',
-    });
+    const accCard = el('div', { class: 'settings-subcard' });
+    const accHeader = el('div', { class: 'settings-subcard-header' });
+    const accTitleWrap = el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '无障碍防退出保护' }),
+    ]);
     const accBadge = el('span', {
-      class: 'chip-pill',
-      style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.05); color: var(--color-text-muted);',
+      class: 'settings-subcard-badge',
       text: '检测中...',
     });
-    accHeader.append(accTitle, accBadge);
+    accHeader.append(accTitleWrap, accBadge);
 
     const accDesc = el('div', {
-      class: 'settings-scan-card-desc mt-1',
-      text: '扫码前防止切回桌面。',
+      class: 'settings-subcard-desc',
+      text: '扫码前防止切回桌面，也更不容易被系统清理。',
     });
 
+    const accActions = el('div', { class: 'btn-row' });
     const accActionBtn = el('button', {
-      class: 'btn tonal mt-2',
-      style: 'font-size: 12px; padding: 6px 12px; width: 100%;',
+      class: 'btn tonal',
       text: '去开启',
     });
     accActionBtn.onclick = async () => {
@@ -706,40 +715,38 @@ export function buildReminderBody(body: HTMLElement, rerender: () => void): void
     };
 
     const accGuideBtn = el('button', {
-      class: 'btn tonal mt-2',
-      style: 'font-size: 12px; padding: 6px 12px; width: 100%;',
-      text: '主流手机后台防杀指南',
+      class: 'btn tonal',
+      text: '防杀指南',
     });
     accGuideBtn.onclick = () => openKeepAliveGuideModal();
 
-    accCard.append(accHeader, accDesc, accActionBtn, accGuideBtn);
+    accActions.append(accActionBtn, accGuideBtn);
+    accCard.append(accHeader, accDesc, accActions);
     body.append(accCard);
 
     void checkAccessibilityGuardEnabled().then((enabled) => {
       if (enabled) {
-        accBadge.className = 'chip-pill chip-pill-active';
-        accBadge.style.background = 'rgba(23, 96, 63, 0.12)';
-        accBadge.style.color = 'var(--color-primary, #17603f)';
+        accBadge.className = 'settings-subcard-badge is-primary';
         accBadge.textContent = '已开启';
         accActionBtn.textContent = '管理';
       } else {
-        accBadge.className = 'chip-pill';
-        accBadge.style.background = 'rgba(245, 158, 11, 0.15)';
-        accBadge.style.color = '#b45309';
+        accBadge.className = 'settings-subcard-badge is-warn';
         accBadge.textContent = '未开启';
         accActionBtn.textContent = '去开启';
       }
     });
   }
 
-  body.append(
+  const tipCard = el('div', { class: 'settings-subcard' });
+  tipCard.append(
     el('div', {
-      class: 'settings-hint',
+      class: 'settings-subcard-desc',
       text: native
-        ? '收不到提醒时，请在「后台保活与防杀」里允许后台运行。'
+        ? '收不到提醒时，请在「后台保活」里允许后台运行。'
         : '网页端不支持锁屏全屏提醒；把网页「添加到主屏幕」会更准时。',
-    })
+    }),
   );
+  body.append(tipCard);
 }
 
 /** ---------------- 扫码解除：专属二维码 Sheet ---------------- */
@@ -993,7 +1000,7 @@ export function periodSettingsChip(settings: ReminderPeriodSetting[]): PanelChip
 export function renderPeriodSettingsPanel(): HTMLElement {
   let panelEl!: HTMLElement;
   panelEl = panel({
-    title: '时段提醒设置',
+    title: '时段设置',
     iconName: 'clock',
     iconTone: 'emerald',
     chip: { text: '…', tone: 'muted' },
@@ -1012,27 +1019,39 @@ export async function renderPeriodSettingsBody(body: HTMLElement, panelEl: HTMLE
   } catch {
     body.replaceChildren();
     body.append(el('div', { class: 'banner warn' }, [
-      el('span', { html: '时段提醒设置读取失败，请稍后重试。' }),
+      el('span', { html: '时段设置读取失败，请稍后重试。' }),
     ]));
     return;
   }
   setChip(panelEl, periodSettingsChip(settings));
   body.replaceChildren();
-  body.append(el('div', {
-    class: 'settings-hint',
-    html: '同一时段的药合并成一次提醒，点卡片可调整时间和方式。',
-  }));
+
+  const overviewCard = el('div', { class: 'settings-subcard' });
+  const overviewHead = el('div', { class: 'settings-subcard-header' });
+  overviewHead.append(
+    el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '按时段合并提醒' }),
+    ]),
+  );
+  overviewCard.append(
+    overviewHead,
+    el('div', {
+      class: 'settings-subcard-desc',
+      text: '同一时段的药合并成一次提醒，点击卡片调整时间与方式。',
+    }),
+  );
 
   const needsReview = settings.filter((s) => s.state === 'needs-review');
   if (needsReview.length > 0) {
-    body.append(el('div', { class: 'banner warn mt-3' }, [
+    overviewCard.append(el('div', { class: 'banner warn' }, [
       el('span', {
         html: `以下时段内不同药的提醒时间或方式不完全一致：${needsReview.map((s) => s.name || SLOT_LABEL[s.slot] || s.slot).join('、')}。请逐个确认统一的整体时间与方式。`,
       }),
     ]));
   }
+  body.append(overviewCard);
 
-  const list = el('div', { class: 'period-setting-list mt-3' });
+  const list = el('div', { class: 'period-setting-list' });
   for (const setting of settings) {
     list.append(buildPeriodSettingRow(setting, body, panelEl));
   }
@@ -1147,10 +1166,10 @@ export function buildPeriodSettingRow(
   const titleRow = el('div', { class: 'period-setting-card-title-row' });
   titleRow.append(el('span', { class: 'period-setting-card-name', text: displayName }));
   if (isReview) {
-    titleRow.append(el('span', { class: 'panel-chip tone-warn period-review-badge', text: '待复核' }));
+    titleRow.append(el('span', { class: 'settings-subcard-badge is-warn period-review-badge', text: '待复核' }));
   }
   if (!isEnabled) {
-    titleRow.append(el('span', { class: 'panel-chip tone-muted', text: '已停用' }));
+    titleRow.append(el('span', { class: 'settings-subcard-badge', text: '已停用' }));
   }
 
   // 提醒时间与多时间点指示

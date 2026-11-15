@@ -170,37 +170,43 @@ export function buildAppUpdateBody(
 ): void {
   body.replaceChildren();
 
-  // 当前版本信息
-  const versionInfo = el('div', { class: 'settings-hint' });
-  versionInfo.append(
-    '当前版本：',
-    el('strong', { text: `v${LOCAL_APP_VERSION}` }),
-    '（正式版）',
-  );
-  body.append(versionInfo);
+  const versionHeader = () => {
+    const header = el('div', { class: 'settings-subcard-header' });
+    header.append(
+      el('div', { class: 'settings-subcard-title-wrap' }, [
+        el('span', { class: 'settings-subcard-title', text: '当前版本' }),
+      ]),
+      el('span', {
+        class: 'settings-subcard-badge is-primary',
+        text: `v${LOCAL_APP_VERSION} 正式版`,
+      }),
+    );
+    return header;
+  };
 
   if (!available) {
-    body.append(el('div', { class: 'banner info mt-3' }, [
-      el('span', { html: '网页版自动保持最新，无需更新。' }),
-    ]));
+    const card = el('div', { class: 'settings-subcard' });
+    card.append(
+      versionHeader(),
+      el('div', {
+        class: 'settings-subcard-desc',
+        text: '网页版自动保持最新，无需更新。',
+      }),
+    );
+    body.append(card);
     return;
   }
 
   const update = getAvailableUpdate();
   if (!update) {
-    body.append(el('div', { class: 'settings-hint mt-2' }, [
-      el('span', { html: '同时检查网上和同一 Wi-Fi 下的设备。' }),
-    ]));
-
-    // 本机为 Android 原生端时展示局域网分发服务状态
-    const servingBadge = el('div', { class: 'app-update-serving-badge mt-2' });
+    const card = el('div', { class: 'settings-subcard' });
+    const servingBadge = el('div', { class: 'app-update-serving-badge' });
     servingBadge.append(
       el('span', { class: 'app-update-serving-dot' }),
       el('span', { text: '可为同一 Wi-Fi 下的设备提供更新' }),
     );
-    body.append(servingBadge);
 
-    const row = el('div', { class: 'btn-row mt-3' });
+    const row = el('div', { class: 'btn-row' });
     const checkBtn = el('button', { class: 'btn', text: '检查更新' });
     checkBtn.onclick = async () => {
       checkBtn.disabled = true;
@@ -227,12 +233,25 @@ export function buildAppUpdateBody(
       }
     };
     row.append(checkBtn);
-    body.append(row);
+    card.append(
+      versionHeader(),
+      el('div', {
+        class: 'settings-subcard-desc',
+        text: '同时检查网上和同一 Wi-Fi 下的设备。',
+      }),
+      servingBadge,
+      row,
+    );
+    body.append(card);
     return;
   }
 
+  const versionCard = el('div', { class: 'settings-subcard' });
+  versionCard.append(versionHeader());
+  body.append(versionCard);
+
   // 发现可用更新：显示版本、来源、推荐方式、更新说明、操作按钮与进度条
-  const updateCard = el('div', { class: 'app-update-card mt-3' });
+  const updateCard = el('div', { class: 'app-update-card' });
 
   const updateHeader = el('div', { class: 'app-update-header' });
   const titleRow = el('div', { class: 'app-update-title-row' });
@@ -300,7 +319,7 @@ export function buildAppUpdateBody(
   progressBox.append(progressLabels, progressTrack);
   body.append(progressBox);
 
-  const row = el('div', { class: 'btn-row mt-3' });
+  const row = el('div', { class: 'btn-row' });
   const allActionButtons: HTMLButtonElement[] = [];
 
   const setButtonsDisabled = (disabled: boolean) => {

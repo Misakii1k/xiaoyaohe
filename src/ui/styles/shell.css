@@ -536,3 +536,28 @@
     min-block-size: 44px;
   }
 }
+
+/* ============ 关怀大字模式适配 ============ */
+:root[data-care='on'] .topbar h1 {
+  font-weight: 800;
+}
+
+:root[data-care='on'] .tabbar.app-navigation {
+  min-block-size: calc(64px + var(--safe-bottom));
+}
+
+:root[data-care='on'] .tabbar.app-navigation a {
+  min-block-size: var(--tap);
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+:root[data-care='on'] .tabbar.app-navigation a .ic {
+  inline-size: 26px;
+  block-size: 26px;
+}
+
+:root[data-care='on'] .ui-page-header-title {
+  font-weight: 800;
+}

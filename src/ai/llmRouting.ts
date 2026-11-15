@@ -55,7 +55,7 @@ export async function runWithLlmFailover<T>(
 ): Promise<LlmRouteResult<T>> {
   const candidates = getLlmRouteCandidates();
   if (candidates.length === 0) {
-    throw new Error('还没连接 AI 服务。到「设置 → AI 服务商」填好服务地址和密钥');
+    throw new Error('还没连接 AI 服务。到「我的 → 对话模型」填好服务地址和密钥');
   }
 
   // 当前供应商是用户明确选择的：未同意就弹窗。顺延候选是备用，未同意则跳过，

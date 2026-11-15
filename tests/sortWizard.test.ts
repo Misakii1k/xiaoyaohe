@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { buildSortWizardSummary, type SortWizardItem } from '../src/ui/SortWizard';
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildSortWizardSummary, openSortWizard, type SortWizardItem } from '../src/ui/SortWizard';
+import { isSortTtsEnabled, resetSortTtsSessionState, setSortTtsEnabled } from '../src/features/sortTts';
 import { emptyIdentity, type Medication } from '../src/db/schema';
 
 function medication(id: string, name: string): Medication {
@@ -55,5 +57,109 @@ describe('sort wizard summary', () => {
       }],
       completedAt: 123,
     });
+  });
+});
+
+describe('openSortWizard TTS playback integration', () => {
+  let spoken: string[] = [];
+  let cancelMock = vi.fn();
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="app"></div>';
+    window.localStorage.clear();
+    resetSortTtsSessionState();
+    setSortTtsEnabled(true);
+    spoken = [];
+    cancelMock = vi.fn();
+
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        cancel: cancelMock,
+        speak: vi.fn((u: { text: string }) => {
+          spoken.push(u.text);
+        }),
+        getVoices: vi.fn(() => [{ lang: 'zh-CN', name: 'Chinese' }]),
+      },
+    });
+    (globalThis as Record<string, unknown>).SpeechSynthesisUtterance = class {
+      text: string;
+      lang = '';
+      rate = 1;
+      constructor(text: string) {
+        this.text = text;
+      }
+    };
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('auto-speaks on step change, supports replay/mute toggle, and stops speech on quit', async () => {
+    const items: SortWizardItem[] = [
+      {
+        med: medication('med-1', '阿莫西林胶囊'),
+        entries: [
+          { occurrenceId: 'o1', slot: 'morning', timeLocal: '08:00', doseLabel: '1片', doseQuantity: 1, doseUnit: '片', mealRels: [] },
+        ],
+        isRest: false,
+        expired: false,
+      },
+      {
+        med: medication('med-2', '硝苯地平缓释片'),
+        entries: [
+          { occurrenceId: 'o2', slot: 'evening', timeLocal: '19:00', doseLabel: '1片', doseQuantity: 1, doseUnit: '片', mealRels: [] },
+        ],
+        isRest: false,
+        expired: false,
+      },
+    ];
+
+    openSortWizard(items);
+
+    await vi.waitFor(() => {
+      expect(spoken).toEqual(['阿莫西林胶囊，早上 1片']);
+    });
+
+    const replayBtn = document.querySelector<HTMLButtonElement>('button[aria-label="重听 阿莫西林胶囊"]');
+    expect(replayBtn).not.toBeNull();
+    replayBtn?.click();
+    await vi.waitFor(() => {
+      expect(spoken).toHaveLength(2);
+    });
+
+    const muteBtn = document.querySelector<HTMLButtonElement>('button[aria-label="关闭分药语音播报"]');
+    expect(muteBtn).not.toBeNull();
+    muteBtn?.click();
+    expect(isSortTtsEnabled()).toBe(false);
+    expect(cancelMock).toHaveBeenCalled();
+
+    const unmuteBtn = document.querySelector<HTMLButtonElement>('button[aria-label="开启分药语音播报"]');
+    expect(unmuteBtn).not.toBeNull();
+
+    const nextBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('放好了，下一盒'));
+    expect(nextBtn).toBeTruthy();
+    nextBtn?.click();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(spoken).toHaveLength(2);
+
+    const replaySecondBtn = document.querySelector<HTMLButtonElement>('button[aria-label="重听 硝苯地平缓释片"]');
+    expect(replaySecondBtn).not.toBeNull();
+    replaySecondBtn?.click();
+    await vi.waitFor(() => {
+      expect(spoken).toEqual([
+        '阿莫西林胶囊，早上 1片',
+        '阿莫西林胶囊，早上 1片',
+        '硝苯地平缓释片，晚上 1片',
+      ]);
+    });
+
+    const cancelCountBeforeQuit = cancelMock.mock.calls.length;
+    const quitBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('先不分了'));
+    expect(quitBtn).toBeTruthy();
+    quitBtn?.click();
+    expect(cancelMock.mock.calls.length).toBeGreaterThan(cancelCountBeforeQuit);
   });
 });

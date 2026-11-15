@@ -1504,3 +1504,41 @@
 .diff-values-grid .highlight-remaining {
   color: var(--color-primary);
 }
+
+/* ============ 关怀大字模式适配 ============ */
+:root[data-care='on'] .med-stat-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+:root[data-care='on'] .inventory-overview-title,
+:root[data-care='on'] .inventory-card-name,
+:root[data-care='on'] .inventory-picker-name,
+:root[data-care='on'] .inventory-actions-summary-title,
+:root[data-care='on'] .history-med-name {
+  font-size: var(--fs-headline);
+  font-weight: 800;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  overflow-wrap: anywhere;
+}
+
+:root[data-care='on'] .inventory-overview-subtitle,
+:root[data-care='on'] .inventory-actions-summary-sub,
+:root[data-care='on'] .inventory-more-tile-title,
+:root[data-care='on'] .inventory-adjust-title {
+  font-size: var(--fs-footnote);
+}
+
+:root[data-care='on'] .inventory-filter-pill,
+:root[data-care='on'] .inventory-preset-pill,
+:root[data-care='on'] .inventory-status-pill,
+:root[data-care='on'] .inventory-source-badge {
+  font-size: calc(12.5px * var(--care-scale));
+  font-weight: 700;
+}
+
+:root[data-care='on'] .inventory-adjust-controls input {
+  min-block-size: var(--tap);
+  font-size: var(--fs-title3);
+}

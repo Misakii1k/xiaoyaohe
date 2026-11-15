@@ -1617,3 +1617,29 @@ a:active,
   flex-shrink: 0 !important;
   min-width: max-content !important;
 }
+
+/* ============ 关怀大字模式全局基线 ============ */
+:root[data-care='on'] {
+  --control-h: var(--tap);
+}
+
+:root[data-care='on'] .btn,
+:root[data-care='on'] .ui-button,
+:root[data-care='on'] .ui-select-trigger,
+:root[data-care='on'] .ui-input,
+:root[data-care='on'] .ui-segmented button,
+:root[data-care='on'] .ui-segmented-btn {
+  min-block-size: var(--tap);
+  font-weight: 700;
+}
+
+:root[data-care='on'] .ui-section-title,
+:root[data-care='on'] .bottom-sheet-title,
+:root[data-care='on'] .ui-form-field-label {
+  font-weight: 800;
+}
+
+:root[data-care='on'] .toast {
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+}

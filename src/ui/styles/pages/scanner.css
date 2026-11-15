@@ -513,3 +513,11 @@ body.camera-capture-active .tabbar {
   white-space: nowrap;
   padding-inline: var(--space-3);
 }
+
+/* ============ 关怀大字模式适配 ============ */
+:root[data-care='on'] .scan-actions .btn,
+:root[data-care='on'] .camera-actions .btn {
+  min-block-size: var(--tap);
+  font-size: var(--fs-headline);
+  font-weight: 700;
+}

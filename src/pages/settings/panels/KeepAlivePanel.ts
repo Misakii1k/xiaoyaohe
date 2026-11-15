@@ -198,8 +198,7 @@ export function openKeepAlivePromptSheet(
     head.append(
       el('span', { class: 'keepalive-card-title', text: '1. 无障碍防退出保护' }),
       el('span', {
-        class: 'chip-pill',
-        style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
+        class: 'settings-subcard-badge is-warn',
         text: '未开启',
       }),
     );
@@ -207,9 +206,9 @@ export function openKeepAlivePromptSheet(
       class: 'keepalive-card-desc',
       text: '在未扫码前阻断切回桌面，同时提升应用在系统中的保活优先级。',
     });
+    const btnRow = el('div', { class: 'btn-row mt-2' });
     const btn = el('button', {
-      class: 'btn tonal mt-2',
-      style: 'font-size: 13px; width: 100%;',
+      class: 'btn tonal btn-full',
       text: '前往开启无障碍服务',
     });
     btn.onclick = async () => {
@@ -217,7 +216,8 @@ export function openKeepAlivePromptSheet(
       sheet.close();
       rerender();
     };
-    accItem.append(head, desc, btn);
+    btnRow.append(btn);
+    accItem.append(head, desc, btnRow);
     list.append(accItem);
   }
 
@@ -227,8 +227,7 @@ export function openKeepAlivePromptSheet(
     head.append(
       el('span', { class: 'keepalive-card-title', text: '2. 忽略电池优化（白名单）' }),
       el('span', {
-        class: 'chip-pill',
-        style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
+        class: 'settings-subcard-badge is-warn',
         text: '需授权',
       }),
     );
@@ -236,9 +235,9 @@ export function openKeepAlivePromptSheet(
       class: 'keepalive-card-desc',
       text: '允许应用在后台持续运行，避免手机长时间熄屏或处于省电模式时遗漏提醒。',
     });
+    const btnRow = el('div', { class: 'btn-row mt-2' });
     const btn = el('button', {
-      class: 'btn tonal mt-2',
-      style: 'font-size: 13px; width: 100%;',
+      class: 'btn tonal btn-full',
       text: '申请加入电池白名单',
     });
     btn.onclick = async () => {
@@ -247,7 +246,8 @@ export function openKeepAlivePromptSheet(
       sheet.close();
       rerender();
     };
-    battItem.append(head, desc, btn);
+    btnRow.append(btn);
+    battItem.append(head, desc, btnRow);
     list.append(battItem);
   }
 
@@ -287,16 +287,28 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     ? { text: '已就绪', tone: 'ok' }
     : { text: '建议设置', tone: 'warn' });
 
+  const overviewCard = el('div', { class: 'settings-subcard' });
+  const overviewHead = el('div', { class: 'settings-subcard-header' });
+  overviewHead.append(
+    el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '后台运行保护' }),
+    ]),
+    el('span', {
+      class: `settings-subcard-badge ${isNative ? (allReady ? 'is-primary' : 'is-warn') : ''}`,
+      text: isNative ? (allReady ? '已就绪' : '建议设置') : '网页端',
+    }),
+  );
   const intro = el('div', {
-    class: 'settings-hint',
+    class: 'settings-subcard-desc',
     text: isNative
       ? '完成以下设置，防止提醒被系统清理。'
-      : '网页端需保持页面打开才能准时提醒，建议装手机 App。',
+      : '网页端需保持页面打开才能准时提醒，建议安装手机 App。',
   });
-  body.append(intro);
+  overviewCard.append(overviewHead, intro);
 
   if (isNative) {
-    const list = el('div', { class: 'keepalive-item-list mt-3' });
+    body.append(overviewCard);
+    const list = el('div', { class: 'keepalive-item-list' });
 
     // 1. 无障碍防退出保护
     const accItem = el('div', { class: 'keepalive-card' });
@@ -304,10 +316,7 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     accHead.append(
       el('span', { class: 'keepalive-card-title', text: '1. 无障碍防退出保护' }),
       el('span', {
-        class: `chip-pill ${accEnabled ? 'chip-pill-active' : ''}`,
-        style: accEnabled
-          ? 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(23, 96, 63, 0.12); color: var(--color-primary, #17603f);'
-          : 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
+        class: `settings-subcard-badge ${accEnabled ? 'is-primary' : 'is-warn'}`,
         text: accEnabled ? '已开启' : '未开启',
       }),
     );
@@ -315,28 +324,26 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
       class: 'keepalive-card-desc',
       text: '扫码前防止切回桌面，也更不容易被系统清理。',
     });
+    const accBtnRow = el('div', { class: 'btn-row mt-2' });
     const accBtn = el('button', {
-      class: 'btn tonal mt-2',
-      style: 'font-size: 13px; width: 100%;',
+      class: 'btn tonal btn-full',
       text: accEnabled ? '管理' : '去开启',
     });
     accBtn.onclick = async () => {
       await openAccessibilityGuardSettings();
       void refreshKeepAlive(body, panelEl);
     };
-    accItem.append(accHead, accDesc, accBtn);
+    accBtnRow.append(accBtn);
+    accItem.append(accHead, accDesc, accBtnRow);
     list.append(accItem);
 
     // 2. 电池优化白名单
-    const battItem = el('div', { class: 'keepalive-card mt-2' });
+    const battItem = el('div', { class: 'keepalive-card' });
     const battHead = el('div', { class: 'keepalive-card-head' });
     battHead.append(
       el('span', { class: 'keepalive-card-title', text: '2. 忽略电池优化（白名单）' }),
       el('span', {
-        class: `chip-pill ${ignoring ? 'chip-pill-active' : ''}`,
-        style: ignoring
-          ? 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(23, 96, 63, 0.12); color: var(--color-primary, #17603f);'
-          : 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(245, 158, 11, 0.15); color: #b45309;',
+        class: `settings-subcard-badge ${ignoring ? 'is-primary' : 'is-warn'}`,
         text: ignoring ? '已允许' : '未允许',
       }),
     );
@@ -346,7 +353,7 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     });
     const battBtnRow = el('div', { class: 'btn-row mt-2' });
     if (!ignoring) {
-      const allowBtn = el('button', { class: 'btn', style: 'font-size: 13px;', text: '允许' });
+      const allowBtn = el('button', { class: 'btn', text: '允许' });
       allowBtn.onclick = async () => {
         const ok = await requestIgnoreBatteryOptimizations();
         toast(ok ? '已加入电池优化白名单' : '未加入，可稍后再试');
@@ -354,20 +361,19 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
       };
       battBtnRow.append(allowBtn);
     }
-    const appSettingsBtn = el('button', { class: 'btn tonal', style: 'font-size: 13px;', text: '应用设置' });
+    const appSettingsBtn = el('button', { class: 'btn tonal', text: '应用设置' });
     appSettingsBtn.onclick = () => void openAppSettings();
     battBtnRow.append(appSettingsBtn);
     battItem.append(battHead, battDesc, battBtnRow);
     list.append(battItem);
 
     // 3. 多任务卡片加锁
-    const lockItem = el('div', { class: 'keepalive-card mt-2' });
+    const lockItem = el('div', { class: 'keepalive-card' });
     const lockHead = el('div', { class: 'keepalive-card-head' });
     lockHead.append(
       el('span', { class: 'keepalive-card-title', text: '3. 多任务后台卡片加锁' }),
       el('span', {
-        class: 'chip-pill',
-        style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.05); color: var(--color-text-muted);',
+        class: 'settings-subcard-badge',
         text: '手动操作',
       }),
     );
@@ -379,7 +385,7 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     list.append(lockItem);
 
     // 4. 自启动与后台运行管理
-    const autoItem = el('div', { class: 'keepalive-card mt-2' });
+    const autoItem = el('div', { class: 'keepalive-card' });
     const autoHead = el('div', { class: 'keepalive-card-head' });
     const brandLabelMap: Record<OemBrand, string> = {
       xiaomi: '小米 / 红米 (MIUI/HyperOS)',
@@ -394,8 +400,7 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     autoHead.append(
       el('span', { class: 'keepalive-card-title', text: '4. 自启动与后台运行权限' }),
       el('span', {
-        class: 'chip-pill',
-        style: 'font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.05); color: var(--color-text-muted);',
+        class: 'settings-subcard-badge',
         text: isDetectedOem ? `已识别 ${matchedGuide?.name || deviceInfo.matchedOem}` : '厂商管理',
       }),
     );
@@ -410,7 +415,6 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     if (isDetectedOem && matchedGuide) {
       const directJumpBtn = el('button', {
         class: 'btn',
-        style: 'font-size: 13px;',
         text: matchedGuide.jumpText,
       });
       directJumpBtn.onclick = async () => {
@@ -423,7 +427,6 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     }
     const guideBtn = el('button', {
       class: 'btn tonal',
-      style: 'font-size: 13px;',
       text: '防杀指南',
     });
     guideBtn.onclick = () => openKeepAliveGuideModal(deviceInfo.matchedOem);
@@ -434,17 +437,18 @@ export async function refreshKeepAlive(body: HTMLElement, panelEl: HTMLElement):
     body.append(list);
   } else {
     // 网页端
-    const battBtnRow = el('div', { class: 'btn-row mt-3' });
+    const battBtnRow = el('div', { class: 'btn-row' });
     const openBtn = el('button', { class: 'btn tonal', text: '防杀指南' });
     openBtn.onclick = () => openKeepAliveGuideModal();
     battBtnRow.append(openBtn);
-    body.append(battBtnRow);
+    overviewCard.append(battBtnRow);
+    body.append(overviewCard);
   }
 }
 
 export function renderKeepAlivePanel(): HTMLElement {
   const p = panel({
-    title: '后台保活与防杀',
+    title: '后台保活',
     iconName: 'shield',
     iconTone: 'orange',
     chip: { text: '检查中', tone: 'muted' },

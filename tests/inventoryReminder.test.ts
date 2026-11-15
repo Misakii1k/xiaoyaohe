@@ -63,6 +63,17 @@ describe('low stock reminder persistence', () => {
     mocks.getMed.mockResolvedValue(fresh);
 
     expect(await sendLowStockReminderIfDue(med, '库存不足')).toBe(true);
+    expect(mocks.show).toHaveBeenCalledWith('药量提醒', {
+      body: '库存不足',
+      tag: 'inventory_low-stock-sent',
+      data: {
+        kind: 'inventory',
+        medId: 'low-stock-sent',
+        channel: 'normal',
+        mode: 'normal',
+        deepLink: '/meds/inventory',
+      },
+    });
     expect(mocks.getMed).toHaveBeenCalledWith('low-stock-sent');
     expect(fresh.inventory?.lastReminderAt).toBe(now);
     expect(mocks.putMed).toHaveBeenCalledWith(fresh);

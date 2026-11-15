@@ -63,6 +63,8 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
     class: `panel-chip ${lastResult ? 'tone-ok' : available ? 'tone-muted' : 'tone-warn'}`,
     text: lastResult ? '已同步' : available ? '未连接' : '仅 App',
   });
+  chip.hidden = true;
+  chip.setAttribute('aria-hidden', 'true');
   trailing.append(chip, icon('chevron-right', 'panel-chevron'));
   head.append(lead, trailing);
 
@@ -216,16 +218,48 @@ export function renderLanSyncSettingsPanel(routeSignal?: AbortSignal): LanSyncSe
   // 一键同步：立即对所有已配对设备做一次 join，不等 30 分钟轮询。
   const syncAllBtn = actionButton('retry', '一键同步所有设备', 'tonal');
   const syncAllRow = el('div', { class: 'btn-row lan-sync-syncall-row' }, [syncAllBtn]);
-  body.append(info, inventoryNote, nameField, allowField, autoSyncField, silentField, peersBox, extrasFieldset, actions, syncAllRow, status);
+
+  const introCard = el('div', { class: 'settings-subcard' });
+  const introHead = el('div', { class: 'settings-subcard-header' });
+  introHead.append(
+    el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '本机与连接说明' }),
+    ]),
+    el('span', {
+      class: `settings-subcard-badge ${available ? 'is-primary' : 'is-warn'}`,
+      text: available ? '局域网直连' : '仅 App 可用',
+    }),
+  );
+  introCard.append(introHead, info, inventoryNote, nameField);
   if (!available) {
     showCode.disabled = true;
     scanCode.disabled = true;
     syncAllBtn.disabled = true;
-    body.append(el('div', {
+    introCard.append(el('div', {
       class: 'banner warn',
       text: '请在 Android App 里使用家庭同步。',
     }));
   }
+
+  const policyCard = el('div', { class: 'settings-subcard' });
+  const policyHead = el('div', { class: 'settings-subcard-header' });
+  policyHead.append(
+    el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '同步策略' }),
+    ]),
+  );
+  policyCard.append(policyHead, allowField, autoSyncField, silentField);
+
+  const transferCard = el('div', { class: 'settings-subcard' });
+  const transferHead = el('div', { class: 'settings-subcard-header' });
+  transferHead.append(
+    el('div', { class: 'settings-subcard-title-wrap' }, [
+      el('span', { class: 'settings-subcard-title', text: '设备与传输' }),
+    ]),
+  );
+  transferCard.append(transferHead, peersBox, extrasFieldset, actions, syncAllRow, status);
+
+  body.append(introCard, policyCard, transferCard);
   panel.append(head, body);
 
   let disposed = false;

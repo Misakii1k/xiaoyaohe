@@ -711,3 +711,37 @@
     animation: none !important;
   }
 }
+
+/* ============ 关怀大字模式适配 ============ */
+:root[data-care='on'] .history-plan-title,
+:root[data-care='on'] .history-plan-name {
+  font-size: var(--fs-headline);
+  font-weight: 800;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+:root[data-care='on'] .history-stat-title,
+:root[data-care='on'] .history-plan-ack-time {
+  font-size: var(--fs-footnote);
+}
+
+:root[data-care='on'] .history-status-badge,
+:root[data-care='on'] .history-plan-summary-badge {
+  font-size: calc(12px * var(--care-scale));
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+:root[data-care='on'] .history-action-pill,
+:root[data-care='on'] .history-plan-action-btn {
+  min-block-size: 44px;
+  font-size: var(--fs-footnote);
+  font-weight: 700;
+}
+
+:root[data-care='on'] .calendar-cell,
+:root[data-care='on'] .calendar-day-cell {
+  min-block-size: 48px;
+}
