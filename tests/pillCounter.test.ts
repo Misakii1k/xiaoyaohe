@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { detectPillsFromImageData, type PillPoint } from '../src/features/pillCounter';
+import * as pillCounterClient from '../src/features/pillCounterClient';
 import { countPillsTool } from '../src/ai/tools/pillTools';
 import { assistantTools } from '../src/ai/assistantTools';
+import * as aiAssistant from '../src/ai/assistant';
+import * as toolTypes from '../src/ai/tools/toolTypes';
 
 describe('pillCounter algorithm 2.0', () => {
   it('detects multiple circular pills on dark background and separates them', () => {
@@ -121,5 +124,91 @@ describe('AI assistant count_pills tool', () => {
       ok: false,
       error: expect.stringContaining('未检测到药片图片'),
     });
+  });
+
+  it('runs unified detection pipeline with blister mode and builds a compact preview card', async () => {
+    const rawImgData = {
+      width: 640,
+      height: 480,
+      data: new Uint8ClampedArray(640 * 480 * 4),
+      colorSpace: 'srgb' as PredefinedColorSpace,
+    } as ImageData;
+    const pipelineSpy = vi
+      .spyOn(pillCounterClient, 'runPillDetectionPipeline')
+      .mockResolvedValue({
+        points: [
+          { id: 1, x: 100, y: 120, isManual: false },
+          { id: 2, x: 200, y: 120, isManual: false },
+          { id: 3, x: 300, y: 120, isManual: false },
+          { id: 4, x: 400, y: 120, isManual: false },
+        ],
+        count: 4,
+        engine: 'cloud',
+        mode: 'blister',
+        imageWidth: 640,
+        imageHeight: 480,
+        clusters: [{ id: 1, label: '白色', colorHex: '#f5f5f5', count: 4 }],
+        consentNeeded: false,
+        prepared: {
+          width: 640,
+          height: 480,
+          rawImgData,
+          jpegDataUrl: 'data:image/jpeg;base64,prep',
+        },
+      });
+    const medSpy = vi
+      .spyOn(toolTypes, 'findMedByName')
+      .mockResolvedValue({
+        med: {
+          id: 'med-1',
+          name: '阿司匹林',
+          inventory: { remaining: 10, unit: '片', lowThreshold: 3, updatedAt: 1 },
+        } as any,
+        meds: [],
+      });
+
+    try {
+      const res = (await countPillsTool.run(
+        { mode: 'blister', med_name: '阿司匹林' },
+        { attachment: { kind: 'image', dataUrl: 'data:image/jpeg;base64,rawinput' } },
+      )) as Record<string, any>;
+
+      expect(pipelineSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'data:image/jpeg;base64,rawinput',
+          mode: 'blister',
+        }),
+      );
+      expect(res.ok).toBe(true);
+      expect(res.count).toBe(4);
+      expect(res.mode).toBe('blister');
+      expect(res.engine).toBe('cloud');
+
+      const block = (aiAssistant as any).contentBlockOf(res);
+      expect(block).toMatchObject({
+        type: 'card',
+        pillPreview: {
+          count: 4,
+          mode: 'blister',
+          engine: 'cloud',
+          imageWidth: 640,
+          imageHeight: 480,
+          medId: 'med-1',
+          medName: '阿司匹林',
+        },
+      });
+
+      const wire = (aiAssistant as any).sanitizeToolResultForWire(res) as Record<string, any>;
+      expect(wire.ui?.pillPreview?.sourceDataUrl).toBeUndefined();
+      expect(wire.ui?.pillPreview?.annotatedDataUrl).toBeUndefined();
+
+      const stripped = (aiAssistant as any).stripHeavyBlockData([block]);
+      expect(stripped[0]?.pillPreview?.sourceDataUrl).toBeUndefined();
+      expect(stripped[0]?.pillPreview?.annotatedDataUrl).toBeUndefined();
+      expect(stripped[0]?.pillPreview?.count).toBe(4);
+    } finally {
+      pipelineSpy.mockRestore();
+      medSpy.mockRestore();
+    }
   });
 });

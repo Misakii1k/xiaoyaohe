@@ -1479,6 +1479,39 @@ body:has(.today-fab, .med-fab-add, .fab-add) .ai-launcher {
   block-size: 16px;
 }
 
+.ai-pill-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-block-start: var(--space-3);
+}
+
+.ai-pill-preview-img {
+  display: block;
+  inline-size: 100%;
+  max-block-size: 220px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-solid);
+}
+
+.ai-pill-preview-fallback {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+
+.ai-pill-preview-btn {
+  margin-block-start: 0;
+  flex: 0 0 auto;
+  min-block-size: var(--tap);
+}
+
 .ai-table-wrap {
   inline-size: 100%;
   overflow-x: auto;

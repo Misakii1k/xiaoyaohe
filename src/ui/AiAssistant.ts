@@ -5,6 +5,7 @@ import { navigate } from '../router';
 import {
   AssistantError,
   runAssistantTurn,
+  stripHeavyBlockData,
   type AssistantAttachment,
   type AssistantContentBlock,
   type AssistantTurnResult,
@@ -107,7 +108,7 @@ function persistExchange(userText: string, reply: AssistantTurnResult): void {
       id: uid(),
       role: 'assistant',
       content: reply.markdown,
-      blocks: reply.blocks,
+      blocks: stripHeavyBlockData(reply.blocks),
       createdAt: base + 1,
     }))
     .catch(() => { /* 持久化失败不影响当前对话 */ });

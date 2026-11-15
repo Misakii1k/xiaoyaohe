@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as consentModule from '../src/ai/consent';
 import * as pillDetection from '../src/features/pillDetection';
 import * as pillCounterClient from '../src/features/pillCounterClient';
+import * as pillCounter from '../src/features/pillCounter';
+import * as pillCounterFollowup from '../src/features/pillCounterFollowup';
+import { renderAssistantBlock } from '../src/ui/assistantContent';
 import { openPillCounterSheet } from '../src/features/pillCounter';
 import { CLOUD_ORIGIN } from '../src/sync/lan/apkTransport';
 
@@ -230,6 +233,90 @@ describe('pillCounter interactive sheet UI', () => {
       );
       expect(pipelineSpy).toHaveBeenCalledTimes(2);
       expect(sheet.textContent).toContain('共 2 粒');
+    });
+  });
+
+  it('renders assistant pillPreview card with thumbnail, adjust button, and safe replay fallback', async () => {
+    const openSheetSpy = vi
+      .spyOn(pillCounter, 'openPillCounterSheet')
+      .mockResolvedValue(null);
+    const followupSpy = vi
+      .spyOn(pillCounterFollowup, 'openPillCountFollowupSheet')
+      .mockResolvedValue(undefined);
+
+    const liveCard = renderAssistantBlock(
+      {
+        type: 'card',
+        title: '识别出 4 粒药片',
+        badge: '共 4 粒',
+        tone: 'success',
+        pillPreview: {
+          count: 4,
+          mode: 'blister',
+          engine: 'cloud',
+          imageWidth: 640,
+          imageHeight: 480,
+          points: [{ id: 1, x: 100, y: 100, isManual: false }],
+          annotatedDataUrl: 'data:image/jpeg;base64,thumbdata',
+          sourceDataUrl: 'data:image/jpeg;base64,sourcedata',
+          medId: 'med-1',
+          medName: '阿司匹林',
+        } as any,
+      },
+      () => undefined,
+    );
+
+    const img = liveCard.querySelector<HTMLImageElement>('.ai-pill-preview-img');
+    expect(img).not.toBeNull();
+    expect(img?.src).toBe('data:image/jpeg;base64,thumbdata');
+
+    const editBtn = [...liveCard.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('微调并回填库存'),
+    );
+    expect(editBtn).toBeDefined();
+    editBtn!.click();
+    await vi.waitFor(() => {
+      expect(openSheetSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          image: 'data:image/jpeg;base64,sourcedata',
+          mode: 'blister',
+        }),
+      );
+    });
+
+    const replayCard = renderAssistantBlock(
+      {
+        type: 'card',
+        title: '识别出 4 粒药片',
+        badge: '共 4 粒',
+        pillPreview: {
+          count: 4,
+          mode: 'loose',
+          engine: 'heuristic_local',
+          imageWidth: 640,
+          imageHeight: 480,
+          points: [],
+          medId: 'med-1',
+        } as any,
+      },
+      () => undefined,
+    );
+
+    expect(replayCard.querySelector('.ai-pill-preview-img')).toBeNull();
+    expect(replayCard.querySelector('.ai-pill-preview-fallback')).not.toBeNull();
+    const fallbackBtn = [...replayCard.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('回填库存'),
+    );
+    expect(fallbackBtn).toBeDefined();
+    fallbackBtn!.click();
+    await vi.waitFor(() => {
+      expect(followupSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          count: 4,
+          defaultMedId: 'med-1',
+          mode: 'loose',
+        }),
+      );
     });
   });
 });

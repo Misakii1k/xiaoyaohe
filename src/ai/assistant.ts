@@ -6,6 +6,7 @@ import { assistantTools, findAssistantTool } from './assistantTools';
 import { isLlmAttemptError, type LlmAttemptError } from './llmRouting';
 import type { AssistantReasoningEffort } from './assistantPrefs';
 import type { MedicationOccurrence, Slot } from '../db/schema';
+import type { PillDetectionEngineKind, PillDetectionMode, PillPoint } from '../features/pillEngine';
 
 export type AssistantErrorKind = 'unconfigured' | 'cancelled' | 'service';
 
@@ -69,6 +70,21 @@ export interface AssistantCardItem {
   medName?: string;
 }
 
+export interface AssistantPillPreview {
+  count: number;
+  mode: PillDetectionMode;
+  engine: PillDetectionEngineKind;
+  imageWidth: number;
+  imageHeight: number;
+  points: PillPoint[];
+  annotatedDataUrl?: string;
+  sourceDataUrl?: string;
+  medId?: string;
+  medName?: string;
+  consentNeeded?: boolean;
+  degradedReason?: string;
+}
+
 export interface AssistantCardBlock {
   type: 'card';
   title: string;
@@ -80,6 +96,7 @@ export interface AssistantCardBlock {
   badge?: string;
   facts?: AssistantCardFact[];
   items?: AssistantCardItem[];
+  pillPreview?: AssistantPillPreview;
 }
 
 export interface AssistantNavigationBlock {
@@ -172,7 +189,7 @@ const SYSTEM_PROMPT = [
   '15. 一次问句里要改多项数据（库存、药品、设置）时，尽量并行调用多个工具，用户一次确认就能全部完成。',
   '16. 你可以帮助用户记录和管理今天以及今天以前的历史服药记录（mark_medication 支持 date 参数，如 "2026-07-30"、"昨天"、"前天"）。',
   '17. 用户想要查看库存修改记录或近 3 天历史操作时调用 get_inventory_logs（支持显示操作来源）；要撤回库存修改时调用 undo_inventory_operation；要一次性预扣或批量扣减多天（如一周）库存时调用 batch_deduct_inventory（扣减前会自动展示当前库存、本次扣减、预计剩余等全方位差异对比）。',
-  '18. 用户发来散落药片照片，或询问“帮我数药片”、“这里有多少粒药”、“还剩几颗”等数药需求时，调用 count_pills 工具进行视觉清点计数；清点完毕后可用 present_card 展示数量与盘点结论，并询问用户是否需要将此数量更新到某个药品的库存。',
+  '18. 用户发来散落药片、混合多种药片或整板泡罩铝塑板照片，或询问“帮我数药片”、“这里有多少粒药”、“还剩几颗”等数药需求时，调用 count_pills 工具进行视觉清点计数（整板泡罩传 mode="blister"，其余传 mode="loose"；提到药名时顺便传 med_name）。该工具已自带带标点的预览卡片与“微调并回填库存”按钮，无需重复调用 present_card 报数字；简要说明结果并提醒用户可点击卡片里的按钮核对微调或直接更新库存即可。',
 ].join('\n');
 
 interface WireToolCall {
@@ -322,7 +339,7 @@ export async function runAssistantTurn(
       const result = await executeToolCall(call, events, batchApproval);
       const block = contentBlockOf(result);
       if (block) blocks.push(block);
-      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(sanitizeToolResultForWire(result)) });
     }
   }
   throw new AssistantError('service', '这个问题查了太多轮还没查完，换个更具体的问法试试。');
@@ -393,13 +410,71 @@ async function runExplicitWebSearch(
   }
 }
 
-function contentBlockOf(result: unknown): AssistantContentBlock | undefined {
+function stripPillPreviewImages(
+  preview: AssistantPillPreview,
+  keepPoints = false,
+): AssistantPillPreview {
+  return {
+    count: preview.count,
+    mode: preview.mode,
+    engine: preview.engine,
+    imageWidth: preview.imageWidth,
+    imageHeight: preview.imageHeight,
+    points: keepPoints ? preview.points : [],
+    ...(preview.medId ? { medId: preview.medId } : {}),
+    ...(preview.medName ? { medName: preview.medName } : {}),
+    ...(preview.consentNeeded ? { consentNeeded: preview.consentNeeded } : {}),
+    ...(preview.degradedReason ? { degradedReason: preview.degradedReason } : {}),
+  };
+}
+
+/** 落库前剥离体积较大的图片 DataURL，仅保留清点摘要用于历史回放。 */
+export function stripHeavyBlockData(
+  blocks: readonly AssistantContentBlock[],
+): AssistantContentBlock[] {
+  return blocks.map((block) => {
+    if (block.type === 'card' && block.pillPreview) {
+      return {
+        ...block,
+        pillPreview: stripPillPreviewImages(block.pillPreview, false),
+      };
+    }
+    return block;
+  });
+}
+
+/** 发给模型 tool 消息前剔除 base64 图片预览，避免占满上下文窗口。 */
+export function sanitizeToolResultForWire(result: unknown): unknown {
+  if (!result || typeof result !== 'object') return result;
+  const record = result as Record<string, unknown>;
+  const ui = record.ui;
+  if (!ui || typeof ui !== 'object') return result;
+  const card = ui as Partial<AssistantCardBlock>;
+  if (card.type !== 'card' || !card.pillPreview) return result;
+  return {
+    ...record,
+    ui: {
+      ...card,
+      pillPreview: stripPillPreviewImages(card.pillPreview, false),
+    },
+  };
+}
+
+export function contentBlockOf(result: unknown): AssistantContentBlock | undefined {
   if (!result || typeof result !== 'object') return undefined;
   const ui = (result as { ui?: unknown }).ui;
   if (!ui || typeof ui !== 'object') return undefined;
   const type = (ui as { type?: unknown }).type;
   if (type === 'card' && typeof (ui as { title?: unknown }).title === 'string') {
-    return ui as AssistantCardBlock;
+    const candidate = ui as AssistantCardBlock;
+    if (candidate.pillPreview) {
+      const p = candidate.pillPreview;
+      if (typeof p.count !== 'number' || !Array.isArray(p.points)) {
+        const { pillPreview: _ignored, ...rest } = candidate;
+        return rest;
+      }
+    }
+    return candidate;
   }
   if (
     type === 'navigation'

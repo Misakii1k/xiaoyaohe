@@ -375,6 +375,77 @@ export function renderAssistantBlock(
     card.append(facts);
   }
 
+  // 3.5 视觉数药片结构化预览卡：标注缩略图 + 一键微调并回填库存（历史剥离原图后降级）
+  if (block.pillPreview) {
+    const preview = block.pillPreview;
+    const previewWrap = el('div', { class: 'ai-pill-preview-wrap' });
+    const thumbSrc = preview.annotatedDataUrl || preview.sourceDataUrl;
+    const editableImage = preview.sourceDataUrl || preview.annotatedDataUrl;
+
+    if (thumbSrc) {
+      const img = el('img', {
+        class: 'ai-pill-preview-img',
+        alt: `共 ${preview.count} 粒药片标点预览`,
+      } as any) as HTMLImageElement;
+      img.src = thumbSrc;
+      previewWrap.append(img);
+    } else {
+      previewWrap.append(
+        el('div', {
+          class: 'ai-pill-preview-fallback',
+          text: '历史记录未保存原图，无法重新标点，可直接按本次清点数量回填库存。',
+        }),
+      );
+    }
+
+    const actionBtn = el(
+      'button',
+      {
+        class: 'ai-card-action-btn ai-pill-preview-btn',
+        type: 'button',
+      },
+      [
+        el('span', { text: editableImage ? '微调并回填库存' : '回填库存 / 核对分药' }),
+        icon('chevron-right'),
+      ],
+    ) as HTMLButtonElement;
+
+    actionBtn.onclick = async () => {
+      try {
+        if (editableImage) {
+          const [{ openPillCounterSheet }, { openPillCountFollowupSheet }] = await Promise.all([
+            import('../features/pillCounter'),
+            import('../features/pillCounterFollowup'),
+          ]);
+          await openPillCounterSheet({
+            image: editableImage,
+            initialPoints: preview.points,
+            mode: preview.mode,
+            onConfirm: async (confirmed) => {
+              await openPillCountFollowupSheet({
+                count: confirmed.count,
+                defaultMedId: preview.medId,
+                mode: confirmed.mode,
+              });
+            },
+          });
+        } else {
+          const { openPillCountFollowupSheet } = await import('../features/pillCounterFollowup');
+          await openPillCountFollowupSheet({
+            count: preview.count,
+            defaultMedId: preview.medId,
+            mode: preview.mode,
+          });
+        }
+      } catch (e) {
+        toast(`打开失败：${e instanceof Error ? e.message : String(e)}`);
+      }
+    };
+
+    previewWrap.append(actionBtn);
+    card.append(previewWrap);
+  }
+
   // 4. 卡片底部跳转操作
   if (targetPath) {
     const actionText = variant === 'medication' ? '查看今日用药' : variant === 'inventory' ? '管理药品库存' : '查看完整历史';
