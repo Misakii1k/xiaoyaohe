@@ -1,6 +1,6 @@
 import { confirmDialog } from '../ui/components';
 
-export type AiDataKind = 'medicine-photo' | 'prescription' | 'assistant-chat' | 'web-search';
+export type AiDataKind = 'medicine-photo' | 'prescription' | 'pill-photo' | 'assistant-chat' | 'web-search';
 export type AiConsentCategory = 'health' | 'assistant';
 
 export interface StoredAiConsent {
