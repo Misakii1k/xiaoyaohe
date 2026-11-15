@@ -15,6 +15,7 @@ import {
   type PillDetectOptions,
   type PillPoint,
 } from './pillDetection';
+import type { PillDetectionMode } from './pillEngine';
 
 export { detectPillsFromImageData };
 export type { PillDetectOptions, PillPoint };
@@ -31,6 +32,7 @@ export interface PillCountResult {
 export interface PillCounterSheetOptions {
   image: Blob | File | string;
   initialPoints?: PillPoint[];
+  mode?: PillDetectionMode;
   onConfirm?: (result: PillCountResult) => void | Promise<void>;
   onRetake?: () => void;
   onCancel?: () => void;

@@ -71,4 +71,23 @@ describe('scanner workbench visual contracts', () => {
     expect(unavailable).toContain("'相册识别条码'");
     expect(unavailable).not.toContain("banner('warn', message)");
   });
+
+  it('wires loose/blister segmented mode and torch toolbar above preview without polluting camera-actions', () => {
+    const page = readFileSync(join(root, 'src/pages/ScanSort.ts'), 'utf8');
+    const pillBlock = page.slice(
+      page.indexOf('async function openPillCamera'),
+      page.indexOf('async function startPillCounting'),
+    );
+    const capture = page.slice(
+      page.indexOf('async function openCameraCapture'),
+      page.indexOf('function renderCameraUnavailable'),
+    );
+
+    expect(pillBlock).toContain('createSegmentedControl');
+    expect(pillBlock).toContain('散落药片');
+    expect(pillBlock).toContain('整板药片');
+    expect(pillBlock).toContain('pill-camera-toolbar');
+    expect(capture).toContain('torch');
+    expect(capture).toContain('toolbarEl');
+  });
 });

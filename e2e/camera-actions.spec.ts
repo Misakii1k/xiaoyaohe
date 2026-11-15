@@ -99,6 +99,18 @@ test('opens the in-app camera directly from the quick pill counter card', async 
 
   // 点击快捷卡后直接进入相机取景，而不是弹系统文件管理器。
   await expect(page.locator('.camera-capture-card')).toContainText('拍照数药片');
+  await expect(page.locator('.pill-camera-toolbar')).toBeVisible();
+  const looseTab = page.locator('.pill-camera-toolbar').getByRole('button', { name: '散落药片' });
+  const blisterTab = page.locator('.pill-camera-toolbar').getByRole('button', { name: '整板药片' });
+  await expect(looseTab).toHaveAttribute('aria-pressed', 'true');
+  await expect(blisterTab).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.camera-actions .btn')).toHaveCount(3);
+
+  await blisterTab.click();
+  await expect(blisterTab).toHaveAttribute('aria-pressed', 'true');
+  await expect(looseTab).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.camera-capture-card')).toContainText('整板');
+
   await expect(page.getByRole('button', { name: '拍照' })).toBeVisible();
   await expect(page.getByRole('button', { name: '相册上传' })).toBeVisible();
   await expect(page.getByRole('button', { name: '返回' })).toBeVisible();

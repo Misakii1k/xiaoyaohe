@@ -58,6 +58,8 @@ import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { applyExplicitDose, createMedicationDraft } from '../domain/medicationDraft';
 import { suggestStructuredDose } from '../features/inventory';
 import { openPillCounterSheet } from '../features/pillCounter';
+import type { PillDetectionMode } from '../features/pillEngine';
+import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
 
 type ScanMode = 'code' | 'sheet' | 'pill';
 
@@ -157,11 +159,13 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
   content.append(home, backRow, panel, codeFile, sheetFile, pillFile);
   backBtn.onclick = () => renderHome();
 
+  let pillMode: PillDetectionMode = 'loose';
+
   pillFile.onchange = async () => {
     const file = pillFile.files?.[0];
     pillFile.value = '';
     if (!file || disposed || mode !== 'pill') return;
-    await startPillCounting(file);
+    await startPillCounting(file, pillMode);
   };
 
   codeFile.onchange = async () => {
@@ -663,27 +667,63 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
     setResultBusy(resultBox, false);
   }
 
+  const pillCameraSub = (currentMode: PillDetectionMode): string =>
+    currentMode === 'blister'
+      ? '整板拍全、尽量平整无反光，空泡与有药泡罩更容易分清。'
+      : '药片摊开、彼此留一点空隙；桌面颜色和药片差别越大，认得越准。';
+
   async function openPillCamera(): Promise<void> {
+    const toolbar = el('div', { class: 'pill-camera-toolbar' });
+    const modeSwitch = createSegmentedControl<PillDetectionMode>(
+      '清点方式',
+      [
+        { value: 'loose', label: '散落药片' },
+        { value: 'blister', label: '整板药片' },
+      ],
+      pillMode,
+      (next) => {
+        pillMode = next;
+        const subEl = toolbar
+          .closest('.camera-capture-card')
+          ?.querySelector<HTMLElement>('.camera-capture-sub');
+        if (subEl) subEl.textContent = pillCameraSub(next);
+      },
+    );
+    const torchBtn = el('button', {
+      type: 'button',
+      class: 'btn tonal pill-torch-btn',
+      text: '补光灯',
+      'aria-pressed': 'false',
+    } as any) as HTMLButtonElement;
+    torchBtn.dataset.torchToggle = '1';
+    torchBtn.hidden = true;
+    toolbar.append(modeSwitch, torchBtn);
+
     await openCameraCapture({
       title: '拍照数药片',
-      sub: '药片摊开、彼此留一点空隙；桌面颜色和药片差别越大，认得越准。',
+      sub: pillCameraSub(pillMode),
       filenamePrefix: 'pills',
       box: resultBox,
       hint,
       controller: cameraCapture,
       isActive: () => !disposed && mode === 'pill',
       cardClass: 'pill-camera-card',
-      onCapture: (file) => startPillCounting(file),
+      toolbarEl: toolbar,
+      onCapture: (file) => startPillCounting(file, pillMode),
       onAlbum: () => pillFile.click(),
       onClose: renderPillStart,
     });
   }
 
-  async function startPillCounting(file: File): Promise<void> {
+  async function startPillCounting(
+    file: File,
+    captureMode: PillDetectionMode = pillMode,
+  ): Promise<void> {
     if (disposed) return;
     try {
       await openPillCounterSheet({
         image: file,
+        mode: captureMode,
         onConfirm: (res) => {
           toast(`已完成清点：共 ${res.count} 粒药片`);
           if (!disposed && mode === 'pill') renderPillStart();
@@ -1538,6 +1578,7 @@ async function openCameraCapture(opts: {
   controller: CameraCaptureController;
   isActive: () => boolean;
   cardClass?: string;
+  toolbarEl?: HTMLElement;
   onCapture: (file: File) => Promise<void>;
   onAlbum: () => void;
   onClose: () => void;
@@ -1550,12 +1591,15 @@ async function openCameraCapture(opts: {
 
   const sessionId = opts.controller.begin();
   let stream: MediaStream | null = null;
+  let activeTrack: MediaStreamTrack | null = null;
+  let torchOn = false;
   let closed = false;
   const card = el('div', {
     class: `card camera-capture-card${opts.cardClass ? ` ${opts.cardClass}` : ''}`,
   });
   card.append(el('div', { class: 'big', text: opts.title }));
-  card.append(el('div', { class: 'muted', text: opts.sub }));
+  card.append(el('div', { class: 'muted camera-capture-sub', text: opts.sub }));
+  if (opts.toolbarEl) card.append(opts.toolbarEl);
 
   const preview = el('div', { class: 'camera-preview' });
   const video = document.createElement('video');
@@ -1580,6 +1624,11 @@ async function openCameraCapture(opts: {
     closed = true;
     document.body.classList.remove('camera-capture-active');
     opts.controller.detach(stopWithoutRestore);
+    if (torchOn && activeTrack && typeof activeTrack.applyConstraints === 'function') {
+      void activeTrack
+        .applyConstraints({ advanced: [{ torch: false } as MediaTrackConstraintSet] })
+        .catch(() => {});
+    }
     stream?.getTracks().forEach((track) => track.stop());
     video.srcObject = null;
     if (restore && opts.isActive()) {
@@ -1625,6 +1674,29 @@ async function openCameraCapture(opts: {
       return;
     }
     video.srcObject = stream;
+    activeTrack = stream.getVideoTracks()[0] ?? null;
+    const torchBtn = opts.toolbarEl?.querySelector<HTMLButtonElement>('[data-torch-toggle]');
+    const caps = (
+      activeTrack?.getCapabilities?.() as (MediaTrackCapabilities & { torch?: boolean }) | undefined
+    );
+    if (torchBtn && activeTrack && caps?.torch && typeof activeTrack.applyConstraints === 'function') {
+      torchBtn.hidden = false;
+      torchBtn.onclick = async () => {
+        if (closed || !activeTrack) return;
+        const nextTorch = !torchOn;
+        try {
+          await activeTrack.applyConstraints({
+            advanced: [{ torch: nextTorch } as MediaTrackConstraintSet],
+          });
+          torchOn = nextTorch;
+          torchBtn.setAttribute('aria-pressed', String(torchOn));
+          torchBtn.classList.toggle('is-active', torchOn);
+        } catch {
+          torchBtn.setAttribute('aria-pressed', 'false');
+          toast('当前设备暂不支持补光灯');
+        }
+      };
+    }
     await video.play();
     if (!opts.controller.isCurrent(sessionId) || closed || !opts.isActive()) return;
     setHint(opts.hint, 'info', '相机已打开，对准后点击底部拍照');
