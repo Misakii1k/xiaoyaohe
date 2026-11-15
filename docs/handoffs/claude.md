@@ -8,6 +8,31 @@ Latest version: `1.2.9` (Android `versionCode: 86`, 修复拍照数药片云端�
 
 ## Summary of Accomplished Work
 
+### 85. 数药片 4.0「清点台」视觉重排与记账抽屉信息重构（`workspace/claude`，本地提交 `c95fa59`，未发版）
+
+1. **清点抽屉重排**（`src/features/pillCountDisplay.ts` 新增、`src/features/pillCounter.ts`、`src/ui/styles/pages/pill-counter.css` 全量重写）：
+   - 采用「清点台」方向：照片是样本、数字是答案、工具是仪器；主层只保留数量 / 照片 / 确认，模式降到次层，撤销 / 长按看原图 / 还原视图收进辅助行；
+   - 新增共享 `createPillCountDisplay`，严格保持 `textContent` 为「共 N 粒」，带 `role=status` / `aria-live` / 数字变更脉冲；数字用 `34px * --care-scale` tabular，标题行右侧放关闭键；
+   - 模式切换独占整行，云端授权压成 32px 薄荷内联条并缩短为「云端识别更准」，画布 38dvh，4 个工具一行，底部「确认 N 粒」吸底常驻；0 粒时禁用确认并显示「没数到药片，试试点样本校准」空态浮层；
+   - 320×568 下抽屉接近全高、画布收到 26dvh，让工具行、辅助行、框选/药板子工具条与吸底确认全部可见；320 下隐藏颜色图例、框选子条只留「仅数框内 / 清除框选」两键。
+2. **清点结果抽屉重构**（`src/features/pillCounterFollowup.ts`、同页 CSS）：
+   - 标题改为「清点结果怎么记？」，大数字与关闭键同排；新增库存变化卡（现在 → 记完 / 当日应取 vs 实点 + 比例条 + 结论胶囊）；
+   - 主按钮随方式动态变为「设为剩余 N 粒 / 累加 N 粒 / 完成核对」，不可执行时禁用并给出原因；记账区吸底，三种方式与 390/320 均无需滚动即可完成。
+3. **交互修复与全局合规**：
+   - 修复框选、拖网格角点、缩放平移后落点被 click 兜底误补一个手动点的问题；新增 E2E 回归覆盖「拖框后计数不变且不出现手动点」；
+   - 手动补点不再参与药片颜色聚类，图例改为「自动 N / 手动 N」，避免把误点的深色背景说成「深色药粒」；
+   - `.bottom-sheet-overlay` 删除 `backdrop-filter` / `-webkit-backdrop-filter`（影响全站所有底抽屉，符合项目「下线液态玻璃」规则，如需只改数药片可回退这两行）；
+   - `.pill-camera-toolbar` 改为单行、40px 分段与紧凑内边距，320/390 不再折行。
+4. **验证与取证**：
+   - `npm run typecheck` 通过；Vitest **105 文件 / 724 项**全过（基线 722 + 新增 2）；Playwright **16/16** 通过（phone-320 / phone-390 / tablet-landscape / desktop），含新增框选回归；
+   - 截图：`output/pill-counter-ui/after/` 17 张（散落、整板、空态、记账三种、320 记账/整板/框选、相机工具条、关怀大字、暗色、手动点图例、桌面 1280、1280@200%）；
+   - 前后对照：`output/pill-counter-ui/compare/core/stitch.png`（390 散落/整板、320 散落、390 空态）、`compare/followup/stitch.png`（记账与桌面）、`compare/states/stitch.png`（8 个改后状态）。
+   - 200% 缩放按「640×400 CSS 视口 + DPR 2」模拟桌面 1280 浏览器 200% 缩放；关怀大字与暗色在抽屉打开后切换 `data-care` / `data-theme` 实测。
+5. **范围与遗留**：
+   - 按用户要求只做本地提交，未 push、未 bump `1.2.9`、未改 release 产物；未跑 `npm run build`（oil-ui 只要求 typecheck/lint，单测与 E2E 已通过）；
+   - 未派独立视觉评审，由主 Agent 逐张看截图自查；
+   - 工作区保留两条与本任务无关的未提交内容：`AGENTS.md` 既有修改、`design/brand/raw/「分药助手横屏专用」盔宝 · 分药小管家.png` 既有删除；均未纳入 `c95fa59`。
+
 ### 84. 修复拍照数药片云端返回空结果及本地强阴影/反光误检（`workspace/claude`，`v1.2.9` / `versionCode: 86`）
 
 1. **云端识别多策略级联与防误报 0 粒**（`functions/api/count-pills.ts`、`src/features/pillCounterClient.ts`）：
