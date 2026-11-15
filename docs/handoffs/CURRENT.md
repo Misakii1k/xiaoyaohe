@@ -2,15 +2,20 @@
 
 Updated: 2026-11-15
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.10` (versionCode 87)
-Latest integration commit: `workspace/claude` 数药片 4.0「清点台」UI 重排与记账抽屉重构 — v1.2.10 (versionCode 87)
+Product version: `1.2.11` (versionCode 88)
+Latest integration commit: `workspace/claude` 全站页面连续转场与补光灯修复 — v1.2.11 (versionCode 88)
 
-## Workspace pending (workspace/claude, 未发版)
+## Release v1.2.11 (versionCode 88, workspace/claude)
 
-- **补光灯修复**（本地提交 `ecd4299`）：`.pill-torch-btn` 不再继承 `.btn` 的 `width:100%`，数药片相机工具条恢复「散落药片 / 整板药片 / 补光灯」单行；新增 `e2e/camera-actions.spec.ts` 回归。
-- **全站页面连续转场**（本地提交 `752bd9c`）：新增 `src/ui/motion.ts` / `motion.css`，接入主 Tab、子页进入/返回、子页换页四条路径；分段控件增加滑动指示块，设置面板收起补齐 `max-height` 过渡；减少动态效果时直接到位。
-- **门禁**：`npm run typecheck` 0 错误；Vitest **105 / 724**；`npm run build:web` 通过；Playwright 四视口 **160/160**（含新增动效 16 项）。本地 Web Bundle 8,378,698 字节 / sha256 `78956ae6…`，已覆盖本地 `release/xiaoyaohe-1.2.10-web-bundle.zip` 与 `version.json`，与远端 v1.2.10 Release（8,376,446 / `2cf64b2c…`）暂不一致。
-- **未推送、未发版**：工作区仍保留 `AGENTS.md` 既有修改与 design PNG 既有删除；上述两份提交未 push，也未 bump 版本。
+- **核心改动**：
+  - 全站页面连续转场：主 Tab、进入子页、从子页返回、子页换页都改为旧页退场 + 新页入场，不再白屏硬切；进入 420ms、退出 280ms，新页不透明覆盖旧页避免文字重影，返回时旧子页右滑露出恢复的 Tab；
+  - 分段控件新增滑动指示块，首帧/缩放/字体加载直接到位；设置面板收起补齐 `max-height` 与透明度过渡，修掉关闭瞬间高度归零；
+  - 补光灯按钮不再继承 `.btn` 的 `width:100%`，数药片相机工具条恢复「散落药片 / 整板药片 / 补光灯」单行；
+  - 减少动态效果时页面直接到位；首屏/子页换页动画增加进行中标记，测试与调试可判断动画落定。
+- **质量门禁与产物**：`npm run release:build` 通过；Vitest **105 文件 / 724 项**、Playwright 4 视口 **160/160** 全过；双遍 Web 构建、Capacitor 同步、Gradle 签名打包与 118 个内嵌资源校验通过。APK **21,009,850** 字节（sha256 `71d226d05929c55623ebbcf6147ed2b8c8f6bde1cb5ef8346a75cf56bf4128c1`，较 v1.2.10 的 21,007,746 字节 +2,104），Web Bundle **8,378,552** 字节（sha256 `5ed832f96464f19369bd4b4887b5ce1abd321eec11d1e0f6a9c42d12399612bc`）。
+- **发布说明**：`docs/releases/1.2.11.md`，3 条大白话，已通过 `tone_lint.py` 与 `tests/releaseNotesJargon.test.ts`。
+- **状态**：由 `release:publish` 提交发版白名单文件、打 `v1.2.11` tag、推送 `workspace/claude`、快进 `main`、创建 GitHub Release 并执行线上冒烟。
+- **遗留**：从子页返回左侧约 40px 旧 Tab 边缘属推入动效正常露出；`#app { overflow:hidden }` 对贴边 tooltip/焦点环的影响仍以真机复核为准。
 
 ## Release v1.2.10 (versionCode 87, workspace/claude)
 
