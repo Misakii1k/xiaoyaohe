@@ -57,6 +57,8 @@ import {
 import { setPendingMedicationBatch } from '../ai/pendingMedicationBatch';
 import { recognizeMedicationImageBatch } from '../features/medicationBatch';
 import { processInventoryReviewCommits } from '../features/inventoryReview';
+import { openPillCounterSheet } from '../features/pillCounter';
+import { openPillCountFollowupSheet } from '../features/pillCounterFollowup';
 
 type InventoryFilter = 'all' | 'low' | 'empty' | 'unset' | 'days_low';
 
@@ -102,6 +104,43 @@ export async function renderMedInventoryPage(root: HTMLElement, signal?: AbortSi
         desc: '拍照/相册数药量',
         icon: 'sparkles',
         onClick: () => { sheet?.close(); openInventorySmartSheet(root, sorted, rulesByMedId, signal); },
+      },
+      {
+        title: '拍照数药片',
+        desc: '点数后直接更新剩余',
+        icon: 'camera',
+        onClick: () => {
+          sheet?.close();
+          const input = el('input', {
+            type: 'file',
+            accept: 'image/*',
+            hidden: 'true',
+          } as any) as HTMLInputElement;
+          document.body.append(input);
+          input.onchange = () => {
+            const file = input.files?.[0];
+            input.remove();
+            if (!file || signal?.aborted) return;
+            void openPillCounterSheet({
+              image: file,
+              onConfirm: async (res) => {
+                await openPillCountFollowupSheet({
+                  count: res.count,
+                  mode: res.mode,
+                  onDone: async (done) => {
+                    if (done.ok && !signal?.aborted) {
+                      await renderMedInventoryPage(root, signal);
+                    }
+                  },
+                });
+              },
+            });
+          };
+          input.click();
+          setTimeout(() => {
+            if (input.isConnected && !input.files?.length) input.remove();
+          }, 60_000);
+        },
       },
       {
         title: '历史操作',

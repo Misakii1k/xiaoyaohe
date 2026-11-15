@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import sharp from 'sharp';
+import { seedVisualFixtures } from './visual-fixtures';
 
 const PILLS = [
   { x: 60, y: 60 },
@@ -137,4 +138,30 @@ test('switches to blister mode, adjusts grid steppers, and toggles cavity state'
     },
   });
   await expect(sheet).toContainText('共 5 粒');
+});
+
+test('counts pills from inventory operations sheet and sets medication remaining stock', async ({ page }) => {
+  await seedVisualFixtures(page);
+  const photo = await makePillPhoto();
+  await page.goto('/#/meds/inventory');
+
+  await page.getByRole('button', { name: '更多操作' }).click();
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.locator('.inventory-more-tile', { hasText: '拍照数药片' }).click(),
+  ]);
+  await chooser.setFiles({ name: 'pills.png', mimeType: 'image/png', buffer: photo });
+
+  const sheet = page.locator('.pill-counter-sheet');
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toContainText('共 5 粒');
+  await page.getByRole('button', { name: '确认 5 片' }).click();
+
+  const followup = page.locator('.pill-followup-sheet');
+  await expect(followup).toBeVisible();
+  await expect(followup).toContainText('共 5 粒');
+  await followup.getByRole('button', { name: '确认执行' }).click();
+  await expect(followup).toBeHidden();
+
+  await expect(page.locator('.inventory-card-days').first()).toContainText('剩余 5片');
 });

@@ -58,6 +58,7 @@ import { rescheduleMedicationReminders } from '../features/reminderScheduler';
 import { applyExplicitDose, createMedicationDraft } from '../domain/medicationDraft';
 import { suggestStructuredDose } from '../features/inventory';
 import { openPillCounterSheet } from '../features/pillCounter';
+import { openPillCountFollowupSheet } from '../features/pillCounterFollowup';
 import type { PillDetectionMode } from '../features/pillEngine';
 import { createSegmentedControl } from '../ui/primitives/SegmentedControl';
 
@@ -727,6 +728,11 @@ export function renderScanSortPage(root: HTMLElement, routeSignal?: AbortSignal)
         onConfirm: (res) => {
           toast(`已完成清点：共 ${res.count} 粒药片`);
           if (!disposed && mode === 'pill') renderPillStart();
+          void openPillCountFollowupSheet({
+            count: res.count,
+            mode: res.mode,
+            skipIfNoMeds: true,
+          });
         },
         onRetake: () => {
           if (!disposed && mode === 'pill') void openPillCamera();
