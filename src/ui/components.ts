@@ -734,11 +734,9 @@ export function tabbar(active: string): HTMLElement {
     a.append(ic);
     a.append(el('span', { html: item.label }));
     a.addEventListener('click', (e) => {
-      const targetHash = `#${item.href}`;
-      if (typeof location !== 'undefined' && location.hash === targetHash) {
-        e.preventDefault();
-        navigate(item.href);
-      }
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      navigate(item.href, { source: 'primary-navigation' });
     });
     bar.append(a);
   }

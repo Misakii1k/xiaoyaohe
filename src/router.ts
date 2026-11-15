@@ -1,4 +1,5 @@
 import { reportSilentFailure } from './app/diagnostics';
+import { primaryNavigation } from './app/navigation';
 import {
   animatePageIn,
   animatePageSwap,
@@ -8,6 +9,7 @@ import {
   transitionPages,
 } from './ui/motion';
 import {
+  adoptSubpageContainer,
   dispatchTabEvent,
   getActiveTabKey,
   getCachedTabEntry,
@@ -74,6 +76,29 @@ let activeCleanup: RouteCleanup | null = null;
 let activeSubpageCleanup: RouteCleanup | null = null;
 let navigationSeq = 0;
 let hashChangeListener: (() => void) | null = null;
+let pendingNavigationSource: 'primary-navigation' | null = null;
+
+const PRIMARY_NAV_PATHS = new Set(primaryNavigation.map((item) => normalizeRoutePath(item.href)));
+
+/** 当前真正占屏的页面；子页覆盖时以子页为准，避免把被盖住的 Tab 当成来源。 */
+function getActiveSurfacePath(): string | null {
+  const subpageEl = getExistingSubpageContainer();
+  if (subpageEl && !subpageEl.hidden) return subpageEl.dataset.routePath ?? null;
+  const tab = getActiveTabKey();
+  return tab ? normalizeRoutePath(tab) : null;
+}
+
+/** 两个底部一级页面之间只做即时切换，不再播放整页转场。 */
+function isPrimaryNavSwitch(from: string | null, to: string): boolean {
+  return Boolean(from && PRIMARY_NAV_PATHS.has(from) && PRIMARY_NAV_PATHS.has(to));
+}
+
+/** 即时切换时收回用作底片的页面，同时清掉临时禁用交互的状态。 */
+function hideSurface(el: HTMLElement): void {
+  hideElement(el);
+  el.inert = false;
+  el.style.pointerEvents = '';
+}
 
 /** 注册路由，path 形如 "/meds/:id" */
 export function route(path: string, handler: RouteHandler): void {
@@ -104,7 +129,8 @@ function runRouteTransitionCleanups(): void {
   for (const cleanup of routeTransitionCleanups) runCleanupSafely(cleanup);
 }
 
-export function navigate(to: string): void {
+export function navigate(to: string, options?: { source?: 'primary-navigation' }): void {
+  if (options?.source) pendingNavigationSource = options.source;
   const normalized = normalizeRoutePath(to);
   if (location.hash !== `#${normalized}`) {
     location.hash = normalized;
@@ -152,6 +178,9 @@ function abortTransientController(previousTabKey: PrimaryTabRoute | null): void 
 }
 
 async function dispatch(): Promise<void> {
+  const navigationSource = pendingNavigationSource;
+  pendingNavigationSource = null;
+  const previousSurfacePath = getActiveSurfacePath();
   const navigationId = ++navigationSeq;
   resetPageMotion();
   const rawPath = location.hash.replace(/^#/, '') || defaultPath;
@@ -162,7 +191,10 @@ async function dispatch(): Promise<void> {
   if (targetTabKey) {
     const previousTabKey = getActiveTabKey();
     const previousTabEntry = previousTabKey ? getCachedTabEntry(previousTabKey) : undefined;
-    const animate = motionEnabled();
+    const instantPrimary =
+      navigationSource === 'primary-navigation' || isPrimaryNavSwitch(previousSurfacePath, path);
+    const animate = motionEnabled() && !instantPrimary;
+    const targetRendered = Boolean(getCachedTabEntry(targetTabKey)?.rendered);
 
     // Abort transient/subpage controller if any (preserve rendered keep-alive tab controller)
     abortTransientController(previousTabKey);
@@ -179,9 +211,14 @@ async function dispatch(): Promise<void> {
     const subpageEl = getExistingSubpageContainer();
     const leavingSubpage = Boolean(subpageEl && !subpageEl.hidden);
     const keepSubpageForExit = Boolean(leavingSubpage && animate);
-    if (subpageEl && !keepSubpageForExit) {
+    // 首屏首次渲染时把旧子页留在屏幕上，等新 Tab 渲染好再一次性换掉，避免空白帧。
+    const keepSubpageForInstantRender = Boolean(
+      leavingSubpage && instantPrimary && !targetRendered,
+    );
+    if (subpageEl && !keepSubpageForExit && !keepSubpageForInstantRender) {
       hideElement(subpageEl);
       subpageEl.replaceChildren();
+      delete subpageEl.dataset.routePath;
     }
     // Remove any orphaned non-tab, non-subpage DOM children from rootEl
     if (rootEl) {
@@ -193,7 +230,8 @@ async function dispatch(): Promise<void> {
     }
 
     // If another tab was active, save its scroll, dispatch deactivation, and hide it.
-    // 有动效时先把旧页留在屏幕上当背景，等新页渲染完再接手；测试环境没有 WAAPI 仍即时隐藏。
+    // 一级页之间即时切换；只有新 Tab 首次渲染时先把旧 Tab 留作底片，渲染完再换。
+    let heldTabForInstantRender: HTMLElement | null = null;
     if (previousTabKey && previousTabKey !== targetTabKey) {
       const prevEntry = previousTabEntry;
       if (prevEntry) {
@@ -203,12 +241,13 @@ async function dispatch(): Promise<void> {
           path,
           nextTab: targetTabKey,
         });
-        if (animate) {
+        if (instantPrimary && !targetRendered && !leavingSubpage) {
           prevEntry.container.style.pointerEvents = 'none';
           prevEntry.container.inert = true;
           prevEntry.container.setAttribute('aria-hidden', 'true');
+          heldTabForInstantRender = prevEntry.container;
         } else {
-          hideElement(prevEntry.container);
+          hideSurface(prevEntry.container);
         }
       }
     }
@@ -252,12 +291,11 @@ async function dispatch(): Promise<void> {
     runRouteTransitionCleanups();
 
     const entry = getOrCreateTabContainer(targetTabKey, rootEl);
-    const oldTab =
-      previousTabEntry && previousTabKey !== targetTabKey ? previousTabEntry.container : null;
     const settleSubpageExit = () => {
       if (!subpageEl) return;
       hideElement(subpageEl);
       subpageEl.replaceChildren();
+      delete subpageEl.dataset.routePath;
     };
 
     if (entry.rendered) {
@@ -276,19 +314,21 @@ async function dispatch(): Promise<void> {
           oldOver: true,
           after: settleSubpageExit,
         });
-      } else if (oldTab && !oldTab.hidden) {
-        if (!transitionPages(oldTab, entry.container, 'tab')) hideElement(oldTab);
-      } else if (animate) {
-        animatePageIn(entry.container, 'initial');
       }
       announceNavigation();
       return;
     }
 
-    // First render of this tab. 先把旧页留在屏幕上，等新页真正渲染完再开始翻页。
+    // First render of this tab. 即时切换时先把旧页当作底片，等新页真正渲染完再换掉。
     setActiveTabKey(targetTabKey);
     showElement(entry.container);
-    const pendingPage = Boolean(oldTab && animate && preparePage(entry.container, 'tab'));
+    const stagedInstantRender = Boolean(
+      heldTabForInstantRender && preparePage(entry.container, 'tab'),
+    );
+    if (heldTabForInstantRender && !stagedInstantRender) {
+      hideSurface(heldTabForInstantRender);
+      heldTabForInstantRender = null;
+    }
 
     const controller = new AbortController();
     entry.controller = controller;
@@ -310,12 +350,24 @@ async function dispatch(): Promise<void> {
       }
 
       if (controller.signal.aborted || navigationId !== navigationSeq) {
-        if (pendingPage) resetPageMotion();
+        if (stagedInstantRender) resetPageMotion();
+        if (heldTabForInstantRender) showElement(heldTabForInstantRender);
         runCleanupSafely(entry.cleanup ?? null);
         entry.cleanup = null;
         return;
       }
       entry.rendered = true;
+      if (stagedInstantRender) {
+        if (heldTabForInstantRender) hideSurface(heldTabForInstantRender);
+        heldTabForInstantRender = null;
+        resetPageMotion();
+        showElement(entry.container);
+      }
+      if (keepSubpageForInstantRender && subpageEl) {
+        hideElement(subpageEl);
+        subpageEl.replaceChildren();
+        delete subpageEl.dataset.routePath;
+      }
       dispatchTabEvent('activated', targetTabKey, entry.container, {
         tab: targetTabKey,
         path,
@@ -326,22 +378,19 @@ async function dispatch(): Promise<void> {
           oldOver: true,
           after: settleSubpageExit,
         });
-      } else if (pendingPage && oldTab) {
-        if (!transitionPages(oldTab, entry.container, 'tab')) hideElement(oldTab);
-      } else if (animate && !keepSubpageForExit) {
-        animatePageIn(entry.container, 'initial');
       }
       announceNavigation();
     } catch (cause) {
       if (controller.signal.aborted || navigationId !== navigationSeq) {
-        if (pendingPage) resetPageMotion();
+        if (stagedInstantRender) resetPageMotion();
+        if (heldTabForInstantRender) showElement(heldTabForInstantRender);
         runCleanupSafely(entry.cleanup ?? null);
         entry.cleanup = null;
         return;
       }
       controller.abort();
       if (activeController === controller) activeController = null;
-      if (pendingPage) resetPageMotion();
+      if (stagedInstantRender) resetPageMotion();
       runCleanupSafely(entry.cleanup ?? null);
       entry.cleanup = null;
       renderRouteError(cause);
@@ -352,9 +401,12 @@ async function dispatch(): Promise<void> {
   // 2. Destination is a Subpage / non-tab route
   const previousTabKey = getActiveTabKey();
   const previousTabEntry = previousTabKey ? getCachedTabEntry(previousTabKey) : undefined;
-  const animate = motionEnabled();
+  const instantPrimary =
+    navigationSource === 'primary-navigation' || isPrimaryNavSwitch(previousSurfacePath, path);
+  const animate = motionEnabled() && !instantPrimary;
   const previousSubpage = getExistingSubpageContainer();
   const replacingSubpage = Boolean(previousSubpage && !previousSubpage.hidden);
+  const stageInstantSubpage = Boolean(instantPrimary && previousTabEntry && !replacingSubpage);
   let backdropTab: HTMLElement | null = null;
   if (previousTabKey) {
     const prevEntry = previousTabEntry;
@@ -365,8 +417,8 @@ async function dispatch(): Promise<void> {
         path,
         nextTab: null,
       });
-      if (animate) {
-        // 子页盖上来之前先留着 Tab 当底片；子页渲染完成后一起推走。
+      if (animate || stageInstantSubpage) {
+        // 子页盖上来之前先留着 Tab 当底片；转场时一起推走，即时切换时等子页渲染完再撤。
         backdropTab = prevEntry.container;
         backdropTab.style.pointerEvents = 'none';
         backdropTab.inert = true;
@@ -396,12 +448,33 @@ async function dispatch(): Promise<void> {
   const isUsingTabPool = hasKeepAliveRoutes();
   let subpageEl: HTMLElement | null = null;
   let preparedSubpage = false;
+  let replacedSubpageEl: HTMLElement | null = null;
+  let stagedSubpageReplacement = false;
   if (isUsingTabPool) {
-    subpageEl = getOrCreateSubpageContainer(rootEl);
-    subpageEl.replaceChildren();
-    showElement(subpageEl);
-    if (backdropTab) {
-      preparedSubpage = preparePage(subpageEl, 'forward');
+    if (instantPrimary && replacingSubpage && previousSubpage) {
+      // 子页之间即时换页：新页先在另一层渲染到透明完成，旧页留在原位，最后一次性替换。
+      replacedSubpageEl = previousSubpage;
+      subpageEl = document.createElement('div');
+      subpageEl.className = 'tab-keepalive-subpage';
+      rootEl.append(subpageEl);
+      showElement(subpageEl);
+      subpageEl.style.opacity = '0';
+      subpageEl.style.pointerEvents = 'none';
+      stagedSubpageReplacement = true;
+    } else {
+      subpageEl = getOrCreateSubpageContainer(rootEl);
+      subpageEl.replaceChildren();
+      delete subpageEl.dataset.routePath;
+      showElement(subpageEl);
+      subpageEl.style.opacity = '';
+      subpageEl.style.pointerEvents = '';
+      if (backdropTab && animate) {
+        preparedSubpage = preparePage(subpageEl, 'forward');
+      } else if (stageInstantSubpage) {
+        // 旧 Tab 继续当底片，新子页先在透明状态下完成布局与取数，再一次性显形。
+        subpageEl.style.opacity = '0';
+        subpageEl.style.pointerEvents = 'none';
+      }
     }
     targetContainer = subpageEl;
   } else {
@@ -425,6 +498,10 @@ async function dispatch(): Promise<void> {
 
     if (controller.signal.aborted || navigationId !== navigationSeq) {
       if (preparedSubpage) resetPageMotion();
+      if (stageInstantSubpage && subpageEl) {
+        subpageEl.style.opacity = '';
+        subpageEl.style.pointerEvents = '';
+      }
       if (backdropTab) showElement(backdropTab);
       runCleanupSafely(routeCleanup);
       return;
@@ -438,18 +515,41 @@ async function dispatch(): Promise<void> {
     routeCleanup = null;
 
     if (subpageEl) {
+      subpageEl.dataset.routePath = path;
+      if (stagedSubpageReplacement) {
+        subpageEl.style.opacity = '1';
+        subpageEl.style.pointerEvents = '';
+        adoptSubpageContainer(subpageEl);
+        if (replacedSubpageEl) {
+          hideSurface(replacedSubpageEl);
+          replacedSubpageEl.replaceChildren();
+          replacedSubpageEl.remove();
+          replacedSubpageEl = null;
+        }
+      }
       if (preparedSubpage && backdropTab) {
-        if (!transitionPages(backdropTab, subpageEl, 'forward')) hideElement(backdropTab);
-      } else if (replacingSubpage) {
-        animatePageSwap(subpageEl);
-      } else if (animate) {
-        animatePageIn(subpageEl, 'initial');
+        if (!transitionPages(backdropTab, subpageEl, 'forward')) hideSurface(backdropTab);
+      } else {
+        if (stageInstantSubpage) {
+          subpageEl.style.opacity = '1';
+          subpageEl.style.pointerEvents = '';
+          if (backdropTab) hideSurface(backdropTab);
+        }
+        if (animate) {
+          if (replacingSubpage) animatePageSwap(subpageEl);
+          else animatePageIn(subpageEl, 'initial');
+        }
       }
     }
     announceNavigation();
   } catch (cause) {
     if (controller.signal.aborted || navigationId !== navigationSeq) {
       if (preparedSubpage) resetPageMotion();
+      if (stageInstantSubpage && subpageEl) {
+        subpageEl.style.opacity = '';
+        subpageEl.style.pointerEvents = '';
+      }
+      if (stagedSubpageReplacement && subpageEl) subpageEl.remove();
       if (backdropTab) showElement(backdropTab);
       runCleanupSafely(routeCleanup);
       return;
@@ -457,6 +557,7 @@ async function dispatch(): Promise<void> {
     controller.abort();
     if (activeController === controller) activeController = null;
     if (preparedSubpage) resetPageMotion();
+    if (stagedSubpageReplacement && subpageEl) subpageEl.remove();
     if (activeCleanup === routeCleanup) activeCleanup = null;
     if (activeSubpageCleanup === routeCleanup) activeSubpageCleanup = null;
     runCleanupSafely(routeCleanup);
@@ -577,4 +678,5 @@ export function resetRouterForTesting(): void {
   notFound = null;
   defaultPath = '/today';
   navigationSeq = 0;
+  pendingNavigationSource = null;
 }

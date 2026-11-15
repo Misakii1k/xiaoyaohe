@@ -162,6 +162,11 @@ export function getExistingSubpageContainer(): HTMLElement | null {
   return subpageContainer;
 }
 
+/** 用新的子页容器替换旧的（旧容器由调用方负责隐藏和移除）。 */
+export function adoptSubpageContainer(container: HTMLElement): void {
+  subpageContainer = container;
+}
+
 export function dispatchTabEvent(
   type: 'activated' | 'deactivated',
   tabKey: string,

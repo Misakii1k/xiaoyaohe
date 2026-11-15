@@ -13,35 +13,46 @@ async function preloadTabs(page: import('@playwright/test').Page) {
   await page.waitForTimeout(600);
 }
 
-test('switches cached tabs with a continuous layer swap', async ({ page }) => {
+test('switches primary navigation instantly without a page-layer swap', async ({ page }) => {
   await preloadTabs(page);
 
   await page.locator('.tab-keepalive-container:not([hidden]) a[href="#/meds"]').click();
   await expect(page.getByRole('heading', { level: 1, name: '药品' })).toBeVisible();
+  await page.waitForTimeout(600);
 
-  await expect(page.locator('.tab-keepalive-container[data-motion-layer="over"]')).toHaveCount(1, { timeout: 1_000 });
-  await expect(page.locator('.tab-keepalive-container[data-motion-layer="under"]')).toHaveCount(1, { timeout: 1_000 });
-
-  const layers = await page.evaluate(() =>
-    [...document.querySelectorAll<HTMLElement>('.tab-keepalive-container[data-motion-layer]')].map((el) => ({
-      route: el.getAttribute('data-tab-route'),
-      layer: el.getAttribute('data-motion-layer'),
-      animations: el.getAnimations().length,
-    })),
-  );
-  expect(layers).toHaveLength(2);
-  expect(layers.every((entry) => entry.animations > 0)).toBe(true);
-
+  await expect(page.locator('[data-motion-layer]')).toHaveCount(0);
   await expect(page.locator('.app-shell:visible')).toHaveCount(1, { timeout: 2_000 });
   const settled = await page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>('.tab-keepalive-container')].map((el) => ({
       route: el.getAttribute('data-tab-route'),
       hidden: el.hidden,
       layer: el.getAttribute('data-motion-layer'),
+      animations: el.getAnimations().length,
     })),
   );
-  expect(settled.find((entry) => entry.route === '/today')).toMatchObject({ hidden: true, layer: null });
-  expect(settled.find((entry) => entry.route === '/meds')).toMatchObject({ hidden: false, layer: null });
+  expect(settled.find((entry) => entry.route === '/today')).toMatchObject({ hidden: true, layer: null, animations: 0 });
+  expect(settled.find((entry) => entry.route === '/meds')).toMatchObject({ hidden: false, layer: null, animations: 0 });
+});
+
+test('keeps all five primary destinations on the instant path', async ({ page }) => {
+  await page.goto('/#/today');
+  await expect(page.getByRole('heading', { level: 1, name: TODAY_HEADING })).toBeVisible();
+  await page.waitForTimeout(400);
+
+  const targets = [
+    { href: '#/meds', heading: '药品' },
+    { href: '#/scan', heading: '分药' },
+    { href: '#/meds/inventory', heading: '库存' },
+    { href: '#/settings', heading: '我的' },
+    { href: '#/today', heading: TODAY_HEADING },
+  ];
+  for (const target of targets) {
+    await page.locator(`a[href="${target.href}"]:visible`).first().click();
+    await expect(page.getByRole('heading', { level: 1, name: target.heading })).toBeVisible();
+    await page.waitForTimeout(160);
+    await expect(page.locator('[data-motion-layer]')).toHaveCount(0);
+    await expect(page.locator('.app-shell:visible')).toHaveCount(1);
+  }
 });
 
 async function watchMotionLayers(page: import('@playwright/test').Page) {
