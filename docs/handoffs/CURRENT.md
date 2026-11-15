@@ -3,7 +3,16 @@
 Updated: 2026-11-15
 Integration branch: `main` (同步自 `workspace/claude`)
 Product version: `1.2.6` (versionCode 83)
-Latest integration commit: 准备推送与发布 — v1.2.6 (versionCode 83)
+Latest integration commit: `workspace/claude` 完成数药片 4.0 实现与全量门禁验证（待用户确认是否发版）
+
+## Unreleased Workspace Work (`workspace/claude`): 数药片 4.0
+
+- **核心改动**：
+  - 云端 Workers AI（`@cf/moondream/moondream3.1-9B-A2B` `task: 'point'`）+ 本地 CIE Lab 样本校准与透视整板网格（`evaluateBlisterGrid`）+ 可插拔二期本地模型钩子（`registerLocalYoloProvider`）；
+  - 相机与微调交互全面升级（散落/整板切换、硬件补光灯、1x–4x 缩放平移、撤销栈、区域框重数、按住看原图、非阻塞云端隐私授权横幅）；
+  - 业务与小助手深度闭环：清点结果直接回填库存/入库累加/核对分药，库存页「更多操作」与 AI 小助手 `count_pills` 结构化带图卡片双向贯通，并补充离线批量对比评估脚本 `scripts/bench-pills.mjs`。
+- **生产部署前置要求（重要）**：启用云端高精度数药片前，须在 **Cloudflare Pages Dashboard → Settings → Functions → Bindings → Workers AI** 添加名称为 `AI` 的绑定；未绑定时自动返回 `503 AI_NOT_BOUND` 并由前端无感降级到本地算法。
+- **质量门禁**：`npm run typecheck` 0 错误；Vitest **105/722** 全过；Playwright 4 视口 **136/136** 全过；`npm run build` 通过（638 模块，WebBundle `8,372,891` 字节）。
 
 ## Release v1.2.6 (versionCode 83, workspace/claude)
 

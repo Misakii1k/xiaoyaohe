@@ -4,9 +4,32 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-11-15
 Status: active
-Latest version: `1.2.6` (Android `versionCode: 83`, 已完成构建正发布)
+Latest version: `1.2.6` (Android `versionCode: 83`, 已完成功能实现待发版)
 
 ## Summary of Accomplished Work
+
+### 82. 数药片 4.0（云端 Moondream `point` 首选 + 本地视觉增强 + 整板网格 + AI/库存/分药全链路闭环，`workspace/claude`，未发版）
+
+1. **引擎契约与隐私同意扩展**（`src/ai/consent.ts`、`src/features/pillEngine.ts`）：
+   - `AiDataKind` 新增 `'pill-photo'` 数据授权类型；
+   - 定义 `PillDetectionMode`（`'loose' | 'blister'`）、`PillDetectionEngineKind`（`'cloud' | 'yolo_local' | 'heuristic_local'`）、`PillAppearanceCluster`、`PillGridConfig`、`PillROI` 与可插拔二期本地模型钩子 `registerLocalYoloProvider` / `getRegisteredLocalYoloProvider`。
+2. **Cloudflare Workers AI 零冷启动计数接口**（`functions/api/_shared.ts`、`functions/api/count-pills.ts`）：
+   - 实现 `POST /api/count-pills`，执行白名单 Origin（403）、缺失 `env.AI`（503 `AI_NOT_BOUND`）、请求体 >1.5MB（413 `PAYLOAD_TOO_LARGE`）及单 IP 每分钟 15 次限流（429 `RATE_LIMITED`）；
+   - 按 `mode` 调用 `@cf/moondream/moondream3.1-9B-A2B`（`task: 'point'`，散落/混药 `pill, tablet, or capsule`，整板泡罩 `unopened blister pocket containing a pill or capsule`，`max_objects: 250`）并将归一化坐标反算为像素点。
+   - **生产运维前置项**：上线云端视觉计数前，必须在 **Cloudflare Pages → Settings → Functions → Bindings → Workers AI** 添加变量名为 `AI` 的绑定；未绑定时接口返回 503 并自动平滑回退本地引擎。
+3. **本地视觉引擎升级与统一编排**（`src/features/pillDetection.ts`、`src/features/pillCounterClient.ts`）：
+   - 本地检测混入 CIE Lab 感知色距以提升深/浅低对比度背景稳定性，新增点击样本区域生长校准 `detectPillsFromSample`、透视双线性整板空满判定 `evaluateBlisterGrid` 与颜色外观聚类 `clusterPillAppearances`；
+   - `runPillDetectionPipeline` 实现图像 longest-edge 1024px 压缩、`'pill-photo'` 隐私授权门禁、8s 超时云端优先调度及平滑回退二期 `yolo_local` / 本地启发式算法 `heuristic_local`。
+4. **相机拍照、交互微调底抽屉与业务闭环**（`src/pages/ScanSort.ts`、`src/features/pillCounter.ts`、`src/features/pillCounterFollowup.ts`、`src/pages/MedInventory.ts`、`src/ui/styles/pages/*.css`）：
+   - 拍照界面顶部工具条接入 `SegmentedControl`（散落药片 / 整板药片）与受能力探测控制的硬件补光灯开关；
+   - 微调底抽屉支持双指捏合/滑杆 1x–4x 缩放平移、撤销栈（Ctrl+Z 与工具栏撤销）、点击校准样本、拖拽矩形区域重数、整板行列步进与网格角点切换、按住预览原图，以及非阻塞式“开启云端识别”授权横幅；
+   - 确认数量后可弹出业务关联底抽屉，将清点结果一键「设为剩余」「入库累加」（拒绝兼容外容器如 `盒` 误改）或「核对分药」（对比每日确认用量并给出刚好/多了/还差结论）；库存页「更多操作」同步接入「拍照数药片」入口。
+5. **AI 小助手 `count_pills` 深度集成**（`src/ai/assistant.ts`、`src/ai/tools/pillTools.ts`、`src/ui/assistantContent.ts`、`src/ui/AiAssistant.ts`、`src/ui/styles/pages/assistant.css`）：
+   - `count_pills` 改为调用统一流水线 `runPillDetectionPipeline`（支持 `loose` / `blister` 与 `med_name`），生成带标点缩略图卡片与原位「微调并回填库存」按钮；
+   - 发送给模型 `role: 'tool'` 的消息体及写入 IndexedDB 历史记录时剥离大数据量图片 DataURL，并在历史回放无原图时自动安全降级为「回填库存 / 核对分药」操作按钮。
+6. **评估脚手架与全量门禁验证**：
+   - 新增离线评测脚本 `scripts/bench-pills.mjs`（支持 `--help`、`--dir`、`--mode`、`--endpoint`，可用真实照片对比本地 MAE 与云端误差）；
+   - 验证结果：`npm run typecheck` 0 错误；Vitest 105 文件 / 722 项测试全部通过；Playwright E2E 4 视口 136/136 全部通过；`npm run build` 通过（638 模块，`assets:check` 32 个图标通过，WebBundle `8,372,891` 字节）。
 
 ### 81. 关怀大字模式、分药语音播报（TTS）、低余量轻提醒与「我的」页面全面改版（`workspace/claude`，已提交功能 `e19f8a2`，正发布 `v1.2.6`）
 
