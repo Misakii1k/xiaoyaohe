@@ -4,11 +4,19 @@ Tool: Claude
 Branch: `workspace/claude`
 Updated: 2026-11-15
 Status: active
-Latest version: `1.2.7` (Android `versionCode: 84`, 正在构建发布)
+Latest version: `1.2.8` (Android `versionCode: 85`, 修复 Cloudflare Pages Linux 构建兼容并重发布)
 
 ## Summary of Accomplished Work
 
-### 82. 数药片 4.0（云端 Moondream `point` 首选 + 本地视觉增强 + 整板网格 + AI/库存/分药全链路闭环，`workspace/claude`，正发布 `v1.2.7`）
+### 83. 修复 Cloudflare Pages Linux `npm ci` 兼容缺陷并完成 `v1.2.8` 正式线上发布（`workspace/claude`，`versionCode: 85`）
+
+1. **线上构建阻塞排查与根治**（`package.json`、`package-lock.json`）：
+   - 验证 `/api/count-pills` 返回 `405` 时经 Cloudflare Pages 控制台排查发现，Production（`workspace/claude`）与 Preview（`main`）部署均因 `package.json` `devDependencies` 中长期存在仅限 Windows 的 `@esbuild/win32-x64`，在 Cloudflare Linux 构建节点 `npm clean-install` 阶段报错 `EBADPLATFORM` 中断，致使 `v1.1.8` 以来的新边缘函数未成功部署；
+   - 移除 `@esbuild/win32-x64` 硬依赖并重生成 `package-lock.json`，保留跨平台 `optionalDependencies`（`@esbuild/linux-x64`、`@img/sharp-linux-x64` 等）。
+2. **发布验证（`v1.2.8` / `versionCode: 85`）**：
+   - 更新 `docs/releases/1.2.8.md`，通过 `tone_lint.py` 与 `releaseNotesJargon.test.ts`，执行 `release:build` 与 `release:publish` 推送并实测 Cloudflare Pages 部署与 `/api/count-pills` Workers AI `AI` 绑定推理返回。
+
+### 82. 数药片 4.0（云端 Moondream `point` 首选 + 本地视觉增强 + 整板网格 + AI/库存/分药全链路闭环，`workspace/claude`，`v1.2.7`）
 
 1. **引擎契约与隐私同意扩展**（`src/ai/consent.ts`、`src/features/pillEngine.ts`）：
    - `AiDataKind` 新增 `'pill-photo'` 数据授权类型；

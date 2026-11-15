@@ -2,8 +2,14 @@
 
 Updated: 2026-11-15
 Integration branch: `main` (同步自 `workspace/claude`)
-Product version: `1.2.7` (versionCode 84)
-Latest integration commit: `workspace/claude` 准备发布 — v1.2.7 (versionCode 84)
+Product version: `1.2.8` (versionCode 85)
+Latest integration commit: `workspace/claude` 修复 Cloudflare Pages Linux 构建兼容并发布 — v1.2.8 (versionCode 85)
+
+## Release v1.2.8 (versionCode 85, workspace/claude)
+
+- **核心改动**：
+  - 移除 `package.json` `devDependencies` 中仅限 Windows 的 `@esbuild/win32-x64`，修复 Cloudflare Pages Linux 构建节点 `npm ci` `EBADPLATFORM` 报错，恢复 `workspace/claude`（Production）与 `main` 的网页及 Functions 边缘函数部署；
+  - 承接 `v1.2.7` 数药片 4.0 完整能力及 Cloudflare Pages 控制台 Workers AI（`AI`）绑定，令 `/api/count-pills` 线上正式可用。
 
 ## Release v1.2.7 (versionCode 84, workspace/claude)
 
